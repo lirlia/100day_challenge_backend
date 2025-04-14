@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/lirlia/100day_challenge_backend/internal/interface/handler"
+	"github.com/lirlia/100day_challenge_backend/template/internal/interface/handler"
 	"github.com/m-mizutani/goerr"
 )
 
