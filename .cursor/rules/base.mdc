@@ -19,8 +19,10 @@ alwaysApply: true
 - エラーはトラシューしやすいようにStackTraceつきでラップしてください
 - dbはmysqlをコンテナで起動してください
 - db は毎度１から作り直すので migration はしない
+- db はトランザクションを利用してください
 - openapiによるスキーマ駆動をおこなってください
 - 細かいエラーハンドリングやセキュリティ観点については目を瞑ってください
+- ミススペルによるlint errorは無視してよいです
 - クリーンアーキテクチャーを意識してください
 - 起動はローカルでのみ行うためSSLなどは不要です
 - tailwind は CDN から直接取得し、ビルド不要にしてください
@@ -29,13 +31,11 @@ alwaysApply: true
 
 | 種類 | 使うもの | 理由 |
 | --- | --- | --- |
-| error | [github.com/m-mizutani/goerr](mdc:http:/github.com/m-mizutani/goerr) | シンプルで使いやすい |
-| logger | slog | デファクト |
-| db | mysql | 別ので postgres つかったので |
+| error | [github.com/m-mizutani/goerr](mdc:http:/github.com/m-mizutani/goerr) | これをつかってトレースを付与してください |
+| logger | slog | デファクトなのでこれを使う |
+| db | mysql | |
 | orm | https://github.com/go-gorm/gen | sqlc だとコード生成が必要なので |
-| interface | openapi
-https://github.com/ogen-go/ogen | 使いやすかったので
-勉強で graphql 使う時もあるかも |
+| interface | openapi 生成は https://github.com/ogen-go/ogen | 使いやすかったので |
 | http server | https://github.com/ogen-go/ogen |  |
 | frontend | https://pkg.go.dev/html/template |  |
 | css | https://tailwindcss.com/ |  |
@@ -46,6 +46,13 @@ https://github.com/ogen-go/ogen | 使いやすかったので
 - docker : mysql 起動のため
 - task : https://taskfile.dev/  タスクランナー
 
+## 必ずやること
+- Taskfile.yaml の `GO_MODULE: github.com/lirlia/100day_challenge_backend/day1_todo_app` は作成したモジュール名に合わせて変更すること
+- go.mod の module を作成したモジュールに合わせて変更すること
+- あわせて template を参照している各importも修正してください
+
 ## 禁止
 
+- こちらからアクションしない限りは勝手に生成を止めずコードを生成し続けてください
+- 完成したら自分自身で正しくアクセスできて表示できるか？を確認してください
 - go.mod の go バージョンを書き換える行為

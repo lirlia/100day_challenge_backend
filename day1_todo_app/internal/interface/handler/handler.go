@@ -101,7 +101,7 @@ func (h *TodoAPIHandler) CreateTodo(ctx context.Context, req *CreateTodoRequest)
 	output, err := h.todoUsecase.CreateTodo(ctx, input)
 	if err != nil {
 		h.logger.ErrorContext(ctx, "createTodo usecase failed", "error", err, "input", input)
-		return nil, myerrors.Wrap(err, "failed to create todo")
+		return nil, ``myerrors``.Wrap(err, "failed to create todo")
 	}
 
 	return toSchemaTodo(output.Todo), nil
