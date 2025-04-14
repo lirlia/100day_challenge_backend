@@ -1,0 +1,34 @@
+version: '3'
+
+vars:
+  GO_MODULE: github.com/lirlia/100day_challenge_backend
+
+tasks:
+  default:
+    cmds:
+      - task --list-all
+
+  build:
+    cmds:
+      - go build -o bin/server ./cmd/server
+
+  run:
+    cmds:
+      - air
+
+  docker-compose:
+    cmds:
+      - docker-compose up -d
+
+  generate:
+    cmds:
+      - ogen generate --package api --target api --clean api/openapi.yaml
+      - go generate ./...
+
+  test:
+    cmds:
+      - go test ./...
+
+  lint:
+    cmds:
+      - golangci-lint run ./...
