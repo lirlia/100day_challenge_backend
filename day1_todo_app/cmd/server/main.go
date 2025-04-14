@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"log"
-	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -12,7 +11,7 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/lirlia/100day_challenge_backend/day1_todo_app/internal/infrastructure/mysql"
 	"github.com/lirlia/100day_challenge_backend/day1_todo_app/internal/infrastructure/server"
-	"github.com/lirlia/100day_challenge_backend/day1_todo_app/internal/application/usecase"
+	"github.com/lirlia/100day_challenge_backend/day1_todo_app/internal/usecase"
 )
 
 func initDB() *sql.DB {

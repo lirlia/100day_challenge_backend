@@ -7,8 +7,8 @@ import (
 	"os"
 
 	_ "github.com/go-sql-driver/mysql"
-	"github.com/lirlia/100day_challenge_backend/internal/handler/web"
-	"github.com/lirlia/100day_challenge_backend/internal/infrastructure/mysql"
+	"github.com/lirlia/100day_challenge_backend/day1_todo_app/internal/handler/web"
+	"github.com/lirlia/100day_challenge_backend/day1_todo_app/internal/infrastructure/mysql"
 	"github.com/lirlia/100day_challenge_backend/day1_todo_app/internal/usecase"
 )
 
