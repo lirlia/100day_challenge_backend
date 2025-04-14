@@ -1,6 +1,6 @@
 module github.com/lirlia/100day_challenge_backend
 
-go 1.22
+go 1.24
 
 require github.com/m-mizutani/goerr v0.1.10
 

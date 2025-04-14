@@ -1,0 +1,51 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+
+# Your rule content
+
+- template ディレクトリ配下を丸ごとコピーして、指定の日のディレクトリをまず最初に作成してください（例：3day の銀行アプリ といわれたら 3day_bank_app というディレクトリを作ること)
+
+## 作成するアプリについて
+- いまから day100 まで毎日異なるアプリを作ります
+- 同じドメインのアプリ(フォーカスを変えるはあり)はなしです
+- 言語はgoです
+- 簡素で構わないので実装した機能を一通り操作できるwebページを用意してください
+  - ユーザが必要なものについては、認証ページを作成するのではなく簡単にユーザを切り替えられる機能で代替してください
+  - セッションを使ってユーザは管理してください
+- ログはAIがおいやすくするためにきちんと出すようにしてください
+- エラーはトラシューしやすいようにStackTraceつきでラップしてください
+- dbはmysqlをコンテナで起動してください
+- db は毎度１から作り直すので migration はしない
+- openapiによるスキーマ駆動をおこなってください
+- 細かいエラーハンドリングやセキュリティ観点については目を瞑ってください
+- クリーンアーキテクチャーを意識してください
+- 起動はローカルでのみ行うためSSLなどは不要です
+- tailwind は CDN から直接取得し、ビルド不要にしてください
+
+## 使用技術
+
+| 種類 | 使うもの | 理由 |
+| --- | --- | --- |
+| error | [github.com/m-mizutani/goerr](mdc:http:/github.com/m-mizutani/goerr) | シンプルで使いやすい |
+| logger | slog | デファクト |
+| db | mysql | 別ので postgres つかったので |
+| orm | https://github.com/go-gorm/gen | sqlc だとコード生成が必要なので |
+| interface | openapi
+https://github.com/ogen-go/ogen | 使いやすかったので
+勉強で graphql 使う時もあるかも |
+| http server | https://github.com/ogen-go/ogen |  |
+| frontend | https://pkg.go.dev/html/template |  |
+| css | https://tailwindcss.com/ |  |
+
+その他のツール
+
+- air: ホットリロード
+- docker : mysql 起動のため
+- task : https://taskfile.dev/  タスクランナー
+
+## 禁止
+
+- go.mod の go バージョンを書き換える行為

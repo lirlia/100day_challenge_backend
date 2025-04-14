@@ -6,7 +6,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/lirlia/100day_challenge_backend/template/internal/interface/handler"
+	"github.com/lirlia/100day_challenge_backend/day1_todo_app/internal/usecase"
+	"github.com/lirlia/100day_challenge_backend/day1_todo_app/internal/interface/handler"
 	"github.com/m-mizutani/goerr"
 )
 
@@ -14,9 +15,9 @@ type Server struct {
 	httpServer *http.Server
 }
 
-func NewServer() (*Server, error) {
+func NewServer(todoUsecase *usecase.TodoUsecase) (*Server, error) {
 	// ハンドラーの初期化
-	h := handler.NewHandler()
+	h := handler.NewHandler(todoUsecase)
 
 	// HTTPサーバーの設定
 	srv := &http.Server{

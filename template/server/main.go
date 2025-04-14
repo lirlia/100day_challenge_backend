@@ -7,7 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/lirlia/100day_challenge_backend/internal/infrastructure/server"
+	"github.com/lirlia/100day_challenge_backend/template/internal/infrastructure/server"
 )
 
 func main() {
