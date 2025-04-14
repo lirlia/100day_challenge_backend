@@ -1,0 +1,416 @@
+openapi: 3.0.3
+info:
+  title: Day1 ToDo App API
+  version: 0.1.0
+servers:
+  - url: http://localhost:8080/api/v1 # 仮の URL
+    description: Local development server
+
+paths:
+  /users:
+    get:
+      summary: Get list of users
+      operationId: getUsers
+      tags:
+        - User
+      responses:
+        "200":
+          description: A list of users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/User"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /session:
+    post:
+      summary: Set current user session
+      operationId: setSession
+      tags:
+        - Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetSessionRequest"
+      responses:
+        "204":
+          description: Session set successfully
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /todos:
+    get:
+      summary: Get list of ToDos for the current user
+      operationId: getTodos
+      tags:
+        - Todo
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of items to return
+          schema:
+            type: integer
+            format: int32
+            default: 20
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: integer
+            format: int32
+            default: 1
+        - name: include_archived
+          in: query
+          required: false
+          description: Include archived ToDos in the list
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: A list of ToDos
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Todo"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+    post:
+      summary: Create a new ToDo
+      operationId: createTodo
+      tags:
+        - Todo
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTodoRequest"
+      responses:
+        "201":
+          description: ToDo created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Todo"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /todos/order:
+    patch:
+      summary: Update the sort order of multiple ToDos
+      operationId: updateTodoOrder
+      tags:
+        - Todo
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTodoOrderRequest"
+      responses:
+        "204":
+          description: Order updated successfully
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /todos/archived:
+    get:
+      summary: Get list of archived ToDos for the current user
+      operationId: getArchivedTodos
+      tags:
+        - Todo
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of items to return
+          schema:
+            type: integer
+            format: int32
+            default: 20
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: integer
+            format: int32
+            default: 1
+      responses:
+        "200":
+          description: A list of archived ToDos
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Todo"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /todos/{todoId}:
+    put:
+      summary: Update an existing ToDo
+      operationId: updateTodo
+      tags:
+        - Todo
+      parameters:
+        - name: todoId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTodoRequest"
+      responses:
+        "200":
+          description: ToDo updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Todo"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+    delete:
+      summary: Archive a ToDo
+      operationId: archiveTodo
+      tags:
+        - Todo
+      parameters:
+        - name: todoId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "204":
+          description: ToDo archived successfully
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /todos/{todoId}/status:
+    patch:
+      summary: Update the status of a ToDo
+      operationId: updateTodoStatus
+      tags:
+        - Todo
+      parameters:
+        - name: todoId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTodoStatusRequest"
+      responses:
+        "200":
+          description: ToDo status updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Todo"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /todos/{todoId}/unarchive:
+    patch:
+      summary: Unarchive a ToDo
+      operationId: unarchiveTodo
+      tags:
+        - Todo
+      parameters:
+        - name: todoId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: ToDo unarchived successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Todo"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+components:
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: User ID
+          readOnly: true
+        name:
+          type: string
+          description: User name
+      required:
+        - id
+        - name
+
+    Todo:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: ToDo ID
+          readOnly: true
+        user_id:
+          type: integer
+          format: int64
+          description: ID of the user who owns this ToDo
+          readOnly: true # Usually set internally
+        title:
+          type: string
+          description: ToDo title
+        description:
+          type: string
+          description: ToDo description (optional)
+        status:
+          $ref: "#/components/schemas/TodoStatus"
+        sort_order:
+          type: number
+          format: double
+          description: Value used for manual sorting
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the ToDo was created
+          readOnly: true
+        archived_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Timestamp when the ToDo was archived (null if not archived)
+          readOnly: true
+      required:
+        - id
+        - user_id
+        - title
+        - status
+        - sort_order
+        - created_at
+
+    TodoStatus:
+      type: string
+      enum:
+        - not started
+        - in progress
+        - done
+        - pending
+        - cancel
+      description: The status of the ToDo item
+
+    SetSessionRequest:
+      type: object
+      properties:
+        user_id:
+          type: integer
+          format: int64
+          description: The ID of the user to set in the session
+      required:
+        - user_id
+
+    CreateTodoRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          description: ToDo title
+        description:
+          type: string
+          description: ToDo description (optional)
+      required:
+        - title
+
+    UpdateTodoRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          description: ToDo title
+        description:
+          type: string
+          description: ToDo description (optional)
+        status:
+          $ref: "#/components/schemas/TodoStatus"
+      required:
+        - title
+        - status # Require status even if unchanged? Or make optional? Let's require for PUT.
+
+    UpdateTodoStatusRequest:
+      type: object
+      properties:
+        status:
+          $ref: "#/components/schemas/TodoStatus"
+      required:
+        - status
+
+    UpdateTodoOrderRequest:
+      type: object
+      properties:
+        orders:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+                format: int64
+                description: ToDo ID
+              sort_order:
+                type: number
+                format: double
+                description: New sort order value
+            required:
+              - id
+              - sort_order
+      required:
+        - orders
+
+    Error:
+      type: object
+      properties:
+        code:
+          type: string # Or integer? String allows more flexibility e.g., "INVALID_INPUT"
+          description: An error code
+        message:
+          type: string
+          description: A human-readable error message
+      required:
+        - code
+        - message
+
+  responses:
+    ErrorResponse:
+      description: Generic error response
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"

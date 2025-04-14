@@ -1,0 +1,184 @@
+{{ define "title" }}ToDo List{{ end }}
+
+{{ define "content" }}{{/* main の代わりに content を定義 */}}
+<div
+    x-data="todoApp"
+    data-todos="{{ .TodosJSON }}"
+    data-users="{{ .UsersJSON }}"
+    data-current-user-id="{{ .CurrentUserID }}"
+>
+    <!-- ユーザー選択 (デバッグ用リスト表示) -->
+    <!--
+    <div class="mb-6">
+        <label class="block text-sm font-medium text-gray-700">Current User (List Debug):</label>
+        <ul class="border border-gray-300 rounded-md p-2 mt-1">
+            <template x-for="user in users" :key="user.id">
+                <li x-text="user.name + ' (ID: ' + user.id + ')'"></li>
+            </template>
+            <template x-if="users.length === 0">
+                <li class="text-gray-500">No users loaded.</li>
+            </template>
+        </ul>
+        <p class="text-xs text-gray-500 mt-1">Selected User ID: <span x-text="currentUserId"></span></p>
+    </div>
+    -->
+    <!-- 元の select はコメントアウト解除 -->
+    <div class="mb-6">
+        <label for="user-select" class="block text-sm font-medium text-gray-700">Current User:</label>
+        <select id="user-select" x-model="currentUserId" @change="changeUser()" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md">
+            <template x-for="user in users">
+                <option :value="user.ID" x-text="user.Name + ' (ID: ' + user.ID + ')'"></option>
+            </template>
+        </select>
+    </div>
+
+    <!-- ToDo作成フォーム -->
+    <div class="bg-white shadow rounded-lg p-6 mb-8">
+        <h2 class="text-xl font-semibold mb-4">Create New ToDo</h2>
+        <form @submit.prevent="createTodo()">
+            <div class="mb-4">
+                <label for="title" class="block text-sm font-medium text-gray-700">Title</label>
+                <input type="text" id="title" x-model="newTodoTitle" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+            </div>
+            <div class="mb-4">
+                <label for="description" class="block text-sm font-medium text-gray-700">Description (Optional)</label>
+                <textarea id="description" x-model="newTodoDescription" rows="3" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"></textarea>
+            </div>
+            <button type="submit" class="w-full inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                Add ToDo
+            </button>
+        </form>
+    </div>
+
+    <!-- ToDoリスト -->
+    <div class="bg-white shadow rounded-lg overflow-hidden">
+        <h2 class="text-xl font-semibold p-6 border-b border-gray-200">Your ToDos</h2>
+        <ul class="divide-y divide-gray-200">
+            <template x-if="todos.length === 0">
+                <li class="p-6 text-center text-gray-500">No ToDos yet for this user!</li>
+            </template>
+
+            <template x-for="todo in todos">
+                 <li class="p-4 sm:p-6 flex items-center justify-between" :id="'todo-li-' + todo.ID">
+                    <div class="flex-grow mr-4">
+                        <div class="flex items-center mb-1">
+                            <input type="checkbox" :id="'todo-cb-' + todo.ID" :checked="todo.Status === 'done'" @change="toggleStatus(todo.ID, todo.Status)" class="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 mr-3">
+                            <label :for="'todo-cb-' + todo.ID" class="text-lg font-medium text-gray-900" :class="{ 'line-through text-gray-500': todo.Status === 'done' }" x-text="todo.Title"></label>
+                        </div>
+                        <p class="text-sm text-gray-600 ml-7" x-text="todo.Description"></p>
+                        <p class="text-xs text-gray-400 ml-7">ID: <span x-text="todo.ID"></span>, Status: <span x-text="todo.Status"></span></p>
+                    </div>
+                    <div class="flex-shrink-0 space-x-2">
+                        <button @click="archiveTodo(todo.ID)" class="inline-flex items-center px-2.5 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                            Archive
+                        </button>
+                    </div>
+                </li>
+            </template>
+
+        </ul>
+    </div>
+
+</div>
+
+<script>
+    document.addEventListener('alpine:init', () => {
+        Alpine.data('todoApp', () => ({
+            todos: [], // 初期値は空
+            users: [], // 初期値は空
+            currentUserId: 1, // 初期値 (後で data-* から読み込む)
+
+            newTodoTitle: '',
+            newTodoDescription: '',
+
+            init() {
+                // data-* 属性から初期データを読み込む
+                this.todos = JSON.parse(this.$el.dataset.todos || '[]');
+                this.users = JSON.parse(this.$el.dataset.users || '[]');
+                this.currentUserId = parseInt(this.$el.dataset.currentUserId || '1');
+                console.log('Initial data loaded:', this.todos, this.users, this.currentUserId);
+            },
+
+            fetchUsers() {
+                // 初期データで読み込むので不要かもしれないが、更新用に残す
+                fetch('/users')
+                    .then(response => response.json())
+                    .then(data => {
+                        this.users = data;
+                    })
+                    .catch(error => console.error('Error fetching users:', error));
+            },
+
+            fetchTodos() {
+                this.todos = []; // 新しいデータを取得する前にリストをクリア
+                // currentUserId に基づいて Todo を取得
+                fetch(`/todos?user_id=${this.currentUserId}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        this.todos = data; // API が正しい形式 (大文字プロパティ) で返す前提
+                    })
+                    .catch(error => console.error('Error fetching todos:', error));
+            },
+
+            changeUser() {
+                // currentUserId が変更されたら、該当ユーザーの Todo を再取得
+                console.log('User changed to:', this.currentUserId);
+                this.fetchTodos();
+            },
+
+            createTodo() {
+                if (!this.newTodoTitle.trim()) return;
+                fetch('/todos', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-User-ID': this.currentUserId }, // ユーザーIDをヘッダーで渡す (仮)
+                    body: JSON.stringify({ title: this.newTodoTitle, description: this.newTodoDescription })
+                })
+                .then(response => {
+                    if (!response.ok) { throw new Error('Failed to create todo'); }
+                    return response.json();
+                 })
+                .then(newTodo => {
+                    this.todos.push(newTodo); // リストに追加
+                    this.newTodoTitle = '';
+                    this.newTodoDescription = '';
+                 })
+                .catch(error => console.error('Error creating todo:', error));
+            },
+
+            toggleStatus(id, currentStatus) {
+                const newStatus = currentStatus === 'done' ? 'in progress' : 'done'; // 仮のトグルロジック
+                fetch(`/todos/${id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json', 'X-User-ID': this.currentUserId }, // ヘッダーは現状 API 側で使われない
+                    body: JSON.stringify({ status: newStatus }) // title, description は省略
+                })
+                .then(response => {
+                    if (!response.ok) { throw new Error('Failed to update status'); }
+                    return response.json();
+                })
+                .then(updatedTodo => {
+                    const index = this.todos.findIndex(t => t.ID === id);
+                    if (index !== -1) {
+                        this.todos[index] = updatedTodo; // 更新されたToDoで置き換え
+                    }
+                })
+                .catch(error => console.error('Error toggling status:', error));
+            },
+
+            archiveTodo(id) {
+                if (!confirm('Are you sure you want to archive this ToDo?')) return;
+                fetch(`/todos/${id}`, {
+                    method: 'DELETE',
+                     headers: { 'X-User-ID': this.currentUserId } // ユーザーIDヘッダー
+                })
+                .then(response => {
+                    if (!response.ok) { throw new Error('Failed to archive todo'); }
+                    // 204 No Content の場合、ボディはない
+                    this.todos = this.todos.filter(t => t.ID !== id); // リストから削除
+                })
+                .catch(error => console.error('Error archiving todo:', error));
+            }
+        }));
+    });
+</script>
+{{ end }}

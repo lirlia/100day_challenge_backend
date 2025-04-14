@@ -2,7 +2,7 @@ root = "."
 tmp_dir = "tmp"
 
 [build]
-  cmd = "go run ./server"
+  cmd = "go run ./cmd/server/main.go"
   bin = ""
   full_bin = ""
   include_ext = ["go", "tpl", "tmpl", "html"]

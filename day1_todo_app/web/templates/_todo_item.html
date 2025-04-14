@@ -1,0 +1,17 @@
+{{/* web/templates/_todo_item.html */}}
+<li class="p-4 sm:p-6 flex items-center justify-between" x-data="{ id: {{.ID}}, title: '{{js .Title}}', description: '{{js .Description}}', status: '{{.Status}}' }">
+    <div class="flex-grow mr-4">
+        <div class="flex items-center mb-1">
+            <input type="checkbox" :id="'todo-' + id" :checked="status === 'done'" @change="// toggleStatus(id)" class="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 mr-3">
+            <label :for="'todo-' + id" class="text-lg font-medium text-gray-900" :class="{ 'line-through text-gray-500': status === 'done' }" x-text="title"></label>
+        </div>
+        <p class="text-sm text-gray-600 ml-7" x-text="description"></p>
+        <p class="text-xs text-gray-400 ml-7">ID: <span x-text="id"></span>, Status: <span x-text="status"></span></p>
+    </div>
+    <div class="flex-shrink-0 space-x-2">
+        <button @click="// archiveTodo(id)" class="inline-flex items-center px-2.5 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+            Archive
+        </button>
+        <!-- 必要であれば編集ボタンなども追加 -->
+    </div>
+</li>

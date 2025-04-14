@@ -1,12 +1,16 @@
 version: "3"
 
 vars:
-  GO_MODULE: github.com/lirlia/100day_challenge_backend
+  GO_MODULE: github.com/lirlia/100day_challenge_backend/day1_todo_app
+  APP_NAME: day1_todo_app
+  APP_CMD_PATH: ./cmd/server
+  OPENAPI_SPEC: ./api/openapi.yaml
+  GENERATED_API_PATH: ./internal/interface/handler
 
 tasks:
   default:
     cmds:
-      - go tool task --list-all
+      - task: dev
 
   build:
     cmds:
@@ -14,7 +18,7 @@ tasks:
 
   dev:
     cmds:
-      - go tool air
+      - /Users/noname/bin/air
 
   docker-compose:
     cmds:
@@ -22,7 +26,7 @@ tasks:
 
   generate:
     cmds:
-      - ogen generate --package api --target api --clean api/openapi.yaml
+      - go tool ogen generate --package api --target api --clean api/openapi.yaml
       - go generate ./...
 
   test:
@@ -31,4 +35,62 @@ tasks:
 
   lint:
     cmds:
-      - golangci-lint run ./...
+      - go tool golangci-lint run ./...
+
+  generate:api:
+    desc: Generate Go code from OpenAPI specification using ogen
+    dir: .
+    cmds:
+      - go run github.com/ogen-go/ogen/cmd/ogen@latest --target {{.GENERATED_API_PATH}} --package handler --clean {{.OPENAPI_SPEC}}
+      - go mod tidy
+    sources:
+      - "{{.OPENAPI_SPEC}}"
+    generates:
+      - "{{.GENERATED_API_PATH}}/*.gen.go"
+
+  db:up:
+    desc: Start database container using docker-compose
+    cmds:
+      - docker compose -f ./docker/docker-compose.yml up -d mysql
+    status:
+      - docker compose -f ./docker/docker-compose.yml ps | grep mysql | grep running
+
+  db:down:
+    desc: Stop and remove database container
+    cmds:
+      - docker compose -f ./docker/docker-compose.yml down
+
+  db:logs:
+    desc: Show database logs
+    cmds:
+      - docker compose -f ./docker/docker-compose.yml logs -f mysql
+
+  deps:
+    desc: Install dependencies
+    cmds:
+      - go mod download
+      - go mod tidy
+
+  # Gorm/Gen モデル生成
+  generate:model:
+    desc: Generate Gorm models and query methods using gorm/gen
+    deps: [db:up] # DB が起動している必要がある
+    cmds:
+      # cmd/gen を実行
+      - go run ./cmd/gen
+      # 生成後、依存関係を整理
+      - go mod tidy
+    sources:
+      # このファイル自身かスキーマが変わったら再生成
+      - ./internal/infra/datastore/gen.go
+      - ./docker/mysql/initdb.d/schema.sql
+    generates:
+      # 生成されるファイルパス
+      - ./internal/infra/datastore/model/*.gen.go
+      - ./internal/infra/datastore/query/*.gen.go
+
+  # 不要なディレクトリを削除するタスク
+  clean:interface-repo:
+    desc: Remove the unnecessary internal/interface/repository directory
+    cmds:
+      - rm -rf ./internal/interface/repository || true # エラーが出ても無視

@@ -1,19 +1,37 @@
-version: '3'
+# day1_todo_app/docker/docker-compose.yml
 
 services:
   mysql:
-    image: mysql:8.0
+    image: mysql:8.0 # 公式イメージを使用
+    container_name: todo_app_mysql
+    platform: linux/amd64 # M1/M2 Mac でも動作するように指定
     environment:
-      MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: todo_app
-      MYSQL_USER: todo_user
-      MYSQL_PASSWORD: todo_password
+      MYSQL_ROOT_PASSWORD: rootpassword # ルートパスワード (開発用)
+      MYSQL_DATABASE: todo_app_db # 作成するデータベース名
+      MYSQL_USER: user # 作成するユーザー名
+      MYSQL_PASSWORD: password # 作成するユーザーのパスワード
     ports:
-      - "3306:3306"
+      - "3306:3306" # ホストの 3306 をコンテナの 3306 にマッピング
     volumes:
-      - mysql_data:/var/lib/mysql
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
-    command: --default-authentication-plugin=mysql_native_password
-
-volumes:
-  mysql_data:
+      # 初期化用 SQL ファイルをマウント
+      - ./mysql/initdb.d:/docker-entrypoint-initdb.d
+      # データ永続化用ボリューム (オプション)
+      # - mysql_data:/var/lib/mysql
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "mysqladmin",
+          "ping",
+          "-h",
+          "localhost",
+          "-u",
+          "root",
+          "-p$$MYSQL_ROOT_PASSWORD",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+# volumes:
+#   mysql_data:

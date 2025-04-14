@@ -1,0 +1,27 @@
+{{ define "base" }}
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ block "title" . }}ToDo App{{ end }}</title> <!-- タイトルブロックは残しても良い -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body class="bg-gray-100">
+    <div class="container mx-auto mt-8 px-4">
+        <header class="mb-8">
+            <h1 class="text-3xl font-bold text-center text-gray-800">ToDo App</h1>
+        </header>
+
+        <main>
+            {{ template "content" . }} {{/* content テンプレートを呼び出す */}}
+        </main>
+
+        <footer class="text-center text-gray-500 mt-12 py-4">
+            <p>&copy; 2025 Day1 ToDo App</p>
+        </footer>
+    </div>
+</body>
+</html>
+{{ end }}

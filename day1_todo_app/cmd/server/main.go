@@ -1,50 +1,69 @@
+// cmd/server/main.go
 package main
 
 import (
 	"context"
-	"database/sql"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
 
-	_ "github.com/go-sql-driver/mysql"
-	"github.com/lirlia/100day_challenge_backend/day1_todo_app/internal/infrastructure/mysql"
-	"github.com/lirlia/100day_challenge_backend/day1_todo_app/internal/infrastructure/server"
-	"github.com/lirlia/100day_challenge_backend/day1_todo_app/internal/usecase"
+	// 追加
+	"github.com/lirlia/100day_challenge_backend/day1_todo_app/internal/infra/datastore"
+	"github.com/lirlia/100day_challenge_backend/day1_todo_app/internal/infrastructure/server" // infra/server を使う
 )
 
-func initDB() *sql.DB {
-	db, err := sql.Open("mysql", "root:password@tcp(localhost:3306)/todo?parseTime=true")
-	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
-	}
-
-	if err := db.Ping(); err != nil {
-		log.Fatalf("Failed to ping database: %v", err)
-	}
-
-	return db
-}
-
 func main() {
-	// 依存関係の初期化
-	db := initDB()
-	todoRepo := mysql.NewTodoRepository(db)
-	todoUsecase := usecase.NewTodoUsecase(todoRepo)
+	// === ロガーの設定 ===
+	logLevel := slog.LevelInfo // デフォルトは Info
+	if os.Getenv("LOG_LEVEL") == "DEBUG" {
+		logLevel = slog.LevelDebug
+	}
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: logLevel}))
+	slog.SetDefault(logger)
+	slog.Info("logger initialized", "level", logLevel.String())
 
-	// サーバーの初期化
-	srv, err := server.NewServer(todoUsecase)
+	// === 設定の読み込み (環境変数から) ===
+	dbCfg := datastore.DBConfig{
+		User:     getEnv("DB_USER", "user"),
+		Password: getEnv("DB_PASSWORD", "password"),
+		Host:     getEnv("DB_HOST", "127.0.0.1"), // Docker Compose のサービス名ではなく localhost を参照
+		Port:     getEnv("DB_PORT", "3306"),      // docker-compose.yml で公開したポート
+		DBName:   getEnv("DB_NAME", "todo_app_db"),
+		Charset:  getEnv("DB_CHARSET", "utf8mb4"),
+		Loc:      getEnv("DB_LOC", "Local"),
+	}
+	serverCfg := server.Config{
+		Addr:   ":" + getEnv("PORT", "8080"),
+		DBConf: dbCfg,
+	}
+	slog.Info("configuration loaded", "serverAddr", serverCfg.Addr, "dbHost", dbCfg.Host, "dbPort", dbCfg.Port, "dbName", dbCfg.DBName)
+
+	// === サーバーの初期化 (依存性注入) ===
+	srv, err := server.NewServer(serverCfg) // DI コンテナがあればそれを使うのが望ましい
 	if err != nil {
-		log.Fatalf("Failed to initialize server: %v", err)
+		slog.Error("failed to initialize server", "error", err)
+		os.Exit(1)
 	}
 
-	// シグナルハンドリングの設定
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	// === シグナルハンドリングとサーバー起動/シャットダウン ===
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// サーバーの起動
+	// サーバーの起動とシャットダウン完了待機
 	if err := srv.Start(ctx); err != nil {
-		log.Fatalf("Server failed to start: %v", err)
+		slog.Error("server execution failed", "error", err)
+		os.Exit(1)
 	}
+
+	slog.Info("application finished")
+}
+
+// getEnv は環境変数を取得し、なければデフォルト値を返します。
+func getEnv(key, fallback string) string {
+	if value, ok := os.LookupEnv(key); ok {
+		return value
+	}
+	slog.Debug("environment variable not set, using fallback", "key", key, "fallback", fallback)
+	return fallback
 }
