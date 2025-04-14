@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/lirlia/100day_challenge_backend/template/internal/interface/handler"
+	"github.com/lirlia/100day_challenge_backend/internal/interface/handler"
 	"github.com/m-mizutani/goerr"
 )
 
@@ -52,6 +52,9 @@ func (s *Server) Start(ctx context.Context) error {
 	if err := s.httpServer.Shutdown(shutdownCtx); err != nil {
 		return goerr.Wrap(err, "server shutdown failed")
 	}
+
+	// 追加: シャットダウン完了を待機
+	<-shutdownCtx.Done()
 
 	slog.Info("server gracefully stopped")
 	return nil

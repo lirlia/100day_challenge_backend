@@ -7,7 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/lirlia/100day_challenge_backend/template/internal/infrastructure/server"
+	"github.com/lirlia/100day_challenge_backend/internal/infrastructure/server"
 )
 
 func main() {
@@ -33,4 +33,7 @@ func main() {
 		slog.Error("failed to start server", "error", err)
 		os.Exit(1)
 	}
+
+	// 追加: サーバーのシャットダウン完了を待機
+	<-ctx.Done()
 }

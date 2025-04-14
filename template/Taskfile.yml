@@ -10,9 +10,9 @@ tasks:
 
   build:
     cmds:
-      - go build -o bin/server ./cmd/server
+      - go build -o bin/server ./server
 
-  run:
+  dev:
     cmds:
       - air
 
