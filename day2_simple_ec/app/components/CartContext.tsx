@@ -16,7 +16,8 @@ export type CartItem = {
     stock: number;
     description: string;
   };
-  currentPrice: number;
+  currentPrice: number; // 最新の価格
+  addedPrice: number; // ★ カート投入時の価格を追加
 };
 
 // カートコンテキストの型定義
@@ -30,6 +31,7 @@ type CartContextType = {
   error: string | null;
   totalAmount: number;
   itemCount: number;
+  priceChangedItems: Set<number>;
 };
 
 // カートコンテキストの作成
@@ -43,6 +45,7 @@ const CartContext = createContext<CartContextType>({
   error: null,
   totalAmount: 0,
   itemCount: 0,
+  priceChangedItems: new Set<number>(),
 });
 
 // カートコンテキストのカスタムフック
@@ -53,6 +56,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [priceChangedItems, setPriceChangedItems] = useState<Set<number>>(new Set());
   const { currentUser } = useUser();
 
   // 合計金額を計算
@@ -69,6 +73,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     const fetchCart = async () => {
       if (!currentUser) {
         setCartItems([]);
+        setPriceChangedItems(new Set());
         return;
       }
 
@@ -79,8 +84,22 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         const response = await fetch(`/api/cart?userId=${currentUser.id}`);
         if (!response.ok) throw new Error('Failed to fetch cart');
 
-        const data = await response.json();
-        setCartItems(data);
+        // ★ APIから取得するデータ (addedPrice, currentPrice を含む)
+        const newCartData: CartItem[] = await response.json();
+
+        // ★ 価格変動チェック（addedPrice と currentPrice を比較）
+        const changedItems = new Set<number>();
+        newCartData.forEach(newItem => {
+          // addedPrice が存在し、currentPrice と異なる場合に Set に追加
+          // (addedPrice はDBから来るので undefined チェックは本来不要だが念のため)
+          if (newItem.addedPrice !== undefined && newItem.addedPrice !== newItem.currentPrice) {
+            changedItems.add(newItem.id);
+          }
+        });
+        setPriceChangedItems(changedItems);
+        // ★ チェックここまで
+
+        setCartItems(newCartData);
       } catch (error) {
         console.error('Error fetching cart:', error);
         setError('カートの取得に失敗しました');
@@ -90,6 +109,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     };
 
     fetchCart();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser]);
 
   // カートに商品を追加
@@ -196,6 +216,14 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       if (!response.ok) throw new Error('Failed to remove from cart');
 
       setCartItems((prev) => prev.filter((item) => item.id !== cartItemId));
+
+      // 価格変更セットからも削除
+      setPriceChangedItems(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(cartItemId);
+        return newSet;
+      });
+
     } catch (error) {
       console.error('Error removing from cart:', error);
       setError('カートからの削除に失敗しました');
@@ -209,6 +237,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     if (!currentUser) return;
 
     setCartItems([]);
+    setPriceChangedItems(new Set());
   };
 
   return (
@@ -223,6 +252,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         error,
         totalAmount,
         itemCount,
+        priceChangedItems,
       }}
     >
       {children}

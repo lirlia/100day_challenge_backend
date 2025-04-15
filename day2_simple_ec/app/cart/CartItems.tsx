@@ -8,7 +8,7 @@ import { useRouter } from 'next/navigation';
 import { useUser } from '../components/UserSwitcher';
 
 export default function CartItems() {
-  const { cartItems, updateCartItem, removeFromCart, clearCart, totalAmount, itemCount } = useCart();
+  const { cartItems, updateCartItem, removeFromCart, clearCart, totalAmount, itemCount, priceChangedItems } = useCart();
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
@@ -104,97 +104,106 @@ export default function CartItems() {
       )}
 
       <ul className="divide-y">
-        {cartItems.map((item) => (
-          <li key={item.id} className="py-6 flex">
-            <div className="flex-shrink-0 relative w-24 h-24 rounded overflow-hidden border">
-              <Image
-                src={item.product.imageUrl}
-                alt={item.product.name}
-                fill
-                sizes="100px"
-                className="object-contain"
-              />
-            </div>
+        {cartItems.map((item) => {
+          const hasPriceChanged = priceChangedItems.has(item.id);
 
-            <div className="ml-4 flex-1">
-              <div className="flex justify-between">
-                <div>
-                  <Link
-                    href={`/products/${item.product.id}`}
-                    className="text-lg font-medium text-gray-900 hover:text-blue-600"
-                  >
-                    {item.product.name}
-                  </Link>
-                  <p className="mt-1 text-gray-500">
-                    単価: {formatPrice(item.currentPrice)}
+          return (
+            <li key={item.id} className="py-6 flex">
+              <div className="flex-shrink-0 relative w-24 h-24 rounded overflow-hidden border">
+                <Image
+                  src={item.product.imageUrl}
+                  alt={item.product.name}
+                  fill
+                  sizes="100px"
+                  className="object-contain"
+                />
+              </div>
+
+              <div className="ml-4 flex-1">
+                <div className="flex justify-between">
+                  <div>
+                    <Link
+                      href={`/products/${item.product.id}`}
+                      className="text-lg font-medium text-gray-900 hover:text-blue-600"
+                    >
+                      {item.product.name}
+                    </Link>
+                    <p className="mt-1 text-gray-500">
+                      単価: {formatPrice(item.currentPrice)}
+                      {hasPriceChanged && (
+                        <span className="ml-2 text-sm text-orange-600 font-medium">
+                          (価格が変更されました)
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                  <p className="text-lg font-medium text-gray-900">
+                    {formatPrice(item.currentPrice * item.quantity)}
                   </p>
                 </div>
-                <p className="text-lg font-medium text-gray-900">
-                  {formatPrice(item.currentPrice * item.quantity)}
-                </p>
-              </div>
 
-              <div className="mt-4 flex justify-between items-center">
-                <div className="flex items-center">
+                <div className="mt-4 flex justify-between items-center">
+                  <div className="flex items-center">
+                    <button
+                      type="button"
+                      onClick={() => handleQuantityChange(item.id, item.quantity, -1)}
+                      className="p-1 rounded-full text-gray-600 hover:bg-gray-100"
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        strokeWidth={1.5}
+                        stroke="currentColor"
+                        className="w-5 h-5"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M18 12H6"
+                        />
+                      </svg>
+                    </button>
+                    <span className="mx-2 text-gray-700">{item.quantity}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleQuantityChange(item.id, item.quantity, 1)}
+                      disabled={item.quantity >= item.product.stock}
+                      className={`p-1 rounded-full text-gray-600 ${
+                        item.quantity >= item.product.stock
+                          ? 'opacity-50 cursor-not-allowed'
+                          : 'hover:bg-gray-100'
+                      }`}
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        strokeWidth={1.5}
+                        stroke="currentColor"
+                        className="w-5 h-5"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M12 6v12m6-6H6"
+                        />
+                      </svg>
+                    </button>
+                  </div>
+
                   <button
                     type="button"
-                    onClick={() => handleQuantityChange(item.id, item.quantity, -1)}
-                    className="p-1 rounded-full text-gray-600 hover:bg-gray-100"
+                    onClick={() => removeFromCart(item.id)}
+                    className="text-red-600 hover:text-red-800"
                   >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      strokeWidth={1.5}
-                      stroke="currentColor"
-                      className="w-5 h-5"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M18 12H6"
-                      />
-                    </svg>
-                  </button>
-                  <span className="mx-2 text-gray-700">{item.quantity}</span>
-                  <button
-                    type="button"
-                    onClick={() => handleQuantityChange(item.id, item.quantity, 1)}
-                    disabled={item.quantity >= item.product.stock}
-                    className={`p-1 rounded-full text-gray-600 ${
-                      item.quantity >= item.product.stock
-                        ? 'opacity-50 cursor-not-allowed'
-                        : 'hover:bg-gray-100'
-                    }`}
-                  >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      strokeWidth={1.5}
-                      stroke="currentColor"
-                      className="w-5 h-5"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M12 6v12m6-6H6"
-                      />
-                    </svg>
+                    削除
                   </button>
                 </div>
-
-                <button
-                  type="button"
-                  onClick={() => removeFromCart(item.id)}
-                  className="text-red-600 hover:text-red-800"
-                >
-                  削除
-                </button>
               </div>
-            </div>
-          </li>
-        ))}
+            </li>
+          );
+        })}
       </ul>
 
       <div className="mt-8 border-t pt-8">

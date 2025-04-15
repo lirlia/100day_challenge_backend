@@ -83,35 +83,51 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 最新価格を取得
+    // 最新価格を取得 (注文処理APIと同様のエラーハンドリング)
     const currentPrice = await getCurrentProductPrice(productId);
     if (currentPrice === null) {
-      // 価格未設定の場合はエラーとするか、デフォルト価格を使うか？
-      // ここではエラーとする
-      return NextResponse.json({ error: `Price not set for product ${product.name}` }, { status: 400 });
+      return NextResponse.json({ error: `Price not set for product ${product?.name ?? productId}` }, { status: 400 });
     }
 
     const upsertedCartItem = await prisma.cart.upsert({
       where: {
-        userId_productId: { // @@unique([userId, productId]) を利用
+        userId_productId: {
           userId: userId,
           productId: productId,
         },
       },
-      update: { quantity: quantity }, // 数量を更新
-      create: { // なければ作成
+      update: {
+        quantity: quantity,
+        // ★ 更新時も addedPrice を現在の価格で更新する（ユーザーが数量変更＝再確認したとみなす）
+        addedPrice: currentPrice,
+      },
+      create: {
         userId: userId,
         productId: productId,
         quantity: quantity,
+        // ★ 作成時に現在の価格を addedPrice として保存
+        addedPrice: currentPrice,
       },
-      // include はここでは不要、必要な情報は product と currentPrice で取得済み
+      // レスポンスに必要な product 情報を付与するため include を使う
+      include: {
+        product: {
+          select: {
+            id: true,
+            name: true,
+            imageUrl: true,
+            stock: true,
+            description: true,
+          },
+        },
+      }
     });
 
     // レスポンスに必要な情報を結合して返す
     const responseCartItem = {
       ...upsertedCartItem,
-      product: product, // select で取得した商品情報
+      // upsertedCartItem に product が含まれるので別途付与は不要
       currentPrice: currentPrice, // 取得した最新価格
+      // addedPrice は upsertedCartItem に含まれている
     };
 
     return NextResponse.json(responseCartItem);

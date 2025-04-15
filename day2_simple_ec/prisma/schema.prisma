@@ -41,6 +41,7 @@ model Cart {
   quantity  Int
   userId    Int
   productId Int
+  addedPrice Int
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
