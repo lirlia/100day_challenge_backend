@@ -1,0 +1,52 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Directory Layout
+
+Next.js App Router の標準的な構成をベースに、シンプルさを保ちます。
+
+```plaintext
+/
+├── app/                  # App Router ディレクトリ (ルーティングとUIの中心)
+│   ├── api/              # API Route Handlers (バックエンドAPI)
+│   │   └── [entity]/     # 例: /api/users
+│   │       └── route.ts  # 各HTTPメソッド(GET, POST, PUT, DELETE)に対応する処理
+│   ├── (pages)/          # UIページ (URLに影響しないグループ化のための括弧)
+│   │   └── [page_name]/  # 例: /users
+│   │       ├── page.tsx    # ページのUIコンポーネント (サーバー or クライアント)
+│   │       └── components/ # そのページ固有のUIコンポーネント (任意)
+│   ├── layout.tsx        # アプリケーション全体の共通レイアウト
+│   ├── globals.css       # グローバルなCSS定義 (Tailwind CSSのベースなど)
+│   └── page.tsx          # ルート('/')のページ
+├── components/           # アプリケーション全体で共有するUIコンポーネント
+├── prisma/               # Prisma関連ファイル
+│   ├── schema.prisma     # DBスキーマ定義、データモデル定義
+│   ├── migrations/       # Prisma Migrateによって自動生成されるマイグレーション履歴
+│   └── dev.db            # SQLite データベースファイル (開発用)
+├── lib/                  # 共通ロジック、ヘルパー関数、DBクライアントなど
+│   └── db.ts             # Prisma Client のインスタンス生成・管理
+├── public/               # 静的ファイル (画像など)
+├── .env                  # 環境変数 (DATABASE_URLなど、.gitignore対象)
+├── .gitignore            # Git の無視ファイルリスト
+├── next.config.mjs       # Next.js の設定ファイル
+├── package.json          # プロジェクト情報、依存パッケージ、npm scripts
+├── postcss.config.mjs    # PostCSS 設定 (Tailwind CSS用)
+├── tailwind.config.ts    # Tailwind CSS 設定
+├── tsconfig.json         # TypeScript の設定ファイル
+└── README.md             # プロジェクトの説明
+```
+
+## 主要ディレクトリ/ファイルの説明
+
+- `app/`: ルーティング、UI、APIエンドポイントを配置します。
+  - `app/api/`: バックエンドAPIのロジックを記述します。ファイルベースルーティング（`app/api/users/route.ts` は `/api/users` に対応）。
+  - `app/(pages)/`: フロントエンドのページコンポーネントを配置します。ディレクトリ名がそのままURLパスになります（例: `app/(pages)/users/page.tsx` は `/users`）。括弧 `()` で囲むことで、URLパスに影響を与えずにディレクトリをグループ化できます。
+- `components/`: 複数のページで再利用可能なUIコンポーネントを配置します。
+- `prisma/`: データベース関連のファイルを管理します。
+  - `schema.prisma`: データベースのテーブル構造（モデル）やリレーションを定義します。
+  - `migrations/`: `prisma migrate` によって生成されたSQLファイルが格納され、データベーススキーマの変更履歴を管理します。
+  - `dev.db`: SQLite のデータベースファイル本体です（開発環境用）。
+- `lib/`: アプリケーション全体で使用する共通関数や設定、Prisma Client のインスタンスなどを配置します。
+- `public/`: 画像ファイルなど、ビルドプロセスを経ずにそのまま配信される静的ファイルを配置します。

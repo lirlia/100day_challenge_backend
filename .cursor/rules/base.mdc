@@ -1,58 +1,52 @@
 ---
-description: 
-globs: 
+description:
+globs:
 alwaysApply: true
 ---
 
 # Your rule content
 
-- template ディレクトリ配下を丸ごとコピーして、指定の日のディレクトリをまず最初に作成してください（例：3day の銀行アプリ といわれたら 3day_bank_app というディレクトリを作ること)
+- `template` ディレクトリ配下を丸ごとコピーして、指定の日のディレクトリをまず最初に作成してください（例：`3day` の銀行アプリ といわれたら `3day_bank_app` というディレクトリを作ること)
 
 ## 作成するアプリについて
 - いまから day100 まで毎日異なるアプリを作ります
 - 同じドメインのアプリ(フォーカスを変えるはあり)はなしです
-- 言語はgoです
+- 言語は **TypeScript**, フレームワークは **Next.js (App Router)** です
 - 簡素で構わないので実装した機能を一通り操作できるwebページを用意してください
-  - ユーザが必要なものについては、認証ページを作成するのではなく簡単にユーザを切り替えられる機能で代替してください
-  - セッションを使ってユーザは管理してください
-- ログはAIがおいやすくするためにきちんと出すようにしてください
-- エラーはトラシューしやすいようにStackTraceつきでラップしてください
-- dbはmysqlをコンテナで起動してください
-- db は毎度１から作り直すので migration はしない
-- db はトランザクションを利用してください
-- openapiによるスキーマ駆動をおこなってください
-- 細かいエラーハンドリングやセキュリティ観点については目を瞑ってください
-- ミススペルによるlint errorは無視してよいです
-- クリーンアーキテクチャーを意識してください
-- 起動はローカルでのみ行うためSSLなどは不要です
-- tailwind は CDN から直接取得し、ビルド不要にしてください
+  - ユーザが必要なものについては、認証ページを作成するのではなく簡単にユーザを切り替えられる機能で代替してください (例: `userId` をクエリパラメータやシンプルなUIで切り替える)
+- ログは **`console.log`** を基本とし、必要に応じてデバッグに役立つ情報を出力してください
+- エラーハンドリングは標準の `try...catch` を基本とし、複雑なラップは不要です。エラー発生時は **`console.error`** でログを出力してください。
+- DBは **SQLite** を利用します。(`template/prisma/dev.db`)
+- DBスキーマの変更は **Prisma Migrate** (`npx prisma migrate dev`) を使用してください。**マイグレーションファイルはコミット対象**です。
+- DBアクセスには **Prisma Client** を利用してください。トランザクションは必要に応じて `prisma.$transaction` を使用してください。
+- APIは **Next.js Route Handlers** (`app/api/.../route.ts`) で実装してください。スキーマ駆動開発は必須ではありません。
+- 細かいエラーハンドリングやセキュリティ観点については目を瞑ってください。
+- Linter (ESLint) の警告やエラーは可能な範囲で修正してください。
+- アーキテクチャはシンプルさを保ち、厳密なレイヤリングは不要です。
+- 起動はローカルでのみ行うためSSLなどは不要です。
+- スタイリングは **Tailwind CSS** を利用してください。
 
 ## 使用技術
 
-| 種類 | 使うもの | 理由 |
-| --- | --- | --- |
-| error | [github.com/m-mizutani/goerr](mdc:http:/github.com/m-mizutani/goerr) | これをつかってトレースを付与してください |
-| logger | slog | デファクトなのでこれを使う |
-| db | mysql | |
-| orm | https://github.com/go-gorm/gen | sqlc だとコード生成が必要なので |
-| interface | openapi 生成は https://github.com/ogen-go/ogen | 使いやすかったので |
-| http server | https://github.com/ogen-go/ogen |  |
-| frontend | https://pkg.go.dev/html/template |  |
-| css | https://tailwindcss.com/ |  |
-
-その他のツール
-
-- air: ホットリロード
-- docker : mysql 起動のため
-- task : https://taskfile.dev/  タスクランナー
+| 種類           | 使うもの                 | 理由                                                              |
+| -------------- | ------------------------ | ----------------------------------------------------------------- |
+| フレームワーク | Next.js (App Router)     | フルスタック開発に適しており、現在の主流                                  |
+| 言語           | TypeScript               | 型安全性による開発効率向上                                        |
+| DB             | SQLite                   | セットアップが容易でローカル開発向き                                |
+| ORM            | Prisma                   | TypeScriptとの親和性が高く、型安全なDBアクセス、マイグレーション機能 |
+| API実装        | Next.js Route Handlers   | フレームワーク標準機能でシンプル                                  |
+| スタイリング   | Tailwind CSS             | 迅速なUI構築が可能                                                |
+| パッケージ管理 | npm                      | Node.js標準                                                       |
+| タスクランナー | npm scripts              | `package.json` で完結                                             |
+| ホットリロード | `next dev`               | Next.js 標準機能                                                  |
 
 ## 必ずやること
-- Taskfile.yaml の `GO_MODULE: github.com/lirlia/100day_challenge_backend/day1_todo_app` は作成したモジュール名に合わせて変更すること
-- go.mod の module を作成したモジュールに合わせて変更すること
-- あわせて template を参照している各importも修正してください
+- 新しい日のディレクトリを作成したら、`template` ディレクトリからコピーした後、**`package.json` の `name` フィールド** を適切なもの (例: `3day_bank_app`) に変更してください。
+- **`.env` ファイルの `DATABASE_URL`** は `file:./dev.db` のままで通常は変更不要ですが、必要に応じて調整してください。
+- DBスキーマを変更した場合は、必ず `npx prisma migrate dev --name <migration_name>` と `npx prisma generate` を実行してください。
 
 ## 禁止
 
-- こちらからアクションしない限りは勝手に生成を止めずコードを生成し続けてください
-- 完成したら自分自身で正しくアクセスできて表示できるか？を確認してください
-- go.mod の go バージョンを書き換える行為
+- こちらからアクションしない限りは勝手に生成を止めずコードを生成し続けてください。
+- 完成したら自分自身で正しくアクセスできて表示できるか？（最低限APIレベルでの確認）を行ってください。
+- `package.json` の `next`, `react` 等の主要な依存パッケージバージョンを勝手に変更する行為。
