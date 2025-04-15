@@ -21,26 +21,49 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { name, description, price, imageUrl, stock } = body;
+    const { name, description, price: initialPrice, imageUrl, stock } = body;
 
-    if (!name || !description || !price || !imageUrl || stock === undefined) {
+    if (!name || !description || initialPrice === undefined || !imageUrl || stock === undefined) {
       return NextResponse.json(
         { error: 'Missing required fields' },
         { status: 400 }
       );
     }
 
-    const product = await prisma.product.create({
-      data: {
-        name,
-        description,
-        price,
-        imageUrl,
-        stock,
-      },
+    if (typeof initialPrice !== 'number' || typeof stock !== 'number') {
+       return NextResponse.json(
+        { error: 'Price and stock must be numbers' },
+        { status: 400 }
+      );
+    }
+
+    const newProduct = await prisma.$transaction(async (tx) => {
+      const product = await tx.product.create({
+        data: {
+          name,
+          description,
+          imageUrl,
+          stock,
+        },
+      });
+
+      await tx.productPrice.create({
+        data: {
+          productId: product.id,
+          price: initialPrice,
+        },
+      });
+
+      return product;
     });
 
-    return NextResponse.json(product, { status: 201 });
+    const responseData = {
+      ...newProduct,
+      price: initialPrice,
+    };
+
+    return NextResponse.json(responseData, { status: 201 });
+
   } catch (error) {
     console.error('Failed to create product:', error);
     return NextResponse.json({ error: 'Failed to create product' }, { status: 500 });
