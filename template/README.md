@@ -1,144 +1,153 @@
-# 100日チャレンジ - Next.js テンプレート
+# 100日チャレンジ - Next.js アプリケーションテンプレート
 
-このプロジェクトは [Next.js](https://nextjs.org) (App Router)、TypeScript、Prisma、SQLite を使用した100日チャレンジ用のテンプレートです。日々の簡易アプリケーション開発に利用できるように設計されています。
+このプロジェクトは [Next.js](https://nextjs.org) (App Router)、TypeScript、Prisma、SQLite を使用した100日チャレンジ用のテンプレートです。日々の簡易アプリケーション開発のベースとして利用します。
 
-## 機能
+## アプリケーション概要
 
-- Next.js App Router を使用したフロントエンド + バックエンド統合開発
-- TypeScript による型安全な開発
-- Prisma + SQLite による簡単なデータベース管理
-- Biome によるリンティングとフォーマット（ESLint + Prettier の代替）
-- Tailwind CSS によるスタイリング
-- シンプルなディレクトリ構成とコード構造
+*ここに、この日に作成するアプリケーションの簡単な説明を記述します。*
 
-## 開始方法
+## 機能一覧
 
-1. このテンプレートをコピーして新しい日のディレクトリを作成します：
+*ここに、実装する機能の一覧を記述します。*
 
-```bash
-cp -r template/ {日付}_アプリ名/
-cd {日付}_アプリ名/
+- [ ] 機能1
+- [ ] 機能2
+- [ ] ...
+
+## ER図
+
+*ここに、Mermaid 形式で ER 図を記述します。*
+
+```mermaid
+erDiagram
+    // 例: User モデル
+    User {
+        int id PK
+        string name
+        datetime createdAt
+        datetime updatedAt
+    }
 ```
 
-2. `package.json` の `name` フィールドを適切なものに変更します。
+## シーケンス図 (オプション)
 
-3. 依存パッケージをインストールします：
+*必要であれば、主要な処理フローのシーケンス図を Mermaid 形式で記述します。*
 
-```bash
-npm install
+```mermaid
+sequenceDiagram
+    participant User
+    participant Frontend
+    participant API
+    participant Database
+
+    User->>Frontend: 操作
+    Frontend->>API: リクエスト
+    API->>Database: データ操作
+    Database-->>API: 結果
+    API-->>Frontend: レスポンス
+    Frontend-->>User: 表示更新
 ```
 
-4. 開発サーバーを起動します：
+## データモデル
 
-```bash
-npm run dev
-```
+*ここに、主要なデータモデルの概要を記述します。*
 
-ブラウザで [http://localhost:3001](http://localhost:3001) を開くと結果が表示されます。
+- モデル1: 説明
+- モデル2: 説明
+- ...
 
-## データベース (Prisma + SQLite)
+## 画面構成
 
-このテンプレートでは Prisma ORM を使用して SQLite データベースにアクセスします。
+*ここに、作成する主要な画面とその概要を記述します。*
 
-### スキーマの修正
+- 画面1: 説明
+- 画面2: 説明
+- ...
 
-`prisma/schema.prisma` ファイルを編集してデータモデルを定義します：
+## 使用技術スタック (テンプレート標準)
 
-```prisma
-model User {
-  id        Int      @id @default(autoincrement())
-  name      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
+- フレームワーク: Next.js (App Router)
+- 言語: TypeScript
+- DB: SQLite
+- ORM: Prisma
+- API実装: Next.js Route Handlers
+- スタイリング: Tailwind CSS
+- パッケージ管理: npm
+- コード品質: Biome (Lint & Format)
 
-// 新しいモデルを追加...
-```
+## 開始方法 (テンプレート標準)
 
-### マイグレーションの実行
+1. **テンプレートをコピーして新しい日のディレクトリを作成**
+   ```bash
+   # プロジェクトルートディレクトリで実行
+   cp -r template/ {日付}_アプリ名/
+   cd {日付}_アプリ名/
+   ```
 
-スキーマを変更したら、以下のコマンドを実行してデータベースを更新します：
+2. **`package.json` の `name` フィールドを変更**
+   - 作成したディレクトリ名に合わせて `package.json` の `name` を変更してください (例: `{日付}_アプリ名`)。
 
-```bash
-npx prisma migrate dev --name 変更の説明
-```
+3. **依存パッケージをインストール**
+   ```bash
+   npm install
+   ```
 
-### Prisma Client の生成
+4. **データベースマイグレーション**
+   - `prisma/schema.prisma` を編集してデータモデルを定義した後、マイグレーションを実行します。
+   ```bash
+   # 初回またはスキーマ変更時
+   npx prisma migrate dev --name init
+   ```
+   - 必要に応じてシードデータを作成・投入してください (`prisma/seed.ts` を編集し `npx prisma db seed`)。
 
-スキーマ変更後または初回クローン時には Prisma Client を生成します：
+5. **開発サーバーを起動**
+   ```bash
+   npm run dev
+   ```
+   ブラウザで [http://localhost:3001](http://localhost:3001) を開くと結果が表示されます。
 
-```bash
-npx prisma generate
-```
+## データベース操作 (Prisma - テンプレート標準)
 
-### データベースの確認
+- **スキーマ定義:** `prisma/schema.prisma`
+- **マイグレーション実行:** `npx prisma migrate dev --name <migration_name>`
+- **Prisma Client 生成:** `npx prisma generate` (通常は `migrate` や `install` で自動実行)
+- **データベース確認 (GUI):** `npx prisma studio`
 
-Prisma Studio を使用してデータベースの内容を確認・編集できます：
+## コード品質管理 (Biome - テンプレート標準)
 
-```bash
-npx prisma studio
-```
+- **チェック (Lint & Format):** `npm run check`
+- **Lint のみ:** `npm run lint`
+- **Format のみ:** `npm run format`
 
-## コード品質管理 (Biome)
+## API エンドポイント (テンプレート標準)
 
-このプロジェクトでは [Biome](https://biomejs.dev/) を使用して、コードのリンティングとフォーマットを行います。Biome は ESLint と Prettier の代替として機能する高速なツールキットです。
+- API は `app/api/` ディレクトリ以下に Route Handlers として実装します。
+- 例: `app/api/users/route.ts` は `/api/users` に対応します。
 
-### 使用可能なコマンド
-
-```bash
-# リンティング
-npm run lint
-
-# フォーマット
-npm run format
-
-# リンティングとフォーマットを一度に実行（推奨）
-npm run check
-```
-
-## API エンドポイント
-
-サンプルの API エンドポイントが `app/api/users/route.ts` にあります。新しいエンドポイントは `app/api/` ディレクトリ内に追加します。
-
-### 利用例
-
-```typescript
-// データの取得
-const response = await fetch('/api/users');
-const users = await response.json();
-
-// データの作成
-await fetch('/api/users', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ name: 'ユーザー名' })
-});
-```
-
-## プロジェクト構成
+## プロジェクト構成 (テンプレート標準)
 
 ```
 /
-├── app/                  # App Router ディレクトリ
+├── app/
 │   ├── api/              # API Route Handlers
-│   │   └── users/        # ユーザー関連 API
-│   │       └── route.ts  # GET, POST メソッド実装
-│   ├── layout.tsx        # 共通レイアウト
-│   ├── globals.css       # グローバル CSS
-│   └── page.tsx          # ホームページ
-├── components/           # 共有 UI コンポーネント
-├── prisma/               # Prisma 関連
-│   ├── schema.prisma     # データモデル定義
-│   ├── migrations/       # マイグレーション履歴
-│   └── dev.db            # SQLite データベース
-├── lib/                  # 共通ロジック
-│   └── db.ts             # Prisma Client
-├── biome.json            # Biome 設定
-└── ... その他の設定ファイル
+│   ├── (pages)/          # UIページグループ (例: app/(pages)/users/page.tsx -> /users)
+│   ├── layout.tsx        # 全体レイアウト
+│   ├── globals.css       # グローバルCSS
+│   └── page.tsx          # ルートページ ('/')
+├── components/           # 共有UIコンポーネント
+├── prisma/               # Prisma関連
+│   ├── schema.prisma
+│   ├── migrations/
+│   └── dev.db
+├── lib/                  # 共通ロジック (例: db.ts)
+├── public/               # 静的ファイル
+├── biome.json            # Biome設定
+├── .env                  # 環境変数 (DATABASE_URL=file:./dev.db)
+└── ... その他の設定ファイル (package.json, tsconfig.json など)
 ```
 
-## 注意事項
+## 注意事項 (テンプレート標準)
 
-- このテンプレートは開発環境のみを想定しています。
-- 本番環境へのデプロイには追加の設定が必要です。
-- エラー処理やセキュリティは簡略化されています。
+- このテンプレートはローカル開発環境を主眼としています。
+- 本番デプロイには追加の考慮が必要です。
+- エラーハンドリングやセキュリティは簡略化されています。
