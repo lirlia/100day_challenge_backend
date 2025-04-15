@@ -156,13 +156,13 @@ export default function OrderHistory() {
                 <div key={item.id} className="flex flex-col items-center text-center">
                   <Link
                     href={`/products/${item.product.id}`}
-                    className="block hover:opacity-75"
+                    className="block hover:opacity-75 w-full flex flex-col items-center"
                   >
-                    <div className="relative w-16 h-16 mb-2">
+                    <div className="relative w-20 h-20 mb-2 flex items-center justify-center border border-gray-100 rounded bg-white p-1">
                       <img
                         src={item.product.imageUrl}
                         alt={item.product.name}
-                        className="object-contain w-full h-full"
+                        className="object-contain max-w-full max-h-full"
                       />
                     </div>
                     <p className="text-xs text-gray-700 truncate w-full">
