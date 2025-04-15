@@ -63,24 +63,26 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid user ID' }, { status: 400 });
     }
 
-    // ユーザーのカート内商品を取得
+    // ユーザーのカート内商品を取得 (addedPrice も取得)
     const cartItemsData = await prisma.cart.findMany({
       where: {
         userId: userIdNum,
       },
       include: {
         product: {
-          select: { id: true, name: true, stock: true }, // product.price は不要
+          select: { id: true, name: true, stock: true },
         },
       },
+      // addedPrice は Cart モデルに直接含まれるので include 不要
     });
 
     if (cartItemsData.length === 0) {
       return NextResponse.json({ error: 'Cart is empty' }, { status: 400 });
     }
 
-    // 各カートアイテムの現在の価格を取得
-    const cartItemsWithPrices = await Promise.all(
+    // ★ トランザクション前の価格比較チェック (lastSeenPrice と比較)
+    let priceMismatchFound = false;
+    const cartItemsWithCurrentPrices = await Promise.all(
       cartItemsData.map(async (item) => {
         const currentPrice = await getCurrentProductPrice(item.productId);
         if (currentPrice === null) {
@@ -88,15 +90,52 @@ export async function POST(request: NextRequest) {
             `Price not found for product ${item.product.name} (ID: ${item.productId})`
           );
         }
+        // ★ 最後に確認した価格 (lastSeenPrice) と最新価格を比較
+        // lastSeenPrice が null の場合は、初回確認 or カート追加直後なので比較スキップ (常にOK扱い)
+        if (item.lastSeenPrice !== null && item.lastSeenPrice !== currentPrice) {
+          priceMismatchFound = true;
+          console.warn(
+            `Price mismatch for product ${item.product.name} (ID: ${item.productId}). Last seen price: ${item.lastSeenPrice}, Current price: ${currentPrice}`
+          );
+        }
         return {
           ...item,
-          currentPrice: currentPrice, // 最新価格を追加
+          currentPrice: currentPrice, // 最新価格は後続処理で使う
         };
       })
     );
 
-    // 在庫チェック
-    for (const item of cartItemsWithPrices) {
+    // ★ 価格不一致が見つかった場合はエラーを返す
+    if (priceMismatchFound) {
+      // 価格が変わった商品と最新価格のリストを作成
+      const changedItems = cartItemsWithCurrentPrices
+        .filter(item =>
+          item.lastSeenPrice !== null &&
+          item.lastSeenPrice !== item.currentPrice
+        )
+        .map(item => ({
+          id: item.id,
+          productId: item.productId,
+          productName: item.product.name,
+          oldPrice: item.lastSeenPrice,
+          newPrice: item.currentPrice,
+          quantity: item.quantity
+        }));
+
+      // エラーメッセージと共に変更された商品情報を返す
+      return NextResponse.json(
+        {
+          error: '最後に確認した時点から商品の価格が変更されました。カートを再度ご確認ください。',
+          changedItems: changedItems,
+          // カート更新のために自動的にlastSeenPriceを更新するフラグ
+          shouldUpdateCart: true
+        },
+        { status: 409 } // 409 Conflict
+      );
+    }
+
+    // 在庫チェック (cartItemsWithCurrentPrices を使用)
+    for (const item of cartItemsWithCurrentPrices) {
       if (item.product.stock < item.quantity) {
         return NextResponse.json(
           {
@@ -107,8 +146,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 注文の合計金額を計算 (取得した最新価格を使用)
-    const totalPrice = cartItemsWithPrices.reduce(
+    // 注文の合計金額を計算 (cartItemsWithCurrentPrices を使用)
+    const totalPrice = cartItemsWithCurrentPrices.reduce(
       (sum, item) => sum + item.currentPrice * item.quantity,
       0
     );
@@ -124,14 +163,14 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      // 注文明細を作成 (取得した最新価格を使用)
-      for (const item of cartItemsWithPrices) {
+      // 注文明細を作成 (cartItemsWithCurrentPrices を使用)
+      for (const item of cartItemsWithCurrentPrices) {
         await tx.orderItem.create({
           data: {
             orderId: order.id,
             productId: item.productId,
             quantity: item.quantity,
-            price: item.currentPrice, // 注文時の価格を記録
+            price: item.currentPrice, // 最新価格を記録
           },
         });
 

@@ -3,16 +3,81 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { useCart } from '../components/CartContext';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useUser } from '../components/UserSwitcher';
+
+// 価格変更された商品の情報を表示するコンポーネント
+type PriceChangeAlertProps = {
+  changedItems: {
+    productId: number;
+    productName: string;
+    oldPrice: number;
+    newPrice: number;
+  }[];
+  onClose: () => void;
+};
+
+function PriceChangeAlert({ changedItems, onClose }: PriceChangeAlertProps) {
+  const formatPrice = (price: number) => {
+    return new Intl.NumberFormat('ja-JP', {
+      style: 'currency',
+      currency: 'JPY',
+    }).format(price);
+  };
+
+  return (
+    <div className="bg-yellow-50 border border-yellow-400 text-yellow-800 px-4 py-3 rounded mb-4 relative">
+      <button
+        onClick={onClose}
+        className="absolute top-2 right-2 text-yellow-800"
+        aria-label="閉じる"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+          <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+        </svg>
+      </button>
+      <p className="font-bold mb-2">以下の商品の価格が変更されました。カートを自動的に更新しました。</p>
+      <ul className="list-disc pl-5">
+        {changedItems.map((item) => (
+          <li key={item.productId} className="mb-1">
+            <span className="font-medium">{item.productName}</span>:
+            <span className="line-through text-gray-500 mx-1">{formatPrice(item.oldPrice)}</span>
+            <span className="text-green-600 font-medium">→ {formatPrice(item.newPrice)}</span>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-2">この価格で注文を続けるには、再度「注文を確定する」ボタンを押してください。</p>
+    </div>
+  );
+}
 
 export default function CartItems() {
   const { cartItems, updateCartItem, removeFromCart, clearCart, totalAmount, itemCount, priceChangedItems } = useCart();
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [priceChangedAlert, setPriceChangedAlert] = useState<{
+    changedItems: {
+      productId: number;
+      productName: string;
+      oldPrice: number;
+      newPrice: number;
+    }[];
+  } | null>(null);
   const router = useRouter();
   const { currentUser } = useUser();
+
+  // カートを再取得する関数
+  const refreshCart = async () => {
+    if (!currentUser) return;
+
+    try {
+      const response = await fetch(`/api/cart?userId=${currentUser.id}`);
+      if (!response.ok) throw new Error('Failed to refresh cart');
+    } catch (error) {
+      console.error('Error refreshing cart:', error);
+    }
+  };
 
   // 数量変更のハンドラー
   const handleQuantityChange = (
@@ -34,6 +99,7 @@ export default function CartItems() {
 
     setIsProcessing(true);
     setError(null);
+    setPriceChangedAlert(null);
 
     try {
       const response = await fetch('/api/orders', {
@@ -46,14 +112,30 @@ export default function CartItems() {
         }),
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || '注文処理に失敗しました');
-      }
+      const data = await response.json();
 
-      const order = await response.json();
-      await clearCart();
-      router.push(`/orders/${order.id}?success=true`);
+      if (!response.ok) {
+        // 409エラー（価格変更）の場合の特別な処理
+        if (response.status === 409 && data.shouldUpdateCart && data.changedItems) {
+          // 価格変更のアラートを表示
+          setPriceChangedAlert({
+            changedItems: data.changedItems
+          });
+
+          // カートを自動的に更新
+          await refreshCart();
+
+          // エラーを表示せず、アラートだけ表示
+          setError(null);
+        } else {
+          // その他のエラーは通常通り表示
+          throw new Error(data.error || '注文処理に失敗しました');
+        }
+      } else {
+        // 注文成功時の処理（変更なし）
+        await clearCart();
+        router.push(`/orders/${data.id}?success=true`);
+      }
     } catch (error) {
       console.error('Checkout error:', error);
       setError(error instanceof Error ? error.message : '注文処理に失敗しました');
@@ -101,6 +183,13 @@ export default function CartItems() {
         <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
           {error}
         </div>
+      )}
+
+      {priceChangedAlert && (
+        <PriceChangeAlert
+          changedItems={priceChangedAlert.changedItems}
+          onClose={() => setPriceChangedAlert(null)}
+        />
       )}
 
       <ul className="divide-y">

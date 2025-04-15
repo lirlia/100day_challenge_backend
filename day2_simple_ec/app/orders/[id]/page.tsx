@@ -13,8 +13,12 @@ type OrderPageProps = {
 };
 
 export default async function OrderPage({ params, searchParams }: OrderPageProps) {
-  const orderId = parseInt(params.id);
-  const showSuccessMessage = searchParams.success === 'true';
+  // params と searchParams を await する
+  const resolvedParams = await params;
+  const resolvedSearchParams = await searchParams;
+
+  const orderId = parseInt(resolvedParams.id);
+  const showSuccessMessage = resolvedSearchParams.success === 'true';
 
   if (isNaN(orderId)) {
     notFound();

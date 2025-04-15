@@ -17,7 +17,7 @@ export type CartItem = {
     description: string;
   };
   currentPrice: number; // 最新の価格
-  addedPrice: number; // ★ カート投入時の価格を追加
+  priceJustChanged: boolean; // ★ 価格が今変更されたかのフラグを追加
 };
 
 // カートコンテキストの型定義
@@ -84,18 +84,16 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         const response = await fetch(`/api/cart?userId=${currentUser.id}`);
         if (!response.ok) throw new Error('Failed to fetch cart');
 
-        // ★ APIから取得するデータ (addedPrice, currentPrice を含む)
         const newCartData: CartItem[] = await response.json();
 
-        // ★ 価格変動チェック（addedPrice と currentPrice を比較）
+        // ★ 価格変動チェック（APIからの priceJustChanged フラグを使用）
         const changedItems = new Set<number>();
         newCartData.forEach(newItem => {
-          // addedPrice が存在し、currentPrice と異なる場合に Set に追加
-          // (addedPrice はDBから来るので undefined チェックは本来不要だが念のため)
-          if (newItem.addedPrice !== undefined && newItem.addedPrice !== newItem.currentPrice) {
+          if (newItem.priceJustChanged) {
             changedItems.add(newItem.id);
           }
         });
+        // ★ priceChangedItems を上書きする（API側でDBは更新済み）
         setPriceChangedItems(changedItems);
         // ★ チェックここまで
 

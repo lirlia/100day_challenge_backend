@@ -5,10 +5,11 @@ import AddToCartButton from './AddToCartButton';
 import Link from 'next/link';
 import { getCurrentProductPrice } from '@/lib/priceUtils';
 import PriceHistoryChart from './PriceHistoryChart';
+import UpdateLastSeenPrice from './UpdateLastSeenPrice';
 
 export default async function ProductPage({ params }: { params: { id: string } }) {
-  const idString = params.id;
-  const productId = parseInt(idString);
+  const resolvedParams = await params;
+  const productId = parseInt(resolvedParams.id);
 
   if (isNaN(productId)) {
     notFound();
@@ -33,6 +34,8 @@ export default async function ProductPage({ params }: { params: { id: string } }
 
   return (
     <div>
+      <UpdateLastSeenPrice productId={productId} />
+
       <div className="mb-4">
         <Link
           href="/"
