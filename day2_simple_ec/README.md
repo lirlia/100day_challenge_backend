@@ -48,7 +48,6 @@ erDiagram
         int quantity
         int userId FK
         int productId FK
-        int addedPrice
         int lastSeenPrice
         datetime createdAt
         datetime updatedAt
@@ -94,7 +93,7 @@ sequenceDiagram
     User->>Frontend: 商品をカートに追加
     Frontend->>API: POST /api/cart
     API->>Database: 最新価格を取得
-    API->>Database: カート情報を保存（addedPrice, lastSeenPrice に最新価格を設定）
+    API->>Database: カート情報を保存（lastSeenPrice に最新価格を設定）
     API-->>Frontend: カート情報を返却
     Frontend-->>User: カートに追加完了を表示
     

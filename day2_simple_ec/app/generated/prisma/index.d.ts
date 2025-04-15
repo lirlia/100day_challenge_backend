@@ -3765,7 +3765,6 @@ export namespace Prisma {
     quantity: number | null
     userId: number | null
     productId: number | null
-    addedPrice: number | null
     lastSeenPrice: number | null
   }
 
@@ -3774,7 +3773,6 @@ export namespace Prisma {
     quantity: number | null
     userId: number | null
     productId: number | null
-    addedPrice: number | null
     lastSeenPrice: number | null
   }
 
@@ -3783,7 +3781,6 @@ export namespace Prisma {
     quantity: number | null
     userId: number | null
     productId: number | null
-    addedPrice: number | null
     lastSeenPrice: number | null
     createdAt: Date | null
     updatedAt: Date | null
@@ -3794,7 +3791,6 @@ export namespace Prisma {
     quantity: number | null
     userId: number | null
     productId: number | null
-    addedPrice: number | null
     lastSeenPrice: number | null
     createdAt: Date | null
     updatedAt: Date | null
@@ -3805,7 +3801,6 @@ export namespace Prisma {
     quantity: number
     userId: number
     productId: number
-    addedPrice: number
     lastSeenPrice: number
     createdAt: number
     updatedAt: number
@@ -3818,7 +3813,6 @@ export namespace Prisma {
     quantity?: true
     userId?: true
     productId?: true
-    addedPrice?: true
     lastSeenPrice?: true
   }
 
@@ -3827,7 +3821,6 @@ export namespace Prisma {
     quantity?: true
     userId?: true
     productId?: true
-    addedPrice?: true
     lastSeenPrice?: true
   }
 
@@ -3836,7 +3829,6 @@ export namespace Prisma {
     quantity?: true
     userId?: true
     productId?: true
-    addedPrice?: true
     lastSeenPrice?: true
     createdAt?: true
     updatedAt?: true
@@ -3847,7 +3839,6 @@ export namespace Prisma {
     quantity?: true
     userId?: true
     productId?: true
-    addedPrice?: true
     lastSeenPrice?: true
     createdAt?: true
     updatedAt?: true
@@ -3858,7 +3849,6 @@ export namespace Prisma {
     quantity?: true
     userId?: true
     productId?: true
-    addedPrice?: true
     lastSeenPrice?: true
     createdAt?: true
     updatedAt?: true
@@ -3956,7 +3946,6 @@ export namespace Prisma {
     quantity: number
     userId: number
     productId: number
-    addedPrice: number
     lastSeenPrice: number | null
     createdAt: Date
     updatedAt: Date
@@ -3986,7 +3975,6 @@ export namespace Prisma {
     quantity?: boolean
     userId?: boolean
     productId?: boolean
-    addedPrice?: boolean
     lastSeenPrice?: boolean
     createdAt?: boolean
     updatedAt?: boolean
@@ -3999,7 +3987,6 @@ export namespace Prisma {
     quantity?: boolean
     userId?: boolean
     productId?: boolean
-    addedPrice?: boolean
     lastSeenPrice?: boolean
     createdAt?: boolean
     updatedAt?: boolean
@@ -4012,7 +3999,6 @@ export namespace Prisma {
     quantity?: boolean
     userId?: boolean
     productId?: boolean
-    addedPrice?: boolean
     lastSeenPrice?: boolean
     createdAt?: boolean
     updatedAt?: boolean
@@ -4025,13 +4011,12 @@ export namespace Prisma {
     quantity?: boolean
     userId?: boolean
     productId?: boolean
-    addedPrice?: boolean
     lastSeenPrice?: boolean
     createdAt?: boolean
     updatedAt?: boolean
   }
 
-  export type CartOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "quantity" | "userId" | "productId" | "addedPrice" | "lastSeenPrice" | "createdAt" | "updatedAt", ExtArgs["result"]["cart"]>
+  export type CartOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "quantity" | "userId" | "productId" | "lastSeenPrice" | "createdAt" | "updatedAt", ExtArgs["result"]["cart"]>
   export type CartInclude<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
     user?: boolean | UserDefaultArgs<ExtArgs>
     product?: boolean | ProductDefaultArgs<ExtArgs>
@@ -4056,7 +4041,6 @@ export namespace Prisma {
       quantity: number
       userId: number
       productId: number
-      addedPrice: number
       lastSeenPrice: number | null
       createdAt: Date
       updatedAt: Date
@@ -4489,7 +4473,6 @@ export namespace Prisma {
     readonly quantity: FieldRef<"Cart", 'Int'>
     readonly userId: FieldRef<"Cart", 'Int'>
     readonly productId: FieldRef<"Cart", 'Int'>
-    readonly addedPrice: FieldRef<"Cart", 'Int'>
     readonly lastSeenPrice: FieldRef<"Cart", 'Int'>
     readonly createdAt: FieldRef<"Cart", 'DateTime'>
     readonly updatedAt: FieldRef<"Cart", 'DateTime'>
@@ -8310,7 +8293,6 @@ export namespace Prisma {
     quantity: 'quantity',
     userId: 'userId',
     productId: 'productId',
-    addedPrice: 'addedPrice',
     lastSeenPrice: 'lastSeenPrice',
     createdAt: 'createdAt',
     updatedAt: 'updatedAt'
@@ -8542,7 +8524,6 @@ export namespace Prisma {
     quantity?: IntFilter<"Cart"> | number
     userId?: IntFilter<"Cart"> | number
     productId?: IntFilter<"Cart"> | number
-    addedPrice?: IntFilter<"Cart"> | number
     lastSeenPrice?: IntNullableFilter<"Cart"> | number | null
     createdAt?: DateTimeFilter<"Cart"> | Date | string
     updatedAt?: DateTimeFilter<"Cart"> | Date | string
@@ -8555,7 +8536,6 @@ export namespace Prisma {
     quantity?: SortOrder
     userId?: SortOrder
     productId?: SortOrder
-    addedPrice?: SortOrder
     lastSeenPrice?: SortOrderInput | SortOrder
     createdAt?: SortOrder
     updatedAt?: SortOrder
@@ -8572,7 +8552,6 @@ export namespace Prisma {
     quantity?: IntFilter<"Cart"> | number
     userId?: IntFilter<"Cart"> | number
     productId?: IntFilter<"Cart"> | number
-    addedPrice?: IntFilter<"Cart"> | number
     lastSeenPrice?: IntNullableFilter<"Cart"> | number | null
     createdAt?: DateTimeFilter<"Cart"> | Date | string
     updatedAt?: DateTimeFilter<"Cart"> | Date | string
@@ -8585,7 +8564,6 @@ export namespace Prisma {
     quantity?: SortOrder
     userId?: SortOrder
     productId?: SortOrder
-    addedPrice?: SortOrder
     lastSeenPrice?: SortOrderInput | SortOrder
     createdAt?: SortOrder
     updatedAt?: SortOrder
@@ -8604,7 +8582,6 @@ export namespace Prisma {
     quantity?: IntWithAggregatesFilter<"Cart"> | number
     userId?: IntWithAggregatesFilter<"Cart"> | number
     productId?: IntWithAggregatesFilter<"Cart"> | number
-    addedPrice?: IntWithAggregatesFilter<"Cart"> | number
     lastSeenPrice?: IntNullableWithAggregatesFilter<"Cart"> | number | null
     createdAt?: DateTimeWithAggregatesFilter<"Cart"> | Date | string
     updatedAt?: DateTimeWithAggregatesFilter<"Cart"> | Date | string
@@ -8932,7 +8909,6 @@ export namespace Prisma {
 
   export type CartCreateInput = {
     quantity: number
-    addedPrice: number
     lastSeenPrice?: number | null
     createdAt?: Date | string
     updatedAt?: Date | string
@@ -8945,7 +8921,6 @@ export namespace Prisma {
     quantity: number
     userId: number
     productId: number
-    addedPrice: number
     lastSeenPrice?: number | null
     createdAt?: Date | string
     updatedAt?: Date | string
@@ -8953,7 +8928,6 @@ export namespace Prisma {
 
   export type CartUpdateInput = {
     quantity?: IntFieldUpdateOperationsInput | number
-    addedPrice?: IntFieldUpdateOperationsInput | number
     lastSeenPrice?: NullableIntFieldUpdateOperationsInput | number | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -8966,7 +8940,6 @@ export namespace Prisma {
     quantity?: IntFieldUpdateOperationsInput | number
     userId?: IntFieldUpdateOperationsInput | number
     productId?: IntFieldUpdateOperationsInput | number
-    addedPrice?: IntFieldUpdateOperationsInput | number
     lastSeenPrice?: NullableIntFieldUpdateOperationsInput | number | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -8977,7 +8950,6 @@ export namespace Prisma {
     quantity: number
     userId: number
     productId: number
-    addedPrice: number
     lastSeenPrice?: number | null
     createdAt?: Date | string
     updatedAt?: Date | string
@@ -8985,7 +8957,6 @@ export namespace Prisma {
 
   export type CartUpdateManyMutationInput = {
     quantity?: IntFieldUpdateOperationsInput | number
-    addedPrice?: IntFieldUpdateOperationsInput | number
     lastSeenPrice?: NullableIntFieldUpdateOperationsInput | number | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -8996,7 +8967,6 @@ export namespace Prisma {
     quantity?: IntFieldUpdateOperationsInput | number
     userId?: IntFieldUpdateOperationsInput | number
     productId?: IntFieldUpdateOperationsInput | number
-    addedPrice?: IntFieldUpdateOperationsInput | number
     lastSeenPrice?: NullableIntFieldUpdateOperationsInput | number | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -9403,7 +9373,6 @@ export namespace Prisma {
     quantity?: SortOrder
     userId?: SortOrder
     productId?: SortOrder
-    addedPrice?: SortOrder
     lastSeenPrice?: SortOrder
     createdAt?: SortOrder
     updatedAt?: SortOrder
@@ -9414,7 +9383,6 @@ export namespace Prisma {
     quantity?: SortOrder
     userId?: SortOrder
     productId?: SortOrder
-    addedPrice?: SortOrder
     lastSeenPrice?: SortOrder
   }
 
@@ -9423,7 +9391,6 @@ export namespace Prisma {
     quantity?: SortOrder
     userId?: SortOrder
     productId?: SortOrder
-    addedPrice?: SortOrder
     lastSeenPrice?: SortOrder
     createdAt?: SortOrder
     updatedAt?: SortOrder
@@ -9434,7 +9401,6 @@ export namespace Prisma {
     quantity?: SortOrder
     userId?: SortOrder
     productId?: SortOrder
-    addedPrice?: SortOrder
     lastSeenPrice?: SortOrder
     createdAt?: SortOrder
     updatedAt?: SortOrder
@@ -9445,7 +9411,6 @@ export namespace Prisma {
     quantity?: SortOrder
     userId?: SortOrder
     productId?: SortOrder
-    addedPrice?: SortOrder
     lastSeenPrice?: SortOrder
   }
 
@@ -10082,7 +10047,6 @@ export namespace Prisma {
 
   export type CartCreateWithoutUserInput = {
     quantity: number
-    addedPrice: number
     lastSeenPrice?: number | null
     createdAt?: Date | string
     updatedAt?: Date | string
@@ -10093,7 +10057,6 @@ export namespace Prisma {
     id?: number
     quantity: number
     productId: number
-    addedPrice: number
     lastSeenPrice?: number | null
     createdAt?: Date | string
     updatedAt?: Date | string
@@ -10158,7 +10121,6 @@ export namespace Prisma {
     quantity?: IntFilter<"Cart"> | number
     userId?: IntFilter<"Cart"> | number
     productId?: IntFilter<"Cart"> | number
-    addedPrice?: IntFilter<"Cart"> | number
     lastSeenPrice?: IntNullableFilter<"Cart"> | number | null
     createdAt?: DateTimeFilter<"Cart"> | Date | string
     updatedAt?: DateTimeFilter<"Cart"> | Date | string
@@ -10194,7 +10156,6 @@ export namespace Prisma {
 
   export type CartCreateWithoutProductInput = {
     quantity: number
-    addedPrice: number
     lastSeenPrice?: number | null
     createdAt?: Date | string
     updatedAt?: Date | string
@@ -10205,7 +10166,6 @@ export namespace Prisma {
     id?: number
     quantity: number
     userId: number
-    addedPrice: number
     lastSeenPrice?: number | null
     createdAt?: Date | string
     updatedAt?: Date | string
@@ -10711,7 +10671,6 @@ export namespace Prisma {
     id?: number
     quantity: number
     productId: number
-    addedPrice: number
     lastSeenPrice?: number | null
     createdAt?: Date | string
     updatedAt?: Date | string
@@ -10727,7 +10686,6 @@ export namespace Prisma {
 
   export type CartUpdateWithoutUserInput = {
     quantity?: IntFieldUpdateOperationsInput | number
-    addedPrice?: IntFieldUpdateOperationsInput | number
     lastSeenPrice?: NullableIntFieldUpdateOperationsInput | number | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -10738,7 +10696,6 @@ export namespace Prisma {
     id?: IntFieldUpdateOperationsInput | number
     quantity?: IntFieldUpdateOperationsInput | number
     productId?: IntFieldUpdateOperationsInput | number
-    addedPrice?: IntFieldUpdateOperationsInput | number
     lastSeenPrice?: NullableIntFieldUpdateOperationsInput | number | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -10748,7 +10705,6 @@ export namespace Prisma {
     id?: IntFieldUpdateOperationsInput | number
     quantity?: IntFieldUpdateOperationsInput | number
     productId?: IntFieldUpdateOperationsInput | number
-    addedPrice?: IntFieldUpdateOperationsInput | number
     lastSeenPrice?: NullableIntFieldUpdateOperationsInput | number | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -10783,7 +10739,6 @@ export namespace Prisma {
     id?: number
     quantity: number
     userId: number
-    addedPrice: number
     lastSeenPrice?: number | null
     createdAt?: Date | string
     updatedAt?: Date | string
@@ -10806,7 +10761,6 @@ export namespace Prisma {
 
   export type CartUpdateWithoutProductInput = {
     quantity?: IntFieldUpdateOperationsInput | number
-    addedPrice?: IntFieldUpdateOperationsInput | number
     lastSeenPrice?: NullableIntFieldUpdateOperationsInput | number | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -10817,7 +10771,6 @@ export namespace Prisma {
     id?: IntFieldUpdateOperationsInput | number
     quantity?: IntFieldUpdateOperationsInput | number
     userId?: IntFieldUpdateOperationsInput | number
-    addedPrice?: IntFieldUpdateOperationsInput | number
     lastSeenPrice?: NullableIntFieldUpdateOperationsInput | number | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -10827,7 +10780,6 @@ export namespace Prisma {
     id?: IntFieldUpdateOperationsInput | number
     quantity?: IntFieldUpdateOperationsInput | number
     userId?: IntFieldUpdateOperationsInput | number
-    addedPrice?: IntFieldUpdateOperationsInput | number
     lastSeenPrice?: NullableIntFieldUpdateOperationsInput | number | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string

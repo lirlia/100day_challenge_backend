@@ -47,8 +47,8 @@ export async function GET(request: NextRequest) {
             const safeLastSeenPrice = item.lastSeenPrice ?? null;
 
             let priceJustChanged = false;
-            // カート追加時の価格 (addedPrice) と最新価格が異なるか？ (フラグ設定用)
-            if (item.addedPrice !== safeCurrentPrice) {
+            // 最後に見た価格と最新価格を比較
+            if (safeLastSeenPrice !== null && safeLastSeenPrice !== safeCurrentPrice) {
               priceJustChanged = true;
             }
 
@@ -70,17 +70,15 @@ export async function GET(request: NextRequest) {
             // 返却するオブジェクトを構築
             return {
               ...item,
-              addedPrice: item.addedPrice,
               lastSeenPrice: safeCurrentPrice, // 更新後の最新価格
               currentPrice: safeCurrentPrice,  // APIレスポンス用の現在価格
-              priceJustChanged: priceJustChanged, // addedPrice との比較結果
+              priceJustChanged: priceJustChanged, // 価格変更フラグ
             };
           } catch (itemError) {
             // 個別の商品の処理中にエラーが発生した場合でも、他の商品の処理を続行
             console.error(`Error processing cart item ${item.id}:`, itemError);
             return {
               ...item,
-              addedPrice: item.addedPrice,
               lastSeenPrice: item.lastSeenPrice ?? 0,
               currentPrice: 0,  // エラー時は0を返す
               priceJustChanged: false,
@@ -146,14 +144,12 @@ export async function POST(request: NextRequest) {
       },
       update: {
         quantity: quantity,
-        addedPrice: currentPrice, // 更新時も addedPrice を現在の価格で更新
         lastSeenPrice: currentPrice, // ★ 更新時も lastSeenPrice を現在の価格で更新
       },
       create: {
         userId: userId,
         productId: productId,
         quantity: quantity,
-        addedPrice: currentPrice, // 作成時に現在の価格を addedPrice として保存
         lastSeenPrice: currentPrice, // ★ 作成時も lastSeenPrice を現在の価格で保存
       },
       include: {
@@ -173,7 +169,7 @@ export async function POST(request: NextRequest) {
     const responseCartItem = {
       ...upsertedCartItem,
       currentPrice: currentPrice, // 取得した最新価格
-      // addedPrice, lastSeenPrice は upsertedCartItem に含まれている
+      // lastSeenPrice は upsertedCartItem に含まれている
     };
 
     return NextResponse.json(responseCartItem);

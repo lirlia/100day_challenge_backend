@@ -17,7 +17,7 @@ export type CartItem = {
     description: string;
   };
   currentPrice: number; // 最新の価格
-  priceJustChanged: boolean; // ★ 価格が今変更されたかのフラグを追加
+  priceJustChanged: boolean; // 最後に確認した価格から変更があったかのフラグ
 };
 
 // カートコンテキストの型定義

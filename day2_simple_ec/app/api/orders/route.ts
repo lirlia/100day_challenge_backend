@@ -91,7 +91,7 @@ export async function POST(request: NextRequest) {
           );
         }
         // ★ 最後に確認した価格 (lastSeenPrice) と最新価格を比較
-        // lastSeenPrice が null の場合は、初回確認 or カート追加直後なので比較スキップ (常にOK扱い)
+        // lastSeenPrice が null の場合は、初回確認なので比較スキップ (常にOK扱い)
         if (item.lastSeenPrice !== null && item.lastSeenPrice !== currentPrice) {
           priceMismatchFound = true;
           console.warn(
@@ -125,7 +125,7 @@ export async function POST(request: NextRequest) {
       // エラーメッセージと共に変更された商品情報を返す
       return NextResponse.json(
         {
-          error: '最後に確認した時点から商品の価格が変更されました。カートを再度ご確認ください。',
+          error: '前回確認した時から商品の価格が変更されました。カートを再度ご確認ください。',
           changedItems: changedItems,
           // カート更新のために自動的にlastSeenPriceを更新するフラグ
           shouldUpdateCart: true
