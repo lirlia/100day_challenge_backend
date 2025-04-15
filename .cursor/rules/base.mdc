@@ -27,6 +27,7 @@ alwaysApply: true
 - スタイリングは **Tailwind CSS** を利用してください。
 - サーバの起動別のターミナルで行い、curl などのテストが成立するようにしてください
 - 画像は SVG 画像であなた自身で作成しそれっぽく作成してください
+- `npm run dev` によるサーバの起動は私が実施しますので対応不要です
 
 ## 使用技術
 
@@ -46,7 +47,7 @@ alwaysApply: true
 - 新しい日のディレクトリを作成したら、`template` ディレクトリからコピーした後、**`package.json` の `name` フィールド** を適切なもの (例: `day3_bank_app`) に変更してください。
 - コピーしたディレクトリ直下の README に今回作るアプリの設計内容を追記してください
 - **`.env` ファイルの `DATABASE_URL`** は `file:./dev.db` のままで通常は変更不要ですが、必要に応じて調整してください。
-- DBスキーマを変更した場合は、必ず `npx prisma migrate dev --name <migration_name>` と `npx prisma generate` を実行してください。
+- DBスキーマを変更した場合は `prisma migrate deploy` でお願いします。(`prisma migrate dev` だと安全ではありますが、interactive になって生産性が落ちるため)
 
 ## アプリケーションの作成の流れについて
 
