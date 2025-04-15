@@ -4,6 +4,8 @@
 
 # Day2 - シンプルECサイト
 
+https://github.com/user-attachments/assets/b5139b98-bd9e-4f08-bbc5-fd5456ae347f
+
 ## 機能一覧
 - 商品一覧表示
 - 商品詳細表示
