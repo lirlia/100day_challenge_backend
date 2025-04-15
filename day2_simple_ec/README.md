@@ -4,7 +4,7 @@
 
 # Day2 - シンプルECサイト
 
-https://github.com/user-attachments/assets/b5139b98-bd9e-4f08-bbc5-fd5456ae347f
+https://github.com/user-attachments/assets/0bdc4c35-60dc-411b-8966-dbcecf2bee13
 
 ## 機能一覧
 - 商品一覧表示
@@ -14,6 +14,119 @@ https://github.com/user-attachments/assets/b5139b98-bd9e-4f08-bbc5-fd5456ae347f
 - 注文履歴表示
 - 価格変動履歴 (ProductPrice テーブル)
 - 定期的な価格更新（フロントエンドトリガーによるデモ実装）
+
+## ER図
+
+```mermaid
+erDiagram
+    User {
+        int id PK
+        string name
+        datetime createdAt
+        datetime updatedAt
+    }
+    
+    Product {
+        int id PK
+        string name
+        string description
+        string imageUrl
+        int stock
+        datetime createdAt
+        datetime updatedAt
+    }
+    
+    ProductPrice {
+        int id PK
+        int price
+        datetime startDate
+        int productId FK
+    }
+    
+    Cart {
+        int id PK
+        int quantity
+        int userId FK
+        int productId FK
+        int addedPrice
+        int lastSeenPrice
+        datetime createdAt
+        datetime updatedAt
+    }
+    
+    Order {
+        int id PK
+        int userId FK
+        int totalPrice
+        string status
+        datetime createdAt
+        datetime updatedAt
+    }
+    
+    OrderItem {
+        int id PK
+        int orderId FK
+        int productId FK
+        int quantity
+        int price
+        datetime createdAt
+        datetime updatedAt
+    }
+    
+    User ||--o{ Cart : "has"
+    User ||--o{ Order : "places"
+    Product ||--o{ Cart : "added_to"
+    Product ||--o{ OrderItem : "included_in"
+    Product ||--o{ ProductPrice : "has"
+    Order ||--o{ OrderItem : "contains"
+```
+
+## 価格更新時の処理フロー
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Frontend
+    participant API
+    participant Database
+    
+    Note over User,Database: 商品をカートに追加するフロー
+    User->>Frontend: 商品をカートに追加
+    Frontend->>API: POST /api/cart
+    API->>Database: 最新価格を取得
+    API->>Database: カート情報を保存（addedPrice, lastSeenPrice に最新価格を設定）
+    API-->>Frontend: カート情報を返却
+    Frontend-->>User: カートに追加完了を表示
+    
+    Note over User,Database: 商品の価格変更が発生
+    Database->>Database: 商品の価格が更新される
+    
+    Note over User,Database: 商品詳細を閲覧するフロー
+    User->>Frontend: 商品詳細ページを閲覧
+    Frontend->>API: POST /api/cart/update-last-seen
+    API->>Database: カート内の lastSeenPrice を最新価格に更新
+    API-->>Frontend: 更新完了
+    
+    Note over User,Database: 注文を確定するフロー
+    User->>Frontend: 「注文を確定する」ボタンをクリック
+    Frontend->>API: POST /api/orders
+    API->>Database: 各商品の最新価格を取得
+    API->>Database: lastSeenPrice と最新価格を比較
+    
+    alt 価格に変更がある場合
+        API-->>Frontend: 409エラー + 変更商品情報
+        Frontend->>API: カート情報を再取得
+        API->>Database: カート情報取得
+        API-->>Frontend: 最新価格を含むカート情報
+        Frontend-->>User: 価格変更通知を表示
+        User->>Frontend: 再度「注文を確定する」ボタンをクリック
+    else 価格に変更がない場合
+        API->>Database: 注文と注文明細を作成
+        API->>Database: カート内の商品を削除
+        API-->>Frontend: 注文完了情報
+        Frontend-->>User: 注文完了画面を表示
+    end
+```
 
 ## データモデル
 - 商品（Product）：名前、説明、画像URL、在庫数
