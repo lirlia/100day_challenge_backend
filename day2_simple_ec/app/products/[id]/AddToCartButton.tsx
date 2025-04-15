@@ -6,15 +6,15 @@ import { useCart } from '@/app/components/CartContext';
 type Product = {
   id: number;
   name: string;
-  price: number;
   stock: number;
 };
 
 type AddToCartButtonProps = {
   product: Product;
+  currentPrice: number | null;
 };
 
-export default function AddToCartButton({ product }: AddToCartButtonProps) {
+export default function AddToCartButton({ product, currentPrice }: AddToCartButtonProps) {
   const { addToCart, isLoading: isCartLoading } = useCart();
   const [quantity, setQuantity] = useState(1);
   const [isAdding, setIsAdding] = useState(false);
@@ -62,6 +62,8 @@ export default function AddToCartButton({ product }: AddToCartButtonProps) {
     );
   }
 
+  const isPriceAvailable = currentPrice !== null && currentPrice > 0;
+
   return (
     <div className="mt-4">
       <div className="flex items-center mb-4">
@@ -72,7 +74,8 @@ export default function AddToCartButton({ product }: AddToCartButtonProps) {
           <button
             type="button"
             onClick={() => quantity > 1 && setQuantity(quantity - 1)}
-            className="px-3 py-1 bg-gray-100 hover:bg-gray-200"
+            disabled={!isPriceAvailable}
+            className={`px-3 py-1 ${isPriceAvailable ? 'bg-gray-100 hover:bg-gray-200' : 'bg-gray-200 cursor-not-allowed'}`}
           >
             -
           </button>
@@ -84,14 +87,16 @@ export default function AddToCartButton({ product }: AddToCartButtonProps) {
             max={product.stock}
             value={quantity}
             onChange={handleQuantityChange}
-            className="w-16 text-center border-x"
+            disabled={!isPriceAvailable}
+            className={`w-16 text-center border-x ${!isPriceAvailable ? 'bg-gray-100 cursor-not-allowed' : ''}`}
           />
           <button
             type="button"
             onClick={() =>
               quantity < product.stock && setQuantity(quantity + 1)
             }
-            className="px-3 py-1 bg-gray-100 hover:bg-gray-200"
+            disabled={!isPriceAvailable}
+            className={`px-3 py-1 ${isPriceAvailable ? 'bg-gray-100 hover:bg-gray-200' : 'bg-gray-200 cursor-not-allowed'}`}
           >
             +
           </button>
@@ -100,11 +105,17 @@ export default function AddToCartButton({ product }: AddToCartButtonProps) {
 
       <button
         onClick={handleAddToCart}
-        disabled={isAdding || isCartLoading || product.stock <= 0}
-        className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded font-semibold flex items-center justify-center"
+        disabled={!isPriceAvailable || isAdding || isCartLoading || product.stock <= 0}
+        className={`w-full py-3 px-4 text-white rounded font-semibold flex items-center justify-center ${
+          !isPriceAvailable
+            ? 'bg-gray-400 cursor-not-allowed'
+            : 'bg-blue-600 hover:bg-blue-700'
+        }`}
       >
         {isAdding ? (
           <span>追加中...</span>
+        ) : !isPriceAvailable ? (
+          <span>価格情報なし</span>
         ) : (
           <span>カートに追加</span>
         )}

@@ -47,3 +47,4 @@ next-env.d.ts
 # Prisma
 *.sqlite
 *.sqlite-journal
+app/generated/prisma/

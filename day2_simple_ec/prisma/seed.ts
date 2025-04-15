@@ -600,16 +600,20 @@ async function main() {
         data: {
           name: productName,
           description,
-          price,
           imageUrl,
           stock,
+          prices: {
+            create: {
+              price: price,
+            },
+          },
         },
       })
     );
   }
 
   await Promise.all(productPromises);
-  console.log(`Created ${productPromises.length} diverse products representing ~${deviceTypes.length} types with varied SVGs.`);
+  console.log(`Created ${productPromises.length} products with initial prices.`);
 }
 
 main()

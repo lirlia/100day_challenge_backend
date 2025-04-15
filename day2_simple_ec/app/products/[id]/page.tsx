@@ -3,15 +3,12 @@ import { notFound } from 'next/navigation';
 import Image from 'next/image';
 import AddToCartButton from './AddToCartButton';
 import Link from 'next/link';
+import { getCurrentProductPrice } from '@/lib/priceUtils';
+import PriceHistoryChart from './PriceHistoryChart';
 
-type ProductPageProps = {
-  params: {
-    id: string;
-  };
-};
-
-export default async function ProductPage({ params }: ProductPageProps) {
-  const productId = parseInt(params.id);
+export default async function ProductPage({ params }: { params: { id: string } }) {
+  const idString = params.id;
+  const productId = parseInt(idString);
 
   if (isNaN(productId)) {
     notFound();
@@ -25,11 +22,14 @@ export default async function ProductPage({ params }: ProductPageProps) {
     notFound();
   }
 
-  // 価格を日本円表示にフォーマット
-  const formattedPrice = new Intl.NumberFormat('ja-JP', {
-    style: 'currency',
-    currency: 'JPY',
-  }).format(product.price);
+  const currentPrice = await getCurrentProductPrice(productId);
+
+  const formattedPrice = currentPrice === null || currentPrice === 0
+    ? '価格情報なし'
+    : new Intl.NumberFormat('ja-JP', {
+        style: 'currency',
+        currency: 'JPY',
+      }).format(currentPrice);
 
   return (
     <div>
@@ -56,7 +56,7 @@ export default async function ProductPage({ params }: ProductPageProps) {
         </Link>
       </div>
 
-      <div className="bg-white rounded-lg shadow-md overflow-hidden">
+      <div className="bg-white rounded-lg shadow-md overflow-hidden mb-8">
         <div className="md:flex">
           <div className="md:w-1/2 p-4">
             <div className="relative w-full h-80">
@@ -91,9 +91,13 @@ export default async function ProductPage({ params }: ProductPageProps) {
               </p>
             </div>
 
-            <AddToCartButton product={product} />
+            <AddToCartButton product={product} currentPrice={currentPrice} />
           </div>
         </div>
+      </div>
+
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <PriceHistoryChart productId={productId} />
       </div>
     </div>
   );

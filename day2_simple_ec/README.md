@@ -12,12 +12,15 @@ https://github.com/user-attachments/assets/b5139b98-bd9e-4f08-bbc5-fd5456ae347f
 - カート機能（追加・削除・数量変更）
 - 注文確定プロセス
 - 注文履歴表示
+- 価格変動履歴 (ProductPrice テーブル)
+- 定期的な価格更新（フロントエンドトリガーによるデモ実装）
 
 ## データモデル
-- 商品（Product）：名前、説明、価格、画像URL、在庫数
+- 商品（Product）：名前、説明、画像URL、在庫数
+- 価格履歴（ProductPrice）：商品ID、価格、適用開始日
 - カート（Cart）：ユーザーID、商品ID、数量
 - 注文（Order）：ユーザーID、注文日、合計金額、ステータス
-- 注文明細（OrderItem）：注文ID、商品ID、数量、価格
+- 注文明細（OrderItem）：注文ID、商品ID、数量、価格（注文時の価格を記録）
 
 ## 画面構成
 - ヘッダー：ロゴ、カートアイコン、ユーザー切替

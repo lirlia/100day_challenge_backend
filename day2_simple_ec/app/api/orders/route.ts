@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { getCurrentProductPrice } from '@/lib/priceUtils'; // ヘルパー関数をインポート
 
 // ユーザーの注文履歴を取得
 export async function GET(request: NextRequest) {
@@ -24,7 +25,13 @@ export async function GET(request: NextRequest) {
       include: {
         orderItems: {
           include: {
-            product: true,
+            product: {
+              select: {
+                id: true,
+                name: true,
+                imageUrl: true,
+              },
+            },
           },
         },
       },
@@ -57,21 +64,39 @@ export async function POST(request: NextRequest) {
     }
 
     // ユーザーのカート内商品を取得
-    const cartItems = await prisma.cart.findMany({
+    const cartItemsData = await prisma.cart.findMany({
       where: {
         userId: userIdNum,
       },
       include: {
-        product: true,
+        product: {
+          select: { id: true, name: true, stock: true }, // product.price は不要
+        },
       },
     });
 
-    if (cartItems.length === 0) {
+    if (cartItemsData.length === 0) {
       return NextResponse.json({ error: 'Cart is empty' }, { status: 400 });
     }
 
+    // 各カートアイテムの現在の価格を取得
+    const cartItemsWithPrices = await Promise.all(
+      cartItemsData.map(async (item) => {
+        const currentPrice = await getCurrentProductPrice(item.productId);
+        if (currentPrice === null) {
+          throw new Error(
+            `Price not found for product ${item.product.name} (ID: ${item.productId})`
+          );
+        }
+        return {
+          ...item,
+          currentPrice: currentPrice, // 最新価格を追加
+        };
+      })
+    );
+
     // 在庫チェック
-    for (const item of cartItems) {
+    for (const item of cartItemsWithPrices) {
       if (item.product.stock < item.quantity) {
         return NextResponse.json(
           {
@@ -82,9 +107,9 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 注文の合計金額を計算
-    const totalPrice = cartItems.reduce(
-      (sum, item) => sum + item.product.price * item.quantity,
+    // 注文の合計金額を計算 (取得した最新価格を使用)
+    const totalPrice = cartItemsWithPrices.reduce(
+      (sum, item) => sum + item.currentPrice * item.quantity,
       0
     );
 
@@ -94,19 +119,19 @@ export async function POST(request: NextRequest) {
       const order = await tx.order.create({
         data: {
           userId: userIdNum,
-          totalPrice,
+          totalPrice, // 計算済みの合計金額
           status: 'completed',
         },
       });
 
-      // 注文明細を作成
-      for (const item of cartItems) {
+      // 注文明細を作成 (取得した最新価格を使用)
+      for (const item of cartItemsWithPrices) {
         await tx.orderItem.create({
           data: {
             orderId: order.id,
             productId: item.productId,
             quantity: item.quantity,
-            price: item.product.price,
+            price: item.currentPrice, // 注文時の価格を記録
           },
         });
 
@@ -127,13 +152,15 @@ export async function POST(request: NextRequest) {
       return order;
     });
 
-    // 作成した注文の詳細を取得して返す
+    // 作成した注文の詳細を取得して返す (Product の price は不要になったので select で調整してもよい)
     const orderWithItems = await prisma.order.findUnique({
       where: { id: order.id },
       include: {
         orderItems: {
           include: {
-            product: true,
+            product: {
+              select: { id: true, name: true, imageUrl: true }, // product.price は不要
+            },
           },
         },
       },
@@ -142,6 +169,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(orderWithItems, { status: 201 });
   } catch (error) {
     console.error('Failed to create order:', error);
+    if (error instanceof Error) {
+      // 価格が見つからない場合のエラーをハンドリング
+      if (error.message.includes('Price not found')) {
+        return NextResponse.json({ error: error.message }, { status: 400 });
+      }
+    }
     return NextResponse.json({ error: 'Failed to create order' }, { status: 500 });
   }
 }

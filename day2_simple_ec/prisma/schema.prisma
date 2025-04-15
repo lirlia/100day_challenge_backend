@@ -27,13 +27,13 @@ model Product {
   id          Int         @id @default(autoincrement())
   name        String
   description String
-  price       Int
   imageUrl    String
   stock       Int
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
   carts       Cart[]
   orderItems  OrderItem[]
+  prices      ProductPrice[]
 }
 
 model Cart {
@@ -70,4 +70,14 @@ model OrderItem {
   updatedAt DateTime @updatedAt
   order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+model ProductPrice {
+  id        Int      @id @default(autoincrement())
+  price     Int
+  startDate DateTime @default(now())
+  productId Int
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId, startDate])
 }

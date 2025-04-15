@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/db';
 import ProductCard from './components/ProductCard';
+import { getCurrentProductPrice } from '@/lib/priceUtils';
 
 export default async function Home() {
   const products = await prisma.product.findMany({
@@ -7,6 +8,16 @@ export default async function Home() {
       createdAt: 'desc',
     },
   });
+
+  const productsWithPrices = await Promise.all(
+    products.map(async (product) => {
+      const currentPrice = await getCurrentProductPrice(product.id);
+      return {
+        ...product,
+        price: currentPrice ?? 0,
+      };
+    })
+  );
 
   return (
     <div>
@@ -18,12 +29,12 @@ export default async function Home() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-        {products.map((product) => (
+        {productsWithPrices.map((product) => (
           <ProductCard key={product.id} product={product} />
         ))}
       </div>
 
-      {products.length === 0 && (
+      {productsWithPrices.length === 0 && (
         <div className="text-center py-12">
           <p className="text-gray-500">商品が見つかりませんでした。</p>
         </div>

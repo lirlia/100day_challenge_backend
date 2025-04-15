@@ -5,11 +5,13 @@ import Link from 'next/link';
 import { useCart } from './CartContext';
 import { useState } from 'react';
 
+// Product 型から price を必須ではなくする（または price: number | null のようにする）
+// page.tsx で price: currentPrice ?? 0 としているので number でOK
 type Product = {
   id: number;
   name: string;
   description: string;
-  price: number;
+  price: number; // page.tsx から渡される最新価格
   imageUrl: string;
   stock: number;
 };
@@ -42,11 +44,13 @@ export default function ProductCard({ product }: ProductCardProps) {
     }
   };
 
-  // 価格を日本円表示にフォーマット
-  const formattedPrice = new Intl.NumberFormat('ja-JP', {
-    style: 'currency',
-    currency: 'JPY',
-  }).format(product.price);
+  // 渡された product.price をそのまま使う
+  const formattedPrice = product.price === 0
+    ? '価格情報なし' // 価格が見つからない、または0の場合の表示
+    : new Intl.NumberFormat('ja-JP', {
+        style: 'currency',
+        currency: 'JPY',
+      }).format(product.price);
 
   return (
     <div className="bg-white rounded-lg shadow-md overflow-hidden flex flex-col h-full">

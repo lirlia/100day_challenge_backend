@@ -12,11 +12,11 @@ export type CartItem = {
   product: {
     id: number;
     name: string;
-    price: number;
     imageUrl: string;
     stock: number;
     description: string;
   };
+  currentPrice: number;
 };
 
 // カートコンテキストの型定義
@@ -57,7 +57,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   // 合計金額を計算
   const totalAmount = cartItems.reduce(
-    (sum, item) => sum + item.product.price * item.quantity,
+    (sum, item) => sum + item.currentPrice * item.quantity,
     0
   );
 

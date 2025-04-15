@@ -126,11 +126,11 @@ export default function CartItems() {
                     {item.product.name}
                   </Link>
                   <p className="mt-1 text-gray-500">
-                    単価: {formatPrice(item.product.price)}
+                    単価: {formatPrice(item.currentPrice)}
                   </p>
                 </div>
                 <p className="text-lg font-medium text-gray-900">
-                  {formatPrice(item.product.price * item.quantity)}
+                  {formatPrice(item.currentPrice * item.quantity)}
                 </p>
               </div>
 
