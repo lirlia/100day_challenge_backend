@@ -8,7 +8,7 @@ import { useRouter } from 'next/navigation';
 import { useUser } from '../components/UserSwitcher';
 
 export default function CartItems() {
-  const { cartItems, updateCartItem, removeFromCart, totalAmount, itemCount } = useCart();
+  const { cartItems, updateCartItem, removeFromCart, clearCart, totalAmount, itemCount } = useCart();
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
@@ -52,6 +52,7 @@ export default function CartItems() {
       }
 
       const order = await response.json();
+      await clearCart();
       router.push(`/orders/${order.id}?success=true`);
     } catch (error) {
       console.error('Checkout error:', error);
