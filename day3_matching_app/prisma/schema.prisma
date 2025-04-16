@@ -1,0 +1,60 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  // output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              Int       @id @default(autoincrement())
+  name            String
+  age             Int
+  gender          String // "male", "female", "other"
+  bio             String?
+  profileImageUrl String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relationships
+  swipesInitiated Swipe[]   @relation("Swiper") // Actions this user initiated
+  swipesReceived  Swipe[]   @relation("Swiped") // Actions towards this user
+  matchesAsUser1  Match[]   @relation("User1")
+  matchesAsUser2  Match[]   @relation("User2")
+}
+
+model Swipe {
+  id           Int      @id @default(autoincrement())
+  swiperUserId Int      // ID of the user who performed the action
+  swipedUserId Int      // ID of the user who received the action
+  action       String   // "like", "skip"
+  createdAt    DateTime @default(now())
+
+  // Relationships
+  swiper User @relation("Swiper", fields: [swiperUserId], references: [id])
+  swiped User @relation("Swiped", fields: [swipedUserId], references: [id])
+
+  @@unique([swiperUserId, swipedUserId]) // A user can only swipe another user once
+}
+
+model Match {
+  id        Int      @id @default(autoincrement())
+  user1Id   Int      // ID of the first user in the match
+  user2Id   Int      // ID of the second user in the match
+  createdAt DateTime @default(now())
+
+  // Relationships
+  user1 User @relation("User1", fields: [user1Id], references: [id])
+  user2 User @relation("User2", fields: [user2Id], references: [id])
+
+  @@unique([user1Id, user2Id]) // Prevent duplicate matches in either order
+  // We might add a check constraint later if needed to enforce user1Id < user2Id
+}
