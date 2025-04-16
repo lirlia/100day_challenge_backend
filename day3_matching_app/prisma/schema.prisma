@@ -1,0 +1,55 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id              Int      @id @default(autoincrement())
+  name            String
+  age             Int
+  gender          String // "male", "female", "other" などを想定
+  bio             String?
+  profileImageUrl String? // SVGなどを文字列として格納することも検討
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // 自分が行ったスワイプアクション
+  swipesMade      Swipe[]  @relation("Swiper")
+  // 自分に対して行われたスワイプアクション
+  swipesReceived  Swipe[]  @relation("Swiped")
+
+  // 自分が関与するマッチ (user1として)
+  matchesAsUser1  Match[]  @relation("User1")
+  // 自分が関与するマッチ (user2として)
+  matchesAsUser2  Match[]  @relation("User2")
+}
+
+model Swipe {
+  id           Int      @id @default(autoincrement())
+  swiperUserId Int      // アクションを起こしたユーザーID
+  swipedUserId Int      // アクション対象となったユーザーID
+  action       String   // "like", "skip"
+  createdAt    DateTime @default(now())
+
+  swiper User @relation("Swiper", fields: [swiperUserId], references: [id], onDelete: Cascade)
+  swiped User @relation("Swiped", fields: [swipedUserId], references: [id], onDelete: Cascade)
+
+  @@unique([swiperUserId, swipedUserId]) // 同じユーザーペアに対するアクションは1回のみ
+}
+
+model Match {
+  id        Int      @id @default(autoincrement())
+  user1Id   Int      // マッチしたユーザー1のID
+  user2Id   Int      // マッチしたユーザー2のID
+  createdAt DateTime @default(now())
+
+  user1 User @relation("User1", fields: [user1Id], references: [id], onDelete: Cascade)
+  user2 User @relation("User2", fields: [user2Id], references: [id], onDelete: Cascade)
+
+  @@unique([user1Id, user2Id]) // 同じペアのマッチは1つのみ
+  // user1Id < user2Id の制約はアプリケーション側で保証する
+}
