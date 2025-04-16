@@ -16,7 +16,7 @@
 - TypeScript
 - Prisma (ORM)
 - SQLite (Database)
-- Tailwind CSS (Styling)
+- Tailwind CSS (Styling) v4
 
 ## データモデル
 
