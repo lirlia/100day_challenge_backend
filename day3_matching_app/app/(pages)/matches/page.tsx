@@ -10,9 +10,9 @@ function MatchesPageContent() {
 
     return (
         <div>
-            <h1 className="text-3xl font-bold mb-6">Your Matches</h1>
+            <h1 className="text-3xl font-bold mb-6">マッチリスト</h1>
             {!userId ? (
-                <p className="text-gray-500">Please select a user from the header to see matches.</p>
+                <p className="text-gray-500">ヘッダーからユーザーを選択してマッチリストを表示してください。</p>
             ) : (
                 <MatchList />
             )}
@@ -25,7 +25,7 @@ export default function MatchesPage() {
   // and MatchList relies on the userId from the URL potentially set by UserSwitcher.
   // Also, MatchList itself fetches data client-side.
   return (
-    <Suspense fallback={<div>Loading matches page...</div>}>
+    <Suspense fallback={<div>マッチリストを読込中...</div>}>
       <MatchesPageContent />
     </Suspense>
   );

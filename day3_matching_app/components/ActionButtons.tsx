@@ -41,7 +41,7 @@ export default function ActionButtons({ onNope, onLike, disabled = false }: Acti
         onClick={onNope}
         disabled={disabled}
         className="font-mplus bg-gradient-to-br from-blue-300 to-blue-400 text-white p-6 rounded-full shadow-xl border-4 border-blue-200 hover:scale-110 hover:shadow-2xl hover:border-blue-400 focus:outline-none focus:ring-4 focus:ring-blue-200 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-        aria-label="Nope"
+        aria-label="スキップ"
       >
         <NopeIcon />
       </button>
@@ -51,7 +51,7 @@ export default function ActionButtons({ onNope, onLike, disabled = false }: Acti
         onClick={onLike}
         disabled={disabled}
         className="font-mplus bg-gradient-to-br from-pink-300 via-pink-400 to-orange-300 text-white p-6 rounded-full shadow-xl border-4 border-pink-200 hover:scale-110 hover:shadow-2xl hover:border-pink-400 focus:outline-none focus:ring-4 focus:ring-pink-200 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-        aria-label="Like"
+        aria-label="いいね"
       >
         <LikeIcon />
       </button>

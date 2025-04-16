@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@prisma/client": "^6.6.0",
+    "framer-motion": "^12.7.3",
     "next": "15.3.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
@@ -29,7 +30,7 @@
     "biome": "^0.2.2",
     "prisma": "^6.6.0",
     "tailwindcss": "^4",
-    "typescript": "^5",
-    "tsx": "^4.16.0"
+    "tsx": "^4.16.0",
+    "typescript": "^5"
   }
 }

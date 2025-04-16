@@ -87,11 +87,11 @@ export default function UserSwitcher() {
   };
 
   if (isLoading) {
-    return <div className="text-pink-500 font-mplus">Loading users...</div>;
+    return <div className="text-pink-500 font-mplus">ユーザー読込中...</div>;
   }
 
   if (users.length === 0) {
-    return <div className="text-pink-500 font-mplus">No users found. Seed the database.</div>;
+    return <div className="text-pink-500 font-mplus">ユーザーが見つかりません。</div>;
   }
 
   const selectedUserName = users.find(u => u.id.toString() === selectedUserId)?.name || '';
@@ -119,7 +119,7 @@ export default function UserSwitcher() {
           value={selectedUserId}
           onChange={handleUserChange}
           className="bg-gradient-to-br from-pink-100 via-blue-100 to-orange-100 text-pink-600 font-bold py-2 pl-4 pr-10 rounded-full shadow-md border-2 border-pink-200 focus:outline-none focus:ring-2 focus:ring-pink-300 transition-all text-base appearance-none min-w-[120px] hover:border-pink-400 cursor-pointer"
-          aria-label="Select User"
+          aria-label="ユーザー選択"
         >
           {users.map((user) => (
             <option key={user.id} value={user.id} className="text-pink-600 font-bold">

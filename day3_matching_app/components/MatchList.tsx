@@ -21,7 +21,7 @@ export default function MatchList() {
   useEffect(() => {
     if (!userId) {
       setIsLoading(false);
-      setError('Select a user to view matches.');
+      setError('ユーザーを選択してマッチリストを表示します。');
       setMatches([]); // Clear matches if no user is selected
       return;
     }
@@ -48,15 +48,15 @@ export default function MatchList() {
   }, [userId]);
 
   if (isLoading) {
-    return <div className="text-center p-6">Loading matches...</div>;
+    return <div className="text-center p-6">マッチリストを読込中...</div>;
   }
 
   if (error) {
-    return <div className="text-center p-6 text-red-600">Error: {error}</div>;
+    return <div className="text-center p-6 text-red-600">エラー: {error}</div>;
   }
 
   if (matches.length === 0) {
-    return <div className="text-center p-6 text-gray-500">No matches found yet. Keep swiping!</div>;
+    return <div className="text-center p-6 text-gray-500">まだマッチした相手がいません。スワイプを続けましょう！</div>;
   }
 
   return (

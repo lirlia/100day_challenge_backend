@@ -27,18 +27,6 @@ const bios = [
   '映画と写真が趣味です📷',
 ];
 const genders = ['female', 'male', 'other'];
-const images = [
-  'https://images.unsplash.com/photo-1494790108377-be9c29b29330?q=80&w=400&auto=format&fit=crop',
-  'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?q=80&w=400&auto=format&fit=crop',
-  'https://images.unsplash.com/photo-1521119989659-a83eee488004?q=80&w=400&auto=format&fit=crop',
-  'https://images.unsplash.com/photo-1580489944761-15a19d654956?q=80&w=400&auto=format&fit=crop',
-  'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?q=80&w=400&auto=format&fit=crop',
-  'https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=400&auto=format&fit=crop',
-  'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=400&auto=format&fit=crop',
-  'https://images.unsplash.com/photo-1554151228-14d9def656e4?q=80&w=400&auto=format&fit=crop',
-  'https://images.unsplash.com/photo-1511367461989-f85a21fda167?q=80&w=400&auto=format&fit=crop',
-  'https://images.unsplash.com/photo-1465101046530-73398c7f28ca?q=80&w=400&auto=format&fit=crop',
-];
 
 function randomInt(min: number, max: number) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -59,7 +47,8 @@ async function main() {
     const age = randomInt(18, 29);
     const gender = genders[i % genders.length];
     const bio = bios[i % bios.length];
-    const profileImageUrl = images[i % images.length];
+    // Generate unique image URL for each user using Picsum Photos
+    const profileImageUrl = `https://picsum.photos/seed/${i + 1}/400/400`;
     const user = await prisma.user.create({
       data: { name, age, gender, bio, profileImageUrl },
     });
