@@ -1,49 +1,75 @@
 # Day 3: Matching App
 
-タップルのような、異性（または同性）のプロフィールを見て「いいね」か「スキップ」を選択し、相互に「いいね」となった場合にマッチングが成立するWebアプリケーションです。
+異性（または同性）のプロフィールを見て「いいね」か「スキップ」を選択し、相互に「いいね」となった場合にマッチングが成立するWebアプリケーションです。
 
-## 主な機能
+[100日チャレンジ day3 の記録](https://zenn.dev/gin_nazo/scraps/bd59dbec76935d)
 
-- プロフィール表示（カード形式）
-- スワイプ（いいね/スキップ）ボタン
-- マッチング成立時の通知（画面表示＆デスクトップ通知）
-- マッチングリスト表示
-- 簡易ユーザー切り替え
-
-# 100日チャレンジ - Next.js アプリケーションテンプレート
-
-このプロジェクトは [Next.js](https://nextjs.org) (App Router)、TypeScript、Prisma、SQLite を使用した100日チャレンジ用のテンプレートです。日々の簡易アプリケーション開発のベースとして利用します。
-
-## アプリケーション概要
-
-*ここに、この日に作成するアプリケーションの簡単な説明を記述します。*
+https://github.com/user-attachments/assets/6e320d1f-a7ce-4ace-8fb6-c26121a761a7
 
 ## 機能一覧
 
-*ここに、実装する機能の一覧を記述します。*
-
-- [ ] 機能1
-- [ ] 機能2
-- [ ] ...
+- ユーザープロフィール表示 (カード形式)
+- プロフィールへの「いいね」アクション
+- プロフィールへの「スキップ」アクション
+- 相互いいねによるマッチング成立ロジック
+- マッチング成立時の画面通知
+- マッチングしたユーザーの一覧表示
+- 開発用の簡易ユーザー切り替え機能
 
 ## ER図
 
-*ここに、Mermaid 形式で ER 図を記述します。*
-
 ```mermaid
 erDiagram
-    // 例: User モデル
     User {
-        int id PK
-        string name
-        datetime createdAt
-        datetime updatedAt
+        Int id PK
+        String name
+        DateTime createdAt
+        DateTime updatedAt
+        Profile Profile @relation(fields: [id], references: [userId])
+        Like SentLikes @relation("SentLikes")
+        Like ReceivedLikes @relation("ReceivedLikes")
+        Match MatchesAsUser1 @relation("MatchesAsUser1")
+        Match MatchesAsUser2 @relation("MatchesAsUser2")
     }
+
+    Profile {
+        Int id PK
+        Int userId FK @unique
+        String imageUrl
+        String bio
+        Int age
+        String gender "MALE | FEMALE | OTHER"
+        User user @relation(fields: [userId], references: [id])
+    }
+
+    Like {
+        Int id PK
+        Int fromUserId FK
+        Int toUserId FK
+        DateTime createdAt
+        User fromUser @relation("SentLikes", fields: [fromUserId], references: [id])
+        User toUser @relation("ReceivedLikes", fields: [toUserId], references: [id])
+        @@unique([fromUserId, toUserId])
+    }
+
+    Match {
+        Int id PK
+        Int user1Id FK
+        Int user2Id FK
+        DateTime createdAt
+        User user1 @relation("MatchesAsUser1", fields: [user1Id], references: [id])
+        User user2 @relation("MatchesAsUser2", fields: [user2Id], references: [id])
+        @@unique([user1Id, user2Id])
+    }
+
+    User ||--o{ Profile : has
+    User ||--o{ Like : "sends"
+    User ||--o{ Like : "receives"
+    User ||--o{ Match : "initiates"
+    User ||--o{ Match : "accepts"
 ```
 
 ## シーケンス図 (オプション)
-
-*必要であれば、主要な処理フローのシーケンス図を Mermaid 形式で記述します。*
 
 ```mermaid
 sequenceDiagram
@@ -52,29 +78,48 @@ sequenceDiagram
     participant API
     participant Database
 
-    User->>Frontend: 操作
-    Frontend->>API: リクエスト
-    API->>Database: データ操作
-    Database-->>API: 結果
-    API-->>Frontend: レスポンス
-    Frontend-->>User: 表示更新
+    User->>Frontend: プロフィールカード表示要求
+    Frontend->>API: GET /api/users/recommendations (自分以外の未アクションユーザー取得)
+    API->>Database: ユーザー情報とLike情報を取得
+    Database-->>API: 未アクションユーザーリスト
+    API-->>Frontend: プロフィールデータ
+    Frontend-->>User: プロフィールカード表示
+
+    User->>Frontend: 「いいね」ボタンクリック
+    Frontend->>API: POST /api/likes { toUserId: X }
+    API->>Database: Likeレコード作成
+    API->>Database: 相手からのLikeが存在するか確認 (相互いいねチェック)
+    alt 相互いいね成立
+        API->>Database: Matchレコード作成
+        Database-->>API: マッチング成功
+        API-->>Frontend: { matched: true }
+        Frontend->>User: マッチング通知表示
+    else 相互いいね不成立
+        Database-->>API: 片方向いいね
+        API-->>Frontend: { matched: false }
+        Frontend->>User: 次のプロフィール表示
+    end
+
+    User->>Frontend: マッチ一覧表示要求
+    Frontend->>API: GET /api/matches
+    API->>Database: ログインユーザーのMatchレコード取得
+    Database-->>API: マッチング相手リスト
+    API-->>Frontend: マッチング相手データ
+    Frontend-->>User: マッチング一覧表示
 ```
 
 ## データモデル
 
-*ここに、主要なデータモデルの概要を記述します。*
-
-- モデル1: 説明
-- モデル2: 説明
-- ...
+- **User**: アプリケーションのユーザー。基本的な認証情報（今回は名前のみ）を持つ。
+- **Profile**: ユーザーの詳細情報（画像URL、自己紹介、年齢、性別）。User と 1対1 の関係。
+- **Like**: あるユーザーから別のユーザーへの「いいね」アクションを記録。`fromUserId` (いいねした人) と `toUserId` (いいねされた人) を持つ。
+- **Match**: 相互に「いいね」が成立したユーザーペアを記録。`user1Id` と `user2Id` を持つ。
 
 ## 画面構成
 
-*ここに、作成する主要な画面とその概要を記述します。*
-
-- 画面1: 説明
-- 画面2: 説明
-- ...
+- **プロフィール表示/スワイプ画面**: メイン画面。ログインユーザー以外のプロフィールがカード形式で表示され、「いいね」「スキップ」ボタンで操作する。
+- **マッチング一覧画面**: ログインユーザーがこれまでにマッチングした相手の一覧を表示する。
+- **ユーザー切り替え**: ヘッダーなどに配置し、開発中に操作ユーザーを簡単に切り替えるためのドロップダウンなど。
 
 ## 使用技術スタック (テンプレート標準)
 
@@ -97,7 +142,7 @@ sequenceDiagram
 2. **データベースの準備**
    ```bash
    # 初回またはスキーマ変更時
-   npx prisma db seed
+   npm run db:seed
    ```
 
 3. **開発サーバーを起動**
