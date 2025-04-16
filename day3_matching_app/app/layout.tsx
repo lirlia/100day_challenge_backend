@@ -23,9 +23,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ja">
-      <body className={`${inter.className} flex flex-col min-h-screen`}>
-        <header className="bg-pink-500 text-white p-4 shadow-md sticky top-0 z-10">
-          <div className="container mx-auto flex flex-wrap justify-between items-center">
+      <head>
+        <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;700&display=swap" rel="stylesheet" />
+      </head>
+      <body className={"font-mplus w-full min-h-screen flex flex-col items-center justify-center p-0 m-0 bg-gradient-to-br from-pink-100 via-blue-100 to-orange-100"}>
+        <header className="bg-pink-500 text-white p-4 shadow-md sticky top-0 z-10 w-full">
+          <div className="flex flex-wrap justify-between items-center max-w-7xl mx-auto px-4">
             <Link href="/" className="text-xl font-bold hover:text-pink-200 transition-colors mr-4 mb-2 sm:mb-0">Matching App</Link>
             <nav className="flex flex-wrap items-center space-x-4">
               <Link href="/matches" className="hover:text-pink-200 transition-colors mb-2 sm:mb-0">Matches</Link>
@@ -36,7 +39,7 @@ export default function RootLayout({
           </div>
         </header>
         <main className="w-full min-h-screen flex flex-col items-center justify-center p-4">{children}</main>
-        <footer className="bg-gray-200 p-4 text-center text-sm text-gray-600">
+        <footer className="bg-gradient-to-br from-pink-100 via-blue-100 to-orange-100 p-4 text-center text-sm text-pink-500">
           © 2024 Matching App
         </footer>
       </body>

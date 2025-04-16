@@ -203,7 +203,7 @@ export default function SwipePage() {
   const currentUserProfile = recommendations[currentIndex];
 
   return (
-    <div className="w-full flex items-center justify-center flex-col pt-8">
+    <div className="w-full flex flex-col items-center justify-center pt-8 gap-y-8 sm:gap-y-12 md:gap-y-16">
       {currentUserProfile ? (
         <ProfileCard user={currentUserProfile} />
       ) : (
@@ -216,7 +216,7 @@ export default function SwipePage() {
       />
       {matchDetails && (
         <MatchModal
-          currentUser={currentUser} // Pass the fetched current user
+          currentUser={currentUser}
           matchedUser={matchDetails.user1Id.toString() === userId ? matchDetails.user2 : matchDetails.user1}
           isOpen={showMatchModal}
           onClose={closeModal}
