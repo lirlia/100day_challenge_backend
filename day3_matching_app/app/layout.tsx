@@ -39,9 +39,6 @@ export default function RootLayout({
           </div>
         </header>
         <main className="w-full flex-grow flex flex-col items-center justify-center p-4">{children}</main>
-        <footer className="bg-gradient-to-br from-pink-100 via-blue-100 to-orange-100 p-4 text-center text-sm text-pink-500 w-full">
-          © 2025 Day3 マッチングアプリ
-        </footer>
       </body>
     </html>
   );

@@ -22,13 +22,13 @@ export default function ProfileCard({ user }: ProfileCardProps) {
       {/* アクセントグラデーションバー */}
       <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-pink-300 via-blue-200 to-orange-200 rounded-t-3xl" />
       {/* 画像 */}
-      <div className="relative h-60 sm:h-72 md:h-80 w-full mt-2 flex justify-center items-center">
+      <div className="relative h-60 sm:h-72 md:h-80 w-full flex justify-center items-center">
         {user.profileImageUrl ? (
           <Image
             src={user.profileImageUrl}
             alt={`Profile picture of ${user.name}`}
             fill
-            className="object-cover rounded-2xl border-4 border-white shadow-lg"
+            className="object-cover rounded-t-3xl"
             priority
             sizes="(max-width: 640px) 90vw, (max-width: 768px) 768px, (max-width: 1024px) 1024px, 1280px"
           />
@@ -42,7 +42,7 @@ export default function ProfileCard({ user }: ProfileCardProps) {
       <div className="p-6 flex flex-col gap-2">
         <h2 className="text-2xl md:text-3xl font-bold text-pink-500 mb-1 tracking-tight flex items-center gap-2">
           {user.name}
-          <span className="text-lg md:text-2xl text-gray-500 font-normal">{user.age}</span>
+          <span className="text-lg md:text-2xl text-gray-500 font-normal">Age {user.age}</span>
         </h2>
         <p className="text-sm md:text-base text-blue-400 mb-1">{user.gender}</p>
         <p className="text-gray-700 text-base md:text-lg leading-relaxed break-words min-h-[2.5rem]">{user.bio || '紹介文がありません。'}</p>
