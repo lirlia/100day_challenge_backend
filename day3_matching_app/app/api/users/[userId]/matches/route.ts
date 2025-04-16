@@ -21,9 +21,10 @@ type MatchWithIncludedUsers = {
 
 export async function GET(
   request: Request,
-  { params }: { params: { userId: string } }
+  context: { params: { userId: string } }
 ) {
-  const userId = parseInt(params.userId, 10);
+  const { userId: userIdString } = context.params;
+  const userId = parseInt(userIdString, 10);
 
   if (isNaN(userId)) {
     return NextResponse.json({ error: 'Invalid user ID' }, { status: 400 });

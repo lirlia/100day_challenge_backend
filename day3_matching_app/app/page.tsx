@@ -203,7 +203,7 @@ export default function SwipePage() {
   const currentUserProfile = recommendations[currentIndex];
 
   return (
-    <div className="flex flex-col items-center justify-center pt-8">
+    <div className="w-full flex items-center justify-center flex-col pt-8">
       {currentUserProfile ? (
         <ProfileCard user={currentUserProfile} />
       ) : (

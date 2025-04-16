@@ -18,7 +18,7 @@ interface ProfileCardProps {
 
 export default function ProfileCard({ user }: ProfileCardProps) {
   return (
-    <div className="bg-white rounded-lg shadow-lg overflow-hidden w-full max-w-sm mx-auto border border-gray-200">
+    <div className="bg-white rounded-lg shadow-lg overflow-hidden w-[90vw] max-w-sm border border-gray-200 mx-auto">
       <div className="relative h-64 w-full">
         {user.profileImageUrl ? (
           <Image

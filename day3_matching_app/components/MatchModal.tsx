@@ -32,12 +32,12 @@ export default function MatchModal({ currentUser, matchedUser, isOpen, onClose }
           </svg>
         </button>
 
-        <h2 className="text-3xl font-extrabold text-white mb-4 animate-pulse">IT'S A MATCH!</h2>
-        <p className="text-lg text-pink-100 mb-6">You and {matchedUser.name} liked each other!</p>
+        <h2 className="text-2xl sm:text-3xl font-extrabold text-white mb-4 animate-pulse">IT'S A MATCH!</h2>
+        <p className="text-md sm:text-lg text-pink-100 mb-6">You and {matchedUser.name} liked each other!</p>
 
-        <div className="flex justify-center items-center space-x-4 mb-6">
+        <div className="flex flex-col sm:flex-row justify-center items-center space-y-4 sm:space-y-0 sm:space-x-4 mb-6">
           {/* Current User Avatar */}
-          <div className="relative w-24 h-24 rounded-full border-4 border-white shadow-lg overflow-hidden">
+          <div className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-full border-4 border-white shadow-lg overflow-hidden">
             {currentUser.profileImageUrl ? (
               <Image src={currentUser.profileImageUrl} alt={currentUser.name} layout="fill" objectFit="cover" />
             ) : (
@@ -45,11 +45,11 @@ export default function MatchModal({ currentUser, matchedUser, isOpen, onClose }
             )}
           </div>
 
-          {/* Heart Icon */}
-          <span className="text-4xl text-white animate-ping">❤️</span>
+          {/* Heart Icon - Rotate on small screens */}
+          <span className="text-4xl text-white animate-ping transform rotate-90 sm:rotate-0">❤️</span>
 
           {/* Matched User Avatar */}
-          <div className="relative w-24 h-24 rounded-full border-4 border-white shadow-lg overflow-hidden">
+          <div className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-full border-4 border-white shadow-lg overflow-hidden">
             {matchedUser.profileImageUrl ? (
               <Image src={matchedUser.profileImageUrl} alt={matchedUser.name} layout="fill" objectFit="cover" />
             ) : (

@@ -21,7 +21,7 @@ const LikeIcon = () => (
 
 export default function ActionButtons({ onNope, onLike, disabled = false }: ActionButtonsProps) {
   return (
-    <div className="flex justify-center items-center space-x-8 mt-6">
+    <div className="flex justify-center items-center space-x-4 sm:space-x-8 mt-6">
       {/* Nope Button */}
       <button
         onClick={onNope}

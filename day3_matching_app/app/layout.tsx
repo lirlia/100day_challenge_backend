@@ -25,17 +25,17 @@ export default function RootLayout({
     <html lang="ja">
       <body className={`${inter.className} flex flex-col min-h-screen`}>
         <header className="bg-pink-500 text-white p-4 shadow-md sticky top-0 z-10">
-          <div className="container mx-auto flex justify-between items-center">
-            <Link href="/" className="text-xl font-bold hover:text-pink-200 transition-colors">Matching App</Link>
-            <nav className="flex items-center space-x-4">
-              <Link href="/matches" className="hover:text-pink-200 transition-colors">Matches</Link>
+          <div className="container mx-auto flex flex-wrap justify-between items-center">
+            <Link href="/" className="text-xl font-bold hover:text-pink-200 transition-colors mr-4 mb-2 sm:mb-0">Matching App</Link>
+            <nav className="flex flex-wrap items-center space-x-4">
+              <Link href="/matches" className="hover:text-pink-200 transition-colors mb-2 sm:mb-0">Matches</Link>
               <Suspense fallback={<UserSwitcherLoading />}>
                 <UserSwitcher />
               </Suspense>
             </nav>
           </div>
         </header>
-        <main className="flex-grow container mx-auto p-4">{children}</main>
+        <main className="w-full min-h-screen flex flex-col items-center justify-center p-4">{children}</main>
         <footer className="bg-gray-200 p-4 text-center text-sm text-gray-600">
           © 2024 Matching App
         </footer>
