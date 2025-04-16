@@ -4,10 +4,10 @@ import prisma from '@/lib/db';
 
 export async function GET(
   request: Request,
-  context: { params: { userId: string } }
+  { params }: { params: { userId: string } }
 ) {
-  const { userId: userIdString } = context.params;
-  const userId = parseInt(userIdString, 10);
+  const resolvedParams = await params; // Await the destructured params object
+  const userId = parseInt(resolvedParams.userId, 10); // Use the resolved params
 
   if (isNaN(userId)) {
     return NextResponse.json({ error: 'Invalid user ID' }, { status: 400 });
