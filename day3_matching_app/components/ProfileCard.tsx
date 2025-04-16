@@ -30,6 +30,7 @@ export default function ProfileCard({ user }: ProfileCardProps) {
             fill
             className="object-cover rounded-2xl border-4 border-white shadow-lg"
             priority
+            sizes="(max-width: 640px) 90vw, (max-width: 768px) 768px, (max-width: 1024px) 1024px, 1280px"
           />
         ) : (
           <div className="bg-gray-200 h-full w-full flex items-center justify-center rounded-2xl">
