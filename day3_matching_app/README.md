@@ -4,7 +4,7 @@
 
 [100日チャレンジ day3 の記録](https://zenn.dev/gin_nazo/scraps/bd59dbec76935d)
 
-https://github.com/user-attachments/assets/6e320d1f-a7ce-4ace-8fb6-c26121a761a7
+https://github.com/user-attachments/assets/3e7eb151-18dd-44f6-b570-1b53f378af36
 
 ## 機能一覧
 
@@ -25,21 +25,15 @@ erDiagram
         String name
         DateTime createdAt
         DateTime updatedAt
-        Profile Profile @relation(fields: [id], references: [userId])
-        Like SentLikes @relation("SentLikes")
-        Like ReceivedLikes @relation("ReceivedLikes")
-        Match MatchesAsUser1 @relation("MatchesAsUser1")
-        Match MatchesAsUser2 @relation("MatchesAsUser2")
     }
 
     Profile {
         Int id PK
-        Int userId FK @unique
+        Int userId FK
         String imageUrl
         String bio
         Int age
-        String gender "MALE | FEMALE | OTHER"
-        User user @relation(fields: [userId], references: [id])
+        String gender "Gender enum: MALE | FEMALE | OTHER"
     }
 
     Like {
@@ -47,9 +41,6 @@ erDiagram
         Int fromUserId FK
         Int toUserId FK
         DateTime createdAt
-        User fromUser @relation("SentLikes", fields: [fromUserId], references: [id])
-        User toUser @relation("ReceivedLikes", fields: [toUserId], references: [id])
-        @@unique([fromUserId, toUserId])
     }
 
     Match {
@@ -57,16 +48,18 @@ erDiagram
         Int user1Id FK
         Int user2Id FK
         DateTime createdAt
-        User user1 @relation("MatchesAsUser1", fields: [user1Id], references: [id])
-        User user2 @relation("MatchesAsUser2", fields: [user2Id], references: [id])
-        @@unique([user1Id, user2Id])
     }
 
-    User ||--o{ Profile : has
+    User ||--o{ Profile : "has one"
     User ||--o{ Like : "sends"
     User ||--o{ Like : "receives"
-    User ||--o{ Match : "initiates"
-    User ||--o{ Match : "accepts"
+    User ||--o{ Match : "matches as user1"
+    User ||--o{ Match : "matches as user2"
+    Profile ||--|| User : "belongs to"
+    Like }o--|| User : "sent by"
+    Like }o--|| User : "received by"
+    Match }o--|| User : "user1"
+    Match }o--|| User : "user2"
 ```
 
 ## シーケンス図 (オプション)
