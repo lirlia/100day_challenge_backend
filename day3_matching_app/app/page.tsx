@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 // import Image from 'next/image'; // 使っていないので削除
 import { useCurrentUser } from '@/context/CurrentUserContext'; // Context フックをインポート
 // import { User } from '@prisma/client'; // Use a simpler type if full User object is not needed
+import Avatar from '../components/Avatar';
 
 // スワイプするユーザーの型定義 (APIレスポンスに合わせる)
 type SwipeableUser = {
@@ -12,6 +13,53 @@ type SwipeableUser = {
   age: number;
   bio: string | null;
   profileImageUrl: string | null;
+  avatarType: string | null;
+  skinColor: string | null;
+  hairColor: string | null;
+  clothesColor: string | null;
+  bgColor: string | null;
+};
+
+// この関数は名前からユニークな色を生成します
+const getColorFromName = (name: string): string => {
+  const colors = [
+    '#1ABC9C', '#2ECC71', '#3498DB', '#9B59B6', '#16A085',
+    '#27AE60', '#2980B9', '#8E44AD', '#F1C40F', '#E67E22',
+    '#E74C3C', '#D35400', '#C0392B', '#6D4C41', '#546E7A'
+  ];
+
+  // 名前の文字をすべて足し合わせて数値に変換し、色の配列の長さで割った余りを取得
+  let sum = 0;
+  for (let i = 0; i < name.length; i++) {
+    sum += name.charCodeAt(i);
+  }
+
+  return colors[sum % colors.length];
+};
+
+// イニシャルを取得する関数
+const getInitials = (name: string): string => {
+  if (!name) return '';
+
+  const parts = name.split(' ');
+  if (parts.length === 1) {
+    return name.substring(0, 2).toUpperCase();
+  }
+
+  return (parts[0].charAt(0) + parts[1].charAt(0)).toUpperCase();
+};
+
+// オンラインステータスをIDから決定する関数
+const getStatusFromId = (id: number): 'online' | 'offline' | 'away' => {
+  // IDに基づいて一貫性のあるステータスを返す
+  const statuses: ('online' | 'offline' | 'away')[] = ['online', 'offline', 'away'];
+  return statuses[id % statuses.length];
+};
+
+// ユーザーIDから性別を決定する関数
+const getGenderFromId = (id: number): 'male' | 'female' => {
+  // 偶数IDは男性、奇数IDは女性として扱う
+  return id % 2 === 0 ? 'male' : 'female';
 };
 
 // このコンポーネントは Props を受け取らなくなる
@@ -140,6 +188,20 @@ const SwipePage: React.FC = () => { // Props を受け取らないように変�
     setUserToSwipe(null);
   }, [currentUserId, fetchNextUser]);
 
+  // アバタータイプをランダムに選択するヘルパー関数
+  const getRandomAvatarType = (): 'casual' | 'business' | 'sporty' | 'artistic' => {
+    const types = ['casual', 'business', 'sporty', 'artistic'];
+    return types[Math.floor(Math.random() * types.length)] as 'casual' | 'business' | 'sporty' | 'artistic';
+  };
+
+  // DBから取得したアバタータイプを有効なアバタータイプに変換
+  const convertToValidAvatarType = (type: string | null): 'casual' | 'business' | 'sporty' | 'artistic' => {
+    if (type === 'casual' || type === 'business' || type === 'sporty' || type === 'artistic') {
+      return type as 'casual' | 'business' | 'sporty' | 'artistic';
+    }
+    return 'casual'; // デフォルト値
+  };
+
   // --- JSX ---
   if (currentUserId === null) {
     return <div className="text-center text-gray-600 mt-10">Loading user context...</div>;
@@ -171,8 +233,22 @@ const SwipePage: React.FC = () => { // Props を受け取らないように変�
               className="w-full h-full object-cover"
             />
           ) : (
-            <div className="w-full h-full bg-gradient-to-br from-gray-200 to-gray-300 flex items-center justify-center">
-              <span className="text-gray-500 text-xl font-semibold">No Image</span>
+            <div
+              className="w-full h-full flex items-center justify-center"
+              style={{ backgroundColor: userToSwipe.bgColor || getColorFromName(userToSwipe.name) }}
+            >
+              <div className="w-64 h-64">
+                <Avatar
+                  type={convertToValidAvatarType(userToSwipe.avatarType)}
+                  size={256}
+                  skinColor={userToSwipe.skinColor || '#F5D0A9'}
+                  hairColor={userToSwipe.hairColor || '#4A2700'}
+                  clothesColor={userToSwipe.clothesColor || '#3498DB'}
+                  bgColor={userToSwipe.bgColor || getColorFromName(userToSwipe.name)}
+                  status={getStatusFromId(userToSwipe.id)}
+                  gender={getGenderFromId(userToSwipe.id)}
+                />
+              </div>
             </div>
           )}
 
@@ -221,7 +297,7 @@ const SwipePage: React.FC = () => { // Props を受け取らないように変�
         </div>
       </div>
 
-      {/* Match Modal - Use the custom match-modal classes */}
+      {/* Match Modal - マッチモーダルにもアバターを表示 */}
       {isMatchModalOpen && (
         <div className="match-modal-overlay">
           <div className="match-modal-content">
@@ -237,12 +313,30 @@ const SwipePage: React.FC = () => { // Props を受け取らないように変�
             {/* User Avatars */}
             <div className="flex justify-center space-x-8 mb-8">
               {/* Current User Avatar */}
-              <div className="w-24 h-24 rounded-full bg-white/30 border-4 border-white shadow-lg flex items-center justify-center animate-pulse">
-                <span className="text-2xl font-bold text-white">You</span>
+              <div className="w-24 h-24">
+                <Avatar
+                  type="casual"
+                  size={96}
+                  skinColor="#F5D0A9"
+                  hairColor="#4A2700"
+                  clothesColor="#FF6B6B"
+                  bgColor="#E6F3FF"
+                  status="online"
+                  gender={getGenderFromId(currentUserId)}
+                />
               </div>
               {/* Matched User Avatar */}
-              <div className="w-24 h-24 rounded-full bg-white/30 border-4 border-white shadow-lg flex items-center justify-center animate-pulse">
-                <span className="text-2xl font-bold text-white">{matchedUserName.substring(0, 2)}</span>
+              <div className="w-24 h-24">
+                <Avatar
+                  type={getRandomAvatarType()}
+                  size={96}
+                  skinColor="#F5D0A9"
+                  hairColor="#4A2700"
+                  clothesColor="#3498DB"
+                  bgColor={getColorFromName(matchedUserName)}
+                  status="online"
+                  gender={getGenderFromId(userToSwipe.id)}
+                />
               </div>
             </div>
             <button

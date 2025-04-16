@@ -34,14 +34,20 @@ export async function GET(request: NextRequest) {
           notIn: swipedIds,      // 既にスワイプしたユーザーを除外
         },
       },
-      // 必要に応じて取得するフィールドを選択
-      // select: {
-      //   id: true,
-      //   name: true,
-      //   age: true,
-      //   bio: true,
-      //   profileImageUrl: true,
-      // },
+      // 必要なフィールドを明示的に取得
+      select: {
+        id: true,
+        name: true,
+        age: true,
+        bio: true,
+        profileImageUrl: true,
+        // アバター関連のフィールドを追加
+        avatarType: true,
+        skinColor: true,
+        hairColor: true,
+        clothesColor: true,
+        bgColor: true,
+      },
       orderBy: {
         // ランダムな順序で取得 (SQLiteでは `random()` が使える場合があるが、Prismaでは標準サポート外。
         // アプリケーション側でシャッフルするか、DBレベルで対応が必要なら拡張が必要)

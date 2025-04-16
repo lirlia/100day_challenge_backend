@@ -1,4 +1,4 @@
-// File: /Users/kenichiro.mikami/Cording/100day_challenge_backend/3day_matching_app/app/api/users/route.ts
+// File: /Users/kenichiro.mikami/Cording/100day_challenge_backend/day3_matching_app/app/api/users/route.ts
 import * as entry from '../../../../../app/api/users/route.js'
 import type { NextRequest } from 'next/server.js'
 

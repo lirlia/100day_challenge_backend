@@ -1,4 +1,4 @@
-// File: /Users/kenichiro.mikami/Cording/100day_challenge_backend/3day_matching_app/app/layout.tsx
+// File: /Users/kenichiro.mikami/Cording/100day_challenge_backend/day3_matching_app/app/layout.tsx
 import * as entry from '../../../app/layout.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

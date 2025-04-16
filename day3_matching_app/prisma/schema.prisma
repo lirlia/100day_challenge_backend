@@ -13,7 +13,13 @@ model User {
   age             Int
   gender          String // "male", "female", "other" などを想定
   bio             String?
-  profileImageUrl String? // SVGなどを文字列として格納することも検討
+  profileImageUrl String? // 外部URLの画像用
+  profileSvg      String? // SVGデータを文字列として保存
+  avatarType      String? // 'casual', 'business', 'sporty', 'artistic' など
+  skinColor       String? // 肌の色（HEXカラーコード）
+  hairColor       String? // 髪の色（HEXカラーコード）
+  clothesColor    String? // 服の色（HEXカラーコード）
+  bgColor         String? // 背景色（HEXカラーコード）
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
