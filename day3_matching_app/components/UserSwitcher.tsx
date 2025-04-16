@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import Image from 'next/image'; // Import Image
 // import type { User } from '@prisma/client'; // Removed unused import
 
@@ -24,6 +24,7 @@ function InitialIcon({ name }: { name: string }) {
 export default function UserSwitcher() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const pathname = usePathname(); // Get current pathname
   const [users, setUsers] = useState<SelectableUser[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<string>('');
   const [selectedUserProfileImageUrl, setSelectedUserProfileImageUrl] = useState<string | null>(null);
@@ -52,8 +53,11 @@ export default function UserSwitcher() {
           const defaultUserId = data[0].id.toString();
           setSelectedUserId(defaultUserId);
           initialUser = data[0];
-          // Update URL if no userId was present or it was invalid
-          router.push(`/?userId=${defaultUserId}`);
+          // Update URL only if no userId was present or it was invalid, preserving current path
+          const currentPathUserId = searchParams.get('userId');
+          if (!currentPathUserId || !data.some(u => u.id.toString() === currentPathUserId)){
+            router.push(`${pathname}?userId=${defaultUserId}`);
+          }
         }
 
         // Set initial image URL
@@ -70,15 +74,16 @@ export default function UserSwitcher() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Run only once on mount
 
-  // Update URL and selected image when user selection changes
+  // Update URL when user selection changes, preserving pathname
   useEffect(() => {
     const currentUser = users.find(user => user.id.toString() === selectedUserId);
     setSelectedUserProfileImageUrl(currentUser?.profileImageUrl || null);
 
     if (selectedUserId && searchParams.get('userId') !== selectedUserId) {
-      router.push(`/?userId=${selectedUserId}`);
+      // Push with current pathname and new userId
+      router.push(`${pathname}?userId=${selectedUserId}`);
     }
-    // Intentionally not adding searchParams to dependency array to avoid loops
+    // Intentionally not adding searchParams or pathname to dependency array to avoid loops
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedUserId, router, users]);
 
