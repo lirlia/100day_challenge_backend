@@ -2,9 +2,9 @@
 
 このプロジェクトは [Next.js](https://nextjs.org) (App Router)、TypeScript、Prisma、SQLite を使用した100日チャレンジ用のタイムラインSNSアプリケーションです。
 
-## アプリケーション概要
+[100日チャレンジ day4 の記録](https://zenn.dev/gin_nazo/scraps/c1d0798bd4bd07)
 
-X (旧Twitter) のようなシンプルなタイムライン形式のSNSを作成します。
+https://github.com/user-attachments/assets/2d8237ff-0374-4ad9-a39d-1da1e34fb261
 
 ## 機能一覧
 
@@ -46,44 +46,6 @@ X (旧Twitter) のようなシンプルなタイムライン形式のSNSを作�
 - **イベントバブリング:** サーバー側では `EventEmitter` を使用して内部的なイベントバブリングを実現し、異なるAPIエンドポイント間でイベントを共有します
 - **最適化された状態更新:** 新規投稿受信時には、既存の投稿配列を完全に置き換えるのではなく、先頭に新しい投稿を追加する形で状態を更新します
 - **コンポーネント間のイベント共有:** `Timeline` コンポーネントは、SSEからのイベントを受け取り、適切なアニメーションと共に表示します
-
-### コード例: SSEリスナーの実装 (lib/sse.ts)
-
-```typescript
-// シングルトンSSEリスナークラス
-export class SSEListener {
-  private static instance: SSEListener | null = null;
-  private eventSource: EventSource | null = null;
-  private listeners: Map<string, Set<Function>> = new Map();
-
-  private constructor() {
-    // ...初期化処理
-  }
-
-  public static initialize(): SSEListener {
-    if (!SSEListener.instance) {
-      SSEListener.instance = new SSEListener();
-      SSEListener.instance.connect();
-    }
-    return SSEListener.instance;
-  }
-
-  private connect(): void {
-    this.eventSource = new EventSource('/api/posts/stream');
-    // ...イベントハンドラの設定
-  }
-
-  // イベントリスナーの追加
-  public on(event: string, callback: Function): void {
-    // ...リスナー登録ロジック
-  }
-
-  // イベントリスナーの削除
-  public off(event: string, callback: Function): void {
-    // ...リスナー削除ロジック
-  }
-}
-```
 
 ### サーバー側実装 (app/api/posts/stream/route.ts)
 
