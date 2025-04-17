@@ -25,6 +25,7 @@
     "biome": "^0.2.2",
     "prisma": "^6.6.0",
     "tailwindcss": "^4",
+    "tsx": "^4.16.0",
     "typescript": "^5"
   }
 }
