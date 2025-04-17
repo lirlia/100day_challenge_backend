@@ -31,9 +31,25 @@ export default function ChatPage() {
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const signaling = useRef<EventSource | null>(null);
+  const iceCandidateQueue = useRef<RTCIceCandidateInit[]>([]);
 
   const [status, setStatus] = useState('Initializing...');
   const [isConnected, setIsConnected] = useState(false);
+
+  const processIceCandidateQueue = async () => {
+    if (!peerConnection.current) return;
+    while(iceCandidateQueue.current.length > 0) {
+      const candidate = iceCandidateQueue.current.shift();
+      if (candidate) {
+        try {
+          await peerConnection.current.addIceCandidate(new RTCIceCandidate(candidate));
+          console.log('Processed queued ICE candidate');
+        } catch (e) {
+          console.error('Error adding queued ICE candidate', e);
+        }
+      }
+    }
+  }
 
   useEffect(() => {
     if (!userId || !peerId) {
@@ -58,6 +74,7 @@ export default function ChatPage() {
 
         // 2. RTCPeerConnection 初期化
         peerConnection.current = new RTCPeerConnection(ICE_SERVERS);
+        iceCandidateQueue.current = [];
 
         // 3. トラック追加
         stream.getTracks().forEach((track) => {
@@ -107,12 +124,27 @@ export default function ChatPage() {
         // 5. シグナリング接続開始
         setupSignaling();
 
-        // 6. Offer 作成（発信側として）
-        setStatus('Creating offer...');
-        const offer = await peerConnection.current.createOffer();
-        await peerConnection.current.setLocalDescription(offer);
-        setStatus('Sending offer...');
-        sendSignalingMessage({ type: 'offer', sdp: offer });
+        // --- 6. Role Determination & Offer/Wait Logic --- (修正箇所)
+        if (!userId || !peerId) {
+            console.error('User ID or Peer ID is missing!');
+            return; // 念のため
+        }
+        const isPolite = userId < peerId; // アルファベット順で役割決定
+
+        if (!isPolite) {
+          // IMPOLITE PEER (例: user2 vs user1) - Offer を送信
+          console.log(`Acting as IMPOLITE peer (${userId}). Sending offer...`);
+          setStatus('Creating offer...');
+          const offer = await peerConnection.current.createOffer();
+          await peerConnection.current.setLocalDescription(offer); // State -> have-local-offer
+          setStatus('Sending offer...');
+          sendSignalingMessage({ type: 'offer', sdp: offer });
+        } else {
+          // POLITE PEER (例: user1 vs user2) - Offer を待機
+          console.log(`Acting as POLITE peer (${userId}). Waiting for offer...`);
+          setStatus('Waiting for peer to send offer...');
+        }
+        // --- End Offer/Wait Logic ---
 
       } catch (error) {
         console.error('Error initializing WebRTC:', error);
@@ -133,8 +165,8 @@ export default function ChatPage() {
           setStatus('Signaling connected. Waiting for peer...');
         };
 
-        signaling.current.onerror = (error) => {
-          console.error('Signaling error:', error);
+        signaling.current.onerror = (event) => {
+          console.error('Signaling EventSource error occurred. Event:', event);
           setStatus('Signaling connection error.');
           // エラー時にも閉じる
           signaling.current?.close();
@@ -153,8 +185,11 @@ export default function ChatPage() {
             switch (message.type) {
               case 'offer':
                 if (message.sdp) {
-                  setStatus('Received offer. Creating answer...');
+                  setStatus('Received offer. Setting remote description...');
                   await peerConnection.current.setRemoteDescription(new RTCSessionDescription(message.sdp));
+                  setStatus('Remote description set. Creating answer...');
+                  await processIceCandidateQueue();
+
                   const answer = await peerConnection.current.createAnswer();
                   await peerConnection.current.setLocalDescription(answer);
                   setStatus('Sending answer...');
@@ -163,16 +198,24 @@ export default function ChatPage() {
                 break;
               case 'answer':
                 if (message.sdp) {
-                  setStatus('Received answer.');
+                  setStatus('Received answer. Setting remote description...');
                   await peerConnection.current.setRemoteDescription(new RTCSessionDescription(message.sdp));
+                  setStatus('Remote description set.');
+                  await processIceCandidateQueue();
                 }
                 break;
               case 'candidate':
                 if (message.candidate) {
-                  try {
-                      await peerConnection.current.addIceCandidate(new RTCIceCandidate(message.candidate));
-                  } catch (e) {
+                  const candidate = new RTCIceCandidate(message.candidate);
+                  if (peerConnection.current.remoteDescription) {
+                    try {
+                      await peerConnection.current.addIceCandidate(candidate);
+                    } catch (e) {
                       console.error('Error adding received ICE candidate', e);
+                    }
+                  } else {
+                    iceCandidateQueue.current.push(candidate);
+                    console.log('Queued ICE candidate');
                   }
                 }
                 break;
@@ -208,6 +251,7 @@ export default function ChatPage() {
       // Ref クリア
       localStream.current = null;
       remoteStream.current = null;
+      iceCandidateQueue.current = [];
 
       setStatus('Disconnected');
       setIsConnected(false);
