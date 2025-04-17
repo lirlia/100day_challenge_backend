@@ -3,9 +3,10 @@ import { motion } from 'framer-motion';
 
 interface PostItemProps {
   post: Post;
+  userEmoji: string;
 }
 
-export default function PostItem({ post }: PostItemProps) {
+export default function PostItem({ post, userEmoji }: PostItemProps) {
   // 経過時間の表示
   const timeAgo = (dateString: string) => {
     const date = new Date(dateString);
@@ -46,8 +47,8 @@ export default function PostItem({ post }: PostItemProps) {
       <div className="flex">
         {/* ユーザーアバター */}
         <div className="mr-3 flex-shrink-0">
-          <div className="w-12 h-12 bg-gradient-to-br from-brand-blue to-brand-blue-dark rounded-full flex items-center justify-center text-white font-bold shadow-sm">
-            {post.user.name.charAt(0).toUpperCase()}
+          <div className="w-12 h-12 bg-gradient-to-br from-brand-blue to-brand-blue-dark rounded-full flex items-center justify-center text-2xl font-bold shadow-sm">
+            {userEmoji}
           </div>
         </div>
 

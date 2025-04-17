@@ -7,9 +7,15 @@ import PostItem from './PostItem';
 
 interface TimelineProps {
   initialPosts: Post[];
+  userEmojiMap: { [key: number]: string };
+  defaultEmoji: string;
 }
 
-export default function Timeline({ initialPosts }: TimelineProps) {
+export default function Timeline({
+  initialPosts,
+  userEmojiMap,
+  defaultEmoji,
+}: TimelineProps) {
   const [posts, setPosts] = useState<Post[]>(initialPosts);
   const [isConnected, setIsConnected] = useState(false);
   const [newPost, setNewPost] = useState<Post | null>(null);
@@ -155,7 +161,13 @@ export default function Timeline({ initialPosts }: TimelineProps) {
         </div>
       ) : (
         // 投稿リスト
-        displayedPosts.map(post => <PostItem key={post.id} post={post} />)
+        displayedPosts.map(post => (
+          <PostItem
+            key={post.id}
+            post={post}
+            userEmoji={userEmojiMap[post.userId] || defaultEmoji}
+          />
+        ))
       )}
 
       {allPostsLoaded ? (

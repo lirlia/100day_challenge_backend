@@ -5,9 +5,10 @@ import { useRouter } from 'next/navigation';
 
 interface PostFormProps {
   userId: number;
+  userEmoji: string;
 }
 
-export default function PostForm({ userId }: PostFormProps) {
+export default function PostForm({ userId, userEmoji }: PostFormProps) {
   const [content, setContent] = useState('');
   const [isPosting, setIsPosting] = useState(false);
   const router = useRouter();
@@ -83,9 +84,9 @@ export default function PostForm({ userId }: PostFormProps) {
     <form onSubmit={handleSubmit} className="relative">
       <div className="flex">
         <div className="mr-3 flex-shrink-0">
-          <div className="w-10 h-10 bg-gradient-to-br from-brand-blue to-brand-blue-dark rounded-full flex items-center justify-center text-white font-bold shadow-sm">
-            {/* ユーザーのイニシャル */}
-            {userId?.toString().charAt(0) || '?'}
+          <div className="w-10 h-10 bg-gradient-to-br from-brand-blue to-brand-blue-dark rounded-full flex items-center justify-center text-xl font-bold shadow-sm">
+            {/* イニシャルから絵文字に変更 */}
+            {userEmoji}
           </div>
         </div>
         <div className="flex-1">

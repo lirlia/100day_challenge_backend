@@ -8,13 +8,22 @@ interface SidebarProps {
   users: User[];
   selectedUserId: number | null;
   onSelectUser: (userId: number) => void;
+  userEmojiMap: { [key: number]: string };
+  defaultEmoji: string;
 }
 
-export default function Sidebar({ users, selectedUserId, onSelectUser }: SidebarProps) {
+export default function Sidebar({
+  users,
+  selectedUserId,
+  onSelectUser,
+  userEmojiMap,
+  defaultEmoji,
+}: SidebarProps) {
   const [showUserSelect, setShowUserSelect] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
 
   const selectedUser = users.find(user => user.id === selectedUserId);
+  const selectedUserEmoji = selectedUserId ? (userEmojiMap[selectedUserId] || defaultEmoji) : defaultEmoji;
 
   return (
     <>
@@ -70,8 +79,8 @@ export default function Sidebar({ users, selectedUserId, onSelectUser }: Sidebar
             onClick={() => setShowUserSelect(!showUserSelect)}
             className="flex items-center w-full p-2 hover:bg-white rounded-md transition-colors group"
           >
-            <div className="w-10 h-10 bg-gradient-to-br from-brand-blue to-brand-blue-dark rounded-full flex items-center justify-center text-white font-bold shadow-sm">
-              {selectedUser?.name.charAt(0).toUpperCase() || '?'}
+            <div className="w-10 h-10 bg-gradient-to-br from-brand-blue to-brand-blue-dark rounded-full flex items-center justify-center text-xl font-bold shadow-sm mr-3">
+              {selectedUserEmoji}
             </div>
             <div className="ml-3 text-left">
               <p className="font-bold">{selectedUser?.name || 'ユーザーを選択'}</p>
@@ -95,8 +104,8 @@ export default function Sidebar({ users, selectedUserId, onSelectUser }: Sidebar
                     setShowUserSelect(false);
                   }}
                 >
-                  <div className="w-8 h-8 bg-gradient-to-br from-brand-blue to-brand-blue-dark rounded-full flex items-center justify-center text-white font-bold shadow-sm mr-2">
-                    {user.name.charAt(0).toUpperCase()}
+                  <div className="w-8 h-8 bg-gradient-to-br from-brand-blue to-brand-blue-dark rounded-full flex items-center justify-center text-lg font-bold shadow-sm mr-2">
+                    {userEmojiMap[user.id] || defaultEmoji}
                   </div>
                   <span className="font-medium">{user.name}</span>
                 </button>
@@ -138,8 +147,8 @@ export default function Sidebar({ users, selectedUserId, onSelectUser }: Sidebar
             onClick={() => setShowUserSelect(!showUserSelect)}
             className="p-1 bg-brand-highlight rounded-full"
           >
-            <div className="w-8 h-8 bg-gradient-to-br from-brand-blue to-brand-blue-dark rounded-full flex items-center justify-center text-white font-bold shadow-sm">
-              {selectedUser?.name.charAt(0).toUpperCase() || '?'}
+            <div className="w-8 h-8 bg-gradient-to-br from-brand-blue to-brand-blue-dark rounded-full flex items-center justify-center text-xl font-bold shadow-sm">
+              {selectedUserEmoji}
             </div>
           </button>
         </div>
@@ -157,8 +166,8 @@ export default function Sidebar({ users, selectedUserId, onSelectUser }: Sidebar
                   setShowUserSelect(false);
                 }}
               >
-                <div className="w-8 h-8 bg-gradient-to-br from-brand-blue to-brand-blue-dark rounded-full flex items-center justify-center text-white font-bold shadow-sm mr-2">
-                  {user.name.charAt(0).toUpperCase()}
+                <div className="w-8 h-8 bg-gradient-to-br from-brand-blue to-brand-blue-dark rounded-full flex items-center justify-center text-lg font-bold shadow-sm mr-2">
+                  {userEmojiMap[user.id] || defaultEmoji}
                 </div>
                 <span className="font-medium">{user.name}</span>
               </button>
@@ -211,8 +220,8 @@ export default function Sidebar({ users, selectedUserId, onSelectUser }: Sidebar
                 <div className="p-3 border rounded-lg bg-gradient-to-br from-brand-highlight to-white mb-4 shadow-sm">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center">
-                      <div className="w-10 h-10 bg-gradient-to-br from-brand-blue to-brand-blue-dark rounded-full flex items-center justify-center text-white font-bold shadow-sm">
-                        {selectedUser?.name.charAt(0).toUpperCase() || '?'}
+                      <div className="w-10 h-10 bg-gradient-to-br from-brand-blue to-brand-blue-dark rounded-full flex items-center justify-center text-xl font-bold shadow-sm">
+                        {selectedUserEmoji}
                       </div>
                       <div className="ml-3">
                         <p className="font-bold">{selectedUser?.name || '選択なし'}</p>

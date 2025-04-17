@@ -47,6 +47,19 @@ function getRandomSubstring(text: string, minLength: number, maxLength: number):
 }
 // --- ここまでランダム部分文字列取得関数 ---
 
+// --- ユーザーIDと絵文字のマッピング ---
+const userEmojiMap: { [key: number]: string } = {
+  1: '🐶', // 例: テストユーザー
+  2: '🐱', // 例: Alice
+  3: '🐼', // 例: Bob
+  4: '🦊', // 例: Charlie
+  5: '🐨', // 例: David
+  // 必要に応じてユーザーIDと絵文字を追加
+};
+
+const defaultEmoji = '👤'; // マッピングにない場合のデフォルト絵文字
+// --- ここまで絵文字マッピング ---
+
 export default function Home() {
   const [users, setUsers] = useState<User[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
@@ -58,9 +71,9 @@ export default function Home() {
 
   // 初期データ(User, Post)取得用Effect
   useEffect(() => {
-    async function fetchInitialData() {
-      // setIsLoading(true); // isFetchingSourceText で管理するためコメントアウト
-      // setError(null);
+    async function fetchData() {
+      setIsLoading(true);
+      setError(null);
       try {
         const [usersRes, postsRes] = await Promise.all([
           fetch('/api/users'),
@@ -68,7 +81,7 @@ export default function Home() {
         ]);
 
         if (!usersRes.ok || !postsRes.ok) {
-          throw new Error('Failed to fetch initial user/post data');
+          throw new Error('Failed to fetch initial data');
         }
 
         const usersData: User[] = await usersRes.json();
@@ -80,13 +93,13 @@ export default function Home() {
           setSelectedUserId(usersData[0].id);
         }
       } catch (err: any) {
-        console.error('Error fetching initial data:', err);
-        setError(err.message || 'An unknown error occurred fetching initial data');
+        console.error('Error fetching data:', err);
+        setError(err.message || 'An unknown error occurred');
       } finally {
-        // setIsLoading(false); // isFetchingSourceText で管理
+        setIsLoading(false);
       }
     }
-    fetchInitialData();
+    fetchData();
   }, []);
 
   // 青空文庫テキスト取得用Effect
@@ -154,6 +167,9 @@ export default function Home() {
     return <div className="text-red-500 text-center mt-10">エラーが発生しました: {error}</div>;
   }
 
+  // selectedUserIdに対応する絵文字を取得
+  const selectedUserEmoji = selectedUserId ? (userEmojiMap[selectedUserId] || defaultEmoji) : defaultEmoji;
+
   return (
     <div className="flex min-h-screen bg-brand-extra-light-gray">
       {/* 左サイドバー */}
@@ -161,6 +177,8 @@ export default function Home() {
         users={users}
         selectedUserId={selectedUserId}
         onSelectUser={setSelectedUserId}
+        userEmojiMap={userEmojiMap} // 絵文字マップを渡す
+        defaultEmoji={defaultEmoji} // デフォルト絵文字を渡す
       />
 
       {/* メインコンテンツ */}
@@ -171,11 +189,15 @@ export default function Home() {
 
         {selectedUserId && (
           <div className="p-3 border-b border-brand-light-gray bg-brand-highlight">
-            <PostForm userId={selectedUserId} />
+            <PostForm userId={selectedUserId} userEmoji={selectedUserEmoji} />
           </div>
         )}
 
-        <Timeline initialPosts={initialPosts} />
+        <Timeline
+          initialPosts={initialPosts}
+          userEmojiMap={userEmojiMap}
+          defaultEmoji={defaultEmoji}
+        />
       </main>
     </div>
   );
