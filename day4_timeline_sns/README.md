@@ -14,6 +14,30 @@ X (旧Twitter) のようなシンプルなタイムライン形式のSNSを作�
 - **自動投稿機能 (開発用):** 約5秒ごとにランダムなユーザーとして投稿を自動生成します。
 - **タイムラインアニメーション:** 新規投稿が追加される際にアニメーションが適用されます。
 - **リアルタイム更新:** Server-Sent Events (SSE) を利用してタイムラインをリアルタイムに更新します。
+- **フォロー/フォロー解除機能:** 他のユーザーをフォロー/フォロー解除できます。
+- **フォロー中タイムライン:** フォローしているユーザーの投稿のみを表示できます。
+- **カーソルベースページネーション:** 効率的なデータロード用のカーソルベースページネーション。
+- **ユーザー絵文字:** 各ユーザーを識別するためのランダム絵文字が表示されます。
+
+## 実装状況
+
+- **Day 4:** 
+  - 基本投稿機能とSSEによるリアルタイム更新を実装
+  - ユーザー切り替え機能の実装
+  - アニメーション付きのタイムライン表示
+
+- **Day 5:** 
+  - フォロー/フォロー解除機能の追加
+  - フォロー中ユーザーのみを表示するタイムライン表示機能
+  - ユーザー絵文字表示機能の追加
+  - カーソルベースのページネーション実装
+  - 無限スクロール機能の追加
+
+- **バグ修正:**
+  - フォロー/フォロー解除時の過剰な再レンダリング修正
+  - 投稿データ取得APIの返却形式を統一（`{ posts: [], nextCursor: ... }`）
+  - 「フォロー中」タイムラインでフォロワー0人の場合に無限リクエストが発生する問題を修正
+  - 絵文字表示の不具合修正
 
 ## ER図
 
@@ -22,6 +46,7 @@ erDiagram
     User {
         Int id PK
         String name UK
+        String emoji
         DateTime createdAt
     }
     Post {
@@ -30,7 +55,13 @@ erDiagram
         DateTime createdAt
         Int userId FK
     }
+    Follows {
+        Int followerId FK
+        Int followingId FK
+    }
     User ||--o{ Post : posts
+    User ||--o{ Follows : follows
+    User ||--o{ Follows : followed_by
 ```
 
 ## シーケンス図 (投稿フロー)
@@ -61,12 +92,16 @@ sequenceDiagram
 - **User**: ユーザー情報を格納します。
   - `id`: ユーザーID
   - `name`: ユーザー名 (一意)
+  - `emoji`: ユーザーの絵文字
   - `createdAt`: 作成日時
 - **Post**: 投稿情報を格納します。
   - `id`: 投稿ID
   - `content`: 投稿内容
   - `createdAt`: 作成日時
   - `userId`: 投稿したユーザーのID
+- **Follows**: フォロー情報を格納します。
+  - `followerId`: フォローしたユーザーのID
+  - `followingId`: フォローされたユーザーのID
 
 ## 画面構成
 
@@ -128,8 +163,11 @@ sequenceDiagram
     *   **`User`**:
         *   `id`: Int (Auto Increment, Primary Key)
         *   `name`: String (Unique)
+        *   `emoji`: String
         *   `createdAt`: DateTime (Default: now())
         *   `posts`: `Post[]` (Relation)
+        *   `follows`: `Follows[]` (Relation)
+        *   `followed_by`: `Follows[]` (Relation)
     *   **`Post`**:
         *   `id`: Int (Auto Increment, Primary Key)
         *   `content`: String
@@ -137,6 +175,9 @@ sequenceDiagram
         *   `userId`: Int (Foreign Key to `User`)
         *   `user`: `User` (Relation)
         *   *(拡張性考慮: 将来的に `isVisible` boolean フィールドなどを追加する可能性)*
+    *   **`Follows`**:
+        *   `followerId`: Int (Foreign Key to `User`)
+        *   `followingId`: Int (Foreign Key to `User`)
 
 3.  **APIエンドポイント (`app/api/.../route.ts`):**
     *   `GET /api/users`: 全てのユーザーを取得します (ユーザー切り替え用)。
