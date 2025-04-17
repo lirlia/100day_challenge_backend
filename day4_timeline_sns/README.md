@@ -19,25 +19,85 @@ X (旧Twitter) のようなシンプルなタイムライン形式のSNSを作�
 - **カーソルベースページネーション:** 効率的なデータロード用のカーソルベースページネーション。
 - **ユーザー絵文字:** 各ユーザーを識別するためのランダム絵文字が表示されます。
 
-## 実装状況
+## リアルタイム更新システムの実装
 
-- **Day 4:** 
-  - 基本投稿機能とSSEによるリアルタイム更新を実装
-  - ユーザー切り替え機能の実装
-  - アニメーション付きのタイムライン表示
+このアプリケーションでは、リアルタイムなタイムライン更新を実現するために、Server-Sent Events (SSE) と通常のHTTP POSTリクエストを組み合わせたアーキテクチャを採用しています。
 
-- **Day 5:** 
-  - フォロー/フォロー解除機能の追加
-  - フォロー中ユーザーのみを表示するタイムライン表示機能
-  - ユーザー絵文字表示機能の追加
-  - カーソルベースのページネーション実装
-  - 無限スクロール機能の追加
+### SSEとPOSTの連携フロー
 
-- **バグ修正:**
-  - フォロー/フォロー解除時の過剰な再レンダリング修正
-  - 投稿データ取得APIの返却形式を統一（`{ posts: [], nextCursor: ... }`）
-  - 「フォロー中」タイムラインでフォロワー0人の場合に無限リクエストが発生する問題を修正
-  - 絵文字表示の不具合修正
+1. **投稿作成プロセス:**
+   - ユーザーが投稿フォームから内容を送信すると、フロントエンドから `/api/posts` へPOSTリクエストが送信されます
+   - サーバー側では投稿をデータベースに保存し、同時にグローバルなイベントエミッター（Node.jsの`EventEmitter`）を通じて「新規投稿」イベントを発火します
+   - SSEエンドポイント（`/api/posts/stream`）がこのイベントをリッスンしており、接続中の全クライアントに新規投稿データをプッシュします
+
+2. **SSEコネクション管理:**
+   - ページロード時に各クライアントは `/api/posts/stream` へSSE接続を確立します
+   - この接続は維持され続け、サーバーから新しい投稿データがプッシュされるのを待ちます
+   - 接続状態はフロントエンドUIに表示され、ユーザーは接続状況を確認できます
+
+3. **クライアント側の実装:**
+   - フロントエンドでは `SSEListener` クラスがSSE接続の管理を担当します
+   - 新規投稿イベントを受信すると、React状態を更新してタイムラインに新しい投稿を追加します
+   - フォロー中タイムライン表示時には、受信した投稿のユーザーIDがフォロー中ユーザーかどうかをチェックし、関連する投稿のみを表示します
+
+### 実装の特徴
+
+- **シングルトンパターン:** `SSEListener` はシングルトンとして実装され、アプリケーション全体で一つのSSE接続を共有します
+- **イベントバブリング:** サーバー側では `EventEmitter` を使用して内部的なイベントバブリングを実現し、異なるAPIエンドポイント間でイベントを共有します
+- **最適化された状態更新:** 新規投稿受信時には、既存の投稿配列を完全に置き換えるのではなく、先頭に新しい投稿を追加する形で状態を更新します
+- **コンポーネント間のイベント共有:** `Timeline` コンポーネントは、SSEからのイベントを受け取り、適切なアニメーションと共に表示します
+
+### コード例: SSEリスナーの実装 (lib/sse.ts)
+
+```typescript
+// シングルトンSSEリスナークラス
+export class SSEListener {
+  private static instance: SSEListener | null = null;
+  private eventSource: EventSource | null = null;
+  private listeners: Map<string, Set<Function>> = new Map();
+
+  private constructor() {
+    // ...初期化処理
+  }
+
+  public static initialize(): SSEListener {
+    if (!SSEListener.instance) {
+      SSEListener.instance = new SSEListener();
+      SSEListener.instance.connect();
+    }
+    return SSEListener.instance;
+  }
+
+  private connect(): void {
+    this.eventSource = new EventSource('/api/posts/stream');
+    // ...イベントハンドラの設定
+  }
+
+  // イベントリスナーの追加
+  public on(event: string, callback: Function): void {
+    // ...リスナー登録ロジック
+  }
+
+  // イベントリスナーの削除
+  public off(event: string, callback: Function): void {
+    // ...リスナー削除ロジック
+  }
+}
+```
+
+### サーバー側実装 (app/api/posts/stream/route.ts)
+
+サーバー側では、Node.jsのEventEmitterを利用して新しい投稿情報を各SSE接続にブロードキャストします。POST APIエンドポイントから投稿が作成されると、このエミッターを通じてSSEストリームに通知されます。
+
+### フォロー/フォロー解除とSSEの連携
+
+フォロー機能の実装においても、SSEシステムと連携しています：
+
+1. ユーザーがフォロー/フォロー解除を行うと、フロントエンドの状態が更新されます
+2. タイムラインのタブが「フォロー中」の場合、SSEから受信する新規投稿は「フォローしているユーザー」のフィルタを通過した場合のみ表示されます
+3. このフィルタリングは、フロントエンドの `followingIdsSet` を用いてクライアント側で行われ、サーバーへの追加リクエストを最小限に抑えます
+
+この設計により、リアルタイム性と効率性を両立したタイムライン更新システムを実現しています。
 
 ## ER図
 
@@ -87,29 +147,6 @@ sequenceDiagram
     API_POST-->>Frontend: レスポンス (成功)
 ```
 
-## データモデル
-
-- **User**: ユーザー情報を格納します。
-  - `id`: ユーザーID
-  - `name`: ユーザー名 (一意)
-  - `emoji`: ユーザーの絵文字
-  - `createdAt`: 作成日時
-- **Post**: 投稿情報を格納します。
-  - `id`: 投稿ID
-  - `content`: 投稿内容
-  - `createdAt`: 作成日時
-  - `userId`: 投稿したユーザーのID
-- **Follows**: フォロー情報を格納します。
-  - `followerId`: フォローしたユーザーのID
-  - `followingId`: フォローされたユーザーのID
-
-## 画面構成
-
-- **トップページ (`/`)**:
-  - ユーザー選択ドロップダウン
-  - 投稿フォーム
-  - リアルタイム更新されるタイムライン
-
 ## 使用技術スタック
 
 - フレームワーク: Next.js (App Router)
@@ -149,71 +186,3 @@ sequenceDiagram
 - 本番デプロイには追加の考慮が必要です。
 - エラーハンドリングやセキュリティは簡略化されています。
 - 将来的な拡張機能 (フォロー、画像投稿、いいね等) を考慮し、拡張しやすい構造を目指します。
-
-## 要件
-
-1.  **基本機能:**
-    *   **投稿機能:** ユーザーは短いテキストメッセージを投稿できます。
-    *   **タイムライン表示:** 投稿されたメッセージが新しい順に一覧表示されます。
-    *   **ユーザー切り替え:** 複数の仮ユーザーを簡単に切り替えられる機能を用意します (認証代わり)。
-    *   **自動投稿機能 (開発用):** フロントエンドから約5秒ごとにランダムなユーザーとして投稿を自動生成します。
-    *   **タイムラインアニメーション:** 新規投稿がタイムラインに追加される際に、上から下へ流れるようなアニメーションを追加します。
-
-2.  **データモデル (`prisma/schema.prisma`):**
-    *   **`User`**:
-        *   `id`: Int (Auto Increment, Primary Key)
-        *   `name`: String (Unique)
-        *   `emoji`: String
-        *   `createdAt`: DateTime (Default: now())
-        *   `posts`: `Post[]` (Relation)
-        *   `follows`: `Follows[]` (Relation)
-        *   `followed_by`: `Follows[]` (Relation)
-    *   **`Post`**:
-        *   `id`: Int (Auto Increment, Primary Key)
-        *   `content`: String
-        *   `createdAt`: DateTime (Default: now())
-        *   `userId`: Int (Foreign Key to `User`)
-        *   `user`: `User` (Relation)
-        *   *(拡張性考慮: 将来的に `isVisible` boolean フィールドなどを追加する可能性)*
-    *   **`Follows`**:
-        *   `followerId`: Int (Foreign Key to `User`)
-        *   `followingId`: Int (Foreign Key to `User`)
-
-3.  **APIエンドポイント (`app/api/.../route.ts`):**
-    *   `GET /api/users`: 全てのユーザーを取得します (ユーザー切り替え用)。
-    *   `GET /api/posts`: 全ての投稿を新しい順に取得します。*(拡張性考慮: 将来的にフォローしているユーザーや特定の条件でフィルタリングできるように)*
-    *   `POST /api/posts`: 新しい投稿を作成します。リクエストボディに `{ "content": "...", "userId": 1 }` の形式でデータを含めます。
-    *   `GET /api/posts/stream`: (SSE) 新しい投稿をリアルタイムにクライアントにプッシュします。
-
-4.  **UI (`app/(pages)/`):**
-    *   **トップページ (`/`):**
-        *   ユーザーを選択するためのドロップダウンまたはボタン。
-        *   テキストを入力して投稿するためのフォーム。
-        *   全ユーザーの投稿を時系列（新しい順）で表示するタイムライン。
-            *   新規投稿はServer-Sent Events (SSE) を利用してリアルタイムに受信し、アニメーション付きで表示します。
-
-5.  **技術スタック:**
-    *   Next.js (App Router)
-    *   TypeScript
-    *   SQLite (Prisma)
-    *   Tailwind CSS
-    *   Server-Sent Events (SSE)
-
-## 将来的な拡張機能 (考慮点)
-
-*   **フォロー/フォロワー機能:**
-    *   `User` モデル間にリレーションを追加。
-    *   タイムライン取得API (`GET /api/posts`) でフォロー中のユーザーの投稿のみを表示するフィルタリングロジックを追加できるようにする。
-    *   (今回の実装) `Post` モデルやAPIの基本構造は、この拡張に対応しやすいように設計します。
-*   **画像投稿:**
-    *   `Post` モデルに `imageUrl` 等のフィールドを追加できるようにする。
-*   **いいね、リツイート機能:**
-    *   `Like`, `Retweet` モデルと関連リレーションを追加できるようにする。
-
-## 起動方法
-
-```bash
-npm run dev
-```
-
-サーバーは `http://localhost:3001` で起動します。 
