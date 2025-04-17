@@ -1,12 +1,18 @@
 import { Post } from '@/lib/types';
 import { motion } from 'framer-motion';
+import { useState } from 'react';
 
 interface PostItemProps {
   post: Post;
   userEmoji: string;
+  selectedUserId: number | null;
+  isFollowing: boolean;
+  onFollowToggle: () => void;
 }
 
-export default function PostItem({ post, userEmoji }: PostItemProps) {
+export default function PostItem({ post, userEmoji, selectedUserId, isFollowing, onFollowToggle }: PostItemProps) {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   // 経過時間の表示
   const timeAgo = (dateString: string) => {
     const date = new Date(dateString);
@@ -37,6 +43,39 @@ export default function PostItem({ post, userEmoji }: PostItemProps) {
     });
   };
 
+  const handleFollowToggle = async () => {
+    if (!selectedUserId || isSubmitting) return;
+
+    setIsSubmitting(true);
+    const method = isFollowing ? 'DELETE' : 'POST';
+    const url = `/api/users/${selectedUserId}/follow`;
+
+    try {
+      const response = await fetch(url, {
+        method: method,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ targetUserId: post.userId }),
+      });
+
+      if (!response.ok) {
+        // エラーレスポンスの内容を表示
+        const errorData = await response.json();
+        console.error(`Failed to ${method} follow:`, response.status, errorData);
+        // TODO: ユーザーにエラーを通知する (例: トースト通知)
+      } else {
+        console.log(`Successfully ${method} follow for user ${post.userId}`);
+        onFollowToggle(); // 成功したら親コンポーネントに通知して再取得
+      }
+    } catch (error) {
+      console.error(`Error during ${method} follow request:`, error);
+      // TODO: ユーザーにエラーを通知する
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <motion.article
       initial={{ opacity: 0, y: -20 }}
@@ -54,15 +93,30 @@ export default function PostItem({ post, userEmoji }: PostItemProps) {
 
         <div className="flex-1 min-w-0">
           {/* ヘッダー: ユーザー名と時間 */}
-          <div className="flex items-center mb-1">
-            <span className="font-bold mr-1 truncate text-brand-black">{post.user.name}</span>
-            <span className="text-brand-light-gray ml-1">·</span>
-            <time
-              className="text-brand-light-gray ml-1"
-              title={formatDateTime(post.createdAt)}
-            >
-              {timeAgo(post.createdAt)}
-            </time>
+          <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center min-w-0">
+              <span className="font-bold mr-1 truncate text-brand-black">{post.user.name}</span>
+              <span className="text-brand-light-gray ml-1">·</span>
+              <time
+                className="text-brand-light-gray ml-1 text-sm"
+                title={formatDateTime(post.createdAt)}
+              >
+                {timeAgo(post.createdAt)}
+              </time>
+            </div>
+            {selectedUserId && selectedUserId !== post.userId && (
+              <button
+                onClick={handleFollowToggle}
+                disabled={isSubmitting}
+                className={`ml-4 px-3 py-1 text-xs font-semibold rounded-full border transition-colors
+                  ${isFollowing ?
+                    'bg-white text-brand-blue border-brand-blue hover:bg-red-100 hover:text-red-600 hover:border-red-600' :
+                    'bg-brand-blue text-white border-brand-blue hover:bg-brand-blue-dark'
+                  } ${isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                {isSubmitting ? '...' : (isFollowing ? 'フォロー中' : 'フォロー')}
+              </button>
+            )}
           </div>
 
           {/* 投稿内容 */}

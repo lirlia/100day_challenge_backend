@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import PostForm from '@/components/PostForm';
 import Timeline from '@/components/Timeline';
 import Sidebar from '@/components/Sidebar';
-import { User, Post } from '@/lib/types';
+import { User, Post, UserWithFollow } from '@/lib/types';
 
 // --- ランダムな部分文字列取得関数 ---
 function getRandomSubstring(text: string, minLength: number, maxLength: number): string {
@@ -60,46 +60,61 @@ const defaultEmoji = '👤'; // フォールバック用
 // --- ここまで絵文字マッピング ---
 
 export default function Home() {
-  const [users, setUsers] = useState<User[]>([]);
+  const [users, setUsers] = useState<UserWithFollow[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
-  const [initialPosts, setInitialPosts] = useState<Post[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingUsers, setIsLoadingUsers] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [sourceText, setSourceText] = useState<string>(''); // 青空文庫テキスト用state
-  const [isFetchingSourceText, setIsFetchingSourceText] = useState(true); // テキスト取得中フラグ
+  const [sourceText, setSourceText] = useState<string>('');
+  const [isFetchingSourceText, setIsFetchingSourceText] = useState(true);
 
-  // 初期データ(User, Post)取得用Effect
-  useEffect(() => {
-    async function fetchData() {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const [usersRes, postsRes] = await Promise.all([
-          fetch('/api/users'),
-          fetch('/api/posts'),
-        ]);
-
-        if (!usersRes.ok || !postsRes.ok) {
-          throw new Error('Failed to fetch initial data');
-        }
-
-        const usersData: User[] = await usersRes.json();
-        const postsData: Post[] = await postsRes.json();
-
-        setUsers(usersData);
-        setInitialPosts(postsData);
-        if (usersData.length > 0) {
-          setSelectedUserId(usersData[0].id);
-        }
-      } catch (err: any) {
-        console.error('Error fetching data:', err);
-        setError(err.message || 'An unknown error occurred');
-      } finally {
-        setIsLoading(false);
+  // ユーザーデータ取得関数 (selectedUserId に依存)
+  const fetchUsers = useCallback(async () => {
+    if (selectedUserId === null) return;
+    console.log(`fetchUsers called for user: ${selectedUserId}`); // 呼び出し確認ログ
+    setIsLoadingUsers(true);
+    setError(null);
+    try {
+      const usersRes = await fetch(`/api/users?currentUserId=${selectedUserId}`);
+      if (!usersRes.ok) {
+        throw new Error('Failed to fetch users data');
       }
+      const usersData: UserWithFollow[] = await usersRes.json();
+      setUsers(usersData);
+    } catch (err: any) {
+      console.error('Error fetching users:', err);
+      setError(err.message || 'An unknown error occurred while fetching users');
+    } finally {
+      setIsLoadingUsers(false);
     }
-    fetchData();
-  }, []);
+    // fetchUsers 自体は selectedUserId に依存する
+  }, [selectedUserId]);
+
+  // ユーザーデータ取得用Effect (fetchUsersを呼び出す)
+  useEffect(() => {
+    // 初期ユーザーID設定ロジック (初回のみ)
+    if (selectedUserId === null && users.length === 0) {
+      async function fetchInitialUserId() {
+        try {
+          const usersRes = await fetch('/api/users'); // フォロー情報なしで一旦取得
+          if (!usersRes.ok) throw new Error('Failed to fetch initial user list');
+          const initialUsers: User[] = await usersRes.json();
+          if (initialUsers.length > 0) {
+            setSelectedUserId(initialUsers[0].id); // 最初のユーザーを選択
+          } else {
+            setError('No users found.'); // ユーザーがいない場合のエラー
+            setIsLoadingUsers(false);
+          }
+        } catch (err: any) {
+          console.error('Error fetching initial user ID:', err);
+          setError(err.message || 'An unknown error occurred');
+          setIsLoadingUsers(false);
+        }
+      }
+      fetchInitialUserId();
+    } else if (selectedUserId !== null) {
+      fetchUsers(); // selectedUserId が確定したら or 変更されたら fetchUsers を呼ぶ
+    }
+  }, [selectedUserId, fetchUsers]); // fetchUsers を依存配列に追加
 
   // 青空文庫テキスト取得用Effect
   useEffect(() => {
@@ -118,11 +133,11 @@ export default function Home() {
         setError(err.message || 'Failed to fetch source text');
       } finally {
         setIsFetchingSourceText(false);
-        setIsLoading(false); // 両方のデータ取得が終わったらローディング完了
+        setIsLoadingUsers(false); // 両方のデータ取得が終わったらローディング完了
       }
     }
     fetchSourceText();
-  }, []); // 初回のみ実行
+  }, []);
 
   // 自動投稿機能 (開発用) - 青空文庫テキストから生成
   useEffect(() => {
@@ -158,7 +173,16 @@ export default function Home() {
     return () => clearInterval(intervalId);
   }, [sourceText, isFetchingSourceText, users]); // sourceText, isFetchingSourceText, usersが変わったら再設定
 
-  if (isLoading || isFetchingSourceText) {
+  // フォロー状態変更時にユーザーリストを再取得する関数
+  const handleFollowChange = useCallback(() => {
+    console.log('handleFollowChange triggered, refreshing users...');
+    fetchUsers(); // ユーザーリストを再取得
+  }, [fetchUsers]); // fetchUsers に依存
+
+  // 全体のローディング状態
+  const isLoading = isLoadingUsers || isFetchingSourceText;
+
+  if (isLoading) {
     return <div className="flex justify-center items-center h-screen">コンテンツを読み込み中...</div>;
   }
 
@@ -166,21 +190,21 @@ export default function Home() {
     return <div className="text-red-500 text-center mt-10">エラーが発生しました: {error}</div>;
   }
 
-  // selectedUserIdに対応する絵文字を取得
   const selectedUserEmoji = selectedUserId ? getEmojiForUserId(selectedUserId) : defaultEmoji;
+
+  // ユーザーリストから現在のユーザーを除外（フォローボタン用）
+  // const otherUsers = users.filter(u => u.id !== selectedUserId);
 
   return (
     <div className="flex min-h-screen bg-brand-extra-light-gray">
-      {/* 左サイドバー */}
       <Sidebar
-        users={users}
+        users={users} // フォロー情報付きのユーザーリスト
         selectedUserId={selectedUserId}
         onSelectUser={setSelectedUserId}
-        getEmojiForUserId={getEmojiForUserId} // 関数を渡す
+        getEmojiForUserId={getEmojiForUserId}
         defaultEmoji={defaultEmoji}
       />
 
-      {/* メインコンテンツ */}
       <main className="flex-1 border-x border-brand-light-gray md:mx-4 pt-0 md:pt-2">
         <div className="p-3 border-b border-brand-light-gray sticky top-0 md:top-2 bg-brand-blue text-white z-10 mt-14 md:mt-0">
           <h1 className="text-xl font-bold">ホーム</h1>
@@ -193,9 +217,12 @@ export default function Home() {
         )}
 
         <Timeline
-          initialPosts={initialPosts}
-          getEmojiForUserId={getEmojiForUserId} // 関数を渡す
+          // initialPosts={initialPosts} // 削除
+          getEmojiForUserId={getEmojiForUserId}
           defaultEmoji={defaultEmoji}
+          selectedUserId={selectedUserId}
+          users={users} // users配列を渡す
+          onFollowToggle={handleFollowChange} // コールバックを渡す
         />
       </main>
     </div>

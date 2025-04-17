@@ -17,9 +17,15 @@ datasource db {
 model User {
   id        Int      @id @default(autoincrement())
   name      String   @unique
+  emoji     String   @default("")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   posts     Post[]
+
+  // フォローしているユーザーへのリレーション
+  following Follows[] @relation("Following")
+  // フォローされているユーザーへのリレーション
+  followers Follows[] @relation("Follower")
 }
 
 model Post {
@@ -28,4 +34,18 @@ model Post {
   createdAt DateTime @default(now())
   userId    Int
   user      User     @relation(fields: [userId], references: [id])
+}
+
+// 新しいFollowsモデル
+model Follows {
+  followerId  Int // フォローするユーザーID
+  followingId Int // フォローされるユーザーID
+  createdAt   DateTime @default(now())
+
+  // リレーション定義
+  follower    User     @relation("Follower", fields: [followerId], references: [id])
+  following   User     @relation("Following", fields: [followingId], references: [id])
+
+  // 複合主キー (同じフォロー関係が重複しないように)
+  @@id([followerId, followingId])
 }
