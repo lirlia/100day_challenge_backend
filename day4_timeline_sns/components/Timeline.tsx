@@ -10,7 +10,7 @@ interface TimelineProps {
   defaultEmoji: string;
   selectedUserId: number | null;
   users: UserWithFollow[];
-  onFollowToggle: () => void;
+  onFollowToggle: (targetUserId: number, newFollowState: boolean) => void;
 }
 
 export default function Timeline({

@@ -173,11 +173,19 @@ export default function Home() {
     return () => clearInterval(intervalId);
   }, [sourceText, isFetchingSourceText, users]); // sourceText, isFetchingSourceText, usersが変わったら再設定
 
-  // フォロー状態変更時にユーザーリストを再取得する関数
-  const handleFollowChange = useCallback(() => {
-    console.log('handleFollowChange triggered, refreshing users...');
-    fetchUsers(); // ユーザーリストを再取得
-  }, [fetchUsers]); // fetchUsers に依存
+  // フォロー状態変更ハンドラ (引数を追加し、状態を直接更新)
+  const handleFollowChange = useCallback((targetUserId: number, newFollowState: boolean) => {
+    console.log('handleFollowChange triggered for user:', targetUserId, 'New state:', newFollowState);
+    // fetchUsers(); // ユーザーリストの再取得はしない
+
+    setUsers(prevUsers =>
+      prevUsers.map(user =>
+        user.id === targetUserId
+          ? { ...user, isFollowing: newFollowState } // 対象ユーザーの isFollowing を更新
+          : user // それ以外のユーザーはそのまま
+      )
+    );
+  }, []); // 依存配列を空に (setUsers は安定している)
 
   // 全体のローディング状態
   const isLoading = isLoadingUsers || isFetchingSourceText;
@@ -198,7 +206,7 @@ export default function Home() {
   return (
     <div className="flex min-h-screen bg-brand-extra-light-gray">
       <Sidebar
-        users={users} // フォロー情報付きのユーザーリスト
+        users={users} // 更新された users が渡る
         selectedUserId={selectedUserId}
         onSelectUser={setSelectedUserId}
         getEmojiForUserId={getEmojiForUserId}
@@ -221,8 +229,8 @@ export default function Home() {
           getEmojiForUserId={getEmojiForUserId}
           defaultEmoji={defaultEmoji}
           selectedUserId={selectedUserId}
-          users={users} // users配列を渡す
-          onFollowToggle={handleFollowChange} // コールバックを渡す
+          users={users} // 更新された users が渡る
+          onFollowToggle={handleFollowChange} // 更新されたハンドラを渡す
         />
       </main>
     </div>

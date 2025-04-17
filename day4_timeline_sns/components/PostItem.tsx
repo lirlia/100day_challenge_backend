@@ -1,16 +1,20 @@
-import { Post } from '@/lib/types';
+import { Post, UserWithFollow } from '@/lib/types';
 import { motion } from 'framer-motion';
 import { useState } from 'react';
+import { useTimeAgo } from '@/lib/hooks';
 
 interface PostItemProps {
   post: Post;
   userEmoji: string;
   selectedUserId: number | null;
   isFollowing: boolean;
-  onFollowToggle: () => void;
+  onFollowToggle: (targetUserId: number, newFollowState: boolean) => void;
 }
 
 export default function PostItem({ post, userEmoji, selectedUserId, isFollowing, onFollowToggle }: PostItemProps) {
+  const createdAtString = typeof post.createdAt === 'string' ? post.createdAt : post.createdAt.toISOString();
+  const relativeTime = useTimeAgo(createdAtString);
+
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // 経過時間の表示
@@ -49,6 +53,7 @@ export default function PostItem({ post, userEmoji, selectedUserId, isFollowing,
     setIsSubmitting(true);
     const method = isFollowing ? 'DELETE' : 'POST';
     const url = `/api/users/${selectedUserId}/follow`;
+    const targetUserId = post.userId;
 
     try {
       const response = await fetch(url, {
@@ -56,7 +61,7 @@ export default function PostItem({ post, userEmoji, selectedUserId, isFollowing,
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ targetUserId: post.userId }),
+        body: JSON.stringify({ targetUserId }),
       });
 
       if (!response.ok) {
@@ -65,8 +70,8 @@ export default function PostItem({ post, userEmoji, selectedUserId, isFollowing,
         console.error(`Failed to ${method} follow:`, response.status, errorData);
         // TODO: ユーザーにエラーを通知する (例: トースト通知)
       } else {
-        console.log(`Successfully ${method} follow for user ${post.userId}`);
-        onFollowToggle(); // 成功したら親コンポーネントに通知して再取得
+        console.log(`Successfully ${method} follow for user ${targetUserId}`);
+        onFollowToggle(targetUserId, !isFollowing);
       }
     } catch (error) {
       console.error(`Error during ${method} follow request:`, error);
@@ -99,9 +104,9 @@ export default function PostItem({ post, userEmoji, selectedUserId, isFollowing,
               <span className="text-brand-light-gray ml-1">·</span>
               <time
                 className="text-brand-light-gray ml-1 text-sm"
-                title={formatDateTime(post.createdAt)}
+                title={formatDateTime(createdAtString)}
               >
-                {timeAgo(post.createdAt)}
+                {relativeTime}
               </time>
             </div>
             {selectedUserId && selectedUserId !== post.userId && (
