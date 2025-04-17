@@ -8,7 +8,7 @@ interface SidebarProps {
   users: User[];
   selectedUserId: number | null;
   onSelectUser: (userId: number) => void;
-  userEmojiMap: { [key: number]: string };
+  getEmojiForUserId: (userId: number) => string;
   defaultEmoji: string;
 }
 
@@ -16,14 +16,14 @@ export default function Sidebar({
   users,
   selectedUserId,
   onSelectUser,
-  userEmojiMap,
+  getEmojiForUserId,
   defaultEmoji,
 }: SidebarProps) {
   const [showUserSelect, setShowUserSelect] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
 
   const selectedUser = users.find(user => user.id === selectedUserId);
-  const selectedUserEmoji = selectedUserId ? (userEmojiMap[selectedUserId] || defaultEmoji) : defaultEmoji;
+  const selectedUserEmoji = selectedUserId ? getEmojiForUserId(selectedUserId) : defaultEmoji;
 
   return (
     <>
@@ -105,7 +105,7 @@ export default function Sidebar({
                   }}
                 >
                   <div className="w-8 h-8 bg-gradient-to-br from-brand-blue to-brand-blue-dark rounded-full flex items-center justify-center text-lg font-bold shadow-sm mr-2">
-                    {userEmojiMap[user.id] || defaultEmoji}
+                    {getEmojiForUserId(user.id)}
                   </div>
                   <span className="font-medium">{user.name}</span>
                 </button>
@@ -167,7 +167,7 @@ export default function Sidebar({
                 }}
               >
                 <div className="w-8 h-8 bg-gradient-to-br from-brand-blue to-brand-blue-dark rounded-full flex items-center justify-center text-lg font-bold shadow-sm mr-2">
-                  {userEmojiMap[user.id] || defaultEmoji}
+                  {getEmojiForUserId(user.id)}
                 </div>
                 <span className="font-medium">{user.name}</span>
               </button>

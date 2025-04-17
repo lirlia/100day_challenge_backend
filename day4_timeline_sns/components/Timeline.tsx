@@ -7,13 +7,13 @@ import PostItem from './PostItem';
 
 interface TimelineProps {
   initialPosts: Post[];
-  userEmojiMap: { [key: number]: string };
+  getEmojiForUserId: (userId: number) => string;
   defaultEmoji: string;
 }
 
 export default function Timeline({
   initialPosts,
-  userEmojiMap,
+  getEmojiForUserId,
   defaultEmoji,
 }: TimelineProps) {
   const [posts, setPosts] = useState<Post[]>(initialPosts);
@@ -165,7 +165,7 @@ export default function Timeline({
           <PostItem
             key={post.id}
             post={post}
-            userEmoji={userEmojiMap[post.userId] || defaultEmoji}
+            userEmoji={getEmojiForUserId(post.userId)}
           />
         ))
       )}

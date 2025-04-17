@@ -48,16 +48,15 @@ function getRandomSubstring(text: string, minLength: number, maxLength: number):
 // --- ここまでランダム部分文字列取得関数 ---
 
 // --- ユーザーIDと絵文字のマッピング ---
-const userEmojiMap: { [key: number]: string } = {
-  1: '🐶', // 例: テストユーザー
-  2: '🐱', // 例: Alice
-  3: '🐼', // 例: Bob
-  4: '🦊', // 例: Charlie
-  5: '🐨', // 例: David
-  // 必要に応じてユーザーIDと絵文字を追加
-};
+const userEmojiList = ['🐶', '🐱', '🐼', '🦊', '🐨', '🦁', '🐯', '🐻', '🐰', '🐸', '🐵', '🐔', '🐧', '🐦', '🦉', '🐺', '🐗', '🐴', '🦄', '🦋', '🐛', '🐌', '🐞', '🐜', '🐝', '🐢', '🐍', '🐙', '🦑', '🐠', '🐬', '🐳', '🦖', '🐉', '🌵'];
 
-const defaultEmoji = '👤'; // マッピングにない場合のデフォルト絵文字
+// IDに基づいてリストから絵文字を選択する関数
+function getEmojiForUserId(userId: number): string {
+  const index = (userId - 1) % userEmojiList.length; // ID-1 をリストの長さで割った余りをインデックスとする
+  return userEmojiList[index];
+}
+
+const defaultEmoji = '👤'; // フォールバック用
 // --- ここまで絵文字マッピング ---
 
 export default function Home() {
@@ -154,7 +153,7 @@ export default function Home() {
       } catch (autoPostError) {
         console.error('Auto-post failed:', autoPostError);
       }
-    }, 5000); // 5秒ごと
+    }, 2500); // 投稿頻度を2.5秒ごとに変更
 
     return () => clearInterval(intervalId);
   }, [sourceText, isFetchingSourceText, users]); // sourceText, isFetchingSourceText, usersが変わったら再設定
@@ -168,7 +167,7 @@ export default function Home() {
   }
 
   // selectedUserIdに対応する絵文字を取得
-  const selectedUserEmoji = selectedUserId ? (userEmojiMap[selectedUserId] || defaultEmoji) : defaultEmoji;
+  const selectedUserEmoji = selectedUserId ? getEmojiForUserId(selectedUserId) : defaultEmoji;
 
   return (
     <div className="flex min-h-screen bg-brand-extra-light-gray">
@@ -177,8 +176,8 @@ export default function Home() {
         users={users}
         selectedUserId={selectedUserId}
         onSelectUser={setSelectedUserId}
-        userEmojiMap={userEmojiMap} // 絵文字マップを渡す
-        defaultEmoji={defaultEmoji} // デフォルト絵文字を渡す
+        getEmojiForUserId={getEmojiForUserId} // 関数を渡す
+        defaultEmoji={defaultEmoji}
       />
 
       {/* メインコンテンツ */}
@@ -195,7 +194,7 @@ export default function Home() {
 
         <Timeline
           initialPosts={initialPosts}
-          userEmojiMap={userEmojiMap}
+          getEmojiForUserId={getEmojiForUserId} // 関数を渡す
           defaultEmoji={defaultEmoji}
         />
       </main>
