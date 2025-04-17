@@ -2,6 +2,10 @@
 
 このプロジェクトは [Next.js](https://nextjs.org) (App Router)、TypeScript、WebRTC を使用した100日チャレンジの5日目、シンプルな1対1ビデオチャットアプリです。
 
+[100日チャレンジ day5](https://zenn.dev/gin_nazo/scraps/4c1fbbb9569fd9)
+
+https://github.com/user-attachments/assets/00d9e7e4-f63c-49ed-97c7-5a5ec852fa7e
+
 ## アプリケーション概要
 
 ユーザー同士が 1 対 1 でリアルタイムにビデオ通話を行えるシンプルな Web アプリケーションです。WebRTC を利用して P2P でメディアストリームを交換し、シグナリングには Server-Sent Events (SSE) を使用します。
