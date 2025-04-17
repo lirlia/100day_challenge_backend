@@ -1,7 +1,6 @@
 import { Post, UserWithFollow } from '@/lib/types';
 import { motion } from 'framer-motion';
 import { useState } from 'react';
-import { useTimeAgo } from '@/lib/hooks';
 
 interface PostItemProps {
   post: Post;
@@ -13,14 +12,15 @@ interface PostItemProps {
 
 export default function PostItem({ post, userEmoji, selectedUserId, isFollowing, onFollowToggle }: PostItemProps) {
   const createdAtString = typeof post.createdAt === 'string' ? post.createdAt : post.createdAt.toISOString();
-  const relativeTime = useTimeAgo(createdAtString);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // 経過時間の表示
-  const timeAgo = (dateString: string) => {
+  // 経過時間の表示 (ヘルパー関数)
+  const timeAgo = (dateString: string): string => {
     const date = new Date(dateString);
     const seconds = Math.floor((new Date().getTime() - date.getTime()) / 1000);
+
+    if (isNaN(seconds)) return ''; // Handle invalid date string
 
     let interval = seconds / 31536000;
     if (interval > 1) return Math.floor(interval) + "年前";
@@ -32,20 +32,21 @@ export default function PostItem({ post, userEmoji, selectedUserId, isFollowing,
     if (interval > 1) return Math.floor(interval) + "時間前";
     interval = seconds / 60;
     if (interval > 1) return Math.floor(interval) + "分前";
-    return Math.floor(seconds) + "秒前";
+    return Math.max(0, Math.floor(seconds)) + "秒前"; // Ensure non-negative seconds
   };
 
-  // 実際の日付時間表示のフォーマット
-  const formatDateTime = (dateString: string) => {
+  // 実際の日付時間表示のフォーマット (ヘルパー関数)
+  const formatDateTime = (dateString: string): string => {
     const date = new Date(dateString);
+    if (isNaN(date.getTime())) return 'Invalid Date'; // Handle invalid date string
     return date.toLocaleString('ja-JP', {
-      hour: '2-digit',
-      minute: '2-digit',
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
+      year: 'numeric', month: 'short', day: 'numeric',
+      hour: '2-digit', minute: '2-digit'
     });
   };
+
+  // ★ timeAgo ヘルパー関数を直接呼び出す
+  const relativeTime = timeAgo(createdAtString);
 
   const handleFollowToggle = async () => {
     if (!selectedUserId || isSubmitting) return;

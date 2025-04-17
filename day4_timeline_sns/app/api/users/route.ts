@@ -8,6 +8,11 @@ export async function GET(request: Request) {
 
   try {
     const users = await prisma.user.findMany({
+      select: {
+        id: true,
+        name: true,
+        emoji: true,
+      },
       orderBy: {
         id: 'asc', // 取得順序を安定させる
       },
@@ -24,8 +29,9 @@ export async function GET(request: Request) {
 
       // 各ユーザーに isFollowing プロパティを追加
       const usersWithFollowStatus = users.map(user => ({
-        ...user,
-        // 自分自身はフォローできないので常に false
+        id: user.id,
+        name: user.name,
+        emoji: user.emoji,
         isFollowing: user.id === currentUserId ? false : followingIds.has(user.id),
       }));
       return NextResponse.json(usersWithFollowStatus);

@@ -13,10 +13,21 @@ function generateRandomName(): string {
   return `${firstName} ${lastName}`;
 }
 
+// --- 絵文字生成ロジック (app/page.tsx からコピー) ---
+const userEmojiList = ['🐶', '🐱', '🐼', '🦊', '🐨', '🦁', '🐯', '🐻', '🐰', '🐸', '🐵', '🐔', '🐧', '🐦', '🦉', '🐺', '🐗', '🐴', '🦄', '🦋', '🐛', '🐌', '🐞', '🐜', '🐝', '🐢', '🐍', '🐙', '🦑', '🐠', '🐬', '🐳', '🦖', '🐉', '🌵'];
+function getEmojiForUserId(userId: number): string {
+  if (userId <= 0) return '👤';
+  const index = (userId - 1) % userEmojiList.length;
+  return userEmojiList[index];
+}
+// --- ここまで絵文字生成 ---
+
 async function main() {
   console.log(`Start seeding ...`);
 
   // 既存のデータを削除
+  console.log(`Deleting existing follows...`);
+  await prisma.follows.deleteMany({});
   console.log(`Deleting existing posts...`);
   await prisma.post.deleteMany({});
   console.log(`Deleting existing users...`);
@@ -24,29 +35,42 @@ async function main() {
 
   // ユーザーを30人作成
   const usersToCreate = 30;
-  const createdUserNames = new Set<string>(); // 名前の重複を避ける
+  const createdUserNames = new Set<string>();
+  const createdUsers = []; // 作成したユーザー情報を保持
 
   console.log(`Creating ${usersToCreate} users...`);
-  for (let i = 0; i < usersToCreate; i++) {
+  for (let i = 1; i <= usersToCreate; i++) { // ID 1から開始するように調整
     let name = generateRandomName();
-    // 重複しない名前が見つかるまで生成し直す (最大試行回数設定)
     let attempt = 0;
     while (createdUserNames.has(name) && attempt < 50) {
         name = generateRandomName();
         attempt++;
     }
-
     if(createdUserNames.has(name)) {
-        console.warn(`Could not generate a unique name after ${attempt} attempts. Skipping user ${i + 1}.`);
-        continue; // 50回試行しても重複する場合はスキップ
+        console.warn(`Skipping user creation due to duplicate name: ${name}`);
+        continue;
     }
-
     createdUserNames.add(name);
+
+    // ★ emoji を決定
+    // 注意: Prismaは通常自動インクリメントでIDを振るため、
+    // このループのインデックス `i` がそのままDBのIDになるとは限らない。
+    // しかし、今回はdeleteMany後に作成するため、ほぼ i = id になる想定。
+    // より確実にするなら、create後に再度IDでemojiをupdateする。
+    // → シンプルにするため、ここではループインデックスでemojiを決定する。
+    const emoji = getEmojiForUserId(i);
+
     const user = await prisma.user.create({
-      data: { name },
+      data: {
+        name,
+        emoji: emoji, // ★ emoji を設定
+      },
     });
-    console.log(`Created user with id: ${user.id}, name: ${user.name}`);
+    createdUsers.push(user);
+    console.log(`Created user with id: ${user.id}, name: ${user.name}, emoji: ${user.emoji}`);
   }
+
+  // TODO: 必要であれば、ここでフォロー関係や投稿の初期データも作成できる
 
   console.log(`Seeding finished.`);
 }

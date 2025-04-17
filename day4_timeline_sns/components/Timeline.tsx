@@ -1,9 +1,12 @@
 'use client';
 
-import type { Post, UserWithFollow } from '@/lib/types';
-import { AnimatePresence } from 'framer-motion';
-import { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import PostItem from './PostItem';
+import { Post, UserWithFollow } from '@/lib/types';
+import { motion, AnimatePresence } from 'framer-motion';
+import { fetchPosts } from '@/lib/utils/fetchPosts';
+import { useIntersectionObserver } from '@/lib/hooks/useIntersectionObserver';
+import { SSEListener } from '@/lib/sse';
 
 interface TimelineProps {
   getEmojiForUserId: (userId: number) => string;
@@ -12,6 +15,9 @@ interface TimelineProps {
   users: UserWithFollow[];
   onFollowToggle: (targetUserId: number, newFollowState: boolean) => void;
 }
+
+// タブの型
+type TimelineType = 'all' | 'following';
 
 export default function Timeline({
   getEmojiForUserId,
@@ -31,164 +37,127 @@ export default function Timeline({
   const [nextCursor, setNextCursor] = useState<string | number | null>(null);
   const isInitialFetchDone = useRef(false);
   const [error, setError] = useState<string | null>(null);
+  const [activeTimeline, setActiveTimeline] = useState<TimelineType>('all');
 
-  // API呼び出し中フラグ (ref を使用)
-  const isFetchingInitialRef = useRef(false);
-  const isFetchingMoreRef = useRef(false);
+  // フォローしているユーザーIDのSet (SSE判定用)
+  const followingIdsSet = useRef(new Set<number>());
+  useEffect(() => {
+    followingIdsSet.current = new Set(
+      users.filter(u => u.isFollowing).map(u => u.id)
+    );
+    if (selectedUserId) {
+      followingIdsSet.current.add(selectedUserId); // 自分自身も追加
+    }
+    console.log('Updated followingIdsSet:', followingIdsSet.current);
+  }, [users, selectedUserId]);
 
-  // データ取得関数 (初期 + 無限スクロール)
-  const fetchPosts = useCallback(async (cursor: string | number | null) => {
-    const limit = 10;
-    const url = cursor
-      ? `/api/posts?cursor=${cursor}&limit=${limit}`
-      : `/api/posts?limit=${limit}`;
-
-    // ref を使ってガード条件をチェック
-    if (cursor === null) {
-      if (isFetchingInitialRef.current) {
-        console.log('fetchPosts skipped, initial fetch already in progress (ref check).');
-        return;
-      }
-    } else {
-      if (isFetchingMoreRef.current) {
-        console.log('fetchPosts skipped, load more already in progress (ref check).');
-        return;
-      }
+  // データ取得関数
+  const fetchData = useCallback(async (cursor: string | number | null) => {
+    if (isInitialFetchDone.current || allPostsLoaded) {
+      console.log('fetchPosts skipped, already fetching or all loaded.');
+      return;
+    }
+    // フォロータブ選択時にユーザー未選択なら何もしない
+    if (activeTimeline === 'following' && selectedUserId === null) {
+      console.log('fetchPosts skipped, following tab selected but no user chosen.');
+      return;
     }
 
-    // UI用 state の更新
+    console.log(`fetchPosts called with cursor: ${cursor}, type: ${activeTimeline}, user: ${selectedUserId}`);
+    isInitialFetchDone.current = true;
     if (cursor === null) {
-      console.log('Setting isLoading to true for initial fetch.');
-      setIsLoading(true);
-      isFetchingInitialRef.current = true; // ref をセット
+      setIsLoading(true); // 初期ロード
     } else {
-      console.log('Setting isFetchingMore to true.');
-      setIsFetchingMore(true);
-      isFetchingMoreRef.current = true; // ref をセット
+      setIsFetchingMore(true); // 追加ロード
     }
     setError(null);
-    console.log(`Fetching from URL: ${url}`);
 
     try {
-      console.log('fetchPosts: Before fetch call');
-      const res = await fetch(url);
-      console.log('fetchPosts: After fetch call, status:', res.status);
+      const fetchedData = await fetchPosts(cursor, activeTimeline, selectedUserId);
+      console.log('fetchPosts received data:', fetchedData);
 
-      if (!res.ok) {
-        let errorBody = 'Unknown error';
-        try {
-          errorBody = await res.text();
-        } catch { }
-        console.error('fetchPosts: Fetch failed with status:', res.status, 'Body:', errorBody);
-        throw new Error(`Failed to fetch posts (${res.status})`);
-      }
+      const fetchedPosts = fetchedData.posts || [];
+      const fetchedNextCursor = fetchedData.nextCursor ?? null;
 
-      const responseText = await res.text();
-      console.log('fetchPosts: Received response text:', responseText.substring(0, 500) + '...');
-
-      let data;
-      try {
-        data = JSON.parse(responseText);
-        console.log('fetchPosts: Successfully parsed JSON data:', data);
-      } catch (parseError) {
-        console.error('fetchPosts: Failed to parse JSON:', parseError, 'Raw text:', responseText);
-        throw new Error('Failed to parse posts data');
-      }
-
-      if (!data || !Array.isArray(data.posts)) {
-        console.error('fetchPosts: Invalid data structure received:', data);
-        throw new Error('Invalid data structure received from API');
-      }
-
-      console.log('fetchPosts: Before setPosts call');
       setPosts((prevPosts) => {
-        const fetchedPosts: Post[] = data.posts || [];
-        console.log('fetchPosts: Inside setPosts callback. fetchedPosts:', fetchedPosts);
-
-        if (cursor === null) {
-          console.log('fetchPosts: Setting initial posts state. Count:', fetchedPosts.length);
-          return fetchedPosts;
-        } else {
-          console.log('fetchPosts: Appending older posts. Prev count:', prevPosts.length, 'Fetched count:', fetchedPosts.length);
-          const existingIds = new Set(prevPosts.map(p => p.id));
-          console.log('fetchPosts: Existing IDs:', existingIds);
-          console.log('fetchPosts: Filtering fetchedPosts:', fetchedPosts);
-          const newPosts = fetchedPosts.filter((fp: Post) => {
-            if (!fp) {
-              console.error('fetchPosts filter: Encountered undefined/null item in fetchedPosts!');
-              return false;
-            }
-            console.log('fetchPosts filter: Checking fp.id:', fp.id, 'Exists in existingIds:', existingIds.has(fp.id));
-            return !existingIds.has(fp.id);
-          });
-          console.log('fetchPosts: Filtered newPosts:', newPosts);
-          return [...prevPosts, ...newPosts];
-        }
+        const existingIds = new Set(prevPosts.map(p => p.id));
+        const newPosts = fetchedPosts.filter((p: Post) => !existingIds.has(p.id));
+        console.log('Existing post IDs:', existingIds);
+        console.log('Fetched new posts:', newPosts);
+        return cursor === null ? newPosts : [...prevPosts, ...newPosts];
       });
-      console.log('fetchPosts: After setPosts call');
 
-      console.log('fetchPosts: Before setNextCursor call');
-      setNextCursor(data.nextCursor);
-      console.log('fetchPosts: After setNextCursor call, value:', data.nextCursor);
-
-      if (data.nextCursor === null) {
-        console.log('fetchPosts: All posts loaded.');
-        setAllPostsLoaded(true);
-      }
-
-    } catch (err: any) {
-      console.error('fetchPosts: Caught error in try block:', err, 'Error name:', err?.name, 'Error message:', err?.message);
-      setError(err.message || 'Failed to fetch posts');
-      setAllPostsLoaded(true);
-    } finally {
+      setNextCursor(fetchedNextCursor);
+      setAllPostsLoaded(fetchedPosts.length === 0 || fetchedNextCursor === null);
       if (cursor === null) {
-        console.log('fetchPosts: Setting isLoading to false and isInitialFetchDone to true in finally block.');
-        setIsLoading(false);
         isInitialFetchDone.current = true;
-        isFetchingInitialRef.current = false; // ref を解除
-      } else {
-        console.log('fetchPosts: Setting isFetchingMore to false in finally block.');
-        setIsFetchingMore(false);
-        isFetchingMoreRef.current = false; // ref を解除
       }
-      console.log('fetchPosts: Exiting finally block');
+    } catch (err: any) {
+      console.error('Error fetching posts in component:', err);
+      setError(err.message || '投稿の取得に失敗しました。');
+    } finally {
+      setIsLoading(false);
+      setIsFetchingMore(false);
+      console.log('fetchPosts finished');
     }
-  }, []);
+  }, [activeTimeline, selectedUserId, allPostsLoaded]);
 
-  // 初期データ読み込み Effect (依存配列は fetchPosts)
+  // ★ タブまたはユーザー変更時にタイムラインをリセットして再取得
   useEffect(() => {
-    console.log('Effect for initial fetch triggered. isInitialFetchDone.current:', isInitialFetchDone.current);
-    if (!isInitialFetchDone.current) {
-      console.log('Calling fetchPosts(null) for initial data.');
-      fetchPosts(null);
+    console.log(`Timeline type or user changed: ${activeTimeline}, ${selectedUserId}. Resetting timeline.`);
+    setPosts([]);
+    setNextCursor(null);
+    setAllPostsLoaded(false);
+    setError(null);
+    isInitialFetchDone.current = false;
+    fetchData(null); // 新しいタイムラインの初期データを取得
+  }, [activeTimeline, selectedUserId, fetchData]);
+
+  // 無限スクロール用のObserver
+  useIntersectionObserver(loadMoreRef, () => {
+    if (isInitialFetchDone.current && !isLoading && !isFetchingMore && !allPostsLoaded && nextCursor) {
+      console.log('Intersection observer triggered, fetching more posts...');
+      fetchData(nextCursor);
     }
-  }, [fetchPosts]); // fetchPosts は useCallback により参照が安定しているはず
+  }, [isLoading, isFetchingMore, allPostsLoaded, nextCursor, fetchData]);
 
-  // 無限スクロール Effect (依存配列に isFetchingMore を含めないようにする)
+  // SSEリスナー
   useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const entry = entries[0];
-        // isFetchingMoreRef.current を使ってチェック
-        if (entry.isIntersecting && !isFetchingMoreRef.current && !allPostsLoaded && nextCursor !== null) {
-          console.log('Conditions met, calling fetchPosts for more data with cursor:', nextCursor);
-          fetchPosts(nextCursor);
+    if (!SSEListener.isInitialized()) {
+      SSEListener.initialize();
+      console.log('SSE Listener initialized.');
+    }
+
+    const handleNewPost = (newPostData: Post) => {
+      console.log('SSE received new post:', newPostData);
+      // ★ フォロー中タブの場合、投稿者がフォロー対象か自分自身かチェック
+      if (activeTimeline === 'following') {
+        if (followingIdsSet.current.has(newPostData.userId)) {
+          console.log('Adding new post to following timeline (from SSE)');
+          setPosts((prev) => [newPostData, ...prev]);
+        } else {
+          console.log('Skipping new post on following timeline (not followed user)');
         }
-      },
-      { threshold: 1.0 }
-    );
-    const currentLoadMoreRef = loadMoreRef.current;
-    if (currentLoadMoreRef) {
-      observer.observe(currentLoadMoreRef);
-    }
-    return () => {
-      if (currentLoadMoreRef) {
-        observer.unobserve(currentLoadMoreRef);
+      } else {
+        // おすすめタブの場合は常に追加
+        console.log('Adding new post to all timeline (from SSE)');
+        setPosts((prev) => [newPostData, ...prev]);
       }
     };
-    // ★ 依存配列から isFetchingMore を削除し、安定した値のみにする
-    // fetchPosts は useCallback([]) なので安定
-  }, [fetchPosts, allPostsLoaded, nextCursor]);
+
+    SSEListener.on('newPost', handleNewPost);
+    console.log('SSE newPost listener attached.');
+
+    return () => {
+      SSEListener.off('newPost', handleNewPost);
+      console.log('SSE newPost listener detached.');
+      // 他のコンポーネントもSSEを使うかもしれないので、ここではcloseしない
+      // if (SSEListener.isInitialized()) {
+      //     SSEListener.close();
+      //     console.log('SSE Listener closed.');
+      // }
+    };
+  }, [activeTimeline]);
 
   useEffect(() => {
     eventSourceRef.current = new EventSource('/api/posts/stream');
@@ -263,41 +232,73 @@ export default function Timeline({
 
   return (
     <div ref={timelineRef} className="border-t border-brand-light-gray">
-      <AnimatePresence initial={false}>
-        {posts.length === 0 ? (
-          <div className="p-4 text-center text-brand-dark-gray bg-white rounded-lg shadow-sm m-4">
-            <p className="mb-2 text-xl">まだ投稿がありません</p>
-            <p>最初の投稿をしてみましょう！</p>
-          </div>
-        ) : (
-          posts.map(post => {
-            const postUser = users.find(u => u.id === post.userId);
-            const isFollowingPostUser = postUser?.isFollowing ?? false;
-            return (
-              <PostItem
-                key={post.id}
-                post={post}
-                userEmoji={getEmojiForUserId(post.userId)}
-                selectedUserId={selectedUserId}
-                isFollowing={isFollowingPostUser}
-                onFollowToggle={onFollowToggle}
-              />
-            );
-          })
-        )}
-      </AnimatePresence>
+      <div className="flex border-b border-brand-light-gray sticky top-0 bg-white z-10">
+        <button
+          onClick={() => setActiveTimeline('all')}
+          className={`flex-1 py-3 text-center font-bold transition-colors duration-150 ${activeTimeline === 'all' ? 'text-brand-blue border-b-2 border-brand-blue' : 'text-brand-dark-gray hover:bg-gray-100'}`}
+        >
+          おすすめ
+        </button>
+        <button
+          onClick={() => setActiveTimeline('following')}
+          disabled={selectedUserId === null}
+          className={`flex-1 py-3 text-center font-bold transition-colors duration-150 ${activeTimeline === 'following' ? 'text-brand-blue border-b-2 border-brand-blue' : 'text-brand-dark-gray hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed'}`}
+        >
+          フォロー中
+        </button>
+      </div>
 
-      <div ref={loadMoreRef} className="p-4 text-center h-10 flex justify-center items-center">
-        {!allPostsLoaded && isFetchingMore && (
-          <div className="flex justify-center items-center space-x-2">
-            <div className="w-3 h-3 rounded-full bg-brand-blue animate-pulse"></div>
-            <div className="w-3 h-3 rounded-full bg-brand-blue animate-pulse delay-75"></div>
-            <div className="w-3 h-3 rounded-full bg-brand-blue animate-pulse delay-150"></div>
+      <div className="relative">
+        <AnimatePresence initial={false}>
+          {posts.map((post) => {
+            const user = users.find(u => u.id === post.userId);
+            console.log(`Timeline Map: Post ID ${post.id}, Post User Info:`, post.user);
+            console.log(`Timeline Map: Found user from props (ID: ${post.userId}):`, user);
+            const userEmoji = user ? user.emoji : defaultEmoji;
+            console.log(`Timeline Map: Determined userEmoji for Post ID ${post.id}:`, userEmoji);
+            const isFollowing = user?.isFollowing ?? false;
+            return (
+              <motion.div
+                key={post.id}
+                layout
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.3 }}
+              >
+                <PostItem
+                  post={post}
+                  userEmoji={userEmoji}
+                  selectedUserId={selectedUserId}
+                  isFollowing={isFollowing}
+                  onFollowToggle={onFollowToggle}
+                />
+              </motion.div>
+            );
+          })}
+        </AnimatePresence>
+
+        {isLoading && (
+          <div className="text-center p-4">読み込み中...</div>
+        )}
+        {isFetchingMore && (
+          <div className="text-center p-4">さらに読み込み中...</div>
+        )}
+
+        {error && (
+          <div className="text-center p-4 text-red-500">エラー: {error}</div>
+        )}
+
+        {allPostsLoaded && posts.length > 0 && !isLoading && (
+          <div className="text-center p-4 text-brand-light-gray">これ以上投稿はありません</div>
+        )}
+        {allPostsLoaded && posts.length === 0 && !isLoading && !error && (
+          <div className="text-center p-4 text-brand-light-gray">
+            {activeTimeline === 'following' ? 'フォローしているユーザーの投稿がまだありません。' : 'まだ投稿がありません。'}
           </div>
         )}
-        {allPostsLoaded && posts.length > 0 && (
-          <p className="text-brand-light-gray text-sm">すべての投稿を読み込みました</p>
-        )}
+
+        <div ref={loadMoreRef} style={{ height: '1px' }} />
       </div>
 
       <div className="fixed bottom-4 right-4 z-20">
