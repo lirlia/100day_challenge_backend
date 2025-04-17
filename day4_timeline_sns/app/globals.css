@@ -1,4 +1,6 @@
-@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 :root {
   --background: #ffffff;
@@ -20,7 +22,7 @@
 }
 
 body {
-  background: var(--background);
+  /* background: var(--background); */ /* layout.tsx の Tailwind クラスを優先するためコメントアウト */
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }

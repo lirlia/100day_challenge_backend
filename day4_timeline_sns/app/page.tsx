@@ -1,9 +1,11 @@
 'use client';
 
+import { useState, useEffect } from 'react';
+import Image from 'next/image';
 import PostForm from '@/components/PostForm';
 import Timeline from '@/components/Timeline';
-import type { Post, User } from '@/lib/types'; // 型定義をインポート
-import { useEffect, useState } from 'react';
+import Sidebar from '@/components/Sidebar';
+import { User, Post } from '@/lib/types';
 
 export default function Home() {
   const [users, setUsers] = useState<User[]>([]);
@@ -55,10 +57,7 @@ export default function Home() {
           await fetch('/api/posts', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              content: randomContent,
-              userId: randomUser.id,
-            }),
+            body: JSON.stringify({ content: randomContent, userId: randomUser.id }),
           });
           // console.log(`Auto-posted for ${randomUser.name}`);
         } catch (autoPostError) {
@@ -71,11 +70,7 @@ export default function Home() {
   }, [users]); // users 配列が更新されたら再設定
 
   if (isLoading) {
-    return (
-      <div className="flex justify-center items-center h-screen">
-        Loading...
-      </div>
-    );
+    return <div className="flex justify-center items-center h-screen">Loading...</div>;
   }
 
   if (error) {
@@ -83,38 +78,28 @@ export default function Home() {
   }
 
   return (
-    <div className="container mx-auto p-4 max-w-2xl">
-      <h1 className="text-2xl font-bold mb-4">タイムライン</h1>
+    <div className="flex min-h-screen bg-brand-extra-light-gray">
+      {/* 左サイドバー */}
+      <Sidebar
+        users={users}
+        selectedUserId={selectedUserId}
+        onSelectUser={setSelectedUserId}
+      />
 
-      {/* ユーザー選択 */}
-      <div className="mb-4">
-        <label htmlFor="user-select" className="mr-2">
-          ユーザー:
-        </label>
-        <select
-          id="user-select"
-          value={selectedUserId ?? ''}
-          onChange={(e) => setSelectedUserId(Number(e.target.value))}
-          className="p-2 border rounded"
-          disabled={users.length === 0}
-        >
-          {users.length === 0 ? (
-            <option value="">ユーザーなし</option>
-          ) : (
-            users.map((user) => (
-              <option key={user.id} value={user.id}>
-                {user.name}
-              </option>
-            ))
-          )}
-        </select>
-      </div>
+      {/* メインコンテンツ */}
+      <main className="flex-1 border-x border-brand-light-gray md:mx-4 pt-0 md:pt-2">
+        <div className="p-3 border-b border-brand-light-gray sticky top-0 md:top-2 bg-brand-blue text-white z-10 mt-14 md:mt-0">
+          <h1 className="text-xl font-bold">ホーム</h1>
+        </div>
 
-      {/* 投稿フォーム */}
-      {selectedUserId && <PostForm userId={selectedUserId} />}
+        {selectedUserId && (
+          <div className="p-3 border-b border-brand-light-gray bg-brand-highlight">
+            <PostForm userId={selectedUserId} />
+          </div>
+        )}
 
-      {/* タイムライン */}
-      <Timeline initialPosts={initialPosts} />
+        <Timeline initialPosts={initialPosts} />
+      </main>
     </div>
   );
 }
