@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 
 const ICE_SERVERS = {
@@ -26,15 +26,21 @@ export default function ChatPage() {
   const peerId = searchParams.get('peerId');
 
   const peerConnection = useRef<RTCPeerConnection | null>(null);
-  const localStream = useRef<MediaStream | null>(null);
+  const originalLocalStream = useRef<MediaStream | null>(null);
+  const modifiedLocalStream = useRef<MediaStream | null>(null);
   const remoteStream = useRef<MediaStream | null>(null);
   const localVideoRef = useRef<HTMLVideoElement>(null);
+  const hiddenVideoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const signaling = useRef<EventSource | null>(null);
   const iceCandidateQueue = useRef<RTCIceCandidateInit[]>([]);
+  const animationFrameId = useRef<number | null>(null);
 
   const [status, setStatus] = useState('Initializing...');
   const [isConnected, setIsConnected] = useState(false);
+  const [isMosaicEnabled, setIsMosaicEnabled] = useState(false);
+  const [mosaicIntensity, setMosaicIntensity] = useState(10);
 
   const processIceCandidateQueue = async () => {
     if (!peerConnection.current) return;
@@ -51,6 +57,47 @@ export default function ChatPage() {
     }
   }
 
+  const drawMosaicFrame = useCallback(() => {
+    if (!hiddenVideoRef.current || !canvasRef.current || !originalLocalStream.current) {
+      animationFrameId.current = requestAnimationFrame(drawMosaicFrame);
+      return;
+    }
+
+    const video = hiddenVideoRef.current;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+
+    if (!ctx) {
+      animationFrameId.current = requestAnimationFrame(drawMosaicFrame);
+      return;
+    }
+
+    if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+    }
+
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    if (isMosaicEnabled && mosaicIntensity > 1 && canvas.width > 0 && canvas.height > 0) {
+      const blockSize = Math.max(2, Math.floor(mosaicIntensity));
+      const w = canvas.width;
+      const h = canvas.height;
+
+      ctx.imageSmoothingEnabled = false;
+
+      for (let y = 0; y < h; y += blockSize) {
+        for (let x = 0; x < w; x += blockSize) {
+          const pixelData = ctx.getImageData(x, y, 1, 1).data;
+          ctx.fillStyle = `rgb(${pixelData[0]}, ${pixelData[1]}, ${pixelData[2]})`;
+          ctx.fillRect(x, y, blockSize, blockSize);
+        }
+      }
+    }
+
+    animationFrameId.current = requestAnimationFrame(drawMosaicFrame);
+  }, [isMosaicEnabled, mosaicIntensity]);
+
   useEffect(() => {
     if (!userId || !peerId) {
       alert('User ID and Peer ID are required.');
@@ -61,27 +108,48 @@ export default function ChatPage() {
     const initializeMediaAndConnection = async () => {
       try {
         setStatus('Getting media devices...');
-        // 1. メディア取得
         const stream = await navigator.mediaDevices.getUserMedia({
           video: true,
           audio: true,
         });
-        localStream.current = stream;
-        if (localVideoRef.current) {
-          localVideoRef.current.srcObject = stream;
-        }
-        setStatus('Media acquired. Initializing connection...');
+        originalLocalStream.current = stream;
 
-        // 2. RTCPeerConnection 初期化
+        if (hiddenVideoRef.current) {
+          hiddenVideoRef.current.srcObject = stream;
+          hiddenVideoRef.current.play().catch(e => console.error("Error playing hidden video:", e));
+          await new Promise<void>((resolve) => {
+            if (hiddenVideoRef.current) {
+              hiddenVideoRef.current.onloadedmetadata = () => resolve();
+            } else { resolve(); }
+          });
+        } else {
+          throw new Error("Hidden video element not found");
+        }
+
+        setStatus('Media acquired. Initializing connection & Canvas...');
+
+        if (canvasRef.current) {
+          modifiedLocalStream.current = canvasRef.current.captureStream();
+          const audioTracks = originalLocalStream.current.getAudioTracks();
+          audioTracks.forEach(track => modifiedLocalStream.current?.addTrack(track));
+        } else {
+          throw new Error("Canvas element not found");
+        }
+
+        if (localVideoRef.current && modifiedLocalStream.current) {
+          localVideoRef.current.srcObject = modifiedLocalStream.current;
+        } else {
+          console.warn("Local video ref or modified stream not ready for display");
+        }
+
         peerConnection.current = new RTCPeerConnection(ICE_SERVERS);
         iceCandidateQueue.current = [];
 
-        // 3. トラック追加
-        stream.getTracks().forEach((track) => {
-          peerConnection.current?.addTrack(track, stream);
+        modifiedLocalStream.current?.getTracks().forEach((track) => {
+          peerConnection.current?.addTrack(track, modifiedLocalStream.current!);
+          console.log('Added track:', track.kind);
         });
 
-        // 4. イベントリスナー設定
         peerConnection.current.onicecandidate = (event) => {
           if (event.candidate) {
             sendSignalingMessage({ type: 'candidate', candidate: event.candidate.toJSON() });
@@ -97,11 +165,10 @@ export default function ChatPage() {
               remoteVideoRef.current.srcObject = event.streams[0];
             }
           } else {
-            // Safari などでは `event.streams` が空の場合がある
             let inboundStream = new MediaStream(event.track ? [event.track] : []);
             if (remoteVideoRef.current) {
-                remoteStream.current = inboundStream;
-                remoteVideoRef.current.srcObject = inboundStream;
+              remoteStream.current = inboundStream;
+              remoteVideoRef.current.srcObject = inboundStream;
             }
           }
         };
@@ -111,40 +178,35 @@ export default function ChatPage() {
           console.log('Connection state change:', state);
           setStatus(`Connection: ${state}`);
           if (state === 'connected') {
-              setIsConnected(true);
+            setIsConnected(true);
           } else {
-              setIsConnected(false);
+            setIsConnected(false);
           }
           if (state === 'failed' || state === 'disconnected' || state === 'closed') {
-              // 必要に応じて再接続処理などを追加
-              console.error('Connection failed or closed.');
+            console.error('Connection failed or closed.');
           }
         };
 
-        // 5. シグナリング接続開始
+        animationFrameId.current = requestAnimationFrame(drawMosaicFrame);
+
         setupSignaling();
 
-        // --- 6. Role Determination & Offer/Wait Logic --- (修正箇所)
         if (!userId || !peerId) {
-            console.error('User ID or Peer ID is missing!');
-            return; // 念のため
+          console.error('User ID or Peer ID is missing!');
+          return;
         }
-        const isPolite = userId < peerId; // アルファベット順で役割決定
-
+        const isPolite = userId < peerId;
         if (!isPolite) {
-          // IMPOLITE PEER (例: user2 vs user1) - Offer を送信
           console.log(`Acting as IMPOLITE peer (${userId}). Sending offer...`);
           setStatus('Creating offer...');
           const offer = await peerConnection.current.createOffer();
-          await peerConnection.current.setLocalDescription(offer); // State -> have-local-offer
+          await peerConnection.current.setLocalDescription(offer);
           setStatus('Sending offer...');
           sendSignalingMessage({ type: 'offer', sdp: offer });
         } else {
-          // POLITE PEER (例: user1 vs user2) - Offer を待機
           console.log(`Acting as POLITE peer (${userId}). Waiting for offer...`);
           setStatus('Waiting for peer to send offer...');
         }
-        // --- End Offer/Wait Logic ---
 
       } catch (error) {
         console.error('Error initializing WebRTC:', error);
@@ -154,102 +216,102 @@ export default function ChatPage() {
     };
 
     const setupSignaling = () => {
-        if (signaling.current) {
-            signaling.current.close();
-        }
-        setStatus('Connecting to signaling server...');
-        signaling.current = new EventSource(`/api/signaling?userId=${userId}`);
+      if (signaling.current) {
+        signaling.current.close();
+      }
+      setStatus('Connecting to signaling server...');
+      signaling.current = new EventSource(`/api/signaling?userId=${userId}`);
 
-        signaling.current.onopen = () => {
-          console.log('Signaling connected.');
-          setStatus('Signaling connected. Waiting for peer...');
-        };
+      signaling.current.onopen = () => {
+        console.log('Signaling connected.');
+        setStatus('Signaling connected. Waiting for peer...');
+      };
 
-        signaling.current.onerror = (event) => {
-          console.error('Signaling EventSource error occurred. Event:', event);
-          setStatus('Signaling connection error.');
-          // エラー時にも閉じる
-          signaling.current?.close();
-        };
+      signaling.current.onerror = (event) => {
+        console.error('Signaling EventSource error occurred. Event:', event);
+        setStatus('Signaling connection error.');
+        signaling.current?.close();
+      };
 
-        signaling.current.onmessage = async (event) => {
-          try {
-            const message: SignalingMessage = JSON.parse(event.data);
-            console.log('Received signaling message:', message);
+      signaling.current.onmessage = async (event) => {
+        try {
+          const message: SignalingMessage = JSON.parse(event.data);
+          console.log('Received signaling message:', message);
 
-            if (!peerConnection.current) {
-              console.warn('PeerConnection not initialized yet.');
-              return;
-            }
-
-            switch (message.type) {
-              case 'offer':
-                if (message.sdp) {
-                  setStatus('Received offer. Setting remote description...');
-                  await peerConnection.current.setRemoteDescription(new RTCSessionDescription(message.sdp));
-                  setStatus('Remote description set. Creating answer...');
-                  await processIceCandidateQueue();
-
-                  const answer = await peerConnection.current.createAnswer();
-                  await peerConnection.current.setLocalDescription(answer);
-                  setStatus('Sending answer...');
-                  sendSignalingMessage({ type: 'answer', sdp: answer });
-                }
-                break;
-              case 'answer':
-                if (message.sdp) {
-                  setStatus('Received answer. Setting remote description...');
-                  await peerConnection.current.setRemoteDescription(new RTCSessionDescription(message.sdp));
-                  setStatus('Remote description set.');
-                  await processIceCandidateQueue();
-                }
-                break;
-              case 'candidate':
-                if (message.candidate) {
-                  const candidate = new RTCIceCandidate(message.candidate);
-                  if (peerConnection.current.remoteDescription) {
-                    try {
-                      await peerConnection.current.addIceCandidate(candidate);
-                    } catch (e) {
-                      console.error('Error adding received ICE candidate', e);
-                    }
-                  } else {
-                    iceCandidateQueue.current.push(candidate);
-                    console.log('Queued ICE candidate');
-                  }
-                }
-                break;
-              case 'connected':
-                 // サーバー接続確認メッセージ（何もしない）
-                 break;
-              default:
-                console.warn('Unknown message type:', message.type);
-            }
-          } catch (error) {
-            console.error('Error processing signaling message:', error);
+          if (!peerConnection.current) {
+            console.warn('PeerConnection not initialized yet.');
+            return;
           }
-        };
+
+          switch (message.type) {
+            case 'offer':
+              if (message.sdp) {
+                setStatus('Received offer. Setting remote description...');
+                await peerConnection.current.setRemoteDescription(new RTCSessionDescription(message.sdp));
+                setStatus('Remote description set. Creating answer...');
+                await processIceCandidateQueue();
+
+                const answer = await peerConnection.current.createAnswer();
+                await peerConnection.current.setLocalDescription(answer);
+                setStatus('Sending answer...');
+                sendSignalingMessage({ type: 'answer', sdp: answer });
+              }
+              break;
+            case 'answer':
+              if (message.sdp) {
+                setStatus('Received answer. Setting remote description...');
+                await peerConnection.current.setRemoteDescription(new RTCSessionDescription(message.sdp));
+                setStatus('Remote description set.');
+                await processIceCandidateQueue();
+              }
+              break;
+            case 'candidate':
+              if (message.candidate) {
+                const candidate = new RTCIceCandidate(message.candidate);
+                if (peerConnection.current.remoteDescription) {
+                  try {
+                    await peerConnection.current.addIceCandidate(candidate);
+                  } catch (e) {
+                    console.error('Error adding received ICE candidate', e);
+                  }
+                } else {
+                  iceCandidateQueue.current.push(candidate);
+                  console.log('Queued ICE candidate');
+                }
+              }
+              break;
+            case 'connected':
+              break;
+            default:
+              console.warn('Unknown message type:', message.type);
+          }
+        } catch (error) {
+          console.error('Error processing signaling message:', error);
+        }
+      };
     };
 
     initializeMediaAndConnection();
 
-    // クリーンアップ関数
     return () => {
       console.log('Cleaning up WebRTC resources...');
-      // ストリーム停止
-      localStream.current?.getTracks().forEach(track => track.stop());
+      if (animationFrameId.current) {
+        cancelAnimationFrame(animationFrameId.current);
+        animationFrameId.current = null;
+      }
+
+      originalLocalStream.current?.getTracks().forEach(track => track.stop());
+      modifiedLocalStream.current?.getTracks().forEach(track => track.stop());
       remoteStream.current?.getTracks().forEach(track => track.stop());
 
-      // PeerConnection 閉じる
       peerConnection.current?.close();
       peerConnection.current = null;
 
-      // シグナリング接続閉じる
       signaling.current?.close();
       signaling.current = null;
 
-      // Ref クリア
-      localStream.current = null;
+      originalLocalStream.current = null;
+      modifiedLocalStream.current = null;
       remoteStream.current = null;
       iceCandidateQueue.current = [];
 
@@ -257,7 +319,7 @@ export default function ChatPage() {
       setIsConnected(false);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, peerId, router]); // router も依存配列に追加
+  }, [userId, peerId, router, drawMosaicFrame]);
 
   const sendSignalingMessage = async (message: Omit<SignalingMessage, 'senderId'>) => {
     if (!peerId) return;
@@ -271,9 +333,9 @@ export default function ChatPage() {
         body: JSON.stringify(messageWithSender),
       });
       if (!response.ok) {
-          const errorText = await response.text();
-          console.error('Failed to send signaling message:', response.status, errorText);
-          setStatus(`Error sending message: ${errorText || response.statusText}`);
+        const errorText = await response.text();
+        console.error('Failed to send signaling message:', response.status, errorText);
+        setStatus(`Error sending message: ${errorText || response.statusText}`);
       }
     } catch (error) {
       console.error('Error sending signaling message:', error);
@@ -283,7 +345,7 @@ export default function ChatPage() {
 
   const handleHangup = () => {
     console.log('Hanging up...');
-    router.push('/'); // トップページに戻る (これにより useEffect のクリーンアップが実行される)
+    router.push('/');
   };
 
   return (
@@ -293,9 +355,41 @@ export default function ChatPage() {
       <p className="mb-4 text-yellow-400">Status: {status}</p>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full max-w-4xl mb-6">
-        <div className="bg-gray-800 p-4 rounded-lg shadow-lg">
+        <div className="bg-gray-800 p-4 rounded-lg shadow-lg relative">
           <h2 className="text-xl font-semibold mb-2 text-center">You</h2>
           <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-auto rounded bg-black"></video>
+          <video ref={hiddenVideoRef} autoPlay playsInline muted className="absolute top-0 left-0 w-1 h-1 opacity-0 pointer-events-none"></video>
+          <canvas ref={canvasRef} className="absolute top-0 left-0 w-1 h-1 opacity-0 pointer-events-none"></canvas>
+          <div className="absolute bottom-2 left-2 right-2 bg-black bg-opacity-50 p-2 rounded">
+            <div className="flex items-center justify-between text-sm">
+              <label htmlFor="mosaicToggle" className="flex items-center cursor-pointer">
+                <input
+                  id="mosaicToggle"
+                  type="checkbox"
+                  checked={isMosaicEnabled}
+                  onChange={(e) => setIsMosaicEnabled(e.target.checked)}
+                  className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                />
+                Mosaic
+              </label>
+              {isMosaicEnabled && (
+                <div className="flex items-center">
+                  <label htmlFor="mosaicIntensity" className="mr-2">Intensity:</label>
+                  <input
+                    id="mosaicIntensity"
+                    type="range"
+                    min="2"
+                    max="32"
+                    step="1"
+                    value={mosaicIntensity}
+                    onChange={(e) => setMosaicIntensity(Number(e.target.value))}
+                    className="w-24 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                  />
+                  <span className="ml-2 w-4 text-right">{mosaicIntensity}</span>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
         <div className="bg-gray-800 p-4 rounded-lg shadow-lg">
           <h2 className="text-xl font-semibold mb-2 text-center">Peer</h2>
