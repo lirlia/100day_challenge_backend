@@ -17,6 +17,7 @@ interface GatewayResponse {
   headers: Record<string, string>;
   body: string;
   error?: string;
+  successCount?: number; // 成功回数を追加
 }
 
 // --- Request Tester コンポーネント --- //
@@ -27,78 +28,119 @@ function RequestTester({ routePrefixes, apiKeys }: { routePrefixes: string[]; ap
   const [apiKey, setApiKey] = useState<string>(apiKeys[0] || '');
   const [response, setResponse] = useState<GatewayResponse | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isBulkSending, setIsBulkSending] = useState<boolean>(false); // 連打中フラグ
 
   useEffect(() => {
-    // routePrefixes が変更されたら選択肢をリセット
-    if (routePrefixes.length > 0) {
+    if (routePrefixes.length > 0 && !routePrefixes.includes(selectedPrefix)) {
       setSelectedPrefix(routePrefixes[0]);
     }
-  }, [routePrefixes]);
+  }, [routePrefixes, selectedPrefix]);
 
   useEffect(() => {
-    // apiKeys が変更されたら選択肢をリセット
-    if (apiKeys.length > 0) {
+    if (apiKeys.length > 0 && !apiKeys.includes(apiKey)) {
       setApiKey(apiKeys[0]);
     }
-  }, [apiKeys]);
+  }, [apiKeys, apiKey]);
+
+  // リクエスト送信ロジックを共通化
+  const sendSingleRequest = useCallback(async (currentApiKey: string, currentPath: string): Promise<GatewayResponse> => {
+      try {
+        const startTime = performance.now();
+        const res = await fetch(currentPath, {
+            method: 'GET', // 簡単化のためGETのみ
+            headers: {
+            'Authorization': `Bearer ${currentApiKey}`,
+            },
+            cache: 'no-store', // キャッシュを無効化
+        });
+        const endTime = performance.now();
+
+        const headers: Record<string, string> = {};
+        res.headers.forEach((value, key) => {
+            headers[key] = value;
+        });
+
+        let bodyText = '';
+        const contentType = res.headers.get('content-type');
+         if (contentType && contentType.includes('application/json')) {
+            try {
+                const jsonBody = await res.json();
+                bodyText = JSON.stringify(jsonBody, null, 2);
+            } catch (e) {
+                bodyText = "Error parsing JSON response body";
+            }
+        } else if (contentType && contentType.startsWith('text/')) {
+            bodyText = await res.text();
+         } else if (res.status !== 204){ // No Content 以外
+             bodyText = "(Non-text or non-JSON response)";
+             // Blob を扱う場合など、必要に応じて拡張
+         }
+
+        console.log(`Request to ${currentPath} took ${endTime - startTime}ms, Status: ${res.status}`);
+
+        return {
+            status: res.status,
+            statusText: res.statusText,
+            headers,
+            body: bodyText,
+        };
+      } catch (error) {
+        console.error('Error sending request:', error);
+        return {
+            status: 0,
+            statusText: 'Fetch Error',
+            headers: {},
+            body: '',
+            error: error instanceof Error ? error.message : 'Unknown fetch error',
+        };
+      }
+  }, []);
 
 
   const handleSendRequest = async () => {
-    if (!selectedPrefix) return;
+    if (!selectedPrefix || !apiKey) return;
     setIsLoading(true);
     setResponse(null);
     const fullPath = selectedPrefix + pathSuffix;
-    try {
-      const startTime = performance.now();
-      const res = await fetch(fullPath, {
-        method: 'GET', // 簡単化のためGETのみ
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-        },
-      });
-      const endTime = performance.now();
 
-      const headers: Record<string, string> = {};
-      res.headers.forEach((value, key) => {
-        headers[key] = value;
-      });
+    const result = await sendSingleRequest(apiKey, fullPath);
+    setResponse(result);
 
-      let bodyText = '';
-      const contentType = res.headers.get('content-type');
-      if (contentType && contentType.includes('application/json')) {
-        try {
-            const jsonBody = await res.json();
-            bodyText = JSON.stringify(jsonBody, null, 2);
-        } catch (e) {
-            bodyText = "Error parsing JSON response body";
-        }
-      } else if (contentType && contentType.startsWith('text/')) {
-        bodyText = await res.text();
-      } else {
-          bodyText = "(Non-text or non-JSON response)";
-          // Blob を扱う場合など、必要に応じて拡張
+    setIsLoading(false);
+  };
+
+  const handleSendUntilLimited = async () => {
+      if (!selectedPrefix || !apiKey) return;
+      setIsLoading(true);
+      setIsBulkSending(true); // 連打開始
+      setResponse(null);
+      const fullPath = selectedPrefix + pathSuffix;
+
+      let count = 0;
+      let lastResponse: GatewayResponse | null = null;
+      const maxAttempts = 100; // 安全停止のための最大試行回数
+
+      while (count < maxAttempts) {
+          const result = await sendSingleRequest(apiKey, fullPath);
+          lastResponse = { ...result, successCount: count }; // 成功回数を記録
+          setResponse(lastResponse); // UIをリアルタイムに更新
+
+          if (result.status === 429 || result.status === 0) { // 429 または fetch エラーで停止
+              console.log(`Stopped after ${count} successful requests. Status: ${result.status}`);
+              break;
+          }
+
+          count++;
+          // サーバー負荷軽減のための短い待機
+          await new Promise(resolve => setTimeout(resolve, 50));
       }
 
-      setResponse({
-        status: res.status,
-        statusText: res.statusText,
-        headers,
-        body: bodyText,
-      });
-      console.log(`Request to ${fullPath} took ${endTime - startTime}ms`);
+      if (count === maxAttempts) {
+          console.warn(`Reached max attempts (${maxAttempts}) without hitting rate limit.`);
+      }
 
-    } catch (error) {
-      console.error('Error sending request:', error);
-      setResponse({
-        status: 0,
-        statusText: 'Fetch Error',
-        headers: {},
-        body: '',
-        error: error instanceof Error ? error.message : 'Unknown fetch error',
-      });
-    } finally {
       setIsLoading(false);
-    }
+      setIsBulkSending(false); // 連打終了
   };
 
   return (
@@ -112,7 +154,7 @@ function RequestTester({ routePrefixes, apiKeys }: { routePrefixes: string[]; ap
           value={selectedPrefix}
           onChange={(e) => setSelectedPrefix(e.target.value)}
           className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600"
-          disabled={routePrefixes.length === 0}
+          disabled={routePrefixes.length === 0 || isLoading}
         >
           {routePrefixes.map((prefix) => (
             <option key={prefix} value={prefix}>{prefix}</option>
@@ -129,6 +171,7 @@ function RequestTester({ routePrefixes, apiKeys }: { routePrefixes: string[]; ap
           onChange={(e) => setPathSuffix(e.target.value)}
           placeholder="/optional/path/params?query=val"
           className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600"
+          disabled={isLoading}
         />
       </div>
 
@@ -139,7 +182,7 @@ function RequestTester({ routePrefixes, apiKeys }: { routePrefixes: string[]; ap
           value={apiKey}
           onChange={(e) => setApiKey(e.target.value)}
           className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600"
-          disabled={apiKeys.length === 0}
+          disabled={apiKeys.length === 0 || isLoading}
         >
           {apiKeys.map((key) => (
             <option key={key} value={key}>{key}</option>
@@ -147,18 +190,30 @@ function RequestTester({ routePrefixes, apiKeys }: { routePrefixes: string[]; ap
         </select>
       </div>
 
-      <button
-        onClick={handleSendRequest}
-        disabled={isLoading || !selectedPrefix || !apiKey}
-        className="w-full bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50"
-      >
-        {isLoading ? 'Sending...' : 'Send GET Request'}
-      </button>
+      <div className="flex gap-2">
+          <button
+            onClick={handleSendRequest}
+            disabled={isLoading || !selectedPrefix || !apiKey}
+            className="flex-1 bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50"
+          >
+            {isLoading && !isBulkSending ? 'Sending...' : 'Send GET Request'}
+          </button>
+          <button
+            onClick={handleSendUntilLimited}
+            disabled={isLoading || !selectedPrefix || !apiKey}
+            className="flex-1 bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded disabled:opacity-50"
+          >
+            {isLoading && isBulkSending ? 'Sending...' : 'Send Until Limited'}
+          </button>
+      </div>
 
       {response && (
         <div className="mt-4 border-t pt-4">
           <h3 className="font-semibold">Response:</h3>
-          <div className={`p-2 rounded ${response.status >= 400 ? 'bg-red-100 dark:bg-red-900' : 'bg-green-100 dark:bg-green-900'}`}>
+          {response.successCount !== undefined && (
+            <p className="text-sm mb-1">Successful requests before stop: {response.successCount}</p>
+          )}
+          <div className={`p-2 rounded ${response.status >= 400 || response.status === 0 ? 'bg-red-100 dark:bg-red-900' : 'bg-green-100 dark:bg-green-900'}`}>
             <p><strong>Status:</strong> {response.status} {response.statusText}</p>
             {response.error && <p className="text-red-600 dark:text-red-400"><strong>Error:</strong> {response.error}</p>}
           </div>
@@ -199,7 +254,7 @@ function AdminPanel() {
     setIsLoadingLogs(true);
     setError('');
     try {
-      const res = await fetch('/api/admin/logs');
+      const res = await fetch('/api/admin/logs', { cache: 'no-store' });
       if (!res.ok) throw new Error(`Failed to fetch logs: ${res.statusText}`);
       const data = await res.json();
       setLogs(data);
@@ -215,14 +270,18 @@ function AdminPanel() {
     setIsLoadingKeys(true);
     setError('');
     try {
-      const res = await fetch('/api/admin/rate-limit');
+      const res = await fetch('/api/admin/rate-limit', { cache: 'no-store' });
       if (!res.ok) throw new Error(`Failed to fetch API key info: ${res.statusText}`);
       const data: ApiKeyInfo[] = await res.json();
       setApiKeysInfo(data);
-      if (data.length > 0 && !selectedApiKey) {
-        setSelectedApiKey(data[0].apiKey); // 初期選択
-        setNewInterval(data[0].rateLimit?.interval.toString() || '');
-        setNewLimit(data[0].rateLimit?.limit.toString() || '');
+      if (data.length > 0) {
+          // 選択中のキーがリストから消えた場合、先頭を選択し直す
+          if (!data.some(k => k.apiKey === selectedApiKey)) {
+              const firstKey = data[0].apiKey;
+              setSelectedApiKey(firstKey);
+              setNewInterval(data[0].rateLimit?.interval.toString() || '');
+              setNewLimit(data[0].rateLimit?.limit.toString() || '');
+          }
       }
     } catch (err) {
       console.error('Error fetching API keys info:', err);
@@ -230,7 +289,7 @@ function AdminPanel() {
     } finally {
       setIsLoadingKeys(false);
     }
-  }, [selectedApiKey]); // selectedApiKey 変更時にも呼び出す可能性があるため依存配列に含める
+  }, [selectedApiKey]);
 
   useEffect(() => {
     fetchLogs();
@@ -259,17 +318,21 @@ function AdminPanel() {
     setError('');
 
     let rateLimitPayload: { interval: number; limit: number } | null = null;
-    const intervalNum = parseInt(newInterval, 10);
-    const limitNum = parseInt(newLimit, 10);
+    const intervalStr = newInterval.trim();
+    const limitStr = newLimit.trim();
 
-    if (!isNaN(intervalNum) && !isNaN(limitNum) && intervalNum > 0 && limitNum >= 0) {
-        rateLimitPayload = { interval: intervalNum, limit: limitNum };
-    } else if (newInterval === '' && newLimit === '') {
+    if (intervalStr === '' && limitStr === '') {
         rateLimitPayload = null; // 空欄の場合は無制限に
     } else {
-        setError('Invalid Interval or Limit value. Both must be positive numbers, or both empty for unlimited.');
-        setIsUpdating(false);
-        return;
+        const intervalNum = parseInt(intervalStr, 10);
+        const limitNum = parseInt(limitStr, 10);
+        if (!isNaN(intervalNum) && !isNaN(limitNum) && intervalNum > 0 && limitNum >= 0) {
+            rateLimitPayload = { interval: intervalNum, limit: limitNum };
+        } else {
+            setError('Invalid Interval or Limit value. Both must be positive numbers, or both empty for unlimited.');
+            setIsUpdating(false);
+            return;
+        }
     }
 
     try {
@@ -282,7 +345,7 @@ function AdminPanel() {
         const errorData = await res.json();
         throw new Error(errorData.error || `Failed to update rate limit: ${res.statusText}`);
       }
-      // 更新成功したら再取得
+      // 更新成功したら再取得してUIに反映
       await fetchApiKeysInfo();
       alert('Rate limit updated successfully!');
     } catch (err) {
@@ -304,6 +367,8 @@ function AdminPanel() {
          <h3 className="font-semibold mb-2">Rate Limit Settings</h3>
          {isLoadingKeys ? (
              <p>Loading API Key settings...</p>
+         ) : apiKeysInfo.length === 0 ? (
+              <p>No API Keys configured.</p>
          ) : (
             <form onSubmit={handleUpdateRateLimit} className="space-y-3">
                 <div>
@@ -313,7 +378,7 @@ function AdminPanel() {
                         value={selectedApiKey}
                         onChange={(e) => handleApiKeySelectionChange(e.target.value)}
                         className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600"
-                        disabled={apiKeysInfo.length === 0}
+                        disabled={isUpdating}
                     >
                         {apiKeysInfo.map((info) => (
                         <option key={info.apiKey} value={info.apiKey}>
@@ -334,6 +399,7 @@ function AdminPanel() {
                             placeholder="e.g., 60000 (for 1 min)"
                             className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600"
                             min="1"
+                            disabled={isUpdating}
                         />
                     </div>
                     <div className="flex-1">
@@ -346,6 +412,7 @@ function AdminPanel() {
                             placeholder="e.g., 10"
                             className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600"
                             min="0"
+                            disabled={isUpdating}
                         />
                     </div>
                  </div>
@@ -394,8 +461,8 @@ function AdminPanel() {
               </thead>
               <tbody className="divide-y dark:divide-gray-600">
                 {logs.map((log, index) => (
-                  <tr key={index} className={`${index % 2 === 0 ? 'bg-white dark:bg-gray-800' : 'bg-gray-50 dark:bg-gray-750'} hover:bg-gray-100 dark:hover:bg-gray-600`}>
-                    <td className="px-2 py-1 whitespace-nowrap">{new Date(log.timestamp).toLocaleTimeString()}</td>
+                  <tr key={`${log.timestamp}-${index}`} className={`${index % 2 === 0 ? 'bg-white dark:bg-gray-800' : 'bg-gray-50 dark:bg-gray-750'} hover:bg-gray-100 dark:hover:bg-gray-600`}>
+                    <td className="px-2 py-1 whitespace-nowrap">{new Date(log.timestamp).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute:'2-digit', second:'2-digit', fractionalSecondDigits: 3 })}</td>
                     <td className="px-2 py-1 truncate max-w-xs" title={log.apiKey || 'N/A'}>{log.apiKey || '-'}</td>
                     <td className="px-2 py-1">{log.method}</td>
                     <td className="px-2 py-1 truncate max-w-xs" title={log.path}>{log.path}</td>
@@ -423,50 +490,12 @@ export default function ApiGatewayUI() {
     const [loadingConfig, setLoadingConfig] = useState<boolean>(true);
     const [configError, setConfigError] = useState<string>('');
 
-    // 設定ファイルからデータを取得するヘルパー関数（今回は使わないが参考）
-    /*
-    const fetchConfig = useCallback(async () => {
-        setConfigError('');
-        setLoadingConfig(true);
-        try {
-            // 本来は専用のAPIエンドポイント (/api/admin/config など) を用意すべき
-            const routesRes = await fetch('/config/routes.json'); // これは通常動作しない
-            const keysRes = await fetch('/config/apiKeys.json'); // これも通常動作しない
-
-            if (!routesRes.ok || !keysRes.ok) {
-                throw new Error('Failed to fetch configuration');
-            }
-            const routesData: RouteConfig[] = await routesRes.json();
-            const keysData: Record<string, any> = await keysRes.json();
-
-            setRoutePrefixes(routesData.map(r => r.pathPrefix));
-            setApiKeys(Object.keys(keysData));
-        } catch (err) {
-            console.error('Error fetching config:', err);
-            setConfigError(err instanceof Error ? err.message : 'Failed to load configuration');
-            // 代替としてAdmin APIから取得する
-            try {
-                const keysInfoRes = await fetch('/api/admin/rate-limit');
-                if (!keysInfoRes.ok) throw new Error('Failed to fetch API keys via admin API');
-                const keysInfoData: ApiKeyInfo[] = await keysInfoRes.json();
-                setApiKeys(keysInfoData.map(k => k.apiKey));
-                // Routes はこの方法では取得できない。サーバーコンポーネントから渡すのが良い
-            } catch (adminErr) {
-                console.error('Error fetching keys via admin API:', adminErr);
-                 setConfigError('Failed to load configuration from server.');
-            }
-        } finally {
-            setLoadingConfig(false);
-        }
-    }, []);
-    */
-
    // Admin APIからAPIキー情報を取得する関数
    const fetchKeysFromAdminApi = useCallback(async () => {
        setConfigError('');
        setLoadingConfig(true);
        try {
-           const keysInfoRes = await fetch('/api/admin/rate-limit');
+           const keysInfoRes = await fetch('/api/admin/rate-limit', { cache: 'no-store' });
            if (!keysInfoRes.ok) throw new Error('Failed to fetch API keys via admin API');
            const keysInfoData: ApiKeyInfo[] = await keysInfoRes.json();
            setApiKeys(keysInfoData.map(k => k.apiKey));
