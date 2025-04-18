@@ -1,0 +1,17 @@
+[
+  {
+    "pathPrefix": "/api/gateway/time",
+    "targetUrl": "http://localhost:3001/api/time",
+    "stripPrefix": true
+  },
+  {
+    "pathPrefix": "/api/gateway/random",
+    "targetUrl": "http://localhost:3001/api/random",
+    "stripPrefix": true
+  },
+  {
+    "pathPrefix": "/api/gateway/external/picsum",
+    "targetUrl": "https://picsum.photos",
+    "stripPrefix": true
+  }
+]

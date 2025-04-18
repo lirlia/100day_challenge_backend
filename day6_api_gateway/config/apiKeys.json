@@ -1,0 +1,17 @@
+{
+  "test-key-1min": {
+    "rateLimit": {
+      "interval": 60000,
+      "limit": 10
+    }
+  },
+  "test-key-10sec": {
+    "rateLimit": {
+      "interval": 10000,
+      "limit": 5
+    }
+  },
+  "unlimited-key": {
+    "rateLimit": null
+  }
+}
