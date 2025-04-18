@@ -22,7 +22,11 @@ interface GatewayResponse {
 
 // --- Request Tester コンポーネント --- //
 
-function RequestTester({ routePrefixes, apiKeys }: { routePrefixes: string[]; apiKeys: string[] }) {
+function RequestTester({ routePrefixes, apiKeys, fetchLogs }: {
+    routePrefixes: string[];
+    apiKeys: string[];
+    fetchLogs: () => Promise<void>;
+}) {
   const [selectedPrefix, setSelectedPrefix] = useState<string>(routePrefixes[0] || '');
   const [pathSuffix, setPathSuffix] = useState<string>('');
   const [apiKey, setApiKey] = useState<string>(apiKeys[0] || '');
@@ -105,6 +109,8 @@ function RequestTester({ routePrefixes, apiKeys }: { routePrefixes: string[]; ap
 
     const result = await sendSingleRequest(apiKey, fullPath);
     setResponse(result);
+    // リクエスト後にログを更新
+    await fetchLogs();
 
     setIsLoading(false);
   };
@@ -125,19 +131,24 @@ function RequestTester({ routePrefixes, apiKeys }: { routePrefixes: string[]; ap
           lastResponse = { ...result, successCount: count }; // 成功回数を記録
           setResponse(lastResponse); // UIをリアルタイムに更新
 
+          // 各リクエスト後にログを更新 (頻繁すぎる可能性もあるが今回は実装)
+          await fetchLogs();
+
           if (result.status === 429 || result.status === 0) { // 429 または fetch エラーで停止
               console.log(`Stopped after ${count} successful requests. Status: ${result.status}`);
               break;
           }
 
           count++;
-          // サーバー負荷軽減のための短い待機
           await new Promise(resolve => setTimeout(resolve, 50));
       }
 
       if (count === maxAttempts) {
           console.warn(`Reached max attempts (${maxAttempts}) without hitting rate limit.`);
       }
+
+      // ループ終了後にもう一度ログを更新
+      await fetchLogs();
 
       setIsLoading(false);
       setIsBulkSending(false); // 連打終了
@@ -237,12 +248,15 @@ function RequestTester({ routePrefixes, apiKeys }: { routePrefixes: string[]; ap
 
 // --- Admin Panel コンポーネント --- //
 
-function AdminPanel() {
-  const [logs, setLogs] = useState<LogEntry[]>([]);
+function AdminPanel({ logs, isLoadingLogs, logError, fetchLogs }: {
+    logs: LogEntry[];
+    isLoadingLogs: boolean;
+    logError: string;
+    fetchLogs: () => Promise<void>;
+}) {
   const [apiKeysInfo, setApiKeysInfo] = useState<ApiKeyInfo[]>([]);
-  const [isLoadingLogs, setIsLoadingLogs] = useState<boolean>(false);
   const [isLoadingKeys, setIsLoadingKeys] = useState<boolean>(false);
-  const [error, setError] = useState<string>('');
+  const [apiKeyError, setApiKeyError] = useState<string>(''); // エラー名を変更
 
   // Rate Limit 更新用 State
   const [selectedApiKey, setSelectedApiKey] = useState<string>('');
@@ -250,32 +264,15 @@ function AdminPanel() {
   const [newLimit, setNewLimit] = useState<string>('');
   const [isUpdating, setIsUpdating] = useState<boolean>(false);
 
-  const fetchLogs = useCallback(async () => {
-    setIsLoadingLogs(true);
-    setError('');
-    try {
-      const res = await fetch('/api/admin/logs', { cache: 'no-store' });
-      if (!res.ok) throw new Error(`Failed to fetch logs: ${res.statusText}`);
-      const data = await res.json();
-      setLogs(data);
-    } catch (err) {
-      console.error('Error fetching logs:', err);
-      setError(err instanceof Error ? err.message : 'Failed to fetch logs');
-    } finally {
-      setIsLoadingLogs(false);
-    }
-  }, []);
-
   const fetchApiKeysInfo = useCallback(async () => {
     setIsLoadingKeys(true);
-    setError('');
+    setApiKeyError('');
     try {
       const res = await fetch('/api/admin/rate-limit', { cache: 'no-store' });
       if (!res.ok) throw new Error(`Failed to fetch API key info: ${res.statusText}`);
       const data: ApiKeyInfo[] = await res.json();
       setApiKeysInfo(data);
       if (data.length > 0) {
-          // 選択中のキーがリストから消えた場合、先頭を選択し直す
           if (!data.some(k => k.apiKey === selectedApiKey)) {
               const firstKey = data[0].apiKey;
               setSelectedApiKey(firstKey);
@@ -285,19 +282,15 @@ function AdminPanel() {
       }
     } catch (err) {
       console.error('Error fetching API keys info:', err);
-      setError(err instanceof Error ? err.message : 'Failed to fetch API key info');
+      setApiKeyError(err instanceof Error ? err.message : 'Failed to fetch API key info');
     } finally {
       setIsLoadingKeys(false);
     }
   }, [selectedApiKey]);
 
   useEffect(() => {
-    fetchLogs();
     fetchApiKeysInfo();
-    // ポーリングする場合
-    // const logIntervalId = setInterval(fetchLogs, 5000); // 5秒ごと
-    // return () => clearInterval(logIntervalId);
-  }, [fetchLogs, fetchApiKeysInfo]);
+  }, [fetchApiKeysInfo]);
 
   const handleApiKeySelectionChange = (apiKey: string) => {
       setSelectedApiKey(apiKey);
@@ -315,21 +308,21 @@ function AdminPanel() {
     e.preventDefault();
     if (!selectedApiKey) return;
     setIsUpdating(true);
-    setError('');
+    setApiKeyError('');
 
     let rateLimitPayload: { interval: number; limit: number } | null = null;
     const intervalStr = newInterval.trim();
     const limitStr = newLimit.trim();
 
     if (intervalStr === '' && limitStr === '') {
-        rateLimitPayload = null; // 空欄の場合は無制限に
+        rateLimitPayload = null;
     } else {
         const intervalNum = parseInt(intervalStr, 10);
         const limitNum = parseInt(limitStr, 10);
         if (!isNaN(intervalNum) && !isNaN(limitNum) && intervalNum > 0 && limitNum >= 0) {
             rateLimitPayload = { interval: intervalNum, limit: limitNum };
         } else {
-            setError('Invalid Interval or Limit value. Both must be positive numbers, or both empty for unlimited.');
+            setApiKeyError('Invalid Interval or Limit value. Both must be positive numbers, or both empty for unlimited.');
             setIsUpdating(false);
             return;
         }
@@ -345,12 +338,11 @@ function AdminPanel() {
         const errorData = await res.json();
         throw new Error(errorData.error || `Failed to update rate limit: ${res.statusText}`);
       }
-      // 更新成功したら再取得してUIに反映
       await fetchApiKeysInfo();
       alert('Rate limit updated successfully!');
     } catch (err) {
       console.error('Error updating rate limit:', err);
-      setError(err instanceof Error ? err.message : 'Failed to update rate limit');
+      setApiKeyError(err instanceof Error ? err.message : 'Failed to update rate limit');
     } finally {
       setIsUpdating(false);
     }
@@ -360,9 +352,8 @@ function AdminPanel() {
     <div className="border rounded-lg p-4 space-y-4">
       <h2 className="text-xl font-semibold mb-2">Admin Panel</h2>
 
-      {error && <p className="text-red-500 mb-4">Error: {error}</p>}
+      {(logError || apiKeyError) && <p className="text-red-500 mb-4">Error: {logError || apiKeyError}</p>}
 
-      {/* --- Rate Limit Management --- */}
       <div className="border-b pb-4 mb-4">
          <h3 className="font-semibold mb-2">Rate Limit Settings</h3>
          {isLoadingKeys ? (
@@ -428,7 +419,6 @@ function AdminPanel() {
          )}
       </div>
 
-      {/* --- Log Viewer --- */}
       <div>
         <div className="flex justify-between items-center mb-2">
             <h3 className="font-semibold">Gateway Logs</h3>
@@ -445,7 +435,7 @@ function AdminPanel() {
         ) : logs.length === 0 ? (
           <p>No logs yet.</p>
         ) : (
-          <div className="max-h-96 overflow-y-auto border rounded p-2 bg-gray-50 dark:bg-gray-800">
+          <div className="max-h-[48rem] overflow-y-auto border rounded p-2 bg-gray-50 dark:bg-gray-800">
             <table className="min-w-full text-xs divide-y dark:divide-gray-700">
               <thead className="bg-gray-100 dark:bg-gray-700 sticky top-0">
                 <tr>
@@ -484,11 +474,36 @@ function AdminPanel() {
 // --- Main UI コンポーネント --- //
 
 export default function ApiGatewayUI() {
-   // API Routes と API Keys を Admin API から取得する
+    // ログ関連の state をここで管理
+    const [logs, setLogs] = useState<LogEntry[]>([]);
+    const [isLoadingLogs, setIsLoadingLogs] = useState<boolean>(false);
+    const [logError, setLogError] = useState<string>('');
+
+    // APIキーとルート設定関連の state
     const [routePrefixes, setRoutePrefixes] = useState<string[]>([]);
     const [apiKeys, setApiKeys] = useState<string[]>([]);
     const [loadingConfig, setLoadingConfig] = useState<boolean>(true);
     const [configError, setConfigError] = useState<string>('');
+
+   // ログ取得関数
+   const fetchLogs = useCallback(async () => {
+    setIsLoadingLogs(true);
+    setLogError('');
+    // 取得前にログをクリア
+    // setLogs([]); // ← 即時クリアするとチラつく可能性があるので、取得後に入れる方が良いかも
+    try {
+      const res = await fetch('/api/admin/logs', { cache: 'no-store' });
+      if (!res.ok) throw new Error(`Failed to fetch logs: ${res.statusText}`);
+      const data = await res.json();
+      setLogs(data); // 取得成功時に上書き
+    } catch (err) {
+      console.error('Error fetching logs:', err);
+      setLogError(err instanceof Error ? err.message : 'Failed to fetch logs');
+      setLogs([]); // エラー時はクリア
+    } finally {
+      setIsLoadingLogs(false);
+    }
+  }, []);
 
    // Admin APIからAPIキー情報を取得する関数
    const fetchKeysFromAdminApi = useCallback(async () => {
@@ -516,7 +531,8 @@ export default function ApiGatewayUI() {
 
     useEffect(() => {
         fetchKeysFromAdminApi();
-    }, [fetchKeysFromAdminApi]);
+        fetchLogs(); // 初期ロード時にもログを取得
+    }, [fetchKeysFromAdminApi, fetchLogs]);
 
   return (
     <div className="w-full max-w-7xl grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -524,8 +540,8 @@ export default function ApiGatewayUI() {
       {configError && <p className="text-red-500 col-span-full">Error loading configuration: {configError}</p>}
       {!loadingConfig && !configError && (
           <>
-            <RequestTester routePrefixes={routePrefixes} apiKeys={apiKeys} />
-            <AdminPanel />
+            <RequestTester routePrefixes={routePrefixes} apiKeys={apiKeys} fetchLogs={fetchLogs} />
+            <AdminPanel logs={logs} isLoadingLogs={isLoadingLogs} logError={logError} fetchLogs={fetchLogs} />
           </>
       )}
     </div>
