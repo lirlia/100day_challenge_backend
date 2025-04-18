@@ -127,3 +127,8 @@ export function addLog(entry: Omit<LogEntry, 'timestamp'>): void {
 export function getLogs(): LogEntry[] {
   return [...logs]; // イミュータブルなコピーを返す
 }
+
+export function clearLogs(): void {
+  logs.length = 0; // 配列を空にする
+  console.log('[Store] Cleared in-memory logs.');
+}

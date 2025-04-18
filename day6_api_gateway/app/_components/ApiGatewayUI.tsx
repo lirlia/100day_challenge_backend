@@ -257,6 +257,7 @@ function AdminPanel({ logs, isLoadingLogs, logError, fetchLogs }: {
   const [apiKeysInfo, setApiKeysInfo] = useState<ApiKeyInfo[]>([]);
   const [isLoadingKeys, setIsLoadingKeys] = useState<boolean>(false);
   const [apiKeyError, setApiKeyError] = useState<string>(''); // エラー名を変更
+  const [isClearingLogs, setIsClearingLogs] = useState<boolean>(false); // クリア中フラグ追加
 
   // Rate Limit 更新用 State
   const [selectedApiKey, setSelectedApiKey] = useState<string>('');
@@ -348,6 +349,35 @@ function AdminPanel({ logs, isLoadingLogs, logError, fetchLogs }: {
     }
   };
 
+  // ログクリア処理
+  const handleClearLogs = async () => {
+      if (!confirm('Are you sure you want to clear all gateway logs?')) {
+          return;
+      }
+      setIsClearingLogs(true);
+      // エラーメッセージは fetchLogs と共通化しても良い
+      // setLogError('');
+      try {
+          const res = await fetch('/api/admin/logs', {
+              method: 'DELETE',
+          });
+          if (!res.ok) {
+              const errorData = await res.json();
+              throw new Error(errorData.error || `Failed to clear logs: ${res.statusText}`);
+          }
+          console.log('Logs cleared successfully via API.');
+          // 削除成功後、空になったログリストを再取得してUIに反映
+          await fetchLogs();
+      } catch (err) {
+          console.error('Error clearing logs:', err);
+          // setLogError(err instanceof Error ? err.message : 'Failed to clear logs');
+          // エラー表示は fetchLogs 側で行うか、ここで別途 setError を呼ぶ
+          alert(`Error clearing logs: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      } finally {
+          setIsClearingLogs(false);
+      }
+  };
+
   return (
     <div className="border rounded-lg p-4 space-y-4">
       <h2 className="text-xl font-semibold mb-2">Admin Panel</h2>
@@ -423,11 +453,11 @@ function AdminPanel({ logs, isLoadingLogs, logError, fetchLogs }: {
         <div className="flex justify-between items-center mb-2">
             <h3 className="font-semibold">Gateway Logs</h3>
             <button
-                onClick={fetchLogs}
-                disabled={isLoadingLogs}
-                className="text-sm bg-gray-200 dark:bg-gray-700 px-3 py-1 rounded hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50"
+                onClick={handleClearLogs}
+                disabled={isLoadingLogs || isClearingLogs}
+                className="text-sm bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded disabled:opacity-50"
             >
-                {isLoadingLogs ? 'Refreshing...' : 'Refresh Logs'}
+                {isClearingLogs ? 'Clearing...' : 'Clear Logs'}
             </button>
         </div>
         {isLoadingLogs && logs.length === 0 ? (
@@ -435,7 +465,7 @@ function AdminPanel({ logs, isLoadingLogs, logError, fetchLogs }: {
         ) : logs.length === 0 ? (
           <p>No logs yet.</p>
         ) : (
-          <div className="max-h-[48rem] overflow-y-auto border rounded p-2 bg-gray-50 dark:bg-gray-800">
+          <div className="h-[48rem] overflow-y-auto border rounded p-2 bg-gray-50 dark:bg-gray-800">
             <table className="min-w-full text-xs divide-y dark:divide-gray-700">
               <thead className="bg-gray-100 dark:bg-gray-700 sticky top-0">
                 <tr>
