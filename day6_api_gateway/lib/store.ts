@@ -7,7 +7,7 @@ type RateLimitConfig = {
   limit: number;
 };
 
-interface ApiKeyInfo {
+export interface ApiKeyInfo {
   apiKey: string;
   rateLimit: RateLimitConfig | null;
 }
