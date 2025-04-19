@@ -85,7 +85,7 @@ export default function LoginPage() {
         // ★ 本来はここでサーバーセッションを確立するか、トークンを受け取る
         alert(`Login successful for ${email}!`);
         // 仮ユーザー情報をローカルストレージに保存
-        localStorage.setItem('loggedInUser', JSON.stringify(verificationResult.user));
+        localStorage.setItem('tempUser', JSON.stringify(verificationResult.user));
         router.push('/'); // ルートページへ
       } else {
         throw new Error('Login verification failed.');

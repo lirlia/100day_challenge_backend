@@ -2,11 +2,13 @@
 
 import { useState } from 'react';
 import { startRegistration } from '@simplewebauthn/browser';
+import { useRouter } from 'next/navigation';
 
 export default function RegisterPage() {
   const [email, setEmail] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const router = useRouter();
 
   const handleRegister = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -62,9 +64,9 @@ export default function RegisterPage() {
       console.log('Verification result:', verificationResult);
 
       if (verificationResult.verified) {
-        // 登録成功！ ログインページやダッシュボードにリダイレクトなど
+        // 登録成功！ ログインページにリダイレクト
         alert(`Registration successful for ${email}! You can now login.`);
-        // 例: router.push('/login');
+        router.push('/login');
       } else {
         throw new Error('Registration verification failed.');
       }
