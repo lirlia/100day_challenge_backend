@@ -15,28 +15,25 @@ import type {
 
 // 仮のユーザー情報型（LocalStorageに保存する形式）
 interface TempUser {
-  id: number;
+  id: string; // PrismaではIDがstring型 (cuid)
   email: string;
 }
 
 // パスキー情報型
 interface Passkey {
-  id: string; // credentialID (Base64URL)
-  // webauthnCredentialID is Buffer in DB, but string here for simplicity
-  // webauthnCredentialPublicKey: Buffer; // Not typically needed on frontend
+  id: string;
+  credentialId: string; // Base64URL encoded string
+  deviceName?: string | null;
+  transports: string; // JSON形式の文字列
   counter: number;
-  // transports: string[]; // Example: ['internal', 'usb']
-  // isBackupEligible: boolean;
-  // isBackedUp: boolean;
   createdAt: string;
-  lastUsedAt: string | null;
-  nickname?: string | null; // User-defined nickname
+  lastUsedAt: string;
 }
 
 // 承認リクエスト型
 interface ApprovalRequest {
   id: string;
-  userId: number;
+  userId: string;
   requestingDeviceId: string; // Identifier for the device requesting approval
   status: 'pending' | 'approved' | 'rejected' | 'expired';
   expiresAt: string;
@@ -54,19 +51,19 @@ export default function HomePage() {
 
   // --- Login Check ---
   useEffect(() => {
-    const storedUser = localStorage.getItem('temp_user');
+    const storedUser = localStorage.getItem('tempUser');
     if (storedUser) {
       try {
         const parsedUser = JSON.parse(storedUser);
         // Basic validation
-        if (parsedUser && typeof parsedUser.id === 'number' && typeof parsedUser.email === 'string') {
+        if (parsedUser && typeof parsedUser.id === 'string' && typeof parsedUser.email === 'string') {
           setUser(parsedUser);
         } else {
-          throw new Error("Invalid user data format");
+          throw new Error("正しくないユーザーデータ形式です");
         }
       } catch (e) {
          console.error("Failed to parse user from localStorage:", e);
-         localStorage.removeItem('temp_user'); // Clear invalid data
+         localStorage.removeItem('tempUser'); // Clear invalid data
          router.push('/login');
       }
     } else {
@@ -90,19 +87,18 @@ export default function HomePage() {
     }
   }, [user]); // Re-fetch if user changes (though unlikely in this flow)
 
-
   const fetchApprovalRequests = async () => {
     if (!user) return;
     try {
-      const res = await fetch(`/api/auth/approval/requests?userId=${user.id}`); // Pass userId if needed by API
+      const res = await fetch(`/api/auth/approval/requests?userId=${user.id}`);
       if (!res.ok) {
-        throw new Error(`Failed to fetch approval requests: ${res.statusText}`);
+        throw new Error(`承認リクエストの取得に失敗しました: ${res.statusText}`);
       }
-      const data: ApprovalRequest[] = await res.json();
+      const data = await res.json();
       // Filter for only pending requests, sort by creation date
       setApprovalRequests(
-          data.filter(req => req.status === 'pending')
-              .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+          data.requests.filter((req: ApprovalRequest) => req.status === 'pending')
+              .sort((a: ApprovalRequest, b: ApprovalRequest) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
       );
     } catch (err: any) {
       console.error('Error fetching approval requests:', err);
@@ -114,15 +110,16 @@ export default function HomePage() {
   const fetchPasskeys = async () => {
     if (!user) return;
     try {
-      const res = await fetch(`/api/passkeys?userId=${user.id}`); // Pass userId
+      const res = await fetch(`/api/passkeys?userId=${user.id}`);
       if (!res.ok) {
-        throw new Error(`Failed to fetch passkeys: ${res.statusText}`);
+        throw new Error(`パスキーの取得に失敗しました: ${res.statusText}`);
       }
-      const data: Passkey[] = await res.json();
-       setPasskeys(data.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+      const data = await res.json();
+      setPasskeys(data.passkeys.sort((a: Passkey, b: Passkey) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
     } catch (err: any) {
       console.error('Error fetching passkeys:', err);
-       setError((prev) => (prev ? `${prev}
+      setError((prev) => (prev ? `${prev}
 ` : '') + `パスキーの取得に失敗しました: ${err.message || '不明なエラー'}`);
     }
   };
@@ -135,15 +132,15 @@ export default function HomePage() {
     setError(null);
     try {
       // 1. Start Approval (get authentication options)
-      const startRes = await fetch(`/api/auth/approve/start`, {
+      const startRes = await fetch(`/api/auth/approval/approve/start`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, requestId }), // Send user ID and request ID
+        body: JSON.stringify({ requestId }), // Request ID
       });
 
       if (!startRes.ok) {
         const errorData = await startRes.json();
-        throw new Error(errorData.error || 'Approval start failed');
+        throw new Error(errorData.error || '承認開始に失敗しました');
       }
 
       const options: PublicKeyCredentialRequestOptionsJSON = await startRes.json();
@@ -155,24 +152,27 @@ export default function HomePage() {
       } catch (err: any) {
         console.error('Authentication cancelled or failed', err);
         if (err.name === 'NotAllowedError') {
-            throw new Error('認証がキャンセルされました。');
+            throw new Error('認証がキャンセルされました');
         }
         throw new Error(`WebAuthn認証に失敗しました: ${err.message}`);
       }
 
       // 3. Finish Approval (verify authentication)
-      const finishRes = await fetch(`/api/auth/approve/finish`, {
+      const finishRes = await fetch(`/api/auth/approval/approve/finish`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ requestId, ...authResp }),
+        body: JSON.stringify({
+          requestId,
+          authenticationResponse: authResp
+        }),
       });
 
       if (!finishRes.ok) {
         const errorData = await finishRes.json();
-        throw new Error(errorData.error || 'Approval finish failed');
+        throw new Error(errorData.error || '承認完了に失敗しました');
       }
 
-      alert('デバイスが承認されました。');
+      alert('デバイスが承認されました');
       // Refresh requests list
       await fetchApprovalRequests();
 
@@ -186,8 +186,11 @@ export default function HomePage() {
     }
   };
 
- const handleAddPasskey = async () => {
+  const handleAddPasskey = async () => {
     if (!user) return;
+    const deviceName = prompt('新しいパスキーのデバイス名を入力してください（例: MacBook Pro）');
+    if (!deviceName) return; // User cancelled
+
     setActionLoading('add-passkey');
     setError(null);
     try {
@@ -195,23 +198,23 @@ export default function HomePage() {
       const startRes = await fetch('/api/passkeys/register/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, email: user.email }), // Send user info
+        body: JSON.stringify({ deviceName }), // Device name
       });
 
       if (!startRes.ok) {
         const errorData = await startRes.json();
-        throw new Error(errorData.error || 'Passkey registration start failed');
+        throw new Error(errorData.error || 'パスキー登録開始に失敗しました');
       }
-      const options: PublicKeyCredentialCreationOptionsJSON = await startRes.json();
+      const options = await startRes.json();
 
       // 2. Perform WebAuthn Registration
-      let regResp: RegistrationResponseJSON;
+      let regResp;
       try {
         regResp = await startRegistration({ optionsJSON: options });
       } catch (err: any) {
         console.error('Registration cancelled or failed', err);
          if (err.name === 'NotAllowedError') {
-             throw new Error('パスキー登録がキャンセルされました。');
+             throw new Error('パスキー登録がキャンセルされました');
          }
         throw new Error(`WebAuthn登録に失敗しました: ${err.message}`);
       }
@@ -220,15 +223,18 @@ export default function HomePage() {
       const finishRes = await fetch('/api/passkeys/register/finish', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, ...regResp }), // Send user ID with response
+        body: JSON.stringify({
+          deviceName,
+          registrationResponse: regResp
+        }),
       });
 
       if (!finishRes.ok) {
          const errorData = await finishRes.json();
-         throw new Error(errorData.error || 'Passkey registration finish failed');
+         throw new Error(errorData.error || 'パスキー登録完了に失敗しました');
       }
 
-      alert('新しいパスキーが正常に登録されました。');
+      alert('新しいパスキーが正常に登録されました');
       // Refresh passkey list
       await fetchPasskeys();
 
@@ -240,23 +246,21 @@ export default function HomePage() {
     }
   };
 
-  const handleDeletePasskey = async (credentialID: string) => {
+  const handleDeletePasskey = async (passkeyId: string) => {
     if (!user || !confirm('このパスキーを削除してもよろしいですか？')) return;
-    setActionLoading(`delete-${credentialID}`);
+    setActionLoading(`delete-${passkeyId}`);
     setError(null);
     try {
-      const res = await fetch(`/api/passkeys/${credentialID}`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id }), // Send userId for authorization on the backend
+      const res = await fetch(`/api/passkeys/${passkeyId}`, {
+        method: 'DELETE'
       });
 
       if (!res.ok) {
          const errorData = await res.json();
-         throw new Error(errorData.error || 'Failed to delete passkey');
+         throw new Error(errorData.error || 'パスキーの削除に失敗しました');
       }
 
-      alert('パスキーが削除されました。');
+      alert('パスキーが削除されました');
       // Refresh passkey list
       await fetchPasskeys();
 
@@ -270,7 +274,7 @@ export default function HomePage() {
 
 
   const handleLogout = () => {
-    localStorage.removeItem('temp_user');
+    localStorage.removeItem('tempUser');
     localStorage.removeItem('requestingDeviceId'); // Also clear this if it exists
     setUser(null);
     router.push('/login');
@@ -293,7 +297,7 @@ export default function HomePage() {
     <div className="max-w-4xl mx-auto py-8 px-4">
       <header className="mb-8 flex justify-between items-center">
         <div>
-            <h1 className="text-2xl font-bold">ダッシュボード</h1>
+            <h1 className="text-2xl font-bold">パスキー認証ダッシュボード</h1>
             <p className="text-gray-600 dark:text-gray-300">ようこそ, {user.email} さん</p>
         </div>
         <button
@@ -367,8 +371,7 @@ export default function HomePage() {
             {passkeys.map((key) => (
               <li key={key.id} className="bg-white dark:bg-gray-800 p-4 rounded shadow flex justify-between items-center">
                 <div>
-                   {/* 仮のニックネーム表示。本来は編集機能などがあっても良い */}
-                  <p className="font-medium">{key.nickname || `Passkey (ID: ${key.id.substring(0, 8)}...)`}</p>
+                  <p className="font-medium">{key.deviceName || `パスキー (${key.credentialId.substring(0, 8)}...)`}</p>
                   <p className="text-xs text-gray-500 dark:text-gray-400">
                     登録日時: {new Date(key.createdAt).toLocaleString()} |
                     最終利用: {key.lastUsedAt ? new Date(key.lastUsedAt).toLocaleString() : '未使用'} |
