@@ -32,11 +32,30 @@ export async function POST(
   try {
     authenticationResponse = await request.json();
     console.log(
-      `[Approval Finish] User ${userId} finishing approval for request ${requestId} with response:`, authenticationResponse,
+      `[Approval Finish] User ${userId} finishing approval for request ${requestId} with response:`,
+      JSON.stringify(authenticationResponse)
     );
+
+    // クライアントからの直接のauthenticationResponseを期待
+    if (!authenticationResponse || !authenticationResponse.response || !authenticationResponse.response.clientDataJSON) {
+      console.error('[Approval Finish] Invalid authentication response format:', authenticationResponse);
+      return NextResponse.json({
+        error: 'Invalid authentication response format',
+        expected: 'AuthenticationResponseJSON object with response.clientDataJSON field'
+      }, {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
   } catch (error) {
     console.error('[Approval Finish] Invalid request body:', error);
-    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
+    return NextResponse.json({
+      error: 'Invalid request body',
+      details: (error as Error).message
+    }, {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' }
+    });
   }
 
   // 1. clientDataJSON からチャレンジを取得

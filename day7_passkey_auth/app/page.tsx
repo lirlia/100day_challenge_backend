@@ -215,10 +215,7 @@ export default function HomePage() {
       // 3. Finish Approval (verify authentication)
       const finishApiUrl = `/api/auth/approval/requests/${requestId}/approve/finish`;
       console.log('Calling API:', finishApiUrl);
-      console.log('With payload:', JSON.stringify({
-        requestId,
-        authenticationResponse: authResp
-      }, null, 2));
+      console.log('With payload (authentication response):', authResp);
 
       const finishRes = await fetch(finishApiUrl, {
         method: 'POST',
@@ -226,10 +223,7 @@ export default function HomePage() {
           'Content-Type': 'application/json',
           'x-user-id': user.id // ユーザーID追加
         },
-        body: JSON.stringify({
-          requestId,
-          authenticationResponse: authResp
-        }),
+        body: JSON.stringify(authResp), // 直接authentication responseを送信
       });
 
       console.log('Finish approval response status:', finishRes.status);
