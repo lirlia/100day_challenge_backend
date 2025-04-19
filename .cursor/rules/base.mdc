@@ -1,6 +1,6 @@
 ---
-description:
-globs:
+description: 
+globs: 
 alwaysApply: true
 ---
 
@@ -97,6 +97,7 @@ alwaysApply: true
 ## 気をつけること
 - rm を実施する場合は /bin/rm を使ってください（別のコマンドが alias 設定されているため）
 - cd するときは pwd でカレントディレクトリを確認してから cd してください
+- types やライブラリのバージョンはあなたが学習しているものと違う可能性があるため、使用前に定義を確認し使い方を理解した上でコードを記載してください
 
 ## 禁止
 
