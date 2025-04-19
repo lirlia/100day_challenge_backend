@@ -40,16 +40,40 @@ export default function ApproveWaitPage() {
 
         if (data.status === 'approved') {
           // 承認されたらログイン成功とみなし、ダッシュボードへ
-          // 本来は /login/finish を再度呼び出すか、トークンを取得するステップが必要かも
-          alert('Device approved! Logging in...');
+          console.log('Device approved! Fetching user info...');
           if (intervalRef.current) {
             clearInterval(intervalRef.current);
           }
-          // 仮ユーザー情報を取得 (本来は login/finish などで取得)
-          const email = 'user@example.com'; // 仮
-          const userId = 'temp-user-id';   // 仮
-          localStorage.setItem('loggedInUser', JSON.stringify({ id: userId, email }));
-          router.push('/');
+
+          try {
+            // 承認リクエストからユーザー情報を取得
+            const userInfoRes = await fetch(`/api/auth/approval/requests/${requestId}/user-info`);
+            if (!userInfoRes.ok) {
+              throw new Error('Failed to fetch user information');
+            }
+
+            const userInfo = await userInfoRes.json();
+            console.log('Received user info:', userInfo);
+
+            // 正しい形式でlocalStorageに保存
+            const tempUserData = {
+              id: userInfo.userId,
+              email: userInfo.email
+            };
+
+            localStorage.setItem('tempUser', JSON.stringify(tempUserData));
+            console.log('User data saved, redirecting to dashboard');
+
+            // 保存されたことを確認
+            const savedData = localStorage.getItem('tempUser');
+            console.log('Saved data in localStorage:', savedData);
+
+            alert('デバイスが承認されました！ダッシュボードに移動します。');
+            router.push('/');
+          } catch (error) {
+            console.error('Error fetching user info:', error);
+            setError('ユーザー情報の取得に失敗しました。ログインページから再度お試しください。');
+          }
         } else if (data.status === 'rejected' || data.status === 'expired') {
           setError(`Approval was ${data.status}. Please try logging in again.`);
           if (intervalRef.current) {
