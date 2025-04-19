@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
 
   // 2. DBからチャレンジ情報を取得・検証
   const now = new Date();
-  const expectedChallenge = await db.challenge.findUnique({
+  const expectedChallenge = await db.challenge.findFirst({
       where: {
           challenge: receivedChallenge,
           type: 'authentication',
@@ -89,8 +89,12 @@ export async function POST(request: NextRequest) {
         expectedChallenge: expectedChallenge.challenge,
         expectedOrigin: RP_ORIGIN as string,
         expectedRPID: RP_ID as string,
-        authenticatorPublicKey: Buffer.alloc(0), // 公開鍵不明
-        authenticatorCounter: 0, // カウンター不明
+        credential: {
+          id: credentialIdFromResponse,
+          publicKey: Buffer.alloc(0), // 公開鍵不明
+          counter: 0, // カウンター不明
+          transports: undefined,
+        },
         requireUserVerification: true,
       });
       console.log('[Login Finish - New Device Attempt] Verification result:', verification);
@@ -146,6 +150,38 @@ export async function POST(request: NextRequest) {
     }
   } else {
     // ★ 既存パスキーの場合 ★
+    console.log(`[Login Finish] Found existing authenticator for credential ${credentialIdFromResponse}:`, authenticator);
+
+    // 取得した authenticator とそのプロパティの存在チェック
+    if (!authenticator || !authenticator.publicKey || authenticator.counter === null || authenticator.counter === undefined) {
+        console.error(`[Login Finish] Invalid authenticator data retrieved from DB for credential ${credentialIdFromResponse}:`, authenticator);
+        await db.challenge.delete({ where: { id: expectedChallenge.id } }).catch(e => console.error("Failed to delete challenge", e));
+        return NextResponse.json({ error: 'Internal Server Error: Failed to retrieve valid authenticator data.' }, { status: 500 });
+    }
+
+    let currentCounter: number;
+    try {
+        currentCounter = Number(authenticator.counter);
+        // Number への変換が安全かチェック (非常に大きな値の場合の対策)
+        if (!Number.isSafeInteger(currentCounter)) {
+            console.warn(`[Login Finish] Unsafe counter conversion from BigInt for credential ${credentialIdFromResponse}. Value: ${authenticator.counter}`);
+            // ここでエラーにするか、続行するかはポリシーによる。
+            // 非常に大きなカウンター値は通常発生しないため、ここでは警告に留めて続行する。
+        }
+        console.log(`[Login Finish] Using counter for verification: ${currentCounter} (original BigInt: ${authenticator.counter})`);
+    } catch (e) {
+        console.error(`[Login Finish] Failed to convert counter BigInt to Number for credential ${credentialIdFromResponse}:`, authenticator.counter, e);
+        await db.challenge.delete({ where: { id: expectedChallenge.id } }).catch(err => console.error("Failed to delete challenge", err));
+        return NextResponse.json({ error: 'Internal Server Error: Failed to process authenticator counter.' }, { status: 500 });
+    }
+
+    console.log(`[Login Finish] Authenticator data for verification:`, {
+      credentialID: base64UrlDecode(authenticator.credentialId),
+      credentialPublicKey: authenticator.publicKey,
+      counter: currentCounter,
+      transports: authenticator.transports ? JSON.parse(authenticator.transports) : undefined,
+    });
+
     let verification: VerifiedAuthenticationResponse;
     try {
       verification = await verifyAuthenticationResponse({
@@ -153,8 +189,12 @@ export async function POST(request: NextRequest) {
         expectedChallenge: expectedChallenge.challenge,
         expectedOrigin: RP_ORIGIN as string,
         expectedRPID: RP_ID as string,
-        authenticatorPublicKey: authenticator.publicKey,
-        authenticatorCounter: Number(authenticator.counter),
+        credential: {
+          id: authenticator.credentialId,
+          publicKey: authenticator.publicKey,
+          counter: Number(currentCounter),
+          transports: authenticator.transports ? JSON.parse(authenticator.transports) : undefined,
+        },
         requireUserVerification: true,
       });
       console.log('[Login Finish - Existing Device] Verification result:', verification);
