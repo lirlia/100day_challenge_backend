@@ -32,11 +32,23 @@ export default function LoginPage() {
       console.log('Authentication options:', options);
 
       // ログインオプションに allowCredentials が空の場合、ユーザーはこのRPにパスキーを登録していない
-      if (options.allowCredentials && options.allowCredentials.length === 0) {
-        setError(
-          'No passkeys found for this account. Please register first or try a different account.',
-        );
-        setIsLoading(false);
+      if (!options.allowCredentials || options.allowCredentials.length === 0) {
+        console.log('No passkeys found for this account. Starting approval flow...');
+        // パスキーがない場合は直接新しいデバイス承認フローを開始
+        const newDeviceResponse = await fetch('/api/auth/login/newdevice', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email }),
+        });
+
+        if (!newDeviceResponse.ok) {
+          const data = await newDeviceResponse.json();
+          throw new Error(data.error || 'Failed to start new device approval');
+        }
+
+        const newDeviceResult = await newDeviceResponse.json();
+        localStorage.setItem('requestingDeviceId', newDeviceResult.requestingDeviceId);
+        router.push(`/approve-wait/${newDeviceResult.requestId}`);
         return;
       }
 
@@ -71,8 +83,7 @@ export default function LoginPage() {
         // 承認が必要な場合 (202 Accepted) は特別な処理
         if (resFinish.status === 202 && verificationResult.status === 'approval_required') {
           console.log('Approval required, redirecting...');
-          // 承認待ちページにリダイレクト (requestingDeviceId をクエリパラメータで渡すなど)
-          // requestingDeviceId をローカルストレージに保存する必要もある
+          // 承認待ちページにリダイレクト
           localStorage.setItem('requestingDeviceId', verificationResult.requestingDeviceId);
           router.push(`/approve-wait/${verificationResult.requestId}`);
           return;
@@ -82,7 +93,6 @@ export default function LoginPage() {
 
       if (verificationResult.verified) {
         // ログイン成功！ ダッシュボードにリダイレクト
-        // ★ 本来はここでサーバーセッションを確立するか、トークンを受け取る
         alert(`Login successful for ${email}!`);
         // 仮ユーザー情報をローカルストレージに保存
         localStorage.setItem('tempUser', JSON.stringify(verificationResult.user));
