@@ -5,8 +5,9 @@ export async function GET(
   request: NextRequest,
   context: { params: { requestId: string } },
 ) {
-  // params を非同期として扱う
-  const { requestId } = context.params;
+  // Next.js 15の推奨パターンに従い、paramsをawaitする
+  const params = await context.params;
+  const { requestId } = params;
 
   if (!requestId) {
     return NextResponse.json({ error: 'Request ID is required' }, { status: 400 });
