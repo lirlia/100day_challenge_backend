@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
     // 本来 userId(email) は必須のはず
     console.error(`[Register Finish] userId(email) missing in challenge data for ${receivedChallenge}`);
     // DBからチャレンジ削除
-    await db.challenge.delete({ where: { id: expectedChallenge.id } }).catch(e => console.error("Failed to delete challenge", e));
+    await db.challenge.delete({ where: { id: expectedChallenge.id } }).catch((e: any) => console.error("Failed to delete challenge", e));
     return NextResponse.json({ error: 'Invalid challenge data' }, { status: 400 });
   }
 
@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('[Register Finish] Verification failed:', error);
     // 検証失敗時もチャレンジは削除
-    await db.challenge.delete({ where: { id: expectedChallenge.id } }).catch(e => console.error("Failed to delete challenge", e));
+    await db.challenge.delete({ where: { id: expectedChallenge.id } }).catch((e: any) => console.error("Failed to delete challenge", e));
     return NextResponse.json(
       { error: 'Verification failed', details: (error as Error).message },
       { status: 400 },
@@ -95,60 +95,100 @@ export async function POST(request: NextRequest) {
 
   if (verified && registrationInfo) {
     console.log('[Register Finish] Verification successful');
-    // registrationInfoから必要な情報を取得 (型定義に合わせて修正)
-    // credentialPublicKey, credentialID, counter を registrationInfo 直下から取得しようとしていたが、
-    // おそらく registrationInfo.credential に情報があるか、別の方法が必要。
-    // ここでは registrationInfo のプロパティを直接使うと仮定して進めるが、
-    // 実行時エラーになる可能性が高い。後で要デバッグ。
-    const { credentialPublicKey, credentialID, counter } = registrationInfo;
 
-    // ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
-    // ★ TODO: 上記の分割代入が正しいか要確認・修正 ★
-    // ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
+    // registrationInfoから正しいプロパティを取得 (ログに基づき修正)
+    const credential = registrationInfo.credential;
+    if (!credential) {
+        console.error('[Register Finish] Missing credential object in registration info:', { registrationInfo });
+        await db.challenge.delete({ where: { id: expectedChallenge.id } }).catch((e: any) => console.error("Failed to delete challenge", e));
+        return NextResponse.json({ error: 'Internal Server Error: Invalid registration data format.' }, { status: 500 });
+    }
+
+    const credentialPublicKey = credential.publicKey; // Uint8Array
+    const credentialID_String = credential.id;       // Base64URL String
+    const counter = credential.counter;               // number
+    const transports = credential.transports;         // string[] | undefined
+
+    // 取得した値の存在チェック
+    // credentialID_String は空文字列でないか、publicKey は存在するか、 counter は number か
+    if (!credentialPublicKey || !credentialID_String || typeof counter !== 'number') {
+        console.error('[Register Finish] Missing essential credential info:', { credential });
+        await db.challenge.delete({ where: { id: expectedChallenge.id } }).catch((e: any) => console.error("Failed to delete challenge", e));
+        return NextResponse.json({ error: 'Internal Server Error: Invalid credential data received after verification.' }, { status: 500 });
+    }
 
     // 4. ユーザーとパスキー情報をデータベースに保存
     try {
-      const newUser = await db.user.create({
-        data: {
-          email: expectedEmail, // DBのチャレンジから取得したemailを使用
-          passkeys: {
-            create: {
-              credentialId: Buffer.from(credentialID).toString('base64url'), // credentialID は Uint8Array
-              publicKey: Buffer.from(credentialPublicKey), // credentialPublicKey は Uint8Array
-              counter: BigInt(counter), // counter は number
-              transports: JSON.stringify(registrationResponse.response.transports ?? []),
-              deviceName: `Device ${new Date().toISOString()}`, // 仮のデバイス名
-              // credentialDeviceType, credentialBackedUp なども保存できる
+      // Check if user already exists
+      let user = await db.user.findUnique({
+        where: { email: expectedEmail },
+      });
+
+      if (user) {
+        // User exists, just add the passkey
+        console.log(`[Register Finish] User ${expectedEmail} already exists. Adding new passkey.`);
+        // 既存ユーザーに同じ Credential ID が登録されていないかチェック
+        const existingPasskey = await db.passkey.findUnique({
+            where: { credentialId: credentialID_String },
+        });
+        if (existingPasskey) {
+            console.warn(`[Register Finish] Passkey with Credential ID ${credentialID_String} already exists for user ${existingPasskey.userId}. Aborting.`);
+            // すでに登録済みの場合はエラーとする（もしくは何もしない）
+            await db.challenge.delete({ where: { id: expectedChallenge.id } }).catch((e: any) => console.error("Failed to delete challenge", e));
+            return NextResponse.json({ error: 'This passkey is already registered.' }, { status: 409 });
+        }
+
+        await db.passkey.create({
+          data: {
+            userId: user.id,
+            credentialId: credentialID_String, // Base64URL String をそのまま保存
+            publicKey: Buffer.from(credentialPublicKey), // Uint8ArrayをBufferに変換
+            counter: BigInt(counter),
+            transports: JSON.stringify(transports ?? []),
+            deviceName: `Device ${new Date().toISOString()}`, // 仮のデバイス名
+          },
+        });
+      } else {
+        // User does not exist, create user and passkey together
+        console.log(`[Register Finish] Creating new user ${expectedEmail} and first passkey.`);
+        user = await db.user.create({
+          data: {
+            email: expectedEmail,
+            passkeys: {
+              create: {
+                credentialId: credentialID_String, // Base64URL String をそのまま保存
+                publicKey: Buffer.from(credentialPublicKey), // Uint8ArrayをBufferに変換
+                counter: BigInt(counter),
+                transports: JSON.stringify(transports ?? []),
+                deviceName: `Device ${new Date().toISOString()}`, // 仮のデバイス名
+              },
             },
           },
-        },
-        include: {
-          passkeys: true, // 作成したパスキー情報も返す
-        }
-      });
-      console.log('[Register Finish] User and Passkey created:', newUser);
+        });
+      }
+
+      console.log('[Register Finish] User/Passkey operation successful for user ID:', user.id);
 
       // 5. 成功したらチャレンジを削除
       await db.challenge.delete({ where: { id: expectedChallenge.id } });
       console.log(`[Register Finish] Deleted challenge ${expectedChallenge.challenge}`);
 
-      return NextResponse.json({ verified: true, user: { id: newUser.id, email: newUser.email } });
+      return NextResponse.json({ verified: true, user: { id: user.id, email: user.email } });
 
-    } catch (dbError) {
+    } catch (dbError: any) {
       console.error('[Register Finish] Failed to save user or passkey:', dbError);
-      // credentialId が重複した場合などのエラーハンドリングが必要
-      // @ts-ignore - prisma error handling
+      // credentialId が重複した場合などのエラーハンドリング (Prisma固有のエラーコードP2002)
       if (dbError.code === 'P2002' && dbError.meta?.target?.includes('credentialId')) {
         return NextResponse.json({ error: 'This passkey seems to be already registered.' }, { status: 409 });
       }
-      // DBエラー時もチャレンジは削除しておく（べきか？） - 一旦残す
-      return NextResponse.json({ error: 'Failed to save user data.' }, { status: 500 });
+      // その他のDBエラー
+      return NextResponse.json({ error: 'Failed to save registration data.' }, { status: 500 });
     }
 
   } else {
     console.error('[Register Finish] Verification failed - not verified or no registration info');
     // 検証失敗時もチャレンジは削除
-    await db.challenge.delete({ where: { id: expectedChallenge.id } }).catch(e => console.error("Failed to delete challenge", e));
+    await db.challenge.delete({ where: { id: expectedChallenge.id } }).catch((e: any) => console.error("Failed to delete challenge", e));
     return NextResponse.json({ error: 'Verification failed' }, { status: 400 });
   }
 }
