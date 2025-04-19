@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { startAuthentication } from '@simplewebauthn/browser';
 import { useRouter } from 'next/navigation'; // リダイレクト用
 
@@ -8,19 +8,39 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [deviceId, setDeviceId] = useState<string | null>(null);
   const router = useRouter();
+
+  // デバイスIDの初期化
+  useEffect(() => {
+    // ローカルストレージからデバイスIDを取得または生成
+    let storedDeviceId = localStorage.getItem('deviceId');
+    if (!storedDeviceId) {
+      // ランダムなデバイスIDを生成
+      storedDeviceId = crypto.randomUUID();
+      localStorage.setItem('deviceId', storedDeviceId);
+    }
+    setDeviceId(storedDeviceId);
+    console.log('Using device ID:', storedDeviceId);
+  }, []);
 
   const handleLogin = async (event: React.FormEvent) => {
     event.preventDefault();
     setError(null);
     setIsLoading(true);
 
+    if (!deviceId) {
+      setError('デバイスIDが初期化されていません。ページを再読み込みしてください。');
+      setIsLoading(false);
+      return;
+    }
+
     try {
       // 1. ログイン開始APIを呼び出し、オプションを取得
       const resStart = await fetch('/api/auth/login/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email, deviceId }), // デバイスIDを送信
       });
 
       if (!resStart.ok) {
@@ -30,6 +50,12 @@ export default function LoginPage() {
 
       const options = await resStart.json();
       console.log('Authentication options:', options);
+
+      // 強制的に別デバイスとして処理する必要があるか確認
+      if (options.forceNewDevice) {
+        console.log('Server requested to handle as new device. Starting approval flow...');
+        return await initiateNewDeviceApproval(email);
+      }
 
       // パスキーの存在チェック
       const hasPasskeys = options.allowCredentials && options.allowCredentials.length > 0;
@@ -53,6 +79,12 @@ export default function LoginPage() {
         // ユーザーがキャンセルした場合など
         if (err.name === 'AbortError' || err.name === 'NotAllowedError') {
           console.log('Passkey authentication cancelled by user.');
+
+          // キャンセル時に新しいデバイス承認フローを開始するかユーザーに確認
+          if (confirm('パスキーが見つからないか、キャンセルされました。別のデバイスからログインしようとしていますか？')) {
+            return await initiateNewDeviceApproval(email);
+          }
+
           setError('Login cancelled.');
           setIsLoading(false);
           return;
@@ -65,7 +97,10 @@ export default function LoginPage() {
       const resFinish = await fetch('/api/auth/login/finish', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(authResp),
+        body: JSON.stringify({
+          ...authResp,
+          deviceId // デバイスIDを送信
+        }),
       });
 
       const verificationResult = await resFinish.json();
@@ -104,11 +139,15 @@ export default function LoginPage() {
   // 新しいデバイス承認フローを開始する関数
   const initiateNewDeviceApproval = async (email: string) => {
     try {
+      if (!deviceId) {
+        throw new Error('デバイスIDが初期化されていません');
+      }
+
       console.log('Initiating new device approval for:', email);
       const newDeviceResponse = await fetch('/api/auth/login/newdevice', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email, deviceId }),
       });
 
       if (!newDeviceResponse.ok) {
@@ -160,6 +199,17 @@ export default function LoginPage() {
             {isLoading ? 'Logging in...' : 'Login with Passkey'}
           </button>
         </form>
+
+        <div className="mt-4 text-center">
+          <button
+            onClick={() => initiateNewDeviceApproval(email)}
+            disabled={!email || isLoading}
+            className="text-sm text-blue-600 hover:text-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            別のデバイスとしてログイン
+          </button>
+        </div>
+
         <p className="mt-4 text-center text-sm text-gray-600">
           Don't have an account?{' '}
           <a href="/register" className="font-medium text-blue-600 hover:text-blue-500">
