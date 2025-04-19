@@ -52,12 +52,17 @@ export default function HomePage() {
   // --- Login Check ---
   useEffect(() => {
     const storedUser = localStorage.getItem('tempUser');
+    console.log('LocalStorage tempUser:', storedUser);
+
     if (storedUser) {
       try {
         const parsedUser = JSON.parse(storedUser);
+        console.log('Parsed user data:', parsedUser);
+
         // Basic validation
         if (parsedUser && typeof parsedUser.id === 'string' && typeof parsedUser.email === 'string') {
           setUser(parsedUser);
+          console.log('User set successfully:', parsedUser);
         } else {
           throw new Error("正しくないユーザーデータ形式です");
         }
@@ -67,6 +72,7 @@ export default function HomePage() {
          router.push('/login');
       }
     } else {
+      console.log('No user data found in localStorage, redirecting to login');
       router.push('/login');
     }
   }, [router]);
@@ -90,20 +96,39 @@ export default function HomePage() {
   const fetchApprovalRequests = async () => {
     if (!user) return;
     try {
-      const res = await fetch(`/api/auth/approval/requests?userId=${user.id}`);
+      console.log('Fetching approval requests for user:', user.id);
+      // URLクエリパラメータをログに出力
+      const apiUrl = `/api/auth/approval/requests?userId=${user.id}`;
+      console.log('API URL:', apiUrl);
+
+      const res = await fetch(apiUrl);
+
+      console.log('Approval requests API response status:', res.status);
+
       if (!res.ok) {
-        throw new Error(`承認リクエストの取得に失敗しました: ${res.statusText}`);
+        const errorText = await res.text();
+        console.error('API error response:', errorText);
+        throw new Error(`承認リクエストの取得に失敗しました: ${res.status} ${res.statusText} - ${errorText}`);
       }
+
       const data = await res.json();
+      console.log('Approval requests API response data:', data);
+
+      // データの構造を確認
+      if (!data.requests || !Array.isArray(data.requests)) {
+        console.error('Unexpected API response format:', data);
+        throw new Error('APIからの応答形式が不正です');
+      }
+
       // Filter for only pending requests, sort by creation date
-      setApprovalRequests(
-          data.requests.filter((req: ApprovalRequest) => req.status === 'pending')
-              .sort((a: ApprovalRequest, b: ApprovalRequest) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-      );
+      const pendingRequests = data.requests.filter((req: ApprovalRequest) => req.status === 'pending')
+          .sort((a: ApprovalRequest, b: ApprovalRequest) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+      console.log('Filtered pending requests:', pendingRequests);
+      setApprovalRequests(pendingRequests);
     } catch (err: any) {
       console.error('Error fetching approval requests:', err);
-      setError((prev) => (prev ? `${prev}
-` : '') + `承認リクエストの取得に失敗しました: ${err.message || '不明なエラー'}`);
+      setError((prev) => (prev ? `${prev}\n` : '') + `承認リクエストの取得に失敗しました: ${err.message || '不明なエラー'}`);
     }
   };
 
@@ -131,24 +156,54 @@ export default function HomePage() {
     setActionLoading(`approve-${requestId}`);
     setError(null);
     try {
+      console.log(`Approving request ${requestId} by user ${user.id}`);
+
       // 1. Start Approval (get authentication options)
-      const startRes = await fetch(`/api/auth/approval/approve/start`, {
+      const apiUrl = `/api/auth/approval/requests/${requestId}/approve/start`;
+      console.log('Calling API:', apiUrl);
+
+      const startRes = await fetch(apiUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': user.id // ユーザーID追加
+        },
         body: JSON.stringify({ requestId }), // Request ID
       });
 
+      console.log('Start approval response status:', startRes.status);
+
       if (!startRes.ok) {
-        const errorData = await startRes.json();
+        const errorText = await startRes.text();
+        console.error('Start approval error response:', errorText);
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch (e) {
+          console.error('Failed to parse error response as JSON:', e);
+          throw new Error(`承認開始に失敗しました: ${startRes.status} ${startRes.statusText}`);
+        }
         throw new Error(errorData.error || '承認開始に失敗しました');
       }
 
-      const options: PublicKeyCredentialRequestOptionsJSON = await startRes.json();
+      const optionsText = await startRes.text();
+      console.log('Authentication options (raw):', optionsText);
+
+      let options: PublicKeyCredentialRequestOptionsJSON;
+      try {
+        options = JSON.parse(optionsText);
+        console.log('Parsed authentication options:', options);
+      } catch (e) {
+        console.error('Failed to parse authentication options as JSON:', e);
+        throw new Error('認証オプションの解析に失敗しました');
+      }
 
       // 2. Perform WebAuthn Authentication
       let authResp: AuthenticationResponseJSON;
       try {
+        console.log('Starting authentication with options:', options);
         authResp = await startAuthentication({ optionsJSON: options });
+        console.log('Authentication response from browser:', authResp);
       } catch (err: any) {
         console.error('Authentication cancelled or failed', err);
         if (err.name === 'NotAllowedError') {
@@ -158,19 +213,42 @@ export default function HomePage() {
       }
 
       // 3. Finish Approval (verify authentication)
-      const finishRes = await fetch(`/api/auth/approval/approve/finish`, {
+      const finishApiUrl = `/api/auth/approval/requests/${requestId}/approve/finish`;
+      console.log('Calling API:', finishApiUrl);
+      console.log('With payload:', JSON.stringify({
+        requestId,
+        authenticationResponse: authResp
+      }, null, 2));
+
+      const finishRes = await fetch(finishApiUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': user.id // ユーザーID追加
+        },
         body: JSON.stringify({
           requestId,
           authenticationResponse: authResp
         }),
       });
 
+      console.log('Finish approval response status:', finishRes.status);
+
       if (!finishRes.ok) {
-        const errorData = await finishRes.json();
+        const errorText = await finishRes.text();
+        console.error('Finish approval error response:', errorText);
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch (e) {
+          console.error('Failed to parse error response as JSON:', e);
+          throw new Error(`承認完了に失敗しました: ${finishRes.status} ${finishRes.statusText}`);
+        }
         throw new Error(errorData.error || '承認完了に失敗しました');
       }
+
+      const result = await finishRes.json();
+      console.log('Approval completion result:', result);
 
       alert('デバイスが承認されました');
       // Refresh requests list

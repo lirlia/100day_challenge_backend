@@ -119,11 +119,27 @@ export default function LoginPage() {
       }
 
       if (verificationResult.verified) {
-        // ログイン成功！ ダッシュボードにリダイレクト
-        alert(`Login successful for ${email}!`);
-        // 仮ユーザー情報をローカルストレージに保存
-        localStorage.setItem('tempUser', JSON.stringify(verificationResult.user));
-        router.push('/'); // ルートページへ
+        console.log('Login successful!', verificationResult);
+        // ログイン成功: 一時的なユーザー情報を保存
+        try {
+          const tempUserData = {
+            id: verificationResult.userId,
+            email: email
+          };
+          console.log('Saving user data to localStorage:', tempUserData);
+          localStorage.setItem('tempUser', JSON.stringify(tempUserData));
+
+          // 保存されたことを確認
+          const savedData = localStorage.getItem('tempUser');
+          console.log('Saved data in localStorage:', savedData);
+
+          // すぐにダッシュボードにリダイレクト
+          router.push('/');
+        } catch (storageError) {
+          console.error('Failed to save user data to localStorage:', storageError);
+          setError('ユーザー情報の保存に失敗しました。ブラウザの設定を確認してください。');
+          setIsLoading(false);
+        }
       } else {
         throw new Error('Login verification failed.');
       }

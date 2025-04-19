@@ -102,8 +102,11 @@ export async function POST(
       expectedChallenge: approvalRequest.challenge, // DBのチャレンジを使用
       expectedOrigin: RP_ORIGIN as string,
       expectedRPID: RP_ID as string,
-      authenticatorPublicKey: authenticator.publicKey,
-      authenticatorCounter: Number(authenticator.counter),
+      authenticator: {
+        credentialID: base64UrlDecode(authenticator.credentialId),
+        credentialPublicKey: authenticator.publicKey,
+        counter: Number(authenticator.counter),
+      },
       requireUserVerification: true,
     });
     console.log('[Approval Finish] Verification result:', verification);
@@ -112,7 +115,12 @@ export async function POST(
     console.error('[Approval Finish] Verification failed:', error);
     return NextResponse.json(
       { error: 'Verification failed', details: (error as Error).message },
-      { status: 400 },
+      {
+        status: 400,
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      },
     );
   }
 
@@ -139,15 +147,29 @@ export async function POST(
       });
       console.log(`[Approval Finish] Marked request ${requestId} as approved`);
       // 9. 成功レスポンス
-      return NextResponse.json({ verified: true, status: 'approved' });
+      return NextResponse.json({ verified: true, status: 'approved' }, {
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
 
     } catch (dbError) {
        console.error('[Approval Finish] Failed to update approval request status:', dbError);
-       return NextResponse.json({ error: 'Failed to finalize approval' }, { status: 500 });
+       return NextResponse.json({ error: 'Failed to finalize approval' }, {
+         status: 500,
+         headers: {
+           'Content-Type': 'application/json'
+         }
+       });
     }
 
   } else {
     console.error('[Approval Finish] Verification failed - not verified');
-    return NextResponse.json({ error: 'Verification failed' }, { status: 400 });
+    return NextResponse.json({ error: 'Verification failed' }, {
+      status: 400,
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
   }
 }

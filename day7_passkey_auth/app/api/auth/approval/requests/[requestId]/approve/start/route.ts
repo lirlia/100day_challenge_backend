@@ -94,13 +94,22 @@ export async function POST(
     );
 
     // 6. オプションをクライアント（承認者のブラウザ）に返す
-    return NextResponse.json(options);
+    return NextResponse.json(options, {
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
 
   } catch (error) {
     console.error('[Approval Start] Failed:', error);
     return NextResponse.json(
       { error: 'Failed to start approval process' },
-      { status: 500 },
+      {
+        status: 500,
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      },
     );
   }
 }
