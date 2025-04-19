@@ -19,7 +19,7 @@ export async function POST(
   { params }: { params: { requestId: string } },
 ) {
   const userId = getUserIdFromRequest(request); // 承認者の User ID
-  const { requestId } = params;
+  const requestId = params.requestId;
   let authenticationResponse: AuthenticationResponseJSON;
 
   if (!userId) {

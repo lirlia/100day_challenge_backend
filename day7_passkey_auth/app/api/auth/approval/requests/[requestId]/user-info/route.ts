@@ -5,7 +5,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: { requestId: string } },
 ) {
-  const { requestId } = params;
+  const requestId = params.requestId;
 
   if (!requestId) {
     return NextResponse.json({ error: 'Request ID is required' }, { status: 400 });

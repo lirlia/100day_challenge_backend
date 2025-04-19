@@ -14,7 +14,7 @@ export async function POST(
   { params }: { params: { requestId: string } },
 ) {
   const userId = getUserIdFromRequest(request);
-  const { requestId } = params;
+  const requestId = params.requestId;
 
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
