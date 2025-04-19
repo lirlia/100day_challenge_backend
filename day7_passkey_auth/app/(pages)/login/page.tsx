@@ -31,25 +31,17 @@ export default function LoginPage() {
       const options = await resStart.json();
       console.log('Authentication options:', options);
 
-      // ログインオプションに allowCredentials が空の場合、ユーザーはこのRPにパスキーを登録していない
-      if (!options.allowCredentials || options.allowCredentials.length === 0) {
-        console.log('No passkeys found for this account. Starting approval flow...');
+      // パスキーの存在チェック
+      const hasPasskeys = options.allowCredentials && options.allowCredentials.length > 0;
+      console.log('Has passkeys:', hasPasskeys, {
+        exists: !!options.allowCredentials,
+        length: options.allowCredentials ? options.allowCredentials.length : 0
+      });
+
+      if (!hasPasskeys) {
+        console.log('No passkeys found for this account. Starting direct approval flow...');
         // パスキーがない場合は直接新しいデバイス承認フローを開始
-        const newDeviceResponse = await fetch('/api/auth/login/newdevice', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email }),
-        });
-
-        if (!newDeviceResponse.ok) {
-          const data = await newDeviceResponse.json();
-          throw new Error(data.error || 'Failed to start new device approval');
-        }
-
-        const newDeviceResult = await newDeviceResponse.json();
-        localStorage.setItem('requestingDeviceId', newDeviceResult.requestingDeviceId);
-        router.push(`/approve-wait/${newDeviceResult.requestId}`);
-        return;
+        return await initiateNewDeviceApproval(email);
       }
 
       // 2. ブラウザのWebAuthn APIを呼び出し、パスキー認証を開始
@@ -105,6 +97,33 @@ export default function LoginPage() {
       console.error('Login failed:', err);
       setError(err.message || 'An unknown error occurred.');
     } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // 新しいデバイス承認フローを開始する関数
+  const initiateNewDeviceApproval = async (email: string) => {
+    try {
+      console.log('Initiating new device approval for:', email);
+      const newDeviceResponse = await fetch('/api/auth/login/newdevice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+
+      if (!newDeviceResponse.ok) {
+        const data = await newDeviceResponse.json();
+        throw new Error(data.error || 'Failed to start new device approval');
+      }
+
+      const newDeviceResult = await newDeviceResponse.json();
+      console.log('New device approval initiated:', newDeviceResult);
+
+      localStorage.setItem('requestingDeviceId', newDeviceResult.requestingDeviceId);
+      router.push(`/approve-wait/${newDeviceResult.requestId}`);
+    } catch (error: any) {
+      console.error('New device approval failed:', error);
+      setError(error.message || 'Failed to start approval process');
       setIsLoading(false);
     }
   };
