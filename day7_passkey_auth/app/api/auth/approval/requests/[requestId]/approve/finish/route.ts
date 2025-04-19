@@ -113,25 +113,45 @@ export async function POST(
     return NextResponse.json({ error: 'Authenticator not found' }, { status: 400 });
   }
 
+  console.log('[Approval Finish] Found authenticator:', {
+    id: authenticator.id,
+    credentialId: authenticator.credentialId,
+    counter: authenticator.counter,
+    hasPublicKey: !!authenticator.publicKey,
+    publicKeyLength: authenticator.publicKey ? authenticator.publicKey.length : 0
+  });
+
   // 5. 認証レスポンスを検証
   let verification: VerifiedAuthenticationResponse;
   try {
+    // 認証に使用する情報を準備
+    const credentialID = base64UrlDecode(authenticator.credentialId);
+    const publicKey = authenticator.publicKey;
+    const counter = Number(authenticator.counter || 0);
+
+    console.log('[Approval Finish] Preparing verification with:', {
+      credentialIdLength: credentialID.length,
+      publicKeyLength: publicKey?.length,
+      counter
+    });
+
+    // @simplewebauthn/server v13 の形式で検証
     verification = await verifyAuthenticationResponse({
       response: authenticationResponse,
-      expectedChallenge: approvalRequest.challenge, // DBのチャレンジを使用
+      expectedChallenge: approvalRequest.challenge,
       expectedOrigin: RP_ORIGIN as string,
       expectedRPID: RP_ID as string,
-      authenticator: {
-        credentialID: base64UrlDecode(authenticator.credentialId),
-        credentialPublicKey: authenticator.publicKey,
-        counter: Number(authenticator.counter),
-      },
       requireUserVerification: true,
+      authenticator: {
+        credentialPublicKey: publicKey,
+        credentialID: credentialID,
+        counter: counter,
+      }
     });
-    console.log('[Approval Finish] Verification result:', verification);
 
+    console.log('[Approval Finish] Verification succeeded:', verification);
   } catch (error) {
-    console.error('[Approval Finish] Verification failed:', error);
+    console.error('[Approval Finish] Verification failed with error:', error);
     return NextResponse.json(
       { error: 'Verification failed', details: (error as Error).message },
       {
@@ -143,49 +163,54 @@ export async function POST(
     );
   }
 
-  const { verified, authenticationInfo } = verification;
+  if (!verification?.verified) {
+    console.error('[Approval Finish] Verification result was not verified:', verification);
+    return NextResponse.json({ error: 'Verification failed - not verified' }, {
+      status: 400,
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+  }
 
-  if (verified) {
-    console.log(`[Approval Finish] Verification successful for request ${requestId}`);
+  console.log(`[Approval Finish] Verification successful for request ${requestId}`);
+
+  // 安全にauthenticationInfoにアクセス
+  const newCounter = verification.authenticationInfo?.newCounter;
+  if (typeof newCounter === 'number') {
     // 7. DBのカウンターを更新
     try {
       await db.passkey.update({
         where: { credentialId: authenticator.credentialId },
-        data: { counter: BigInt(authenticationInfo.newCounter) },
+        data: { counter: BigInt(newCounter) },
       });
+      console.log(`[Approval Finish] Updated counter to ${newCounter} for credential ${authenticator.credentialId}`);
     } catch (dbError) {
       console.error('[Approval Finish] Failed to update counter:', dbError);
       // ここでのエラーは致命的ではないかもしれない
     }
-
-    // 8. 承認リクエストのステータスを 'approved' に更新
-    try {
-      await db.deviceApprovalRequest.update({
-        where: { id: requestId },
-        data: { status: 'approved', challenge: null }, // challenge は不要になったのでクリア
-      });
-      console.log(`[Approval Finish] Marked request ${requestId} as approved`);
-      // 9. 成功レスポンス
-      return NextResponse.json({ verified: true, status: 'approved' }, {
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
-
-    } catch (dbError) {
-       console.error('[Approval Finish] Failed to update approval request status:', dbError);
-       return NextResponse.json({ error: 'Failed to finalize approval' }, {
-         status: 500,
-         headers: {
-           'Content-Type': 'application/json'
-         }
-       });
-    }
-
   } else {
-    console.error('[Approval Finish] Verification failed - not verified');
-    return NextResponse.json({ error: 'Verification failed' }, {
-      status: 400,
+    console.warn('[Approval Finish] No new counter value available, skipping counter update');
+  }
+
+  // 8. 承認リクエストのステータスを 'approved' に更新
+  try {
+    await db.deviceApprovalRequest.update({
+      where: { id: requestId },
+      data: { status: 'approved', challenge: null }, // challenge は不要になったのでクリア
+    });
+    console.log(`[Approval Finish] Marked request ${requestId} as approved`);
+    // 9. 成功レスポンス
+    return NextResponse.json({ verified: true, status: 'approved' }, {
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+
+  } catch (dbError) {
+    console.error('[Approval Finish] Failed to update approval request status:', dbError);
+    return NextResponse.json({ error: 'Failed to finalize approval' }, {
+      status: 500,
       headers: {
         'Content-Type': 'application/json'
       }
