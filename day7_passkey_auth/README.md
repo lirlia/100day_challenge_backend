@@ -4,7 +4,7 @@
 
 [100日チャレンジ day7](https://zenn.dev/gin_nazo/scraps/b473ea4791c7f6)
 
-https://github.com/user-attachments/assets/d504f5d6-2706-411e-a219-5b74f85eff1e
+https://github.com/user-attachments/assets/5ec4438f-33ac-4af1-9b40-c88310de04a6
 
 ## 機能概要
 
