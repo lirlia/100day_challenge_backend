@@ -202,13 +202,13 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
-    participant 新デバイス as 新規デバイス(通常ログインページ)
+    participant 新デバイス as 新規デバイス(専用ページ)
     participant UA as ユーザーエージェント(新規)
     participant サーバー as サーバー
     participant 既存デバイス as 既存デバイス
     participant DB as データベース
     
-    新デバイス->>サーバー: 1. 通常のログインページで<br>メールアドレス送信
+    新デバイス->>サーバー: 1. 新規デバイス用ログインページで<br>メールアドレス送信<br>(/api/auth/login/newdevice)
     サーバー->>DB: 2. ユーザー確認
     DB->>サーバー: 3. パスキー情報取得
     サーバー->>DB: 4. チャレンジ生成・保存
@@ -216,11 +216,11 @@ sequenceDiagram
     
     新デバイス->>UA: 6. WebAuthn API呼び出し<br>(navigator.credentials.get)
     Note over UA: 7. ユーザーに認証を促す<br>（秘密鍵にアクセス）
-    Note over UA: 8. 異なるデバイスのため<br>パスキーが見つからない or<br>新たに作成されたパスキーで応答
-    UA->>新デバイス: 9. 認証応答（新しいパスキーデータ）
+    Note over UA: 8. 新規デバイス用の<br>特殊な認証応答を生成
+    UA->>新デバイス: 9. 認証応答データ
     
     新デバイス->>サーバー: 10. 認証応答送信
-    Note over サーバー: 11. 登録されていないパスキーを検出
+    Note over サーバー: 11. 新規デバイス用の応答を処理
     サーバー->>DB: 12. 承認リクエスト作成
     サーバー->>新デバイス: 13. 承認待ち状態・リクエストID返却
     新デバイス->>新デバイス: 14. 承認待ちページにリダイレクト
