@@ -6,7 +6,7 @@
 
 generator client {
   provider = "prisma-client-js"
-  output   = "../app/generated/prisma"
+  output   = "../node_modules/.prisma/client"
 }
 
 datasource db {
@@ -15,8 +15,59 @@ datasource db {
 }
 
 model User {
-  id        Int      @id @default(autoincrement())
-  name      String
+  id        String    @id @default(cuid())
+  email     String    @unique // ユーザー識別子
+  passkeys  Passkey[]
+  // ユーザーが承認すべきリクエスト (User が承認者)
+  approvalRequests DeviceApprovalRequest[] @relation("UserApprovalRequests")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Passkey {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  credentialId  String   @unique // Base64URL encoded 文字列として扱う
+  publicKey     Bytes    // CBOR encoded public key
+  counter       BigInt   // Counter は非常に大きくなる可能性があるので BigInt
+  transports    String   // JSON 文字列として保存 (例: "["internal", "usb"]")
+  deviceName    String?  // ユーザーが識別するためのデバイス名 (例: "My MacBook Pro")
+  createdAt     DateTime @default(now())
+  lastUsedAt    DateTime @updatedAt
+
+  @@index([userId])
+}
+
+// 新しいデバイスからのアクセス承認リクエスト
+model DeviceApprovalRequest {
+  id                 String   @id @default(cuid())
+  // 承認を行うべきユーザー (承認者)
+  userId             String
+  user               User     @relation("UserApprovalRequests", fields: [userId], references: [id], onDelete: Cascade)
+  // 新しいデバイス/ブラウザを一時的に識別するID (クライアント側で生成・保持)
+  requestingDeviceId String
+  status             String   // "pending", "approved", "rejected", "expired"
+  expiresAt          DateTime // リクエストの有効期限
+  // 承認フローを開始するためのチャレンジ (承認者が既存デバイスで認証する際に使用)
+  challenge          String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  // 同一ユーザーからの同一デバイスIDリクエストは一つに制限
+  @@unique([userId, requestingDeviceId])
+  @@index([userId, status])
+}
+
+// チャレンジ情報を一時的に保存するモデル
+model Challenge {
+  id        String   @id @default(cuid())
+  challenge String   @unique // チャレンジ文字列 (Base64URL)
+  userId    String?  // 関連するユーザーID (登録時は null か email、ログイン/承認時は必須)
+  type      String   // "registration", "authentication", "approval"
+  expiresAt DateTime // 有効期限
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+
+  @@index([expiresAt])
+  @@index([userId, type])
 }

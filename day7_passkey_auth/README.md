@@ -48,7 +48,7 @@ model User {
   id        String    @id @default(cuid())
   email     String    @unique // ユーザー識別子
   passkeys  Passkey[]
-  approvalRequests DeviceApprovalRequest[] // このユーザーが承認すべきリクエスト
+  approvalRequests DeviceApprovalRequest[] @relation("UserApprovalRequests") // リレーション名を明示
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 }
@@ -56,11 +56,11 @@ model User {
 model Passkey {
   id            String   @id @default(cuid())
   userId        String
-  user          User     @relation(fields: [userId], references: [id])
-  credentialId  String   @unique // Base64URL encoded
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  credentialId  String   @unique // Base64URL encoded 文字列として扱う
   publicKey     Bytes    // CBOR encoded public key
-  counter       Int
-  transports    String[] // 例: "internal", "usb", "nfc", "ble"
+  counter       BigInt
+  transports    String   // JSON 文字列として保存 (例: "["internal", "usb"]")
   deviceName    String?  // ユーザーが識別するためのデバイス名 (例: "My MacBook Pro")
   createdAt     DateTime @default(now())
   lastUsedAt    DateTime @updatedAt
@@ -71,13 +71,15 @@ model Passkey {
 model DeviceApprovalRequest {
   id                 String   @id @default(cuid())
   userId             String   // 承認を行うべきユーザーのID
-  user               User     @relation(fields: [userId], references: [id])
+  user               User     @relation("UserApprovalRequests", fields: [userId], references: [id], onDelete: Cascade)
   requestingDeviceId String   // 新しいデバイスを一時的に識別するID (例: UUID)
   status             String   // "pending", "approved", "rejected", "expired"
   expiresAt          DateTime // リクエストの有効期限
+  challenge          String?  // 承認時に使用するチャレンジ (Base64URL encoded)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
+  @@unique([userId, requestingDeviceId]) // 同一ユーザーからの同一デバイスIDリクエストは一つ
   @@index([userId, status])
 }
 ```
@@ -134,7 +136,8 @@ model DeviceApprovalRequest {
 npm install @simplewebauthn/server @simplewebauthn/browser
 
 # Prismaマイグレーション
-npx prisma migrate deploy
+npx prisma migrate dev --name <migration_name> # 初回またはスキーマ変更時
+npx prisma migrate deploy # 適用
 
 # 開発サーバー起動
 npm run dev

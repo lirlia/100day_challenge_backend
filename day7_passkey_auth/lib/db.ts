@@ -1,6 +1,14 @@
-import { PrismaClient } from '../app/generated/prisma'
+import { PrismaClient } from '@prisma/client';
 
-// Use a single instance of PrismaClient across the app
-const prisma = new PrismaClient()
+declare global {
+  // eslint-disable-next-line no-var
+  var prisma: PrismaClient | undefined;
+}
 
-export default prisma
+export const db =
+  globalThis.prisma ||
+  new PrismaClient({
+    log: ['query', 'info', 'warn', 'error'],
+  });
+
+if (process.env.NODE_ENV !== 'production') globalThis.prisma = db;
