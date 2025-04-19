@@ -2,9 +2,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 
-// 仮のユーザー認証: ヘッダーから 'x-user-id' を取得
+// ユーザーIDの取得: ヘッダーまたはクエリパラメータから取得
 function getUserIdFromRequest(request: NextRequest): string | null {
-  return request.headers.get('x-user-id');
+  // ヘッダーから取得
+  const userIdFromHeader = request.headers.get('x-user-id');
+  if (userIdFromHeader) return userIdFromHeader;
+
+  // クエリパラメータから取得
+  const url = new URL(request.url);
+  const userIdFromQuery = url.searchParams.get('userId');
+  return userIdFromQuery;
 }
 
 export async function GET(request: NextRequest) {
@@ -41,7 +48,7 @@ export async function GET(request: NextRequest) {
     }));
 
     console.log(`[Passkeys GET] Found ${formattedPasskeys.length} passkeys for user ${userId}`);
-    return NextResponse.json(formattedPasskeys);
+    return NextResponse.json({ passkeys: formattedPasskeys });
 
   } catch (error) {
     console.error('[Passkeys GET] Failed to fetch passkeys:', error);

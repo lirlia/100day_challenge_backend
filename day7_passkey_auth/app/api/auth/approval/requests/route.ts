@@ -1,10 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 
-// 仮のユーザー認証: ヘッダーから 'x-user-id' を取得
+// ユーザーIDの取得: ヘッダーまたはクエリパラメータから取得
 // 本来はセッションやトークンで認証する
 function getUserIdFromRequest(request: NextRequest): string | null {
-  return request.headers.get('x-user-id');
+  // ヘッダーから取得
+  const userIdFromHeader = request.headers.get('x-user-id');
+  if (userIdFromHeader) return userIdFromHeader;
+
+  // クエリパラメータから取得
+  const url = new URL(request.url);
+  const userIdFromQuery = url.searchParams.get('userId');
+  return userIdFromQuery;
 }
 
 export async function GET(request: NextRequest) {
@@ -36,7 +43,7 @@ export async function GET(request: NextRequest) {
     });
 
     console.log(`[Approval Requests GET] Found ${requests.length} pending requests for user ${userId}`);
-    return NextResponse.json(requests);
+    return NextResponse.json({ requests });
 
   } catch (error) {
     console.error('[Approval Requests GET] Failed to fetch requests:', error);
