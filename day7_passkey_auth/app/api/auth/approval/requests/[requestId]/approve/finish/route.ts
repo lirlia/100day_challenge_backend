@@ -16,10 +16,11 @@ function getUserIdFromRequest(request: NextRequest): string | null {
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { requestId: string } },
+  context: { params: { requestId: string } },
 ) {
   const userId = getUserIdFromRequest(request); // 承認者の User ID
-  const requestId = params.requestId;
+  // params を非同期として扱う
+  const { requestId } = context.params;
   let authenticationResponse: AuthenticationResponseJSON;
 
   if (!userId) {

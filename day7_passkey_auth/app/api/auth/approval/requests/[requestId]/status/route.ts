@@ -3,9 +3,10 @@ import { db } from '@/lib/db';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { requestId: string } },
+  context: { params: { requestId: string } },
 ) {
-  const requestId = params.requestId;
+  // params を非同期として扱う
+  const { requestId } = context.params;
 
   if (!requestId) {
     return NextResponse.json({ error: 'Request ID is required' }, { status: 400 });

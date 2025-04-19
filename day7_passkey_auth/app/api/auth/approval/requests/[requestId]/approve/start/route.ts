@@ -11,10 +11,11 @@ function getUserIdFromRequest(request: NextRequest): string | null {
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { requestId: string } },
+  context: { params: { requestId: string } },
 ) {
   const userId = getUserIdFromRequest(request);
-  const requestId = params.requestId;
+  // params を非同期として扱う
+  const { requestId } = context.params;
 
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
