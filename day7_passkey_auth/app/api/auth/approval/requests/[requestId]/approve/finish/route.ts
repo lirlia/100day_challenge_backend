@@ -142,10 +142,11 @@ export async function POST(
       expectedOrigin: RP_ORIGIN as string,
       expectedRPID: RP_ID as string,
       requireUserVerification: true,
-      authenticator: {
-        credentialPublicKey: publicKey,
-        credentialID: credentialID,
-        counter: counter,
+      credential: {
+        id: authenticator.credentialId,
+        publicKey: authenticator.publicKey,
+        counter: Number(authenticator.counter || 0),
+        transports: authenticator.transports ? JSON.parse(authenticator.transports) : undefined,
       }
     });
 
