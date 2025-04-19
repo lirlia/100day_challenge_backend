@@ -124,7 +124,7 @@ export default function LoginPage() {
         try {
           const tempUserData = {
             id: verificationResult.userId,
-            email: email
+            email: verificationResult.email
           };
           console.log('Saving user data to localStorage:', tempUserData);
           localStorage.setItem('tempUser', JSON.stringify(tempUserData));

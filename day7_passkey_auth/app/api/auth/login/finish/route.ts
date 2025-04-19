@@ -239,7 +239,18 @@ export async function POST(request: NextRequest) {
       // 6. ログイン成功。セッションを開始するか、成功したことをクライアントに伝える
       //    今回はステートレスなので、成功レスポンスを返す
       const user = await db.user.findUnique({ where: { id: userId }});
-      return NextResponse.json({ verified: true, user: { id: user?.id, email: user?.email } });
+      if (!user) {
+        console.error(`[Login Finish] User not found in database for ID: ${userId}`);
+        return NextResponse.json({ error: 'User not found' }, { status: 404 });
+      }
+
+      console.log(`[Login Finish] Login successful for user: ${user.email} (${user.id})`);
+      return NextResponse.json({
+        status: 'success',
+        verified: true,
+        userId: user.id,
+        email: user.email
+      });
 
     } else {
       console.error('[Login Finish] Verification failed - not verified');
