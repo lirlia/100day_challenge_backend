@@ -5,6 +5,10 @@ import ShareDBClient from 'sharedb/lib/client';
 import richText from 'rich-text';
 import ReconnectingWebSocket from 'reconnecting-websocket';
 import Delta from 'quill-delta';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter/dist/esm/prism';
+import { ghcolors } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
 ShareDBClient.types.register(richText.type);
 
@@ -250,17 +254,38 @@ export default function Home() {
           </div>
           <div className="flex-1 flex flex-col bg-gray-50">
             {/* Removed the header within the panel */}
-            <div className="flex-1 p-4 overflow-y-auto bg-gray-50">
-              {/* Simple preview using pre for now */}
-              {text ? (
-                <pre className="whitespace-pre-wrap break-words font-sans text-base">
-                  {text}
-                </pre>
-              ) : (
-                <div className="text-gray-400 italic">
-                  Nothing to preview
-                </div>
-              )}
+            <div className="flex-1 p-4 overflow-y-auto bg-gray-50 prose prose-sm max-w-none">
+              {/* Render Markdown using ReactMarkdown */}
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={{
+                  code({ node, inline, className, children, ...props }: {
+                    node: any;
+                    inline?: boolean;
+                    className?: string;
+                    children?: React.ReactNode;
+                    [key: string]: any;
+                  }) {
+                    const match = /language-(\w+)/.exec(className || '');
+                    return !inline && match ? (
+                      <SyntaxHighlighter
+                        style={ghcolors as any}
+                        language={match[1]}
+                        PreTag="div"
+                        {...props}
+                      >
+                        {String(children).replace(/\n$/, '')}
+                      </SyntaxHighlighter>
+                    ) : (
+                      <code className={className} {...props}>
+                        {children}
+                      </code>
+                    );
+                  }
+                }}
+              >
+                {text}
+              </ReactMarkdown>
             </div>
           </div>
         </div>
