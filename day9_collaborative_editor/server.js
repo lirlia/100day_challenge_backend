@@ -8,8 +8,10 @@ class WebSocketJSONStream extends EventEmitter {
   constructor(ws) {
     super();
     this.ws = ws;
+    console.log('[Debug][Stream] WebSocketJSONStream created for a connection.');
 
     this.ws.on('message', (message) => {
+      console.log('[Debug][Stream] Received message from client:', message.toString());
       try {
         // ShareDBは通常JSONを期待するため、文字列からパース
         // クライアントもJSON文字列で送信する必要があることに注意
@@ -31,6 +33,7 @@ class WebSocketJSONStream extends EventEmitter {
   }
 
   write(data) {
+    console.log('[Debug][Stream] Writing data to client:', data);
     try {
       // ShareDBからのデータをJSON文字列に変換して送信
       this.ws.send(JSON.stringify(data));

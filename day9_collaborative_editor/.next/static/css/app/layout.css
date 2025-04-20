@@ -39,9 +39,6 @@
 .flex {
   display: flex;
 }
-.grid {
-  display: grid;
-}
 .hidden {
   display: none;
 }
@@ -71,12 +68,6 @@
 }
 .flex-shrink {
   flex-shrink: 1;
-}
-.shrink {
-  flex-shrink: 1;
-}
-.grow {
-  flex-grow: 1;
 }
 .border-collapse {
   border-collapse: collapse;
@@ -138,12 +129,6 @@
 }
 .whitespace-pre-wrap {
   white-space: pre-wrap;
-}
-.lowercase {
-  text-transform: lowercase;
-}
-.uppercase {
-  text-transform: uppercase;
 }
 .italic {
   font-style: italic;

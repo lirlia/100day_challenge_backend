@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import ShareDBClient from 'sharedb/lib/client';
 import richText from 'rich-text';
 import ReconnectingWebSocket from 'reconnecting-websocket';
+import Delta from 'quill-delta';
 
 ShareDBClient.types.register(richText.type);
 
@@ -150,23 +151,45 @@ export default function Home() {
 
     const newText = event.target.value;
     const doc = docRef.current;
-    if (!doc || !doc.type || !doc.data) return;
+    const previousText = text; // Use the state value *before* this change as previousText
 
-    // Calculate the diff using rich-text type
-    // Get current text from doc.data (Delta format)
-    const currentText = doc.data.ops.map((op: any) => op.insert).join('');
-    const diff = richText.type.diff(currentText, newText);
+    if (!doc || !doc.type) { // Removed doc.data check here, as we use previousText state
+        console.warn('[Debug] Doc or doc.type not available in handleTextChange');
+        return;
+    }
 
-    console.log('Local diff:', diff);
+    // Explicitly check if strings are identical before diffing
+    if (previousText === newText) {
+        console.log('[Debug] Texts are identical according to ===, skipping diff.');
+        setText(newText); // Still update local state if needed (e.g., cursor move)
+        return; // No diff to calculate or submit
+    }
+
+    // Calculate the diff using Quill Delta
+    const previousDelta = new Delta().insert(previousText);
+    const newDelta = new Delta().insert(newText);
+    const diffDelta = previousDelta.diff(newDelta);
+
+    console.log(`[Debug] Diffing Deltas: Previous=${JSON.stringify(previousDelta)}, New=${JSON.stringify(newDelta)}`);
+    console.log('[Debug] Calculated Delta diff:', diffDelta);
+
     // Submit the operation if there's a change
-    if (diff && diff.ops.length > 0) {
-      doc.submitOp(diff.ops);
+    if (diffDelta && diffDelta.ops && diffDelta.ops.length > 0) {
+      console.log('[Debug] Delta diff has ops, attempting to submit...', diffDelta.ops);
+      try {
+        doc.submitOp(diffDelta.ops); // Submit the calculated Delta ops
+        console.log('[Debug] doc.submitOp called successfully with Delta ops.');
+      } catch (submitError) {
+        console.error('[Debug] Error calling doc.submitOp:', submitError);
+      }
+    } else {
+        console.log('[Debug] No ops in diff, not submitting.');
     }
     // Update local state immediately (though ShareDB will eventually send the op back)
     // This makes the UI feel more responsive.
     setText(newText);
 
-  }, []); // Dependencies: text (managed via doc.data)
+  }, [text]); // Add text to dependency array
 
   if (!hasMounted) {
     return (
