@@ -1,76 +1,93 @@
 import { PrismaClient } from '@/app/generated/prisma';
 import * as fs from 'node:fs';
 import * as nodePath from 'node:path'; // path -> nodePath に変更
-import git from 'isomorphic-git';
+import git from 'isomorphic-git'; // walk のために残すが、読み取りは spawn に変更
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import prisma from '@/lib/db'; // default import に修正
 import CloneRepo from '@/components/CloneRepo'; // 新しいコンポーネントをインポート
+import { spawn } from 'child_process'; // spawn をインポート
+import { promisify } from 'util'; // exec を Promise 化するために使う (今回は spawn なので不要かも)
 
 // const prisma = new PrismaClient();
+
+// キャッシュを無効化し、常に動的レンダリングする
+export const dynamic = 'force-dynamic';
 
 // GitEntry 型の type と mode を修正
 type GitEntry = {
     oid: string;
     type: 'blob' | 'tree' | 'commit' | 'tag' | 'special'; // 'special' を追加
     path: string;
-    mode: number; // string -> number に変更
+    mode: string; // ls-tree の出力に合わせて string に戻す
 }
 
-async function getRepoData(repoName: string) {
+async function getRepoDataWithSpawn(repoName: string): Promise<{ repository: { id: string; name: string; path: string; createdAt: Date; updatedAt: Date; } | null; entries: GitEntry[] }> {
   const repository = await prisma.repository.findUnique({
     where: { name: repoName },
   });
 
   if (!repository) {
-    return null;
+    return { repository: null, entries: [] };
   }
 
-  try {
-    // デフォルトブランチ (main) の最新コミットを取得
-    const headOid = await git.resolveRef({ fs: fs.promises, dir: repository.path, ref: 'HEAD' });
-    const commit = await git.readCommit({ fs: fs.promises, dir: repository.path, oid: headOid });
-    const treeOid = commit.commit.tree;
-
-    // --- git.walk を使ってルートツリーのエントリを取得 ---
-    const entries: GitEntry[] = [];
-    await git.walk({
-        fs: fs.promises,
-        dir: repository.path,
-        trees: [git.TREE({ oid: treeOid } as any)],
-        map: async (filepath, [root]) => {
-            // filepath はファイル/ディレクトリへのパス (ルートからの相対)
-            // root は TreeEntry オブジェクト (null になる場合もあるのでチェック)
-            if (filepath === '.' || !root) return null; // ルート自体や null はスキップ
-
-            // walk は再帰的に潜るが、今回はルート直下のみ欲しいので階層チェック
-            if (filepath.includes('/')) return null;
-
-            entries.push({
-                oid: await root.oid(),
-                type: await root.type() as GitEntry['type'],
-                path: filepath,
-                mode: await root.mode(),
-            });
-            return true; // 何か返さないと walk が止まる可能性がある
-        },
+  return new Promise((resolve, reject) => {
+    // git ls-tree コマンドを実行してルートツリーの内容を取得
+    // -z オプションで NUL 区切り、--full-tree は不要 (HEAD 指定のため)
+    const lsTreeProcess = spawn('git', ['ls-tree', '-z', 'HEAD'], {
+        cwd: repository.path, // bare リポジトリ内で実行
+        env: process.env, // 環境変数を引き継ぐ
     });
-    // --- ここまで ---
 
-    return { repository, entries };
+    let stdoutData = '';
+    let stderrData = '';
 
-  } catch (error) {
-    console.error(`Failed to read repository data for ${repoName}:`, error);
-    // HEAD がない、コミットがない等の場合もエラーになる
-    return { repository, entries: [] }; // エラーでもリポジトリ情報だけ返す (クローンURL表示のため)
-  }
+    lsTreeProcess.stdout.on('data', (data) => {
+      stdoutData += data.toString();
+    });
+
+    lsTreeProcess.stderr.on('data', (data) => {
+      stderrData += data.toString();
+    });
+
+    lsTreeProcess.on('close', (code) => {
+      if (code === 0) {
+        console.log(`[DEBUG RepoDetail Spawn] git ls-tree HEAD successful for ${repoName}`);
+        const entries: GitEntry[] = [];
+        // NUL 区切りで分割し、各行をパース
+        const lines = stdoutData.split('\0').filter(line => line.trim() !== '');
+        lines.forEach(line => {
+          // フォーマット: <mode> SP <type> SP <oid> TAB <path>
+          const parts = line.split(/[ \t]/);
+          if (parts.length >= 4) {
+            const mode = parts[0];
+            const type = parts[1] as GitEntry['type']; // 型アサーション
+            const oid = parts[2];
+            const path = parts.slice(3).join(' '); // ファイル名にスペースが含まれる場合を考慮
+            entries.push({ mode, type, oid, path });
+          }
+        });
+        console.log(`[DEBUG RepoDetail Spawn] Found ${entries.length} entries in root tree:`, entries.map(e => e.path));
+        resolve({ repository, entries });
+      } else {
+        console.error(`[ERROR RepoDetail Spawn] git ls-tree failed for ${repoName} with code ${code}: ${stderrData}`);
+        // エラーでもリポジトリ情報だけ返す
+        resolve({ repository, entries: [] });
+      }
+    });
+
+    lsTreeProcess.on('error', (err) => {
+      console.error(`[ERROR RepoDetail Spawn] Failed to spawn git ls-tree for ${repoName}:`, err);
+      reject(err); // spawn 自体のエラーは reject
+    });
+  });
 }
 
 export default async function RepoDetailPage({ params }: { params: { repoName: string } }) {
   // params を await する
   const resolvedParams = await params;
   const repoName = resolvedParams.repoName;
-  const data = await getRepoData(repoName);
+  const data = await getRepoDataWithSpawn(repoName);
 
   if (!data || !data.repository) {
     notFound(); // リポジトリがDBに存在しない場合は 404

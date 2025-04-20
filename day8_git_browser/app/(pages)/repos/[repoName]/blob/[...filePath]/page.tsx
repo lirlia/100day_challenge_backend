@@ -1,55 +1,64 @@
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import git from 'isomorphic-git';
+import prisma from '@/lib/db';
+import { spawn } from 'child_process';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import ReactMarkdown from 'react-markdown';
-import prisma from '@/lib/db';
 
-async function getFileData(repoName: string, filePathArray: string[]) {
+// キャッシュを無効化し、常に動的レンダリングする
+export const dynamic = 'force-dynamic';
+
+async function getFileDataWithSpawn(repoName: string, filePathArray: string[]): Promise<{ repository: { id: string; name: string; path: string; createdAt: Date; updatedAt: Date; } | null; filePath: string; content: string | null; isMarkdown: boolean; }> {
   const repository = await prisma.repository.findUnique({
     where: { name: repoName },
   });
 
   if (!repository) {
-    return null;
+    return { repository: null, filePath: filePathArray.join('/'), content: null, isMarkdown: false };
   }
 
   const filePath = filePathArray.join('/');
+  const isMarkdown = filePath.toLowerCase().endsWith('.md');
 
-  try {
-    const headOid = await git.resolveRef({ fs: fs.promises, dir: repository.path, ref: 'HEAD' });
-    const commit = await git.readCommit({ fs: fs.promises, dir: repository.path, oid: headOid });
-    const treeOid = commit.commit.tree;
-
-    const blobStat = await git.readObject({
-      fs: fs.promises,
-      dir: repository.path,
-      oid: treeOid,
-      filepath: filePath,
+  return new Promise((resolve, reject) => {
+    const catFileProcess = spawn('git', ['cat-file', 'blob', `HEAD:${filePath}`], {
+        cwd: repository.path,
+        env: process.env,
     });
 
-    if (!blobStat || blobStat.type !== 'blob') {
-        console.error(`Object at path ${filePath} is not a blob or not found.`);
-        return { repository, filePath, content: null, isMarkdown: false };
-    }
+    let stdoutData = Buffer.alloc(0);
+    let stderrData = '';
 
-    const { blob } = await git.readBlob({ fs: fs.promises, dir: repository.path, oid: blobStat.oid });
-    const content = Buffer.from(blob).toString('utf8');
+    catFileProcess.stdout.on('data', (data) => {
+      stdoutData = Buffer.concat([stdoutData, data]);
+    });
 
-    const isMarkdown = filePath.toLowerCase().endsWith('.md');
+    catFileProcess.stderr.on('data', (data) => {
+      stderrData += data.toString();
+    });
 
-    return { repository, filePath, content, isMarkdown };
+    catFileProcess.on('close', (code) => {
+      if (code === 0) {
+        const content = stdoutData.toString('utf8');
+        console.log(`[DEBUG FileContent Spawn] git cat-file successful for ${repoName}/${filePath}, length: ${content.length}`);
+        resolve({ repository, filePath, content, isMarkdown });
+      } else {
+        console.error(`[ERROR FileContent Spawn] git cat-file failed for ${repoName}/${filePath} with code ${code}: ${stderrData}`);
+        resolve({ repository, filePath, content: null, isMarkdown });
+      }
+    });
 
-  } catch (error) {
-    console.error(`Failed to read file data for ${repoName}/${filePath}:`, error);
-    return { repository, filePath, content: null, isMarkdown: false };
-  }
+     catFileProcess.on('error', (err) => {
+      console.error(`[ERROR FileContent Spawn] Failed to spawn git cat-file for ${repoName}/${filePath}:`, err);
+      reject(err);
+    });
+  });
 }
 
 export default async function FileContentPage({ params }: { params: { repoName: string, filePath: string[] } }) {
-  const { repoName, filePath: filePathArray } = params;
-  const data = await getFileData(repoName, filePathArray);
+  // params を await する
+  const resolvedParams = await params;
+  const { repoName, filePath: filePathArray } = resolvedParams;
+  const data = await getFileDataWithSpawn(repoName, filePathArray);
 
   if (!data || !data.repository) {
     notFound();
