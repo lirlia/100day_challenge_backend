@@ -1,58 +1,140 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import ShareDBClient from 'sharedb/lib/client';
+import richText from 'rich-text';
+import ReconnectingWebSocket from 'reconnecting-websocket';
+
+ShareDBClient.types.register(richText.type);
+
+const WS_URL = 'ws://localhost:8080'; // WebSocket server URL
 
 export default function Home() {
   const [hasMounted, setHasMounted] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
-  const [text, setText] = useState(''); // Editor content
-  const ws = useRef<WebSocket | null>(null);
+  const [text, setText] = useState(''); // Local editor content (derived from ShareDB)
+  const docRef = useRef<ShareDBClient.Doc | null>(null); // Ref to store the ShareDB document object
+  const connectionRef = useRef<ShareDBClient.Connection | null>(null); // Ref for ShareDB connection
+  const editorRef = useRef<HTMLTextAreaElement>(null); // Ref for the textarea element
+  const applyingServerOp = useRef(false); // Flag to prevent feedback loop
 
-  // WebSocket connection logic
+  // Initialize ShareDB connection and document subscription
   useEffect(() => {
-    console.log('Attempting WebSocket connection...');
-    ws.current = new WebSocket('ws://localhost:8080');
+    console.log('[Debug] Setting up ShareDB connection...');
+    const socket = new ReconnectingWebSocket(WS_URL);
+    console.log('[Debug] ReconnectingWebSocket instance created:', socket);
 
-    ws.current.onopen = () => {
-      console.log('WebSocket connected');
-      setIsConnected(true);
-    };
+    socket.addEventListener('open', () => {
+        console.log('[Debug] WebSocket connection opened.');
+    });
+    socket.addEventListener('close', (event) => {
+        console.log('[Debug] WebSocket connection closed:', event.code, event.reason);
+    });
+    socket.addEventListener('error', (event) => {
+        console.error('[Debug] WebSocket connection error:', event);
+    });
 
-    ws.current.onclose = () => {
-      console.log('WebSocket disconnected');
-      setIsConnected(false);
-      ws.current = null;
-    };
+    const connection = new ShareDBClient.Connection(socket as any);
+    console.log('[Debug] ShareDB Connection instance created:', connection);
+    connectionRef.current = connection;
 
-    ws.current.onerror = (event) => {
-      console.error('WebSocket error event:', event);
-    };
+    // Get the document
+    const doc = connection.get('documents', 'default');
+    console.log('[Debug] ShareDB document instance obtained:', doc);
+    docRef.current = doc;
 
-    ws.current.onmessage = (event) => {
-      console.log('Message from server:', event.data);
-      try {
-        const data = JSON.parse(event.data);
-        if (data.type === 'init') {
-          setText(data.document);
-          console.log('Initialized with document:', data.document);
-          // TODO: Handle revision, clientId, clientColor, clients for cursor/OT
-        } else if (data.type === 'operation') {
-          // TODO: Apply incoming operation using ot.js
-          console.log('Received operation:', data);
-        } else if (data.type === 'selection_update') {
-           // TODO: Handle cursor updates
-           console.log('Received selection update:', data);
-        }
-        // Ignore user_joined/user_left for now as user list is removed
-      } catch (e) {
-        console.error("Failed to parse message or invalid JSON", event.data, e);
+    console.log('[Debug] Calling doc.subscribe...');
+    doc.subscribe((err) => {
+      if (err) {
+        console.error('[Debug] Failed to subscribe to document:', err);
+        setIsConnected(false); // Ensure disconnected state on subscribe error
+        return;
       }
-    };
+      console.log('[Debug] Successfully subscribed to document');
+      setIsConnected(true);
+      // Initial document load
+      if (doc.data) {
+         // ShareDB rich-text data is an array of ops (Delta format)
+         // We need plain text for the textarea
+         const initialText = doc.data.ops.map((op: any) => op.insert).join('');
+         setText(initialText);
+         console.log('Document loaded:', initialText);
+      } else {
+        console.log('Document is empty or not yet loaded');
+      }
+    });
 
-    const currentWs = ws.current;
+    // Listen for changes from the server
+    doc.on('op', (op, source) => {
+      if (source) {
+          console.log('[Debug] Ignoring op from self:', op);
+          return; // Don't apply our own operations
+      }
+      console.log('[Debug] Received op from server:', op);
+      try {
+        applyingServerOp.current = true; // Set flag before applying
+        // Apply op to local state (rich-text ops are deltas)
+        // We need to calculate the new full text based on the delta
+        // This is a simplified approach; a proper rich-text editor would handle this better.
+        // For plain text, applying diffs is complex with rich-text deltas.
+        // Let's refetch the full text for simplicity here, though less efficient.
+        const currentDocData = doc.data; // Get the latest data after the op was applied by ShareDB
+        if (currentDocData?.ops) {
+            const newText = currentDocData.ops.map((op: any) => op.insert).join('');
+            setText(newText);
+            console.log('Applied server op, new text:', newText);
+        } else {
+            console.warn('Could not get text from doc data after op');
+        }
+      } catch (e) {
+          console.error("[Debug] Error applying server op:", e);
+      } finally {
+          applyingServerOp.current = false; // Reset flag
+      }
+    });
+
+    doc.on('error', (err) => {
+        console.error('[Debug] ShareDB document error:', err);
+    });
+
+    // Listen for connection state changes
+    connection.on('connected', () => {
+        console.log('[Debug] ShareDB state: connected');
+        setIsConnected(true);
+        // Re-subscribe or ensure subscription is active if needed
+        if (docRef.current && !docRef.current.subscribed) {
+            console.log('[Debug] Attempting to re-subscribe...');
+            docRef.current.subscribe((err) => {
+                if (err) console.error('[Debug] Error re-subscribing:', err);
+                else console.log('[Debug] Re-subscribed successfully');
+            });
+        }
+    });
+    connection.on('disconnected', () => {
+        console.log('[Debug] ShareDB state: disconnected');
+        setIsConnected(false);
+    });
+    connection.on('error', (err) => {
+        console.error('[Debug] ShareDB connection error event:', err);
+        setIsConnected(false);
+    });
+    connection.on('connection error', (err) => {
+        console.error('[Debug] ShareDB connection error (explicit event):', err);
+        setIsConnected(false);
+    });
+    connection.on('state', (newState, reason) => {
+        console.log(`[Debug] ShareDB state changed to: ${newState}, Reason: ${reason}`);
+        if (newState === 'disconnected' || newState === 'closed' || newState === 'stopped') {
+            setIsConnected(false);
+        }
+    });
+
+    // Cleanup on unmount
     return () => {
-      console.log('WebSocket effect cleanup - closing connection');
-      currentWs?.close();
+      console.log('Cleaning up ShareDB connection');
+      connection.close();
+      docRef.current = null;
+      connectionRef.current = null;
       setIsConnected(false);
     };
   }, []);
@@ -62,15 +144,29 @@ export default function Home() {
     setHasMounted(true);
   }, []);
 
-  // Text area change handler
-  const handleTextChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
+  // Text area change handler - submits OT ops to ShareDB
+  const handleTextChange = useCallback((event: React.ChangeEvent<HTMLTextAreaElement>) => {
+    if (applyingServerOp.current) return; // Don't process change if it came from the server
+
     const newText = event.target.value;
-    // TODO: Generate OT operation BEFORE updating state locally?
-    // For now, just update local state. OT logic will handle diffing later.
+    const doc = docRef.current;
+    if (!doc || !doc.type || !doc.data) return;
+
+    // Calculate the diff using rich-text type
+    // Get current text from doc.data (Delta format)
+    const currentText = doc.data.ops.map((op: any) => op.insert).join('');
+    const diff = richText.type.diff(currentText, newText);
+
+    console.log('Local diff:', diff);
+    // Submit the operation if there's a change
+    if (diff && diff.ops.length > 0) {
+      doc.submitOp(diff.ops);
+    }
+    // Update local state immediately (though ShareDB will eventually send the op back)
+    // This makes the UI feel more responsive.
     setText(newText);
-    // TODO: Send OT operation to server
-    console.log("Text changed, sending operation should happen here.");
-  };
+
+  }, []); // Dependencies: text (managed via doc.data)
 
   if (!hasMounted) {
     return (
@@ -82,7 +178,7 @@ export default function Home() {
 
   return (
     <div className="flex flex-col h-screen bg-white">
-      {/* HackMD-style Navigation Bar - Changed to black background */}
+      {/* Navigation Bar */}
       <nav className="bg-black text-white h-12 flex items-center px-4">
         <div className="flex items-center">
           <span className="font-bold text-xl">Day9 Collaborative Editor</span>
@@ -105,16 +201,15 @@ export default function Home() {
 
       {/* Editor Container */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Left Panel: Text Input Area (HackMD Style) */}
+        {/* Left Panel: Text Input Area */}
         <div className="w-1/2 border-r border-gray-200 flex flex-col">
           <div className="py-2 px-4 border-b border-gray-200 bg-gray-50 flex items-center justify-center">
             <span className="text-gray-700 font-medium">MARKDOWN</span>
           </div>
-          <div className="flex-1 flex flex-col">
-            <div className="px-4 py-2 bg-gray-50 border-b border-gray-200">
-              <span className="text-gray-500 text-sm"># aaa</span>
-            </div>
+          <div className="flex-1 flex flex-col bg-gray-50">
+            {/* Removed the header within the panel */}
             <textarea
+              ref={editorRef}
               className="flex-1 w-full p-4 border-none resize-none font-mono text-sm outline-none bg-gray-50"
               value={text}
               onChange={handleTextChange}
@@ -125,18 +220,15 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Right Panel: Preview Area (HackMD Style) */}
+        {/* Right Panel: Preview Area */}
         <div className="w-1/2 flex flex-col">
           <div className="py-2 px-4 border-b border-gray-200 bg-gray-50 flex items-center justify-center">
             <span className="text-gray-700 font-medium">PREVIEW</span>
           </div>
-          <div className="flex-1 flex flex-col">
-            <div className="px-4 py-2 bg-gray-50 border-b border-gray-200">
-              <span className="text-gray-500 text-sm"># aaa</span>
-            </div>
+          <div className="flex-1 flex flex-col bg-gray-50">
+            {/* Removed the header within the panel */}
             <div className="flex-1 p-4 overflow-y-auto bg-gray-50">
-              {/* This would normally use a Markdown parser like react-markdown */}
-              {/* For simplicity, we just display the raw text for now */}
+              {/* Simple preview using pre for now */}
               {text ? (
                 <pre className="whitespace-pre-wrap break-words font-sans text-base">
                   {text}
