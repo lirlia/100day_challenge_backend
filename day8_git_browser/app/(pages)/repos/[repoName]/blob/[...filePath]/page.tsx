@@ -3,6 +3,8 @@ import { spawn } from 'child_process';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import rehypeHighlight from 'rehype-highlight';
 
 // キャッシュを無効化し、常に動的レンダリングする
 export const dynamic = 'force-dynamic';
@@ -85,15 +87,18 @@ export default async function FileContentPage({ params }: { params: { repoName: 
       </nav>
       <h1 className="text-xl font-bold mb-4 break-all">{filePath}</h1>
 
-      <div className="border rounded p-4 bg-white dark:bg-gray-800">
+      <div className="mt-6">
         {isMarkdown ? (
-          <div className="prose dark:prose-invert max-w-none">
-            <ReactMarkdown>
+          <div className="markdown-body">
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              rehypePlugins={[rehypeHighlight]}
+            >
               {content}
             </ReactMarkdown>
           </div>
         ) : (
-          <pre className="whitespace-pre-wrap text-sm">{content}</pre>
+          <pre className="whitespace-pre-wrap text-sm bg-gray-100 dark:bg-gray-800 p-4 rounded">{content}</pre>
         )}
       </div>
     </div>

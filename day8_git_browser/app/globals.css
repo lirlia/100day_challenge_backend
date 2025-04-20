@@ -1,4 +1,15 @@
 @import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* highlight.js GitHub Dark theme を削除 */
+/* @import 'highlight.js/styles/github-dark.css'; */
+
+/* github-markdown-css をインポート */
+@import 'github-markdown-css/github-markdown.css';
+
+/* 必要なら他のグローバルスタイル */
 
 :root {
   --background: #ffffff;
