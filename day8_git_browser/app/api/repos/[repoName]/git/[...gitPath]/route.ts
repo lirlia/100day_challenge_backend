@@ -79,22 +79,46 @@ async function handleGitRequest(request: NextRequest, params: { repoName: string
     const gitBackend = backend as any;
     const responseHeaders = new Headers();
 
-    // --- Content-Type を URL から事前に設定 ---
-    const requestPath = request.nextUrl.pathname; // フルパスを使う
-    if (requestPath.endsWith('/info/refs') && request.nextUrl.searchParams.get('service') === 'git-upload-pack') {
-        responseHeaders.set('Content-Type', 'application/x-git-upload-pack-advertisement');
-        console.log('[DEBUG] Pre-setting Content-Type based on URL: application/x-git-upload-pack-advertisement');
-    } else if (requestPath.endsWith('/git-upload-pack')) {
-        responseHeaders.set('Content-Type', 'application/x-git-upload-pack-result');
-        console.log('[DEBUG] Pre-setting Content-Type based on URL: application/x-git-upload-pack-result');
-    } else {
-        // 他のgitサービス (receive-packなど) や想定外のパスの場合。
-        // 必要に応じて他の Content-Type を設定するか、エラーとする。
-        console.warn(`[DEBUG] Could not determine Git Content-Type from URL: ${requestPath}${request.nextUrl.search}`);
-        // ここではデフォルトを設定せず、git-http-backend が設定することを期待する（ただし、現状期待できない）
-        // あるいは、ここで 400 Bad Request を返す方が安全かもしれない。
+    // --- Content-Type と spawn するコマンドを URL から事前に判断 ---
+    const requestPath = request.nextUrl.pathname;
+    const serviceParam = request.nextUrl.searchParams.get('service');
+    // ログ追加
+    console.log(`[DEBUG] Determining service: Path=${requestPath}, ServiceParam=${serviceParam}`);
+
+    let gitCommand = '';
+    let contentType = '';
+    const spawnEnv = { ...process.env }; // 現在の環境変数をコピー
+
+    // --- 修正: パス末尾を優先して判定 ---
+    if (requestPath.endsWith('/git-upload-pack')) {
+        contentType = 'application/x-git-upload-pack-result';
+        gitCommand = 'git-upload-pack';
+    } else if (requestPath.endsWith('/git-receive-pack')) {
+        contentType = 'application/x-git-receive-pack-result';
+        gitCommand = 'git-receive-pack';
+        spawnEnv['GIT_HTTP_RECEIVE_PACK'] = 'true';
+    } else if (requestPath.endsWith('/info/refs')) {
+        // /info/refs の場合のみ service パラメータを見る
+        if (serviceParam === 'git-upload-pack') {
+            contentType = 'application/x-git-upload-pack-advertisement';
+            gitCommand = 'git-upload-pack';
+        } else if (serviceParam === 'git-receive-pack') {
+            contentType = 'application/x-git-receive-pack-advertisement';
+            gitCommand = 'git-receive-pack';
+            spawnEnv['GIT_HTTP_RECEIVE_PACK'] = 'true';
+        }
     }
+    // --- 修正ここまで ---
+
+    if (!gitCommand || !contentType) {
+        console.warn(`[DEBUG] Could not determine Git command/Content-Type from URL: ${requestPath}?${serviceParam}`);
+        // 不明なリクエストはエラーにする
+        return new NextResponse('Bad Request: Unknown Git service or path', { status: 400 });
+    }
+
+    responseHeaders.set('Content-Type', contentType);
     responseHeaders.set('Cache-Control', 'no-cache, max-age=0, must-revalidate');
+    console.log(`[DEBUG] Determined git command: ${gitCommand}, Content-Type: ${contentType}`);
     // ---
 
     // backendStream は Duplex (Readable & Writable)
@@ -105,10 +129,20 @@ async function handleGitRequest(request: NextRequest, params: { repoName: string
         return;
       }
       console.log(`Git service: ${service.action}, Repo: ${repoName}`);
-      // ここでのヘッダー設定は削除
 
-      const gitProcess = spawn(service.cmd, service.args.concat(repoPath));
-      console.log(`Spawning git process: ${service.cmd} ${service.args.concat(repoPath).join(' ')}`);
+      // --- spawn するコマンドと環境変数を事前に決定したものに差し替え ---
+      // Note: service.cmd, service.args は git-http-backend (npm) が解析したもの。
+      // 本来はこれを使うべきだが、Content-Type 同様、コールバック内での情報が遅い/不確実なため、
+      // 事前に URL から判定した gitCommand を使う。
+      // 引数 (service.args) は git-http-backend の解析結果を流用する。
+      if (!service.args) { // args がない場合はエラー
+           console.error('git-http-backend did not provide service.args');
+           responseStreamPassThrough.destroy(new Error('Internal Server Error: Missing service args'));
+           return;
+      }
+      const gitProcess = spawn(gitCommand, service.args.concat(repoPath), { env: spawnEnv });
+      console.log(`Spawning git process: ${gitCommand} ${service.args.concat(repoPath).join(' ')} with env GIT_HTTP_RECEIVE_PACK=${spawnEnv['GIT_HTTP_RECEIVE_PACK']}`);
+      // --- ここまで ---
 
       // エラーログ用
       gitProcess.stderr.on('data', (data) => {
