@@ -1,30 +1,30 @@
-'use client';
+// 'use client';
 
-import { useState, useEffect } from 'react';
-import Image from 'next/image';
-import { PrismaClient } from '@/app/generated/prisma';
+// import { useState, useEffect } from 'react';
+// import Image from 'next/image';
 import Link from 'next/link';
 import RepoCreateForm from '@/components/RepoCreateForm';
+import prisma from '@/lib/db';
 
-type User = {
-  id: number;
-  name: string;
-  createdAt: string;
-};
+// import { useState, useEffect } from 'react';
+// import Image from 'next/image';
+// import Link from 'next/link';
+// import RepoCreateForm from '@/components/RepoCreateForm';
+// import prisma from '@/lib/db';
 
-const prisma = new PrismaClient();
+// type User = {
+//   id: number;
+//   name: string;
+//   createdAt: string;
+// };
 
 async function getRepositories() {
-  try {
-    const repositories = await prisma.repository.findMany({
-      orderBy: {
-        createdAt: 'desc',
-      },
-    });
-    return repositories;
-  } finally {
-    await prisma.$disconnect();
-  }
+  const repositories = await prisma.repository.findMany({
+    orderBy: {
+      createdAt: 'desc',
+    },
+  });
+  return repositories;
 }
 
 export default async function HomePage() {
