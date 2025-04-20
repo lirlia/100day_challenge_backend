@@ -6,9 +6,6 @@
 .collapse {
   visibility: collapse;
 }
-.invisible {
-  visibility: hidden;
-}
 .visible {
   visibility: visible;
 }
@@ -37,9 +34,6 @@
 }
 .sticky {
   position: sticky;
-}
-.isolate {
-  isolation: isolate;
 }
 .container {
   width: 100%;
@@ -92,9 +86,6 @@
 .w-full {
   width: 100%;
 }
-.max-w-none {
-  max-width: none;
-}
 .flex-1 {
   flex: 1;
 }
@@ -103,9 +94,6 @@
 }
 .shrink {
   flex-shrink: 1;
-}
-.flex-grow {
-  flex-grow: 1;
 }
 .grow {
   flex-grow: 1;
@@ -124,9 +112,6 @@
 }
 .flex-col {
   flex-direction: column;
-}
-.flex-wrap {
-  flex-wrap: wrap;
 }
 .items-center {
   align-items: center;
@@ -207,6 +192,9 @@
 .filter {
   filter: var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,);
 }
+.filter\! {
+  filter: var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,) !important;
+}
 .backdrop-filter {
   -webkit-backdrop-filter: var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,);
   backdrop-filter: var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,);
@@ -229,6 +217,68 @@
       text-decoration-line: underline;
     }
   }
+}
+:root {
+  --hackmd-nav: #2f363d;
+  --hackmd-bg: #f7f7f7;
+  --hackmd-editor-bg: #ffffff;
+  --hackmd-preview-bg: #ffffff;
+  --hackmd-border: #dcdcdc;
+  --hackmd-green: #05c58b;
+  --hackmd-red: #d9534f;
+  --hackmd-text: #24292e;
+  --hackmd-code-bg: #f5f7f9;
+}
+nav.bg-black {
+  background-color: var(--hackmd-green) !important;
+}
+nav .bg-green-500 {
+  background-color: var(--hackmd-green) !important;
+}
+nav .bg-red-500 {
+  background-color: var(--hackmd-red) !important;
+}
+.border-b.bg-gray-50 {
+  background-color: var(--hackmd-bg) !important;
+  border-color: var(--hackmd-border) !important;
+  color: var(--hackmd-text);
+}
+.bg-gray-50 {
+  background-color: var(--hackmd-bg) !important;
+}
+textarea.bg-gray-50 {
+  background-color: var(--hackmd-editor-bg) !important;
+  color: var(--hackmd-text);
+}
+.prose, .prose * {
+  color: var(--hackmd-text);
+}
+.prose pre {
+  background: var(--hackmd-code-bg);
+  border: 1px solid var(--hackmd-border);
+  border-radius: 4px;
+  padding: 0.75rem 1rem;
+  font-size: 0.85rem;
+  overflow-x: auto;
+}
+.prose code {
+  background: var(--hackmd-code-bg);
+  padding: 0.15em 0.3em;
+  border-radius: 3px;
+}
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--hackmd-bg);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--hackmd-border);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #b3b3b3;
 }
 @property --tw-rotate-x {
   syntax: "*";

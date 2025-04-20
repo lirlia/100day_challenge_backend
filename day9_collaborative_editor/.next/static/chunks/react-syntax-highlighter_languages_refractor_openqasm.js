@@ -1,0 +1,22 @@
+"use strict";
+/*
+ * ATTENTION: An "eval-source-map" devtool has been used.
+ * This devtool is neither made for production nor for readable output files.
+ * It uses "eval()" calls to create a separate source file with attached SourceMaps in the browser devtools.
+ * If you are trying to read the output file, select a different devtool (https://webpack.js.org/configuration/devtool/)
+ * or disable the default devtool with "devtool: false".
+ * If you are looking for production-ready output files, see mode: "production" (https://webpack.js.org/configuration/mode/).
+ */
+(self["webpackChunk_N_E"] = self["webpackChunk_N_E"] || []).push([["react-syntax-highlighter_languages_refractor_openqasm"],{
+
+/***/ "(app-pages-browser)/../node_modules/refractor/lang/openqasm.js":
+/*!**************************************************!*\
+  !*** ../node_modules/refractor/lang/openqasm.js ***!
+  \**************************************************/
+/***/ (function(module, __unused_webpack_exports, __webpack_require__) {
+
+eval(__webpack_require__.ts("\n\nmodule.exports = openqasm\nopenqasm.displayName = 'openqasm'\nopenqasm.aliases = ['qasm']\nfunction openqasm(Prism) {\n  // https://qiskit.github.io/openqasm/grammar/index.html\n  Prism.languages.openqasm = {\n    comment: /\\/\\*[\\s\\S]*?\\*\\/|\\/\\/.*/,\n    string: {\n      pattern: /\"[^\"\\r\\n\\t]*\"|'[^'\\r\\n\\t]*'/,\n      greedy: true\n    },\n    keyword:\n      /\\b(?:CX|OPENQASM|U|barrier|boxas|boxto|break|const|continue|ctrl|def|defcal|defcalgrammar|delay|else|end|for|gate|gphase|if|in|include|inv|kernel|lengthof|let|measure|pow|reset|return|rotary|stretchinf|while)\\b|#pragma\\b/,\n    'class-name':\n      /\\b(?:angle|bit|bool|creg|fixed|float|int|length|qreg|qubit|stretch|uint)\\b/,\n    function: /\\b(?:cos|exp|ln|popcount|rotl|rotr|sin|sqrt|tan)\\b(?=\\s*\\()/,\n    constant: /\\b(?:euler|pi|tau)\\b|π|𝜏|ℇ/,\n    number: {\n      pattern:\n        /(^|[^.\\w$])(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:e[+-]?\\d+)?(?:dt|ns|us|µs|ms|s)?/i,\n      lookbehind: true\n    },\n    operator: /->|>>=?|<<=?|&&|\\|\\||\\+\\+|--|[!=<>&|~^+\\-*/%]=?|@/,\n    punctuation: /[(){}\\[\\];,:.]/\n  }\n  Prism.languages.qasm = Prism.languages.openqasm\n}\n//# sourceURL=[module]\n//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiKGFwcC1wYWdlcy1icm93c2VyKS8uLi9ub2RlX21vZHVsZXMvcmVmcmFjdG9yL2xhbmcvb3BlbnFhc20uanMiLCJtYXBwaW5ncyI6IkFBQVk7O0FBRVo7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQSxLQUFLO0FBQ0w7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQSxLQUFLO0FBQ0w7QUFDQSx1QkFBdUIsS0FBSztBQUM1QjtBQUNBO0FBQ0EiLCJzb3VyY2VzIjpbIndlYnBhY2s6Ly9fTl9FLy4uL25vZGVfbW9kdWxlcy9yZWZyYWN0b3IvbGFuZy9vcGVucWFzbS5qcz8xYmU2Il0sInNvdXJjZXNDb250ZW50IjpbIid1c2Ugc3RyaWN0J1xuXG5tb2R1bGUuZXhwb3J0cyA9IG9wZW5xYXNtXG5vcGVucWFzbS5kaXNwbGF5TmFtZSA9ICdvcGVucWFzbSdcbm9wZW5xYXNtLmFsaWFzZXMgPSBbJ3Fhc20nXVxuZnVuY3Rpb24gb3BlbnFhc20oUHJpc20pIHtcbiAgLy8gaHR0cHM6Ly9xaXNraXQuZ2l0aHViLmlvL29wZW5xYXNtL2dyYW1tYXIvaW5kZXguaHRtbFxuICBQcmlzbS5sYW5ndWFnZXMub3BlbnFhc20gPSB7XG4gICAgY29tbWVudDogL1xcL1xcKltcXHNcXFNdKj9cXCpcXC98XFwvXFwvLiovLFxuICAgIHN0cmluZzoge1xuICAgICAgcGF0dGVybjogL1wiW15cIlxcclxcblxcdF0qXCJ8J1teJ1xcclxcblxcdF0qJy8sXG4gICAgICBncmVlZHk6IHRydWVcbiAgICB9LFxuICAgIGtleXdvcmQ6XG4gICAgICAvXFxiKD86Q1h8T1BFTlFBU018VXxiYXJyaWVyfGJveGFzfGJveHRvfGJyZWFrfGNvbnN0fGNvbnRpbnVlfGN0cmx8ZGVmfGRlZmNhbHxkZWZjYWxncmFtbWFyfGRlbGF5fGVsc2V8ZW5kfGZvcnxnYXRlfGdwaGFzZXxpZnxpbnxpbmNsdWRlfGludnxrZXJuZWx8bGVuZ3Rob2Z8bGV0fG1lYXN1cmV8cG93fHJlc2V0fHJldHVybnxyb3Rhcnl8c3RyZXRjaGluZnx3aGlsZSlcXGJ8I3ByYWdtYVxcYi8sXG4gICAgJ2NsYXNzLW5hbWUnOlxuICAgICAgL1xcYig/OmFuZ2xlfGJpdHxib29sfGNyZWd8Zml4ZWR8ZmxvYXR8aW50fGxlbmd0aHxxcmVnfHF1Yml0fHN0cmV0Y2h8dWludClcXGIvLFxuICAgIGZ1bmN0aW9uOiAvXFxiKD86Y29zfGV4cHxsbnxwb3Bjb3VudHxyb3RsfHJvdHJ8c2lufHNxcnR8dGFuKVxcYig/PVxccypcXCgpLyxcbiAgICBjb25zdGFudDogL1xcYig/OmV1bGVyfHBpfHRhdSlcXGJ8z4B88J2cj3zihIcvLFxuICAgIG51bWJlcjoge1xuICAgICAgcGF0dGVybjpcbiAgICAgICAgLyhefFteLlxcdyRdKSg/OlxcZCsoPzpcXC5cXGQqKT98XFwuXFxkKykoPzplWystXT9cXGQrKT8oPzpkdHxuc3x1c3zCtXN8bXN8cyk/L2ksXG4gICAgICBsb29rYmVoaW5kOiB0cnVlXG4gICAgfSxcbiAgICBvcGVyYXRvcjogLy0+fD4+PT98PDw9P3wmJnxcXHxcXHx8XFwrXFwrfC0tfFshPTw+Jnx+XitcXC0qLyVdPT98QC8sXG4gICAgcHVuY3R1YXRpb246IC9bKCl7fVxcW1xcXTssOi5dL1xuICB9XG4gIFByaXNtLmxhbmd1YWdlcy5xYXNtID0gUHJpc20ubGFuZ3VhZ2VzLm9wZW5xYXNtXG59XG4iXSwibmFtZXMiOltdLCJzb3VyY2VSb290IjoiIn0=\n//# sourceURL=webpack-internal:///(app-pages-browser)/../node_modules/refractor/lang/openqasm.js\n"));
+
+/***/ })
+
+}]);

@@ -1,0 +1,22 @@
+"use strict";
+/*
+ * ATTENTION: An "eval-source-map" devtool has been used.
+ * This devtool is neither made for production nor for readable output files.
+ * It uses "eval()" calls to create a separate source file with attached SourceMaps in the browser devtools.
+ * If you are trying to read the output file, select a different devtool (https://webpack.js.org/configuration/devtool/)
+ * or disable the default devtool with "devtool: false".
+ * If you are looking for production-ready output files, see mode: "production" (https://webpack.js.org/configuration/mode/).
+ */
+(self["webpackChunk_N_E"] = self["webpackChunk_N_E"] || []).push([["react-syntax-highlighter_languages_refractor_ada"],{
+
+/***/ "(app-pages-browser)/../node_modules/refractor/lang/ada.js":
+/*!*********************************************!*\
+  !*** ../node_modules/refractor/lang/ada.js ***!
+  \*********************************************/
+/***/ (function(module, __unused_webpack_exports, __webpack_require__) {
+
+eval(__webpack_require__.ts("\n\nmodule.exports = ada\nada.displayName = 'ada'\nada.aliases = []\nfunction ada(Prism) {\n  Prism.languages.ada = {\n    comment: /--.*/,\n    string: /\"(?:\"\"|[^\"\\r\\f\\n])*\"/,\n    number: [\n      {\n        pattern:\n          /\\b\\d(?:_?\\d)*#[\\dA-F](?:_?[\\dA-F])*(?:\\.[\\dA-F](?:_?[\\dA-F])*)?#(?:E[+-]?\\d(?:_?\\d)*)?/i\n      },\n      {\n        pattern: /\\b\\d(?:_?\\d)*(?:\\.\\d(?:_?\\d)*)?(?:E[+-]?\\d(?:_?\\d)*)?\\b/i\n      }\n    ],\n    'attr-name': /\\b'\\w+/,\n    keyword:\n      /\\b(?:abort|abs|abstract|accept|access|aliased|all|and|array|at|begin|body|case|constant|declare|delay|delta|digits|do|else|elsif|end|entry|exception|exit|for|function|generic|goto|if|in|interface|is|limited|loop|mod|new|not|null|of|others|out|overriding|package|pragma|private|procedure|protected|raise|range|record|rem|renames|requeue|return|reverse|select|separate|some|subtype|synchronized|tagged|task|terminate|then|type|until|use|when|while|with|xor)\\b/i,\n    boolean: /\\b(?:false|true)\\b/i,\n    operator: /<[=>]?|>=?|=>?|:=|\\/=?|\\*\\*?|[&+-]/,\n    punctuation: /\\.\\.?|[,;():]/,\n    char: /'.'/,\n    variable: /\\b[a-z](?:\\w)*\\b/i\n  }\n}\n//# sourceURL=[module]\n//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiKGFwcC1wYWdlcy1icm93c2VyKS8uLi9ub2RlX21vZHVsZXMvcmVmcmFjdG9yL2xhbmcvYWRhLmpzIiwibWFwcGluZ3MiOiJBQUFZOztBQUVaO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQSxPQUFPO0FBQ1A7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0EsMkJBQTJCO0FBQzNCO0FBQ0E7QUFDQTtBQUNBIiwic291cmNlcyI6WyJ3ZWJwYWNrOi8vX05fRS8uLi9ub2RlX21vZHVsZXMvcmVmcmFjdG9yL2xhbmcvYWRhLmpzPzUwMmQiXSwic291cmNlc0NvbnRlbnQiOlsiJ3VzZSBzdHJpY3QnXG5cbm1vZHVsZS5leHBvcnRzID0gYWRhXG5hZGEuZGlzcGxheU5hbWUgPSAnYWRhJ1xuYWRhLmFsaWFzZXMgPSBbXVxuZnVuY3Rpb24gYWRhKFByaXNtKSB7XG4gIFByaXNtLmxhbmd1YWdlcy5hZGEgPSB7XG4gICAgY29tbWVudDogLy0tLiovLFxuICAgIHN0cmluZzogL1wiKD86XCJcInxbXlwiXFxyXFxmXFxuXSkqXCIvLFxuICAgIG51bWJlcjogW1xuICAgICAge1xuICAgICAgICBwYXR0ZXJuOlxuICAgICAgICAgIC9cXGJcXGQoPzpfP1xcZCkqI1tcXGRBLUZdKD86Xz9bXFxkQS1GXSkqKD86XFwuW1xcZEEtRl0oPzpfP1tcXGRBLUZdKSopPyMoPzpFWystXT9cXGQoPzpfP1xcZCkqKT8vaVxuICAgICAgfSxcbiAgICAgIHtcbiAgICAgICAgcGF0dGVybjogL1xcYlxcZCg/Ol8/XFxkKSooPzpcXC5cXGQoPzpfP1xcZCkqKT8oPzpFWystXT9cXGQoPzpfP1xcZCkqKT9cXGIvaVxuICAgICAgfVxuICAgIF0sXG4gICAgJ2F0dHItbmFtZSc6IC9cXGInXFx3Ky8sXG4gICAga2V5d29yZDpcbiAgICAgIC9cXGIoPzphYm9ydHxhYnN8YWJzdHJhY3R8YWNjZXB0fGFjY2Vzc3xhbGlhc2VkfGFsbHxhbmR8YXJyYXl8YXR8YmVnaW58Ym9keXxjYXNlfGNvbnN0YW50fGRlY2xhcmV8ZGVsYXl8ZGVsdGF8ZGlnaXRzfGRvfGVsc2V8ZWxzaWZ8ZW5kfGVudHJ5fGV4Y2VwdGlvbnxleGl0fGZvcnxmdW5jdGlvbnxnZW5lcmljfGdvdG98aWZ8aW58aW50ZXJmYWNlfGlzfGxpbWl0ZWR8bG9vcHxtb2R8bmV3fG5vdHxudWxsfG9mfG90aGVyc3xvdXR8b3ZlcnJpZGluZ3xwYWNrYWdlfHByYWdtYXxwcml2YXRlfHByb2NlZHVyZXxwcm90ZWN0ZWR8cmFpc2V8cmFuZ2V8cmVjb3JkfHJlbXxyZW5hbWVzfHJlcXVldWV8cmV0dXJufHJldmVyc2V8c2VsZWN0fHNlcGFyYXRlfHNvbWV8c3VidHlwZXxzeW5jaHJvbml6ZWR8dGFnZ2VkfHRhc2t8dGVybWluYXRlfHRoZW58dHlwZXx1bnRpbHx1c2V8d2hlbnx3aGlsZXx3aXRofHhvcilcXGIvaSxcbiAgICBib29sZWFuOiAvXFxiKD86ZmFsc2V8dHJ1ZSlcXGIvaSxcbiAgICBvcGVyYXRvcjogLzxbPT5dP3w+PT98PT4/fDo9fFxcLz0/fFxcKlxcKj98WyYrLV0vLFxuICAgIHB1bmN0dWF0aW9uOiAvXFwuXFwuP3xbLDsoKTpdLyxcbiAgICBjaGFyOiAvJy4nLyxcbiAgICB2YXJpYWJsZTogL1xcYlthLXpdKD86XFx3KSpcXGIvaVxuICB9XG59XG4iXSwibmFtZXMiOltdLCJzb3VyY2VSb290IjoiIn0=\n//# sourceURL=webpack-internal:///(app-pages-browser)/../node_modules/refractor/lang/ada.js\n"));
+
+/***/ })
+
+}]);

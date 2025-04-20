@@ -5,29 +5,70 @@ import ShareDBClient from 'sharedb/lib/client';
 import richText from 'rich-text';
 import ReconnectingWebSocket from 'reconnecting-websocket';
 import Delta from 'quill-delta';
-import ReactMarkdown from 'react-markdown';
+import dynamic from 'next/dynamic';
 import remarkGfm from 'remark-gfm';
-import SyntaxHighlighter from 'react-syntax-highlighter';
+import { Options } from 'react-markdown';
+import { PrismAsyncLight as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { SyntaxHighlighterProps } from 'react-syntax-highlighter';
+
+// Explicitly target default export for ReactMarkdown
+const ReactMarkdown = dynamic<Options>(() => import('react-markdown').then(mod => mod.default), { ssr: false });
+
+// Keep static import for the theme, or load it dynamically if needed
 import { ghcolors } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
 ShareDBClient.types.register(richText.type);
 
 const WS_URL = 'ws://localhost:8080'; // WebSocket server URL
+const PRESENCE_CHANNEL = 'editor-presence'; // Define a channel name for presence
+
+// Define types for presence data (optional but good practice)
+interface CursorPresence {
+  cursor: {
+    start: number;
+    end: number;
+  };
+  color: string;
+}
+
+type RemotePresences = Record<string, CursorPresence>;
 
 export default function Home() {
   const [hasMounted, setHasMounted] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [text, setText] = useState(''); // Local editor content (derived from ShareDB)
+  const [clientId, setClientId] = useState<string | null>(null); // Store our client ID
+  const [clientColor, setClientColor] = useState<string | null>(null); // Store our color
+  const [remotePresences, setRemotePresences] = useState<RemotePresences>({}); // Store remote presence data
   const docRef = useRef<ShareDBClient.Doc | null>(null); // Ref to store the ShareDB document object
   const connectionRef = useRef<ShareDBClient.Connection | null>(null); // Ref for ShareDB connection
   const editorRef = useRef<HTMLTextAreaElement>(null); // Ref for the textarea element
   const applyingServerOp = useRef(false); // Flag to prevent feedback loop
+  const presenceRef = useRef<ShareDBClient.Presence<CursorPresence> | null>(null); // Ref for presence object
+  const localPresenceRef = useRef<ShareDBClient.LocalPresence<CursorPresence> | null>(null); // Ref for local presence object
 
   // Initialize ShareDB connection and document subscription
   useEffect(() => {
     console.log('[Debug] Setting up ShareDB connection...');
     const socket = new ReconnectingWebSocket(WS_URL);
     console.log('[Debug] ReconnectingWebSocket instance created:', socket);
+
+    // --- Add listener for custom messages (like client_info) ---
+    const handleCustomMessage = (event: MessageEvent) => {
+        try {
+            const data = JSON.parse(event.data);
+            if (data.type === 'client_info') {
+                console.log('[Debug] Received client_info:', data);
+                setClientId(data.clientId);
+                setClientColor(data.clientColor);
+            }
+        } catch (e) {
+            // Might be a ShareDB message, ignore parse errors here
+            // console.warn('Could not parse message as JSON or unknown type:', event.data);
+        }
+    };
+    socket.addEventListener('message', handleCustomMessage);
+    // --- End of custom message listener ---
 
     socket.addEventListener('open', () => {
         console.log('[Debug] WebSocket connection opened.');
@@ -67,6 +108,39 @@ export default function Home() {
       } else {
         console.log('Document is empty or not yet loaded');
       }
+
+      // --- Initialize Presence ---
+      if (clientId && connectionRef.current && !presenceRef.current) {
+          console.log(`[Debug] Initializing presence for client ${clientId}`);
+          const presence = connectionRef.current.getPresence(PRESENCE_CHANNEL);
+          presenceRef.current = presence;
+
+          presence.subscribe((err) => {
+              if (err) {
+                  console.error('[Debug] Failed to subscribe to presence:', err);
+                  return;
+              }
+              console.log('[Debug] Successfully subscribed to presence');
+              localPresenceRef.current = presence.create(clientId);
+              console.log('[Debug] Local presence created.');
+
+              // Listen for remote presence changes
+              presence.on('receive', (id, presenceData) => {
+                  if (id === clientId) return; // Ignore our own presence data
+                  console.log(`[Debug] Received presence update from ${id}:`, presenceData);
+                  setRemotePresences(prev => ({ ...prev, [id]: presenceData }));
+              });
+          });
+
+          // Handle remote client leaving (presence destroyed)
+          // Note: ShareDB presence doesn't have a direct 'leave' event per user
+          // We might need server-side logic or check presence map periodically
+          // For now, we rely on the 'receive' event with null data? (Needs verification)
+          // Or, implement a custom leave message from the server.
+      } else {
+          console.warn('[Debug] Cannot initialize presence yet. ClientID or Connection missing or presence already initialized.');
+      }
+      // --- End of Presence initialization ---
     });
 
     // Listen for changes from the server
@@ -137,6 +211,16 @@ export default function Home() {
     // Cleanup on unmount
     return () => {
       console.log('Cleaning up ShareDB connection');
+      // Unsubscribe from presence before closing connection
+      presenceRef.current?.destroy((err) => {
+        if(err) console.error('[Debug] Error destroying presence:', err);
+        else console.log('[Debug] Presence destroyed.');
+      });
+      presenceRef.current = null;
+      localPresenceRef.current = null;
+
+      // Remove custom message listener
+      socket.removeEventListener('message', handleCustomMessage);
       connection.close();
       docRef.current = null;
       connectionRef.current = null;
@@ -148,6 +232,27 @@ export default function Home() {
   useEffect(() => {
     setHasMounted(true);
   }, []);
+
+  // Text area selection change handler - submits presence data
+  const handleSelect = useCallback(() => {
+    if (!localPresenceRef.current || !clientId || !clientColor) {
+        // console.log('[Debug] Local presence not ready for select event.');
+        return;
+    }
+    if (editorRef.current) {
+        const { selectionStart, selectionEnd } = editorRef.current;
+        console.log(`[Debug] Selection changed: Start=${selectionStart}, End=${selectionEnd}`);
+        const presenceData: CursorPresence = {
+            cursor: { start: selectionStart, end: selectionEnd },
+            color: clientColor,
+        };
+        localPresenceRef.current.submit(presenceData, (err) => {
+            if (err) {
+                console.error('[Debug] Error submitting presence:', err);
+            }
+        });
+    }
+  }, [clientId, clientColor]); // Depend on clientId and clientColor
 
   // Text area change handler - submits OT ops to ShareDB
   const handleTextChange = useCallback((event: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -208,7 +313,7 @@ export default function Home() {
       {/* Navigation Bar */}
       <nav className="bg-black text-white h-12 flex items-center px-4">
         <div className="flex items-center">
-          <span className="font-bold text-xl">Day9 Collaborative Editor</span>
+          <span className="font-bold text-xl text-white">Day9 Collaborative Editor</span>
         </div>
         <div className="flex-1"></div>
         <div className="text-sm flex items-center h-full">
@@ -255,7 +360,11 @@ export default function Home() {
           </div>
           <div className="flex-1 flex flex-col bg-gray-50">
             {/* Removed the header within the panel */}
-            <div className="flex-1 p-4 overflow-y-auto bg-gray-50 prose prose-sm max-w-none">
+            {/* Applying inline style to test padding */}
+            <div
+              className="flex-1 overflow-y-auto bg-gray-50" // Removed padding classes (py-4 pr-4 pl-8)
+              style={{ paddingLeft: '2rem' }} // Added inline style for left padding
+            >
               {/* Render Markdown using ReactMarkdown */}
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}

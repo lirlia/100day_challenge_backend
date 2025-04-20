@@ -1,3 +1,62 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* --- styles/hackmd-theme.css --- */
+:root {
+  /* ライクなカラーパレット */
+  --hackmd-nav:        #2f363d; /* ヘッダー */
+  --hackmd-bg:         #f7f7f7; /* エディタ背景 */
+  --hackmd-editor-bg:  #ffffff; /* テキストエリア */
+  --hackmd-preview-bg: #ffffff; /* プレビュー */
+  --hackmd-border:     #dcdcdc;
+  --hackmd-green:      #05c58b; /* 接続中アイコン */
+  --hackmd-red:        #d9534f; /* 切断中アイコン */
+  --hackmd-text:       #24292e;
+  --hackmd-code-bg:    #f5f7f9;
+}
+
+/* ───────── ナビゲーションバー ───────── */
+nav.bg-black         { background-color: var(--hackmd-green) !important; }
+nav .bg-green-500    { background-color: var(--hackmd-green) !important; }
+nav .bg-red-500      { background-color: var(--hackmd-red)   !important; }
+
+/* ───────── パネルヘッダー ───────── */
+.border-b.bg-gray-50 {
+  background-color: var(--hackmd-bg) !important;
+  border-color:     var(--hackmd-border) !important;
+  color:            var(--hackmd-text);
+}
+
+/* ───────── エディタ／プレビュー共通 ───────── */
+.bg-gray-50          { background-color: var(--hackmd-bg) !important; }
+textarea.bg-gray-50  {
+  background-color: var(--hackmd-editor-bg) !important;
+  color:            var(--hackmd-text);
+}
+
+/* ───────── Markdown プレビュー ───────── */
+.prose, .prose *     { color: var(--hackmd-text); }
+
+.prose pre {
+  background:   var(--hackmd-code-bg);
+  border:       1px solid var(--hackmd-border);
+  border-radius:4px;
+  padding:      0.75rem 1rem;
+  font-size:    0.85rem;
+  overflow-x:   auto;
+}
+.prose code {
+  background:   var(--hackmd-code-bg);
+  padding:      0.15em 0.3em;
+  border-radius:3px;
+}
+
+/* ───────── スクロールバー（オプション） ───────── */
+::-webkit-scrollbar      { width: 8px; height: 8px; }
+::-webkit-scrollbar-track{ background: var(--hackmd-bg); }
+::-webkit-scrollbar-thumb{
+  background: var(--hackmd-border);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover{ background: #b3b3b3; }

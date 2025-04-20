@@ -51,24 +51,59 @@ class WebSocketJSONStream extends EventEmitter {
 
 ShareDB.types.register(richText.type);
 
-const backend = new ShareDB();
+// Enable presence
+const backend = new ShareDB({ presence: true });
+
+// 接続クライアント情報 (ID と 色)
+const clients = new Map();
+const colors = [
+    '#ff6347', '#4682b4', '#32cd32', '#ffc0cb', '#ffa500', '#9370db',
+    '#e9967a', '#87cefa', '#da70d6', '#ffd700', '#add8e6', '#f08080'
+];
+let colorIndex = 0;
+
+function generateUniqueId() {
+    return Math.random().toString(36).substring(2, 15);
+}
 
 // ShareDBサーバーを起動
 function startServer() {
   const wss = new WebSocket.Server({ port: 8080 });
-  console.log('WebSocket server started on port 8080');
+  console.log('WebSocket server started on port 8080 (Presence enabled)');
 
   wss.on('connection', (ws) => {
-    console.log('Client connected');
+    const clientId = generateUniqueId();
+    const clientColor = colors[colorIndex % colors.length];
+    colorIndex++;
+    clients.set(ws, { id: clientId, color: clientColor }); // Use ws object as key for simplicity
+    console.log(`Client connected: ${clientId} (${clientColor})`);
+
+    // Send client info (ID and Color) via custom message
+    ws.send(JSON.stringify({
+      type: 'client_info',
+      clientId,
+      clientColor
+    }));
+
     // WebSocket接続をカスタムストリームでラップ
     const stream = new WebSocketJSONStream(ws);
-    backend.listen(stream); // ラップしたストリームを渡す
+    backend.listen(stream);
 
-    // ws 自体のイベントリスナーは WebSocketJSONStream 内で処理されるため、
-    // ここでの ws.on('close') や ws.on('error') は不要になる場合があるが、
-    // 念のため残しておくか、stream のイベントとして監視することも検討。
-    // stream.on('close', () => { console.log('Stream closed'); });
-    // stream.on('error', (err) => { console.error('Stream error:', err); });
+    // Clean up on close/error
+    const cleanup = () => {
+        const clientInfo = clients.get(ws);
+        if (clientInfo) {
+            console.log(`Client disconnected: ${clientInfo.id} (${clientInfo.color})`);
+            clients.delete(ws);
+            // TODO: Optionally, notify other users about disconnection via presence or custom message
+        }
+    };
+    ws.on('close', cleanup);
+    ws.on('error', (error) => {
+        console.error(`WebSocket error for client ${clientId}:`, error);
+        cleanup();
+    });
+
   });
 
   // 初期ドキュメントを作成（メモリ上に保持）

@@ -1,0 +1,22 @@
+"use strict";
+/*
+ * ATTENTION: An "eval-source-map" devtool has been used.
+ * This devtool is neither made for production nor for readable output files.
+ * It uses "eval()" calls to create a separate source file with attached SourceMaps in the browser devtools.
+ * If you are trying to read the output file, select a different devtool (https://webpack.js.org/configuration/devtool/)
+ * or disable the default devtool with "devtool: false".
+ * If you are looking for production-ready output files, see mode: "production" (https://webpack.js.org/configuration/mode/).
+ */
+(self["webpackChunk_N_E"] = self["webpackChunk_N_E"] || []).push([["react-syntax-highlighter_languages_refractor_gedcom"],{
+
+/***/ "(app-pages-browser)/../node_modules/refractor/lang/gedcom.js":
+/*!************************************************!*\
+  !*** ../node_modules/refractor/lang/gedcom.js ***!
+  \************************************************/
+/***/ (function(module, __unused_webpack_exports, __webpack_require__) {
+
+eval(__webpack_require__.ts("\n\nmodule.exports = gedcom\ngedcom.displayName = 'gedcom'\ngedcom.aliases = []\nfunction gedcom(Prism) {\n  Prism.languages.gedcom = {\n    'line-value': {\n      // Preceded by level, optional pointer, and tag\n      pattern:\n        /(^[\\t ]*\\d+ +(?:@\\w[\\w!\"$%&'()*+,\\-./:;<=>?[\\\\\\]^`{|}~\\x80-\\xfe #]*@ +)?\\w+ ).+/m,\n      lookbehind: true,\n      inside: {\n        pointer: {\n          pattern: /^@\\w[\\w!\"$%&'()*+,\\-./:;<=>?[\\\\\\]^`{|}~\\x80-\\xfe #]*@$/,\n          alias: 'variable'\n        }\n      }\n    },\n    tag: {\n      // Preceded by level and optional pointer\n      pattern:\n        /(^[\\t ]*\\d+ +(?:@\\w[\\w!\"$%&'()*+,\\-./:;<=>?[\\\\\\]^`{|}~\\x80-\\xfe #]*@ +)?)\\w+/m,\n      lookbehind: true,\n      alias: 'string'\n    },\n    level: {\n      pattern: /(^[\\t ]*)\\d+/m,\n      lookbehind: true,\n      alias: 'number'\n    },\n    pointer: {\n      pattern: /@\\w[\\w!\"$%&'()*+,\\-./:;<=>?[\\\\\\]^`{|}~\\x80-\\xfe #]*@/,\n      alias: 'variable'\n    }\n  }\n}\n//# sourceURL=[module]\n//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiKGFwcC1wYWdlcy1icm93c2VyKS8uLi9ub2RlX21vZHVsZXMvcmVmcmFjdG9yL2xhbmcvZ2VkY29tLmpzIiwibWFwcGluZ3MiOiJBQUFZOztBQUVaO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQSxnREFBZ0QsWUFBWSxFQUFFO0FBQzlEO0FBQ0E7QUFDQTtBQUNBLDRDQUE0QyxZQUFZLEVBQUU7QUFDMUQ7QUFDQTtBQUNBO0FBQ0EsS0FBSztBQUNMO0FBQ0E7QUFDQTtBQUNBLGdEQUFnRCxZQUFZLEVBQUU7QUFDOUQ7QUFDQTtBQUNBLEtBQUs7QUFDTDtBQUNBO0FBQ0E7QUFDQTtBQUNBLEtBQUs7QUFDTDtBQUNBLHVDQUF1QyxZQUFZLEVBQUU7QUFDckQ7QUFDQTtBQUNBO0FBQ0EiLCJzb3VyY2VzIjpbIndlYnBhY2s6Ly9fTl9FLy4uL25vZGVfbW9kdWxlcy9yZWZyYWN0b3IvbGFuZy9nZWRjb20uanM/MjU2YyJdLCJzb3VyY2VzQ29udGVudCI6WyIndXNlIHN0cmljdCdcblxubW9kdWxlLmV4cG9ydHMgPSBnZWRjb21cbmdlZGNvbS5kaXNwbGF5TmFtZSA9ICdnZWRjb20nXG5nZWRjb20uYWxpYXNlcyA9IFtdXG5mdW5jdGlvbiBnZWRjb20oUHJpc20pIHtcbiAgUHJpc20ubGFuZ3VhZ2VzLmdlZGNvbSA9IHtcbiAgICAnbGluZS12YWx1ZSc6IHtcbiAgICAgIC8vIFByZWNlZGVkIGJ5IGxldmVsLCBvcHRpb25hbCBwb2ludGVyLCBhbmQgdGFnXG4gICAgICBwYXR0ZXJuOlxuICAgICAgICAvKF5bXFx0IF0qXFxkKyArKD86QFxcd1tcXHchXCIkJSYnKCkqKyxcXC0uLzo7PD0+P1tcXFxcXFxdXmB7fH1+XFx4ODAtXFx4ZmUgI10qQCArKT9cXHcrICkuKy9tLFxuICAgICAgbG9va2JlaGluZDogdHJ1ZSxcbiAgICAgIGluc2lkZToge1xuICAgICAgICBwb2ludGVyOiB7XG4gICAgICAgICAgcGF0dGVybjogL15AXFx3W1xcdyFcIiQlJicoKSorLFxcLS4vOjs8PT4/W1xcXFxcXF1eYHt8fX5cXHg4MC1cXHhmZSAjXSpAJC8sXG4gICAgICAgICAgYWxpYXM6ICd2YXJpYWJsZSdcbiAgICAgICAgfVxuICAgICAgfVxuICAgIH0sXG4gICAgdGFnOiB7XG4gICAgICAvLyBQcmVjZWRlZCBieSBsZXZlbCBhbmQgb3B0aW9uYWwgcG9pbnRlclxuICAgICAgcGF0dGVybjpcbiAgICAgICAgLyheW1xcdCBdKlxcZCsgKyg/OkBcXHdbXFx3IVwiJCUmJygpKissXFwtLi86Ozw9Pj9bXFxcXFxcXV5ge3x9flxceDgwLVxceGZlICNdKkAgKyk/KVxcdysvbSxcbiAgICAgIGxvb2tiZWhpbmQ6IHRydWUsXG4gICAgICBhbGlhczogJ3N0cmluZydcbiAgICB9LFxuICAgIGxldmVsOiB7XG4gICAgICBwYXR0ZXJuOiAvKF5bXFx0IF0qKVxcZCsvbSxcbiAgICAgIGxvb2tiZWhpbmQ6IHRydWUsXG4gICAgICBhbGlhczogJ251bWJlcidcbiAgICB9LFxuICAgIHBvaW50ZXI6IHtcbiAgICAgIHBhdHRlcm46IC9AXFx3W1xcdyFcIiQlJicoKSorLFxcLS4vOjs8PT4/W1xcXFxcXF1eYHt8fX5cXHg4MC1cXHhmZSAjXSpALyxcbiAgICAgIGFsaWFzOiAndmFyaWFibGUnXG4gICAgfVxuICB9XG59XG4iXSwibmFtZXMiOltdLCJzb3VyY2VSb290IjoiIn0=\n//# sourceURL=webpack-internal:///(app-pages-browser)/../node_modules/refractor/lang/gedcom.js\n"));
+
+/***/ })
+
+}]);
