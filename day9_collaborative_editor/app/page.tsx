@@ -343,7 +343,7 @@ export default function Home() {
             {/* Removed the header within the panel */}
             <textarea
               ref={editorRef}
-              className="flex-1 w-full p-4 border-none resize-none font-mono text-sm outline-none bg-gray-50"
+              className="flex-1 w-full p-4 border-none resize-none font-mono text-base outline-none bg-gray-50"
               value={text}
               onChange={handleTextChange}
               placeholder="# Start typing in Markdown..."

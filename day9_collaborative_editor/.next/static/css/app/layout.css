@@ -250,6 +250,9 @@ textarea.bg-gray-50 {
   background-color: var(--hackmd-editor-bg) !important;
   color: var(--hackmd-text);
 }
+textarea {
+  font-size: 18px;
+}
 .prose, .prose * {
   color: var(--hackmd-text);
 }

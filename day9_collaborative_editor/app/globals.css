@@ -35,6 +35,10 @@ textarea.bg-gray-50  {
   color:            var(--hackmd-text);
 }
 
+textarea {
+  font-size: 18px;
+}
+
 /* ───────── Markdown プレビュー ───────── */
 .prose, .prose *     { color: var(--hackmd-text); }
 
