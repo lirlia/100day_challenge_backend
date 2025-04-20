@@ -3,119 +3,153 @@
 import { useState, useEffect, useRef } from 'react';
 
 export default function Home() {
-  const [hasMounted, setHasMounted] = useState(false); // マウント状態
+  const [hasMounted, setHasMounted] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
-  const [messageLog, setMessageLog] = useState<string[]>([]);
-  const [text, setText] = useState('');
+  const [text, setText] = useState(''); // Editor content
   const ws = useRef<WebSocket | null>(null);
 
-  // WebSocket 接続とクリーンアップの useEffect
+  // WebSocket connection logic
   useEffect(() => {
-    // マウント後にのみ WebSocket 接続を初期化
     console.log('Attempting WebSocket connection...');
     ws.current = new WebSocket('ws://localhost:8080');
 
     ws.current.onopen = () => {
       console.log('WebSocket connected');
       setIsConnected(true);
-      setMessageLog((prev) => ['Connected to WebSocket server']); // Reset log on connect
     };
 
     ws.current.onclose = () => {
       console.log('WebSocket disconnected');
       setIsConnected(false);
-      // Avoid adding disconnect message immediately after error/close during init
-      if (ws.current) { // Only add if it wasn't an immediate close after failed init
-          setMessageLog((prev) => [...prev, 'Disconnected from WebSocket server']);
-      }
-      ws.current = null; // Ensure ref is cleared
+      ws.current = null;
     };
 
     ws.current.onerror = (event) => {
       console.error('WebSocket error event:', event);
-      setMessageLog((prev) => [...prev, 'WebSocket error occurred. Check console.']);
     };
 
     ws.current.onmessage = (event) => {
       console.log('Message from server:', event.data);
       try {
         const data = JSON.parse(event.data);
-        setMessageLog((prev) => [...prev, `Received: ${JSON.stringify(data)}`]); // Log parsed data
         if (data.type === 'init') {
           setText(data.document);
-          console.log('Initialized with data:', data);
-          // TODO: Handle revision, clientId, clientColor, clients
-        } else {
-          // TODO: Handle other message types
+          console.log('Initialized with document:', data.document);
+          // TODO: Handle revision, clientId, clientColor, clients for cursor/OT
+        } else if (data.type === 'operation') {
+          // TODO: Apply incoming operation using ot.js
+          console.log('Received operation:', data);
+        } else if (data.type === 'selection_update') {
+           // TODO: Handle cursor updates
+           console.log('Received selection update:', data);
         }
+        // Ignore user_joined/user_left for now as user list is removed
       } catch (e) {
         console.error("Failed to parse message or invalid JSON", event.data, e);
-        setMessageLog((prev) => [...prev, `Received raw: ${event.data}`]); // Log raw on parse failure
       }
     };
 
-    const currentWs = ws.current; // Capture current ref for cleanup
-
-    // クリーンアップ関数
+    const currentWs = ws.current;
     return () => {
       console.log('WebSocket effect cleanup - closing connection');
       currentWs?.close();
-      setIsConnected(false); // Ensure disconnected state on cleanup
+      setIsConnected(false);
     };
-  }, []); // この Effect はマウント/アンマウントで一度だけ実行されるべき
+  }, []);
 
-  // マウント状態を設定する Effect
+  // Mount state logic
   useEffect(() => {
     setHasMounted(true);
   }, []);
 
-  // テキストエリアの変更ハンドラ
+  // Text area change handler
   const handleTextChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newText = event.target.value;
+    // TODO: Generate OT operation BEFORE updating state locally?
+    // For now, just update local state. OT logic will handle diffing later.
     setText(newText);
-    // TODO: Generate OT operation and send to server
+    // TODO: Send OT operation to server
+    console.log("Text changed, sending operation should happen here.");
   };
 
-  // マウントされるまでローディング表示
   if (!hasMounted) {
     return (
-      <main className="flex flex-col min-h-screen p-8 bg-gray-50 justify-center items-center">
+      <main className="flex h-screen justify-center items-center bg-gray-100">
         <div>Loading Editor...</div>
       </main>
     );
   }
 
-  // マウント後に実際の UI をレンダリング
   return (
-    <main className="flex flex-col min-h-screen p-8 bg-gray-50">
-      <h1 className="text-2xl font-bold mb-4 text-center w-full">Day 9: Collaborative Editor</h1>
-      <div className="mb-2 w-full max-w-6xl mx-auto">
-        Status: {isConnected ? <span className="text-green-600">Connected</span> : <span className="text-red-600">Disconnected</span>}
-      </div>
-      <div className="flex flex-1 w-full max-w-6xl mx-auto gap-4 overflow-hidden">
-        {/* Left Panel: Text Area */}
-        <div className="w-1/2 flex flex-col">
-          <div className="relative flex-1 border border-gray-300 rounded-md shadow-sm overflow-hidden">
-            {/* TODO: カーソル表示レイヤー */}
+    <div className="flex flex-col h-screen bg-white">
+      {/* HackMD-style Navigation Bar - Changed to black background */}
+      <nav className="bg-black text-white h-12 flex items-center px-4">
+        <div className="flex items-center">
+          <span className="font-bold text-xl">Day9 Collaborative Editor</span>
+        </div>
+        <div className="flex-1"></div>
+        <div className="text-sm">
+          <span>
+            Status: {isConnected ?
+              <span className="ml-1 inline-flex items-center">
+                <span className="h-2 w-2 rounded-full bg-green-500 mr-1"></span>
+                Connected
+              </span> :
+              <span className="ml-1 inline-flex items-center">
+                <span className="h-2 w-2 rounded-full bg-red-500 mr-1"></span>
+                Disconnected
+              </span>}
+          </span>
+        </div>
+      </nav>
+
+      {/* Editor Container */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Left Panel: Text Input Area (HackMD Style) */}
+        <div className="w-1/2 border-r border-gray-200 flex flex-col">
+          <div className="py-2 px-4 border-b border-gray-200 bg-gray-50 flex items-center justify-center">
+            <span className="text-gray-700 font-medium">MARKDOWN</span>
+          </div>
+          <div className="flex-1 flex flex-col">
+            <div className="px-4 py-2 bg-gray-50 border-b border-gray-200">
+              <span className="text-gray-500 text-sm"># aaa</span>
+            </div>
             <textarea
-              className="absolute top-0 left-0 w-full h-full p-2 border-none outline-none resize-none font-mono text-sm bg-white z-10"
-              value={text} // マウント後なので直接 text を使える
+              className="flex-1 w-full p-4 border-none resize-none font-mono text-sm outline-none bg-gray-50"
+              value={text}
               onChange={handleTextChange}
-              placeholder="Start typing..."
-              disabled={!isConnected} // 接続中のみ有効 (hasMounted は不要)
+              placeholder="# Start typing in Markdown..."
+              disabled={!isConnected}
+              spellCheck="false"
             />
           </div>
         </div>
-        {/* Right Panel: Message Log */}
+
+        {/* Right Panel: Preview Area (HackMD Style) */}
         <div className="w-1/2 flex flex-col">
-          <div className="flex-1 p-4 border border-gray-200 rounded-md bg-white shadow-sm overflow-y-auto text-sm">
-            <h2 className="font-semibold mb-2 sticky top-0 bg-white pb-2">Message Log:</h2>
-            {messageLog.map((msg, index) => (
-              <div key={index} className="font-mono break-all mb-1">{msg}</div>
-            ))}
+          <div className="py-2 px-4 border-b border-gray-200 bg-gray-50 flex items-center justify-center">
+            <span className="text-gray-700 font-medium">PREVIEW</span>
+          </div>
+          <div className="flex-1 flex flex-col">
+            <div className="px-4 py-2 bg-gray-50 border-b border-gray-200">
+              <span className="text-gray-500 text-sm"># aaa</span>
+            </div>
+            <div className="flex-1 p-4 overflow-y-auto bg-gray-50">
+              {/* This would normally use a Markdown parser like react-markdown */}
+              {/* For simplicity, we just display the raw text for now */}
+              {text ? (
+                <pre className="whitespace-pre-wrap break-words font-sans text-base">
+                  {text}
+                </pre>
+              ) : (
+                <div className="text-gray-400 italic">
+                  Nothing to preview
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
-    </main>
+    </div>
   );
 }
