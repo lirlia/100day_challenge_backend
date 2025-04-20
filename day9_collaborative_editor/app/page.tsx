@@ -7,7 +7,7 @@ import ReconnectingWebSocket from 'reconnecting-websocket';
 import Delta from 'quill-delta';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter/dist/esm/prism';
+import SyntaxHighlighter from 'react-syntax-highlighter';
 import { ghcolors } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
 ShareDBClient.types.register(richText.type);
@@ -211,18 +211,19 @@ export default function Home() {
           <span className="font-bold text-xl">Day9 Collaborative Editor</span>
         </div>
         <div className="flex-1"></div>
-        <div className="text-sm">
-          <span>
-            Status: {isConnected ?
+        <div className="text-sm flex items-center h-full">
+          Status:&nbsp;
+          {isConnected ? (
               <span className="ml-1 inline-flex items-center">
                 <span className="h-2 w-2 rounded-full bg-green-500 mr-1"></span>
                 Connected
-              </span> :
+              </span>
+            ) : (
               <span className="ml-1 inline-flex items-center">
                 <span className="h-2 w-2 rounded-full bg-red-500 mr-1"></span>
                 Disconnected
-              </span>}
-          </span>
+              </span>
+            )}
         </div>
       </nav>
 
