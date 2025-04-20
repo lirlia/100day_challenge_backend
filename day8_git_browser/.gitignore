@@ -48,3 +48,6 @@ next-env.d.ts
 *.sqlite
 *.sqlite-journal
 app/generated/prisma/
+
+# Local Repositories (bare)
+/repositories/
