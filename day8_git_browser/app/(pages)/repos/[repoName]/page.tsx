@@ -131,7 +131,9 @@ export default async function RepoDetailPage({ params }: { params: { repoName: s
                 <tr key={entry.path}>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                     {entry.type === 'tree' ? (
-                      <span className="text-blue-600">{entry.path}</span> // ディレクトリ (今回はリンクなし)
+                      <Link href={`/repos/${repository.name}/tree/${entry.path}`}>
+                        <span className="text-blue-600 hover:underline">{entry.path}</span>
+                      </Link>
                     ) : (
                       <Link href={`/repos/${repository.name}/blob/${entry.path}`}>
                         <span className="text-gray-900 dark:text-gray-100 hover:underline">{entry.path}</span>
