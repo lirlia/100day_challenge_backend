@@ -2,7 +2,11 @@
 
 ### 概要
 
-`isomorphic-git` と `git-http-backend` を利用して、ローカル環境で動作するシンプルな Git リポジトリのブラウジング機能と、HTTP 経由での `git clone` 機能を提供する Web アプリケーションを作成します。UI からリポジトリを作成でき、クローン用のコマンドも表示されます。
+ローカル環境で動作するシンプルな Git リポジトリのブラウジング機能と、HTTP 経由での `git clone` / `push` 機能を提供する Web アプリケーションを作成します。UI からリポジトリを作成でき、リポジトリ内のファイルやディレクトリを閲覧できます。クローン用のコマンドも表示されます。
+
+[100日チャレンジ day8](https://zenn.dev/gin_nazo/scraps/1cde7e2a535b6d)
+
+https://github.com/user-attachments/assets/de0f64d0-16d9-40bd-b7ab-986c9c26e431
 
 ### 機能要件
 
@@ -44,6 +48,12 @@
         *   npm パッケージ `git-http-backend` を利用。
         *   システムにインストールされている `git http-backend` CGI を呼び出して Smart HTTP プロトコルを処理。
         *   ローカルからの `git clone http://localhost:3001/api/repos/[repoName]/git` を成功させる。
+7.  **`git push` 機能 (API)**
+    *   エンドポイント: `POST` リクエストを `/api/repos/[repoName]/git/[...gitPath]` で受け付ける。
+    *   処理:
+        *   npm パッケージ `git-http-backend` を利用。
+        *   システムにインストールされている `git http-backend` CGI を呼び出して Smart HTTP プロトコルを処理。
+        *   ローカルからの `git push http://localhost:3001/api/repos/[repoName]/git` を成功させる。
 
 ### 非機能要件
 
@@ -123,3 +133,141 @@ model Repository {
 8.  **UI 実装 (ファイル/ディレクトリ一覧 & クローンコマンド):** `/app/(pages)/repos/[repoName]/page.tsx`。`isomorphic-git` でファイル一覧取得、クローンコマンド文字列を表示。
 9.  **UI 実装 (ファイル内容表示):** `/app/(pages)/repos/[repoName]/blob/[...filePath]/page.tsx`。
 10. **動作確認:** UI 操作、`curl`、`git clone`。
+
+### Git 関連処理の実装詳細
+
+当初、ファイルシステム操作には `isomorphic-git` を利用する計画でしたが、特に Bare リポジトリに対する `ls-tree` (ディレクトリ内容取得) や `cat-file` (ファイル内容取得) の機能実装において、Node.js の `child_process.spawn` を使用して直接システム上の `git` コマンドを実行する方式に変更しました。これは、`isomorphic-git` で Bare リポジトリの特定のディレクトリやファイルにアクセスする際の挙動が不安定であったため、より確実な方法として採用しました。
+
+*   **ディレクトリ内容の取得:**
+    *   該当ページの Server Component (`/app/(pages)/repos/[repoName]/page.tsx`, `/app/(pages)/repos/[repoName]/tree/[...dirPath]/page.tsx`) 内で `spawn('git', ['ls-tree', '-z', 'HEAD[:path]'], { cwd: repoPath })` を実行します。
+    *   `-z` オプションで NUL 区切りされた標準出力を受け取り、パースしてファイル/ディレクトリのリストを生成します。
+    *   `tree` ページでは、カレントディレクトリ (`currentPath`) と `ls-tree` から得られた相対パスを結合して、リポジトリルートからのフルパスを生成し、リンクに使用しています。
+*   **ファイル内容の取得:**
+    *   該当ページの Server Component (`/app/(pages)/repos/[repoName]/blob/[...filePath]/page.tsx`) 内で `spawn('git', ['cat-file', 'blob', `HEAD:${filePath}`], { cwd: repoPath })` を実行します。
+    *   標準出力をファイル内容として取得します。
+*   **HTTP 経由の Git 操作 (`clone`/`push`):**
+    *   Next.js の Route Handler (`/api/repos/[repoName]/git/[...gitPath]/route.ts`) で実装されています。
+    *   npm パッケージ `git-http-backend` を利用しています。このライブラリは、入ってきた HTTP リクエスト (パス、メソッド、クエリパラメータ、ボディ) を解析し、実行すべき Git コマンド (`git-upload-pack` または `git-receive-pack`) とその引数、必要な環境変数を特定します。
+    *   Route Handler 内で `spawn` を使用して、`git-http-backend` が特定した Git コマンドを適切な引数と環境変数 (`GIT_PROJECT_ROOT`, `GIT_HTTP_EXPORT_ALL` など、及び `git-receive-pack` 用の `GIT_HTTP_RECEIVE_PACK=true`) 付きで Bare リポジトリのディレクトリ (`repositories/[repoName].git`) を対象に実行します。
+    *   クライアントのリクエストボディ (push の場合) を `spawn` した Git プロセスの標準入力に流し込み、Git プロセスの標準出力をクライアントへのレスポンスボディとしてストリーミングで返します。
+    *   レスポンスの `Content-Type` ヘッダーは、リクエストパス (`/info/refs`, `/git-upload-pack`, `/git-receive-pack`) とクエリパラメータ (`service=`) から事前に判断して設定しています。
+
+### シーケンス図
+
+#### 1. ディレクトリ/ファイル一覧表示 (Tree Page)
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Browser
+    participant NextServer as Next.js Server (Tree Page)
+    participant GitProcess as git ls-tree (spawn)
+
+    User->>Browser: ディレクトリリンクをクリック (例: /repos/test-repo/tree/app)
+    Browser->>NextServer: GET /repos/test-repo/tree/app
+    activate NextServer
+    NextServer->>GitProcess: spawn('git', ['ls-tree', '-z', 'HEAD:app'])
+    activate GitProcess
+    GitProcess-->>NextServer: 標準出力 (ディレクトリ内容)
+    deactivate GitProcess
+    NextServer->>NextServer: 内容をパースし、HTMLを生成
+    NextServer-->>Browser: HTMLレスポンス (ファイル/サブディレクトリへのリンク付き)
+    deactivate NextServer
+    Browser->>User: ディレクトリ内容を表示
+```
+
+#### 2. ファイル内容表示 (Blob Page)
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Browser
+    participant NextServer as Next.js Server (Blob Page)
+    participant GitProcess as git cat-file (spawn)
+
+    User->>Browser: ファイルリンクをクリック (例: /repos/test-repo/blob/app/page.tsx)
+    Browser->>NextServer: GET /repos/test-repo/blob/app/page.tsx
+    activate NextServer
+    NextServer->>GitProcess: spawn('git', ['cat-file', 'blob', 'HEAD:app/page.tsx'])
+    activate GitProcess
+    GitProcess-->>NextServer: 標準出力 (ファイル内容)
+    deactivate GitProcess
+    NextServer->>NextServer: 内容を取得し、HTMLを生成 (Markdownの場合はレンダリング)
+    NextServer-->>Browser: HTMLレスポンス
+    deactivate NextServer
+    Browser->>User: ファイル内容を表示
+```
+
+#### 3. `git clone` (Smart HTTP)
+
+```mermaid
+sequenceDiagram
+    participant GitClient as Git Client (User)
+    participant NextServer as Next.js Server (API Route)
+    participant GitHttpBackend as git-http-backend (npm)
+    participant GitProcess as git-upload-pack (spawn)
+
+    GitClient->>NextServer: GET /api/repos/test-repo/git/info/refs?service=git-upload-pack
+    activate NextServer
+    NextServer->>GitHttpBackend: リクエストを渡す
+    activate GitHttpBackend
+    GitHttpBackend->>NextServer: 実行すべきコマンド情報 (cmd: 'git-upload-pack', args)
+    deactivate GitHttpBackend
+    NextServer->>GitProcess: spawn('git-upload-pack', args + repoPath)
+    activate GitProcess
+    GitProcess-->>NextServer: 標準出力 (refs advertisement)
+    NextServer-->>GitClient: レスポンス (Content-Type: application/x-git-upload-pack-advertisement)
+    deactivate GitProcess
+    deactivate NextServer
+
+    GitClient->>NextServer: POST /api/repos/test-repo/git/git-upload-pack (want/have リクエスト)
+    activate NextServer
+    NextServer->>GitHttpBackend: リクエストを渡す
+    activate GitHttpBackend
+    GitHttpBackend->>NextServer: 実行すべきコマンド情報 (cmd: 'git-upload-pack', args)
+    deactivate GitHttpBackend
+    NextServer->>GitProcess: spawn('git-upload-pack', args + repoPath)
+    activate GitProcess
+    NextServer-->>GitProcess: リクエストボディを標準入力へパイプ
+    GitProcess-->>NextServer: 標準出力 (pack データ)
+    NextServer-->>GitClient: レスポンス (ストリーミング, Content-Type: application/x-git-upload-pack-result)
+    deactivate GitProcess
+    deactivate NextServer
+```
+
+#### 4. `git push` (Smart HTTP)
+
+```mermaid
+sequenceDiagram
+    participant GitClient as Git Client (User)
+    participant NextServer as Next.js Server (API Route)
+    participant GitHttpBackend as git-http-backend (npm)
+    participant GitProcess as git-receive-pack (spawn)
+
+    GitClient->>NextServer: GET /api/repos/test-repo/git/info/refs?service=git-receive-pack
+    activate NextServer
+    NextServer->>GitHttpBackend: リクエストを渡す
+    activate GitHttpBackend
+    GitHttpBackend->>NextServer: 実行すべきコマンド情報 (cmd: 'git-receive-pack', args)
+    deactivate GitHttpBackend
+    NextServer->>GitProcess: spawn('git-receive-pack', args + repoPath, { env: { GIT_HTTP_RECEIVE_PACK: 'true' } })
+    activate GitProcess
+    GitProcess-->>NextServer: 標準出力 (refs advertisement)
+    NextServer-->>GitClient: レスポンス (Content-Type: application/x-git-receive-pack-advertisement)
+    deactivate GitProcess
+    deactivate NextServer
+
+    GitClient->>NextServer: POST /api/repos/test-repo/git/git-receive-pack (pack データ)
+    activate NextServer
+    NextServer->>GitHttpBackend: リクエストを渡す
+    activate GitHttpBackend
+    GitHttpBackend->>NextServer: 実行すべきコマンド情報 (cmd: 'git-receive-pack', args)
+    deactivate GitHttpBackend
+    NextServer->>GitProcess: spawn('git-receive-pack', args + repoPath, { env: { GIT_HTTP_RECEIVE_PACK: 'true' } })
+    activate GitProcess
+    NextServer-->>GitProcess: リクエストボディを標準入力へパイプ
+    GitProcess-->>NextServer: 標準出力 (push 結果レポート)
+    NextServer-->>GitClient: レスポンス (ストリーミング, Content-Type: application/x-git-receive-pack-result)
+    deactivate GitProcess
+    deactivate NextServer
+```
