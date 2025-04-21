@@ -219,7 +219,8 @@ export default function MovieDetailPage() {
       setGqlRequest(`mutation DeleteMovie($id: ID!) { deleteMovie(id: $id) { id } } Variables: ${JSON.stringify({ id: movieId }, null, 2)}`);
       await executeGraphQL<MutationResponse>(mutation, { id: movieId });
       toast.success('Movie deleted successfully!');
-      router.push('/movies'); // Redirect after successful deletion
+      // Remove automatic redirection
+      // router.push('/movies');
     } catch (err) {
       toast.error('Failed to delete movie.');
       // Error state is handled by executeGraphQL
@@ -232,7 +233,10 @@ export default function MovieDetailPage() {
     const mutation = `
         mutation RelateMovieBook($movieId: ID!, $bookId: ID!) {
             relateMovieBook(movieId: $movieId, bookId: $bookId) {
-                id # Refetch necessary fields, including the updated books list
+                id
+                title # Include fields needed for state update
+                director
+                releaseYear
                 books {
                     id
                     title
@@ -241,18 +245,28 @@ export default function MovieDetailPage() {
         }
       `;
     try {
-      // Manually set the request for the viewer
-      setGqlRequest(`mutation RelateMovieBook($movieId: ID!, $bookId: ID!) { relateMovieBook(movieId: $movieId, bookId: $bookId) { id books { id title } } } Variables: ${JSON.stringify({ movieId: movieId, bookId: selectedBookToRelate }, null, 2)}`);
-      await executeGraphQL<MutationResponse>(mutation, {
+      // Let executeGraphQL handle setting the request log by making it primary
+      // Remove manual setGqlRequest: setGqlRequest(`mutation RelateMovieBook...`);
+      const result = await executeGraphQL<MutationResponse>(mutation, {
         movieId: movieId,
         bookId: selectedBookToRelate,
-      });
-      toast.success('Book related successfully!');
-      setSelectedBookToRelate('');
-      await fetchMovieAndBooks(); // Refetch data to update UI
+      } /*, isPrimaryLog: true is default */);
+
+      if (result.data?.relateMovieBook) {
+        toast.success('Book related successfully!');
+        setSelectedBookToRelate('');
+        // Update state directly from mutation response instead of refetching
+        setMovie(result.data.relateMovieBook);
+      } else {
+        // Handle case where mutation succeeded but returned no data (shouldn't happen per schema)
+        toast.error('Failed to relate book: No data returned.');
+      }
+      // Remove refetch: await fetchMovieAndBooks();
 
     } catch (err) {
-      toast.error('Failed to relate book.');
+      // Error toast is already handled by the helper potentially
+      // toast.error('Failed to relate book.');
+      console.error("Relate book error:", err) // Keep console log
     }
   };
 
@@ -263,25 +277,36 @@ export default function MovieDetailPage() {
     const mutation = `
         mutation UnrelateMovieBook($movieId: ID!, $bookId: ID!) {
             unrelateMovieBook(movieId: $movieId, bookId: $bookId) {
-                id
-                books {
-                    id
-                    title
-                }
+                 id
+                 title # Include fields needed for state update
+                 director
+                 releaseYear
+                 books {
+                      id
+                      title
+                  }
             }
         }
       `;
     try {
-      // Manually set the request for the viewer
-      setGqlRequest(`mutation UnrelateMovieBook($movieId: ID!, $bookId: ID!) { unrelateMovieBook(movieId: $movieId, bookId: $bookId) { id books { id title } } } Variables: ${JSON.stringify({ movieId: movieId, bookId: bookId }, null, 2)}`);
-      await executeGraphQL<MutationResponse>(mutation, {
+      // Let executeGraphQL handle setting the request log
+      // Remove manual setGqlRequest: setGqlRequest(`mutation UnrelateMovieBook...`);
+      const result = await executeGraphQL<MutationResponse>(mutation, {
         movieId: movieId,
         bookId: bookId,
-      });
-      toast.success('Book unrelated successfully!');
-      await fetchMovieAndBooks(); // Refetch data to update UI
+      }/*, isPrimaryLog: true is default */);
+
+      if (result.data?.unrelateMovieBook) {
+        toast.success('Book unrelated successfully!');
+        // Update state directly from mutation response instead of refetching
+        setMovie(result.data.unrelateMovieBook);
+      } else {
+        toast.error('Failed to unrelate book: No data returned.');
+      }
+      // Remove refetch: await fetchMovieAndBooks();
     } catch (err) {
-      toast.error('Failed to unrelate book.');
+      // toast.error('Failed to unrelate book.');
+      console.error("Unrelate book error:", err) // Keep console log
     }
   };
 

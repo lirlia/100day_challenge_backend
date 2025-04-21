@@ -44,7 +44,33 @@ export default function EditMoviePage() {
 
   // --- GraphQL Helper (reused) ---
   const executeGraphQL = async <T,>(query: string, variables?: Record<string, any>): Promise<T> => {
-    setGqlRequest(variables ? `${query}\nVariables: ${JSON.stringify(variables, null, 2)}` : query);
+
+    // --- Refined Dedent logic for display --- START
+    const trimmedQuery = query.trim();
+    const lines = trimmedQuery.split('\n');
+    const nonEmptyLines = lines.filter(line => line.trim() !== '');
+    let dedentedQuery = trimmedQuery;
+
+    if (nonEmptyLines.length > 0) {
+      const minIndent = nonEmptyLines.reduce((min, line) => {
+        const currentIndent = line.match(/^\s*/)![0].length;
+        return Math.min(min, currentIndent);
+      }, Infinity);
+
+      if (minIndent > 0 && minIndent !== Infinity) {
+        dedentedQuery = lines.map(line => line.slice(minIndent)).join('\n');
+      }
+    }
+    // --- Refined Dedent logic for display --- END
+
+    const operationType = dedentedQuery.startsWith('mutation') ? 'Mutation' : 'Query';
+    let requestStringToDisplay = `${operationType}:\n${dedentedQuery}`; // Use dedented query
+    if (variables) {
+      requestStringToDisplay += `\nVariables: ${JSON.stringify(variables, null, 2)}`;
+    } else {
+      requestStringToDisplay = `${operationType}:\n${dedentedQuery}`;
+    }
+    setGqlRequest(requestStringToDisplay);
     setGqlResponse(null);
     setGqlError(null);
     setError(null);
@@ -172,19 +198,26 @@ export default function EditMoviePage() {
 
     try {
       const result = await executeGraphQL<MutationResponse>(mutation, variables);
+
       if (result.data?.updateMovie) {
         toast.success('Movie updated successfully!');
-        router.push(`/movies/${movieId}`); // Redirect to detail page
+        // Keep user on the edit page to see the mutation log
+        // router.push(`/movies/${movieId}`); // Redirect back to detail page
+        // Optionally update form fields with returned data if needed, though they should match
+        // setTitle(result.data.updateMovie.title);
+        // setDirector(result.data.updateMovie.director);
+        // setReleaseYear(result.data.updateMovie.releaseYear);
       } else {
-        // This case might happen if the update returns null (e.g., movie deleted concurrently)
-        // Or if the response structure is unexpected.
-        throw new Error('Failed to update movie or unexpected response.');
+        // This case might occur if the mutation somehow succeeded but returned null/no data
+        toast.error('Update successful, but no data returned.');
+        // Consider if redirection is still appropriate here
+        // router.push(`/movies/${movieId}`);
       }
     } catch (err) {
       toast.error('Failed to update movie.');
-      // Error state is already set by executeGraphQL
+      // Error state is handled within executeGraphQL
     } finally {
-      setLoading(false); // Finish submission loading state
+      setLoading(false); // Submission finished
     }
   };
 
@@ -199,7 +232,7 @@ export default function EditMoviePage() {
   return (
     <div className="flex flex-col md:flex-row flex-1 h-[calc(100vh-theme(space.16))]">
       {/* Left Column: Edit Form (Takes full width on small screens) */}
-      <div className="w-full md:w-2/3 pr-0 md:pr-4 overflow-y-auto mb-4 md:mb-0">
+      <div className="w-full md:w-1/2 pr-0 md:pr-4 overflow-y-auto mb-4 md:mb-0">
         {/* Display submission/fetch errors */}
         {error && <p className="mb-4 text-red-500 bg-red-100 p-3 rounded">Error: {error}</p>}
 
@@ -260,7 +293,7 @@ export default function EditMoviePage() {
       </div>
 
       {/* Right Column: GraphQL Viewer (Takes full width on small screens) */}
-      <div className="w-full md:w-1/3 pl-0 md:pl-4 border-t md:border-t-0 md:border-l border-gray-300 h-auto md:h-full">
+      <div className="w-full md:w-1/2 pl-0 md:pl-4 border-t md:border-t-0 md:border-l border-gray-300 h-auto md:h-full">
         <div className="sticky top-0 h-full">
           <GraphQLViewer
             requestQuery={gqlRequest}

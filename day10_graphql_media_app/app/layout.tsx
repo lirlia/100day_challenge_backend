@@ -24,7 +24,7 @@ export default function RootLayout({
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* TODO: Add Navigation Header/Sidebar if needed */}
           <header className="bg-white shadow-sm p-4">
-            <h1 className="text-xl font-semibold">GraphQL Media App</h1>
+            <h1 className="text-xl font-semibold">Day 10: GraphQL Media App</h1>
             {/* Simple Navigation for now */}
             <nav className="mt-2">
               <Link href="/" className="text-blue-600 hover:underline mr-4">

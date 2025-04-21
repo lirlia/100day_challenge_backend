@@ -51,18 +51,39 @@ export default function BookDetailPage() {
   const [gqlError, setGqlError] = useState<string | null>(null);
 
   // --- GraphQL Query/Mutation Helper ---
-  // (Reusing the same helper logic as MovieDetailPage for consistency)
-  const executeGraphQL = async <T,>(query: string, variables?: Record<string, any>): Promise<T> => {
-    // Determine if it's a mutation or query for display purposes
-    const operationType = query.trim().startsWith('mutation') ? 'Mutation' : 'Query';
-    let requestStringToDisplay = `${operationType}:\n${query}`;
+  // Add optional isPrimaryLog flag
+  const executeGraphQL = async <T,>(query: string, variables?: Record<string, any>, isPrimaryLog: boolean = true): Promise<T> => {
+
+    // --- Refined Dedent logic for display --- START
+    const trimmedQuery = query.trim();
+    const lines = trimmedQuery.split('\n');
+    const nonEmptyLines = lines.filter(line => line.trim() !== '');
+    let dedentedQuery = trimmedQuery;
+
+    if (nonEmptyLines.length > 0) {
+      const minIndent = nonEmptyLines.reduce((min, line) => {
+        const currentIndent = line.match(/^\s*/)![0].length;
+        return Math.min(min, currentIndent);
+      }, Infinity);
+
+      if (minIndent > 0 && minIndent !== Infinity) {
+        dedentedQuery = lines.map(line => line.slice(minIndent)).join('\n');
+      }
+    }
+    // --- Refined Dedent logic for display --- END
+
+    const operationType = dedentedQuery.startsWith('mutation') ? 'Mutation' : 'Query';
+    let requestStringToDisplay = `${operationType}:\n${dedentedQuery}`; // Use dedented query
     if (variables) {
       requestStringToDisplay += `\nVariables: ${JSON.stringify(variables, null, 2)}`;
     }
-    setGqlRequest(requestStringToDisplay);
-    setGqlResponse(null);
-    setGqlError(null);
-    setError(null);
+    // Only update viewer state if it's the primary log source
+    if (isPrimaryLog) {
+      setGqlRequest(requestStringToDisplay);
+      setGqlResponse(null);
+      setGqlError(null);
+    }
+    setError(null); // Clear general error regardless
 
     try {
       const res = await fetch('/api/graphql', {
@@ -76,23 +97,38 @@ export default function BookDetailPage() {
       }
 
       const result = await res.json();
-      setGqlResponse(result);
+
+      // Only update viewer state if it's the primary log source
+      if (isPrimaryLog) {
+        setGqlResponse(result);
+      }
 
       if (result.errors) {
         console.error('GraphQL Errors:', result.errors);
         const errorMessages = result.errors.map((e: { message: string }) => e.message).join('\n');
-        setGqlError(errorMessages);
+        if (isPrimaryLog) {
+          setGqlError(errorMessages);
+        }
+        setError(errorMessages);
         throw new Error(errorMessages);
       }
-      if (!result.data) {
-        throw new Error('No data returned from GraphQL query.');
+      if (!result.data && !result.errors) { // Check for data only if no errors
+        const errorMsg = 'No data returned from GraphQL query.';
+        if (isPrimaryLog) {
+          setGqlError(errorMsg);
+        }
+        setError(errorMsg);
+        throw new Error(errorMsg);
       }
       return result;
 
     } catch (err: any) {
       console.error('GraphQL Execution Error:', err);
-      setError(err.message || 'An error occurred.');
-      setGqlError(err.message || 'An error occurred.');
+      const errorMsg = err.message || 'An error occurred.';
+      setError(errorMsg);
+      if (isPrimaryLog) {
+        setGqlError(errorMsg);
+      }
       throw err;
     }
   };
@@ -104,9 +140,10 @@ export default function BookDetailPage() {
 
     setLoading(true);
     setError(null);
-    setGqlError(null);
-    setGqlResponse(null);
-    setGqlRequest(null);
+    // Reset viewer state via the primary query call
+    // setGqlError(null);
+    // setGqlResponse(null);
+    // setGqlRequest(null);
 
 
     const bookQuery = `
@@ -133,15 +170,18 @@ export default function BookDetailPage() {
     `;
 
     try {
+      // Fetch book details (primary) and all movies (not primary)
       const [bookResult, moviesResult] = await Promise.all([
-        executeGraphQL<BookDetailsResponse>(bookQuery, { id: bookId }),
-        executeGraphQL<MoviesResponse>(moviesQuery)
+        executeGraphQL<BookDetailsResponse>(bookQuery, { id: bookId } /*, true */), // isPrimaryLog: true is default
+        executeGraphQL<MoviesResponse>(moviesQuery, undefined, false) // isPrimaryLog: false
       ]);
 
       if (bookResult.data?.book) {
         setBook(bookResult.data.book);
       } else {
-        setError(`Book with ID ${bookId} not found.`);
+        const bookErrorMsg = `Book with ID ${bookId} not found.`;
+        setError(bookErrorMsg);
+        setGqlError(bookErrorMsg); // Set viewer error as this is primary context
         setBook(null);
       }
 
@@ -152,10 +192,11 @@ export default function BookDetailPage() {
         setAllMovies([]);
       }
 
-    } catch (err) {
+    } catch (err: any) {
+      // Error state (setError, setGqlError for primary) handled in executeGraphQL
       setBook(null);
       setAllMovies([]);
-      console.error("Failed to fetch initial data:", err);
+      console.error("Failed to fetch initial data (error likely logged already):", err.message);
     } finally {
       setLoading(false);
     }
@@ -185,7 +226,8 @@ export default function BookDetailPage() {
       await executeGraphQL<MutationResponse>(mutation, { id: bookId });
       // alert('Book deleted successfully!');
       toast.success('Book deleted successfully!');
-      router.push('/books');
+      // Remove automatic redirection
+      // router.push('/books');
     } catch (err) {
       // alert('Failed to delete book.');
       toast.error('Failed to delete book.');
@@ -202,32 +244,47 @@ export default function BookDetailPage() {
     const mutation = `
         mutation RelateMovieBook($movieId: ID!, $bookId: ID!) {
             relateMovieBook(movieId: $movieId, bookId: $bookId) {
-                id # We get back the movie ID
-                 books { # And the movie's updated book list
-                      id
-                      title
-                  }
+                id # Only need ID to confirm success
+                # books { # We don't need the movie's book list here
+                #      id
+                #      title
+                #  }
             }
         }
       `;
     try {
-      // We don't get the updated Book object back directly from this mutation.
-      // To reflect the change, we refetch the book details.
-      // Manually set the request for the viewer
-      setGqlRequest(`mutation RelateMovieBook($movieId: ID!, $bookId: ID!) { relateMovieBook(movieId: $movieId, bookId: $bookId) { id books { id title } } } Variables: ${JSON.stringify({ movieId: selectedMovieToRelate, bookId: bookId }, null, 2)}`);
-      await executeGraphQL<MutationResponse>(mutation, {
+      // Find the movie title from allMovies for potential use in state update
+      const movieToRelate = allMovies.find(m => m.id === selectedMovieToRelate);
+
+      // Let executeGraphQL handle setting the request log
+      // Remove manual setGqlRequest: setGqlRequest(`mutation RelateMovieBook...`);
+      const result = await executeGraphQL<MutationResponse>(mutation, {
         movieId: selectedMovieToRelate,
         bookId: bookId,
       });
-      // alert('Movie related successfully!');
-      toast.success('Movie related successfully!');
-      setSelectedMovieToRelate('');
-      // Refetch book details to show the updated related movies list
-      await fetchBookAndMovies();
+
+      if (result.data?.relateMovieBook) {
+        toast.success('Movie related successfully!');
+        setSelectedMovieToRelate('');
+        // Manually update the book state's movies array
+        if (movieToRelate) {
+          setBook(prevBook => prevBook ? {
+            ...prevBook,
+            movies: [...prevBook.movies, { id: movieToRelate.id, title: movieToRelate.title }]
+          } : null);
+        } else {
+          // If movie details weren't available, just refetch as a fallback
+          console.warn("Could not find movie details locally to update UI, refetching book.");
+          fetchBookAndMovies(); // Fallback refetch
+        }
+      } else {
+        toast.error('Failed to relate movie: No data returned.');
+      }
+      // Remove refetch: await fetchBookAndMovies();
 
     } catch (err) {
-      // alert('Failed to relate movie.');
-      toast.error('Failed to relate movie.');
+      // toast.error('Failed to relate movie.');
+      console.error("Relate movie error:", err)
     }
   };
 
@@ -240,28 +297,36 @@ export default function BookDetailPage() {
     const mutation = `
         mutation UnrelateMovieBook($movieId: ID!, $bookId: ID!) {
             unrelateMovieBook(movieId: $movieId, bookId: $bookId) {
-                id # Movie ID
-                 books { # Updated book list for the movie
-                      id
-                      title
-                  }
+                id # Only need ID to confirm success
+                # books { # We don't need the movie's book list here
+                #      id
+                #      title
+                #  }
             }
         }
       `;
     try {
-      // Manually set the request for the viewer
-      setGqlRequest(`mutation UnrelateMovieBook($movieId: ID!, $bookId: ID!) { unrelateMovieBook(movieId: $movieId, bookId: $bookId) { id books { id title } } } Variables: ${JSON.stringify({ movieId: movieId, bookId: bookId }, null, 2)}`);
-      await executeGraphQL<MutationResponse>(mutation, {
+      // Let executeGraphQL handle setting the request log
+      // Remove manual setGqlRequest: setGqlRequest(`mutation UnrelateMovieBook...`);
+      const result = await executeGraphQL<MutationResponse>(mutation, {
         movieId: movieId,
         bookId: bookId,
       });
-      // alert('Movie unrelated successfully!');
-      toast.success('Movie unrelated successfully!');
-      // Refetch book details to update the UI
-      await fetchBookAndMovies();
+
+      if (result.data?.unrelateMovieBook) {
+        toast.success('Movie unrelated successfully!');
+        // Manually update the book state's movies array
+        setBook(prevBook => prevBook ? {
+          ...prevBook,
+          movies: prevBook.movies.filter(m => m.id !== movieId)
+        } : null);
+      } else {
+        toast.error('Failed to unrelate movie: No data returned.');
+      }
+      // Remove refetch: await fetchBookAndMovies();
     } catch (err) {
-      // alert('Failed to unrelate movie.');
-      toast.error('Failed to unrelate movie.');
+      // toast.error('Failed to unrelate movie.');
+      console.error("Unrelate movie error:", err)
     }
   };
 
@@ -277,7 +342,7 @@ export default function BookDetailPage() {
   return (
     <div className="flex flex-col md:flex-row flex-1 h-[calc(100vh-theme(space.16))]">
       {/* Left Column: Book Details & Actions (Takes full width on small screens) */}
-      <div className="w-full md:w-2/3 pr-0 md:pr-4 overflow-y-auto mb-4 md:mb-0">
+      <div className="w-full md:w-1/2 pr-0 md:pr-4 overflow-y-auto mb-4 md:mb-0">
         {error && <p className="mb-4 text-red-500 bg-red-100 p-3 rounded">Error: {error}</p>}
 
         {/* Book Info */}
@@ -358,7 +423,7 @@ export default function BookDetailPage() {
       </div>
 
       {/* Right Column: GraphQL Viewer (Takes full width on small screens) */}
-      <div className="w-full md:w-1/3 pl-0 md:pl-4 border-t md:border-t-0 md:border-l border-gray-300 h-auto md:h-full">
+      <div className="w-full md:w-1/2 pl-0 md:pl-4 border-t md:border-t-0 md:border-l border-gray-300 h-auto md:h-full">
         <div className="sticky top-0 h-full">
           <GraphQLViewer
             requestQuery={gqlRequest}
