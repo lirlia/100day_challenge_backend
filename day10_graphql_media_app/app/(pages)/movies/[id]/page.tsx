@@ -1,0 +1,360 @@
+"use client";
+
+import React, { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
+import { useParams, useRouter } from 'next/navigation'; // Import useParams
+import GraphQLViewer from '@/components/GraphQLViewer';
+
+// Types matching GraphQL schema (could be refined or imported if generated)
+interface BookBasic {
+  id: string;
+  title: string;
+}
+interface MovieDetails extends BookBasic { // Using BookBasic as a base for common fields like id, title
+  director: string;
+  releaseYear: number;
+  books: BookBasic[];
+}
+
+// GraphQL Response Types
+interface MovieDetailsResponse {
+  data?: {
+    movie?: MovieDetails;
+  };
+  errors?: { message: string }[];
+}
+interface BooksResponse {
+  data?: {
+    books?: BookBasic[];
+  };
+  errors?: { message: string }[];
+}
+interface MutationResponse { // Generic type for mutation responses
+  data?: any;
+  errors?: { message: string }[];
+}
+
+
+export default function MovieDetailPage() {
+  const params = useParams(); // Get route parameters
+  const router = useRouter();
+  const movieId = params?.id as string | undefined; // Extract movie ID
+
+  const [movie, setMovie] = useState<MovieDetails | null>(null);
+  const [allBooks, setAllBooks] = useState<BookBasic[]>([]);
+  const [selectedBookToRelate, setSelectedBookToRelate] = useState<string>('');
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+  const [gqlRequest, setGqlRequest] = useState<string | null>(null);
+  const [gqlResponse, setGqlResponse] = useState<any | null>(null);
+  const [gqlError, setGqlError] = useState<string | null>(null);
+
+  // --- GraphQL Query/Mutation Helper ---
+  const executeGraphQL = async <T,>(query: string, variables?: Record<string, any>): Promise<T> => {
+    // Determine if it's a mutation or query for display purposes
+    const operationType = query.trim().startsWith('mutation') ? 'Mutation' : 'Query';
+    let requestStringToDisplay = `${operationType}:\n${query}`;
+    if (variables) {
+      requestStringToDisplay += `\nVariables: ${JSON.stringify(variables, null, 2)}`;
+    }
+    setGqlRequest(requestStringToDisplay);
+    setGqlResponse(null);
+    setGqlError(null);
+    setError(null); // Clear general error as well
+
+    try {
+      const res = await fetch('/api/graphql', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, variables }),
+      });
+
+      if (!res.ok) {
+        throw new Error(`HTTP error! status: ${res.status}`);
+      }
+
+      const result = await res.json();
+      setGqlResponse(result); // Show full response regardless of GraphQL errors
+
+      if (result.errors) {
+        console.error('GraphQL Errors:', result.errors);
+        const errorMessages = result.errors.map((e: { message: string }) => e.message).join('\n');
+        setGqlError(errorMessages);
+        throw new Error(errorMessages); // Throw error to be caught by calling function
+      }
+
+      if (!result.data) {
+        throw new Error('No data returned from GraphQL query.');
+      }
+
+      return result; // Return full response structure
+
+    } catch (err: any) {
+      console.error('GraphQL Execution Error:', err);
+      setError(err.message || 'An error occurred.'); // Set general error
+      setGqlError(err.message || 'An error occurred.'); // Also set GqlError for display
+      throw err; // Re-throw to be caught by calling function if needed
+    }
+  };
+
+  // --- Fetch Initial Data ---
+  const fetchMovieAndBooks = useCallback(async () => {
+    if (!movieId) return; // Don't fetch if ID is not available
+
+    setLoading(true);
+    setError(null);
+    setGqlError(null);
+    setGqlResponse(null);
+    setGqlRequest(null);
+
+    const movieQuery = `
+    query GetMovie($id: ID!) {
+      movie(id: $id) {
+      id
+            title
+    director
+    releaseYear
+    books {
+      id
+                title
+            }
+            }
+        }
+    `;
+    const booksQuery = `
+    query GetAllBooks {
+      books {
+      id
+            title
+            }
+        }
+    `;
+
+    try {
+      // Fetch movie details and all books in parallel
+      const [movieResult, booksResult] = await Promise.all([
+        executeGraphQL<MovieDetailsResponse>(movieQuery, { id: movieId }),
+        executeGraphQL<BooksResponse>(booksQuery) // No variables needed
+      ]);
+
+      if (movieResult.data?.movie) {
+        setMovie(movieResult.data.movie);
+      } else {
+        setError(`Movie with ID ${movieId} not found.`);
+        setMovie(null);
+      }
+
+      if (booksResult.data?.books) {
+        setAllBooks(booksResult.data.books);
+      } else {
+        // Handle error case for books if necessary, though list might just be empty
+        console.warn("Could not fetch the list of all books.");
+        setAllBooks([]);
+      }
+
+    } catch (err) {
+      // Error state is set within executeGraphQL
+      setMovie(null); // Ensure movie state is cleared on error
+      setAllBooks([]);
+      console.error("Failed to fetch initial data:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, [movieId]); // Re-run if movieId changes
+
+  useEffect(() => {
+    fetchMovieAndBooks();
+  }, [fetchMovieAndBooks]); // Depend on the memoized fetch function
+
+
+  // --- Handlers ---
+  const handleDeleteMovie = async () => {
+    if (!movieId || !movie) return;
+    // Remove confirmation dialog
+
+    const mutation = `
+      mutation DeleteMovie($id: ID!) {
+        deleteMovie(id: $id) {
+          id # Request ID to confirm deletion
+        }
+      }
+    `;
+    try {
+      // Manually set the request for the viewer before executing
+      setGqlRequest(`mutation DeleteMovie($id: ID!) { deleteMovie(id: $id) { id } } Variables: ${JSON.stringify({ id: movieId }, null, 2)}`);
+      await executeGraphQL<MutationResponse>(mutation, { id: movieId });
+      alert('Movie deleted successfully!');
+      router.push('/movies'); // Redirect after successful deletion
+    } catch (err) {
+      alert('Failed to delete movie.'); // Inform user
+      // Error state is handled by executeGraphQL
+    }
+  };
+
+  const handleRelateBook = async () => {
+    if (!movieId || !selectedBookToRelate) return;
+
+    const mutation = `
+        mutation RelateMovieBook($movieId: ID!, $bookId: ID!) {
+            relateMovieBook(movieId: $movieId, bookId: $bookId) {
+                id # Refetch necessary fields, including the updated books list
+                books {
+                    id
+                    title
+                }
+            }
+        }
+      `;
+    try {
+      // Manually set the request for the viewer
+      setGqlRequest(`mutation RelateMovieBook($movieId: ID!, $bookId: ID!) { relateMovieBook(movieId: $movieId, bookId: $bookId) { id books { id title } } } Variables: ${JSON.stringify({ movieId: movieId, bookId: selectedBookToRelate }, null, 2)}`);
+      await executeGraphQL<MutationResponse>(mutation, {
+        movieId: movieId,
+        bookId: selectedBookToRelate,
+      });
+      alert('Book related successfully!');
+      setSelectedBookToRelate('');
+      await fetchMovieAndBooks(); // Refetch data to update UI
+
+    } catch (err) {
+      alert('Failed to relate book.');
+    }
+  };
+
+  const handleUnrelateBook = async (bookId: string, bookTitle: string) => {
+    if (!movieId || !movie) return;
+    // Remove confirmation dialog
+
+    const mutation = `
+        mutation UnrelateMovieBook($movieId: ID!, $bookId: ID!) {
+            unrelateMovieBook(movieId: $movieId, bookId: $bookId) {
+                id
+                books {
+                    id
+                    title
+                }
+            }
+        }
+      `;
+    try {
+      // Manually set the request for the viewer
+      setGqlRequest(`mutation UnrelateMovieBook($movieId: ID!, $bookId: ID!) { unrelateMovieBook(movieId: $movieId, bookId: $bookId) { id books { id title } } } Variables: ${JSON.stringify({ movieId: movieId, bookId: bookId }, null, 2)}`);
+      await executeGraphQL<MutationResponse>(mutation, {
+        movieId: movieId,
+        bookId: bookId,
+      });
+      alert('Book unrelated successfully!');
+      await fetchMovieAndBooks(); // Refetch data to update UI
+    } catch (err) {
+      alert('Failed to unrelate book.');
+    }
+  };
+
+  // --- Render Logic ---
+  if (loading) return <p className="p-6 text-gray-500">Loading movie details...</p>;
+  // Show general errors prominently if movie data couldn't be loaded
+  if (error && !movie) return <p className="p-6 text-red-500">Error: {error}</p>;
+  if (!movie) return <p className="p-6 text-gray-500">Movie not found.</p>;
+
+
+  // Filter books that are not already related
+  const relatedBookIds = new Set(movie.books.map(b => b.id));
+  const availableBooksToRelate = allBooks.filter(b => !relatedBookIds.has(b.id));
+
+  return (
+    <div className="flex flex-1 h-[calc(100vh-theme(space.16))]">
+      {/* Left Column: Movie Details & Actions */}
+      <div className="w-2/3 pr-4 overflow-y-auto">
+        {/* General Error Display (e.g., for mutation errors) */}
+        {error && <p className="mb-4 text-red-500 bg-red-100 p-3 rounded">Error: {error}</p>}
+
+        {/* Movie Info */}
+        <div className="bg-white p-6 rounded shadow-md mb-6">
+          <h2 className="text-3xl font-bold mb-2">{movie.title}</h2>
+          <p className="text-gray-700 mb-1"><span className="font-semibold">Director:</span> {movie.director}</p>
+          <p className="text-gray-700 mb-4"><span className="font-semibold">Released:</span> {movie.releaseYear}</p>
+
+          {/* Action Buttons */}
+          <div className="flex space-x-3">
+            {/* TODO: Link to an edit page */}
+            <Link href={`/movies/${movieId}/edit`}>
+              <button className="px-4 py-2 bg-yellow-500 text-white rounded shadow hover:bg-yellow-600">
+                Edit Movie
+              </button>
+            </Link>
+            <button
+              onClick={handleDeleteMovie}
+              className="px-4 py-2 bg-red-600 text-white rounded shadow hover:bg-red-700"
+            >
+              Delete Movie
+            </button>
+          </div>
+        </div>
+
+        {/* Related Books Section */}
+        <div className="bg-white p-6 rounded shadow-md mb-6">
+          <h3 className="text-xl font-semibold mb-3">Related Books</h3>
+          {movie.books.length > 0 ? (
+            <ul className="space-y-2">
+              {movie.books.map(book => (
+                <li key={book.id} className="flex justify-between items-center border-b pb-2">
+                  <Link href={`/books/${book.id}`} className="text-blue-600 hover:underline">
+                    {book.title}
+                  </Link>
+                  <button
+                    onClick={() => handleUnrelateBook(book.id, book.title)}
+                    className="text-xs px-2 py-1 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+                  >
+                    Unrelate
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-gray-500">No related books.</p>
+          )}
+        </div>
+
+        {/* Relate New Book Section */}
+        <div className="bg-white p-6 rounded shadow-md">
+          <h3 className="text-xl font-semibold mb-3">Relate a Book</h3>
+          {availableBooksToRelate.length > 0 ? (
+            <div className="flex items-center space-x-3">
+              <select
+                value={selectedBookToRelate}
+                onChange={(e) => setSelectedBookToRelate(e.target.value)}
+                className="flex-grow px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+              >
+                <option value="" disabled>Select a book to relate...</option>
+                {availableBooksToRelate.map(book => (
+                  <option key={book.id} value={book.id}>{book.title}</option>
+                ))}
+              </select>
+              <button
+                onClick={handleRelateBook}
+                disabled={!selectedBookToRelate}
+                className="px-4 py-2 bg-indigo-600 text-white rounded shadow hover:bg-indigo-700 disabled:opacity-50"
+              >
+                Relate Book
+              </button>
+            </div>
+          ) : (
+            <p className="text-gray-500">All available books are already related or no other books exist.</p>
+          )}
+        </div>
+
+      </div>
+
+      {/* Right Column: GraphQL Viewer */}
+      <div className="w-1/3 pl-4 border-l border-gray-300 h-full">
+        <div className="sticky top-0 h-full">
+          <GraphQLViewer
+            requestQuery={gqlRequest}
+            responseJson={gqlResponse}
+            error={gqlError} // Display only GraphQL-specific errors here
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
