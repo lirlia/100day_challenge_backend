@@ -66,3 +66,33 @@ GraphQL API エンドポイントは `http://localhost:3001/api/graphql` です�
 - このテンプレートはローカル開発環境を主眼としています。
 - 本番デプロイには追加の考慮が必要です。
 - エラーハンドリングやセキュリティは簡略化されています。
+
+## GraphQL 通信フロー
+
+基本的なデータ取得・更新は以下の流れで行われます。
+
+```mermaid
+sequenceDiagram
+    participant FE as Frontend (React Component)
+    participant GQLH as executeGraphQL Helper
+    participant API as API Route (/api/graphql/route.ts)
+    participant AS as Apollo Server
+    participant R as Resolvers
+    participant P as Prisma Client
+    participant DB as SQLite DB
+
+    FE->>GQLH: クエリ/Mutationと変数を渡す
+    GQLH->>API: fetch (POST /api/graphql)
+    API->>AS: リクエストを処理 (startServerAndCreateNextHandler)
+    AS->>R: 対応するリゾルバを実行
+    R->>P: Prismaメソッド呼び出し (findMany, create, update, etc.)
+    P->>DB: SQLクエリ実行
+    DB-->>P: クエリ結果を返す
+    P-->>R: 結果を返す
+    R-->>AS: 解決されたデータを返す
+    AS-->>API: GraphQLレスポンス (data/errors) を返す
+    API-->>GQLH: fetch 応答
+    GQLH-->>FE: 結果 (data/errors) を返す
+    FE->>FE: State を更新して UI に反映
+
+```
