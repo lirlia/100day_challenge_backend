@@ -51,17 +51,27 @@ export default function MovieDetailPage() {
   const [gqlError, setGqlError] = useState<string | null>(null);
 
   // --- GraphQL Query/Mutation Helper ---
-  const executeGraphQL = async <T,>(query: string, variables?: Record<string, any>): Promise<T> => {
-    // Determine if it's a mutation or query for display purposes
-    const operationType = query.trim().startsWith('mutation') ? 'Mutation' : 'Query';
-    let requestStringToDisplay = `${operationType}:\n${query}`;
+  const executeGraphQL = async <T,>(query: string, variables?: Record<string, any>, isPrimaryLog: boolean = true): Promise<T> => {
+
+    // --- Simplified Display Logic --- START
+    // Use the original query, just trimmed, for display. Remove complex dedent.
+    const trimmedQuery = query.trim();
+    // --- Simplified Display Logic --- END
+
+    // Use the trimmed query for determining operation type and display
+    const operationType = trimmedQuery.startsWith('mutation') ? 'Mutation' : 'Query';
+    let requestStringToDisplay = `${operationType}:\n${trimmedQuery}`; // Use trimmed query directly
     if (variables) {
       requestStringToDisplay += `\nVariables: ${JSON.stringify(variables, null, 2)}`;
     }
-    setGqlRequest(requestStringToDisplay);
-    setGqlResponse(null);
-    setGqlError(null);
-    setError(null); // Clear general error as well
+
+    // Only update viewer state if it's the primary log source
+    if (isPrimaryLog) {
+      setGqlRequest(requestStringToDisplay);
+      setGqlResponse(null);
+      setGqlError(null);
+    }
+    setError(null); // Clear general error regardless of primary log status
 
     try {
       const res = await fetch('/api/graphql', {
@@ -75,25 +85,43 @@ export default function MovieDetailPage() {
       }
 
       const result = await res.json();
-      setGqlResponse(result); // Show full response regardless of GraphQL errors
+
+      // Only update viewer state if it's the primary log source
+      if (isPrimaryLog) {
+        setGqlResponse(result); // Show full response regardless of GraphQL errors
+      }
 
       if (result.errors) {
         console.error('GraphQL Errors:', result.errors);
         const errorMessages = result.errors.map((e: { message: string }) => e.message).join('\n');
-        setGqlError(errorMessages);
+        // Only update viewer state if it's the primary log source
+        if (isPrimaryLog) {
+          setGqlError(errorMessages);
+        }
+        setError(errorMessages); // Set general error regardless
         throw new Error(errorMessages); // Throw error to be caught by calling function
       }
 
-      if (!result.data) {
-        throw new Error('No data returned from GraphQL query.');
+      if (!result.data && !result.errors) { // Check for data only if no errors
+        const errorMsg = 'No data returned from GraphQL query.';
+        if (isPrimaryLog) {
+          setGqlError(errorMsg);
+        }
+        setError(errorMsg); // Set general error regardless
+        throw new Error(errorMsg);
       }
+
 
       return result; // Return full response structure
 
     } catch (err: any) {
       console.error('GraphQL Execution Error:', err);
-      setError(err.message || 'An error occurred.'); // Set general error
-      setGqlError(err.message || 'An error occurred.'); // Also set GqlError for display
+      const errorMsg = err.message || 'An error occurred.';
+      setError(errorMsg); // Set general error
+      // Only update viewer state if it's the primary log source
+      if (isPrimaryLog) {
+        setGqlError(errorMsg); // Also set GqlError for display
+      }
       throw err; // Re-throw to be caught by calling function if needed
     }
   };
@@ -103,24 +131,22 @@ export default function MovieDetailPage() {
     if (!movieId) return; // Don't fetch if ID is not available
 
     setLoading(true);
+    // Reset general error, viewer state will be reset by the primary call
     setError(null);
-    setGqlError(null);
-    setGqlResponse(null);
-    setGqlRequest(null);
 
     const movieQuery = `
-    query GetMovie($id: ID!) {
-      movie(id: $id) {
-      id
+      query GetMovie($id: ID!) {
+        movie(id: $id) {
+          id
+          title
+          director
+          releaseYear
+          books {
+            id
             title
-    director
-    releaseYear
-    books {
-      id
-                title
-            }
-            }
+          }
         }
+      }
     `;
     const booksQuery = `
     query GetAllBooks {
@@ -132,32 +158,40 @@ export default function MovieDetailPage() {
     `;
 
     try {
-      // Fetch movie details and all books in parallel
+      // Fetch movie details (primary log) and all books (not primary) in parallel
       const [movieResult, booksResult] = await Promise.all([
-        executeGraphQL<MovieDetailsResponse>(movieQuery, { id: movieId }),
-        executeGraphQL<BooksResponse>(booksQuery) // No variables needed
+        // For GetMovie, isPrimaryLog is true (default or explicit)
+        executeGraphQL<MovieDetailsResponse>(movieQuery, { id: movieId } /*, true */), // isPrimaryLog: true is default
+        // For GetAllBooks, explicitly set isPrimaryLog to false
+        executeGraphQL<BooksResponse>(booksQuery, undefined, false) // isPrimaryLog: false
       ]);
 
+      // State updates based on results...
       if (movieResult.data?.movie) {
         setMovie(movieResult.data.movie);
       } else {
-        setError(`Movie with ID ${movieId} not found.`);
+        // If movie fetch failed but wasn't caught below (e.g., data.movie is null)
+        const movieErrorMsg = `Movie with ID ${movieId} not found.`;
+        setError(movieErrorMsg);
+        setGqlError(movieErrorMsg); // Update viewer error as this is the primary query context
         setMovie(null);
       }
 
       if (booksResult.data?.books) {
         setAllBooks(booksResult.data.books);
       } else {
-        // Handle error case for books if necessary, though list might just be empty
         console.warn("Could not fetch the list of all books.");
         setAllBooks([]);
       }
 
-    } catch (err) {
-      // Error state is set within executeGraphQL
-      setMovie(null); // Ensure movie state is cleared on error
+    } catch (err: any) {
+      // Error state (setError, setGqlError) should have been set
+      // inside executeGraphQL for the failing primary query.
+      // If the non-primary query failed, only setError would be set.
+      // We still need to clear the component's data state.
+      setMovie(null);
       setAllBooks([]);
-      console.error("Failed to fetch initial data:", err);
+      console.error("Failed to fetch initial data (error likely logged already by executeGraphQL):", err.message);
     } finally {
       setLoading(false);
     }
@@ -265,7 +299,7 @@ export default function MovieDetailPage() {
   return (
     <div className="flex flex-col md:flex-row flex-1 h-[calc(100vh-theme(space.16))]">
       {/* Left Column: Movie Details & Actions (Takes full width on small screens) */}
-      <div className="w-full md:w-2/3 pr-0 md:pr-4 overflow-y-auto mb-4 md:mb-0">
+      <div className="w-full md:w-1/2 pr-0 md:pr-4 overflow-y-auto mb-4 md:mb-0">
         {/* General Error Display (e.g., for mutation errors) */}
         {error && <p className="mb-4 text-red-500 bg-red-100 p-3 rounded">Error: {error}</p>}
 
@@ -347,7 +381,7 @@ export default function MovieDetailPage() {
       </div>
 
       {/* Right Column: GraphQL Viewer (Takes full width on small screens) */}
-      <div className="w-full md:w-1/3 pl-0 md:pl-4 border-t md:border-t-0 md:border-l border-gray-300 h-auto md:h-full">
+      <div className="w-full md:w-1/2 pl-0 md:pl-4 border-t md:border-t-0 md:border-l border-gray-300 h-auto md:h-full">
         <div className="sticky top-0 h-full">
           <GraphQLViewer
             requestQuery={gqlRequest}
