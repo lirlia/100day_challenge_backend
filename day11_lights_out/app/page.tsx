@@ -20,7 +20,7 @@ export default async function Home() {
 
   return (
     <main className="container mx-auto p-4">
-      <h1 className="text-2xl font-bold mb-4 text-center">Lights Out Game</h1>
+      <h1 className="text-2xl font-bold mb-4 text-center">Day11: Lights Out Game</h1>
       {/* 取得した gameId を GameClient に渡す */}
       <GameClient gameId={gameId} />
     </main>

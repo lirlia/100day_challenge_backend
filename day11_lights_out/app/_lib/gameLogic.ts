@@ -28,7 +28,7 @@ export type GameEvent = {
 export type PersistedGameEvent = Omit<DomainEvent, 'payload'> & GameEvent;
 
 // ペイロードを安全にパースし、期待する型として返すヘルパー関数
-function safeParsePayload<T>(payload: Prisma.JsonValue): T | null {
+export function safeParsePayload<T>(payload: Prisma.JsonValue): T | null {
   if (payload === null || typeof payload !== 'object') {
     // 文字列の場合はパース試行
     if (typeof payload === 'string') {

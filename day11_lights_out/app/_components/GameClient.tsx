@@ -168,15 +168,42 @@ export default function GameClient({ gameId }: { gameId: string }) {
   // ライトのスタイルを計算する関数
   const lightStyle = (isOn: boolean, row: number, col: number) => {
     const isHint = hintCoords?.row === row && hintCoords?.col === col;
-    return `
+
+    let baseClasses = `
       w-12 h-12 border rounded-md transition-colors duration-150 ease-out
       flex items-center justify-center text-xl font-bold
       focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500
-      ${isOn ? 'bg-yellow-400 border-yellow-500 shadow-inner' : 'bg-gray-600 border-gray-700 shadow-md'}
-      ${!isHistoryView && !isProcessing && !isWon ? 'hover:bg-opacity-80 active:scale-95 cursor-pointer' : 'cursor-default'}
-      ${isHint ? 'border-4 border-green-500 animate-pulse' : ''}
-      disabled:opacity-50 disabled:cursor-not-allowed
     `;
+
+    if (isOn) {
+      baseClasses += ' bg-yellow-400 border-yellow-500 shadow-inner';
+    } else {
+      baseClasses += ' bg-gray-600 border-gray-700 shadow-md';
+    }
+
+    if (!isHistoryView && !isProcessing && !isWon) {
+        baseClasses += ' hover:bg-opacity-80 active:scale-95 cursor-pointer';
+    } else {
+        baseClasses += ' cursor-default';
+    }
+
+    if (isHistoryView || isProcessing || isWon) {
+        baseClasses += ' disabled:opacity-50 disabled:cursor-not-allowed';
+    }
+
+    if (isHint) {
+        let hintClasses = ' border-4'; // 枠線太さ
+        if (isOn) {
+            hintClasses += ' border-purple-700'; // オン: 紫枠
+        } else {
+            hintClasses += ' border-green-500'; // オフ: 緑枠
+        }
+        // カスタムアニメーションクラス名に変更
+        hintClasses += ' animate-hint-pulse';
+        baseClasses += hintClasses;
+    }
+
+    return baseClasses.trim().replace(/\s{2,}/g, ' ');
   };
 
   // New Game ボタンのハンドラ (ページリロード)
@@ -294,8 +321,8 @@ export default function GameClient({ gameId }: { gameId: string }) {
               return (
                 <li
                     key={event.id}
-                    onClick={() => event.type !== 'GameInitialized' && handleHistoryClick(event.sequence)}
-                    className={`${baseStyle} ${event.type === 'GameInitialized' ? 'text-gray-500' : 'text-gray-300'} ${event.type !== 'GameInitialized' ? 'cursor-pointer' : 'cursor-default'} ${selectedStyle}`}
+                    onClick={() => handleHistoryClick(event.sequence)}
+                    className={`${baseStyle} ${event.type === 'GameInitialized' ? 'text-gray-500' : 'text-gray-300'} cursor-pointer ${selectedStyle}`}
                 >
                    Seq {event.sequence}: {eventText}
                 </li>
@@ -305,12 +332,12 @@ export default function GameClient({ gameId }: { gameId: string }) {
         </div>
       </div>
       <style jsx global>{`
-          @keyframes pulse {
+          @keyframes hint-pulse {
               0%, 100% { opacity: 1; transform: scale(1); }
               50% { opacity: 0.7; transform: scale(1.05); }
           }
-          .animate-pulse {
-              animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+          .animate-hint-pulse {
+              animation: hint-pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
           }
       `}</style>
     </div>

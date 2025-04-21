@@ -6,18 +6,18 @@
 # Error details
 
 ```
-Error: expect(locator).toHaveCount(expected)
+Error: expect(locator).toHaveText(expected)
 
-Locator: locator('.grid button')
-Expected: 25
-Received: 0
+Locator: locator('h1')
+Expected string: "Lights Out Game"
+Received string: "Day11: Lights Out Game"
 Call log:
-  - expect.toHaveCount with timeout 5000ms
-  - waiting for locator('.grid button')
-    5 × locator resolved to 0 elements
-      - unexpected value "0"
+  - expect.toHaveText with timeout 5000ms
+  - waiting for locator('h1')
+    8 × locator resolved to <h1 class="text-2xl font-bold mb-4 text-center">Day11: Lights Out Game</h1>
+      - unexpected value "Day11: Lights Out Game"
 
-    at /Users/noname/Cording/100day_challenge_backend/day11_lights_out/e2e/lights-out.spec.ts:15:32
+    at /Users/noname/Cording/100day_challenge_backend/day11_lights_out/e2e/lights-out.spec.ts:11:38
 ```
 
 # Test source
@@ -33,12 +33,12 @@ Call log:
    8 |
    9 |     // 1. ページタイトルと盤面の確認
   10 |     await expect(page).toHaveTitle(/Lights Out Game/); // page.tsx の title か h1 で確認
-  11 |     await expect(page.locator('h1')).toHaveText('Lights Out Game');
+> 11 |     await expect(page.locator('h1')).toHaveText('Lights Out Game');
+     |                                      ^ Error: expect(locator).toHaveText(expected)
   12 |
   13 |     // 盤面 (5x5=25個のボタン) が表示されるのを待つ
   14 |     const boardButtons = page.locator('.grid button');
-> 15 |     await expect(boardButtons).toHaveCount(25);
-     |                                ^ Error: expect(locator).toHaveCount(expected)
+  15 |     await expect(boardButtons).toHaveCount(25);
   16 |
   17 |     // 初期手数が 0 であることを確認
   18 |     const movesCounter = page.locator('text=/Moves: \\d+/');
