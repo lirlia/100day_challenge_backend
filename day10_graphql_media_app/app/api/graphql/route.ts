@@ -196,4 +196,81 @@ const resolvers = {
             });
         } catch (error: any) {
              if (error.code === 'P2025') {
-                console.error(`Book with id ${id} not found for update.`
+                console.error(`Book with id ${id} not found for update.`);
+                // Return null or throw a specific error based on API design
+                return null;
+            }
+            console.error(`Error updating book with id ${id}:`, error);
+            throw new Error('Failed to update book');
+        }
+    },
+    deleteBook: async (_: any, { id }: { id: string }) => {
+         try {
+            const deletedBook = prisma.book.delete({
+                where: { id: parseInt(id, 10) },
+            });
+            return deletedBook;
+        } catch (error: any) {
+            if (error.code === 'P2025') {
+                console.warn(`Book with id ${id} not found for deletion.`);
+                return null;
+            }
+            console.error(`Error deleting book with id ${id}:`, error);
+            throw new Error('Failed to delete book');
+        }
+    },
+    relateMovieBook: async (
+      _: any,
+      { movieId, bookId }: { movieId: string; bookId: string }
+    ) => {
+        try {
+            return prisma.movie.update({
+                where: { id: parseInt(movieId, 10) },
+                data: {
+                    books: {
+                        connect: { id: parseInt(bookId, 10) },
+                    },
+                },
+                include: { books: true }, // Include related books in the response
+            });
+        } catch (error) {
+            console.error(`Error relating movie ${movieId} and book ${bookId}:`, error);
+             throw new Error('Failed to relate movie and book');
+        }
+    },
+    unrelateMovieBook: async (
+      _: any,
+      { movieId, bookId }: { movieId: string; bookId: string }
+    ) => {
+        try {
+            return prisma.movie.update({
+                where: { id: parseInt(movieId, 10) },
+                data: {
+                    books: {
+                        disconnect: { id: parseInt(bookId, 10) },
+                    },
+                },
+                include: { books: true }, // Include related books in the response
+            });
+        } catch (error) {
+             console.error(`Error unrelating movie ${movieId} and book ${bookId}:`, error);
+              throw new Error('Failed to unrelate movie and book');
+        }
+    },
+  }, // End of Mutation resolvers
+}; // End of resolvers object
+
+
+// Create Apollo Server instance
+const server = new ApolloServer({
+  typeDefs,
+  resolvers,
+});
+
+// Create Next.js handler
+const handler = startServerAndCreateNextHandler(server, {
+    // context: async (req, res) => ({ req, res }), // Add context if needed
+});
+
+// Export the handler for GET and POST requests
+export { handler as GET, handler as POST };
