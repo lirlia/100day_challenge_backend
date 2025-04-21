@@ -1,0 +1,52 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// model User {
+//   id        Int      @id @default(autoincrement())
+//   name      String
+//   createdAt DateTime @default(now())
+//   updatedAt DateTime @updatedAt
+// }
+
+model Movie {
+  id          Int      @id @default(autoincrement())
+  title       String
+  director    String
+  releaseYear Int
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  books       Book[]   @relation("MovieBook") // Relation field for many-to-many
+}
+
+model Book {
+  id              Int      @id @default(autoincrement())
+  title           String
+  author          String
+  publicationYear Int
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  movies          Movie[]  @relation("MovieBook") // Relation field for many-to-many
+}
+
+// If you need an explicit join table for many-to-many, you can define it like this:
+// model MovieBook {
+//   movieId Int
+//   bookId  Int
+//   movie   Movie @relation(fields: [movieId], references: [id])
+//   book    Book  @relation(fields: [bookId], references: [id])
+//   @@id([movieId, bookId])
+// }
+// Prisma's implicit many-to-many relation is used by default here,
+// which handles the join table automatically.
