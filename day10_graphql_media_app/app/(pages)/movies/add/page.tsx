@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation'; // For redirection
 import GraphQLViewer from '@/components/GraphQLViewer';
+import { toast } from 'react-hot-toast';
 
 // Define the structure of the GraphQL response for addMovie
 interface AddMovieResponse {
@@ -87,7 +88,7 @@ export default function AddMoviePage() {
       } else if (result.data?.addMovie) {
         console.log('Movie added:', result.data.addMovie);
         setGqlError(null);
-        // Redirect to movies list on success
+        toast.success('Movie added successfully!');
         router.push('/movies');
       } else {
         console.error("Unexpected response structure:", result);
@@ -99,6 +100,7 @@ export default function AddMoviePage() {
       console.error('Submission Error:', err);
       setError(err.message || 'Failed to submit the form.');
       setGqlError(null);
+      toast.error('Failed to add movie.');
     } finally {
       setSubmitting(false);
     }

@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import GraphQLViewer from '@/components/GraphQLViewer';
 import Link from 'next/link';
+import { toast } from 'react-hot-toast';
 
 
 // Types (reusing from detail page where applicable)
@@ -172,7 +173,7 @@ export default function EditMoviePage() {
     try {
       const result = await executeGraphQL<MutationResponse>(mutation, variables);
       if (result.data?.updateMovie) {
-        alert('Movie updated successfully!');
+        toast.success('Movie updated successfully!');
         router.push(`/movies/${movieId}`); // Redirect to detail page
       } else {
         // This case might happen if the update returns null (e.g., movie deleted concurrently)
@@ -180,7 +181,7 @@ export default function EditMoviePage() {
         throw new Error('Failed to update movie or unexpected response.');
       }
     } catch (err) {
-      alert('Failed to update movie.'); // Inform user
+      toast.error('Failed to update movie.');
       // Error state is already set by executeGraphQL
     } finally {
       setLoading(false); // Finish submission loading state
@@ -196,9 +197,9 @@ export default function EditMoviePage() {
 
 
   return (
-    <div className="flex flex-1 h-[calc(100vh-theme(space.16))]">
-      {/* Left Column: Edit Form */}
-      <div className="w-2/3 pr-4 overflow-y-auto">
+    <div className="flex flex-col md:flex-row flex-1 h-[calc(100vh-theme(space.16))]">
+      {/* Left Column: Edit Form (Takes full width on small screens) */}
+      <div className="w-full md:w-2/3 pr-0 md:pr-4 overflow-y-auto mb-4 md:mb-0">
         {/* Display submission/fetch errors */}
         {error && <p className="mb-4 text-red-500 bg-red-100 p-3 rounded">Error: {error}</p>}
 
@@ -258,8 +259,8 @@ export default function EditMoviePage() {
         )}
       </div>
 
-      {/* Right Column: GraphQL Viewer */}
-      <div className="w-1/3 pl-4 border-l border-gray-300 h-full">
+      {/* Right Column: GraphQL Viewer (Takes full width on small screens) */}
+      <div className="w-full md:w-1/3 pl-0 md:pl-4 border-t md:border-t-0 md:border-l border-gray-300 h-auto md:h-full">
         <div className="sticky top-0 h-full">
           <GraphQLViewer
             requestQuery={gqlRequest}

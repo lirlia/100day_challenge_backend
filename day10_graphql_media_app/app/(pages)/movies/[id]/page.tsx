@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation'; // Import useParams
 import GraphQLViewer from '@/components/GraphQLViewer';
+import { toast } from 'react-hot-toast';
 
 // Types matching GraphQL schema (could be refined or imported if generated)
 interface BookBasic {
@@ -183,10 +184,10 @@ export default function MovieDetailPage() {
       // Manually set the request for the viewer before executing
       setGqlRequest(`mutation DeleteMovie($id: ID!) { deleteMovie(id: $id) { id } } Variables: ${JSON.stringify({ id: movieId }, null, 2)}`);
       await executeGraphQL<MutationResponse>(mutation, { id: movieId });
-      alert('Movie deleted successfully!');
+      toast.success('Movie deleted successfully!');
       router.push('/movies'); // Redirect after successful deletion
     } catch (err) {
-      alert('Failed to delete movie.'); // Inform user
+      toast.error('Failed to delete movie.');
       // Error state is handled by executeGraphQL
     }
   };
@@ -212,12 +213,12 @@ export default function MovieDetailPage() {
         movieId: movieId,
         bookId: selectedBookToRelate,
       });
-      alert('Book related successfully!');
+      toast.success('Book related successfully!');
       setSelectedBookToRelate('');
       await fetchMovieAndBooks(); // Refetch data to update UI
 
     } catch (err) {
-      alert('Failed to relate book.');
+      toast.error('Failed to relate book.');
     }
   };
 
@@ -243,10 +244,10 @@ export default function MovieDetailPage() {
         movieId: movieId,
         bookId: bookId,
       });
-      alert('Book unrelated successfully!');
+      toast.success('Book unrelated successfully!');
       await fetchMovieAndBooks(); // Refetch data to update UI
     } catch (err) {
-      alert('Failed to unrelate book.');
+      toast.error('Failed to unrelate book.');
     }
   };
 
@@ -262,9 +263,9 @@ export default function MovieDetailPage() {
   const availableBooksToRelate = allBooks.filter(b => !relatedBookIds.has(b.id));
 
   return (
-    <div className="flex flex-1 h-[calc(100vh-theme(space.16))]">
-      {/* Left Column: Movie Details & Actions */}
-      <div className="w-2/3 pr-4 overflow-y-auto">
+    <div className="flex flex-col md:flex-row flex-1 h-[calc(100vh-theme(space.16))]">
+      {/* Left Column: Movie Details & Actions (Takes full width on small screens) */}
+      <div className="w-full md:w-2/3 pr-0 md:pr-4 overflow-y-auto mb-4 md:mb-0">
         {/* General Error Display (e.g., for mutation errors) */}
         {error && <p className="mb-4 text-red-500 bg-red-100 p-3 rounded">Error: {error}</p>}
 
@@ -345,8 +346,8 @@ export default function MovieDetailPage() {
 
       </div>
 
-      {/* Right Column: GraphQL Viewer */}
-      <div className="w-1/3 pl-4 border-l border-gray-300 h-full">
+      {/* Right Column: GraphQL Viewer (Takes full width on small screens) */}
+      <div className="w-full md:w-1/3 pl-0 md:pl-4 border-t md:border-t-0 md:border-l border-gray-300 h-auto md:h-full">
         <div className="sticky top-0 h-full">
           <GraphQLViewer
             requestQuery={gqlRequest}

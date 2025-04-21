@@ -1,145 +1,154 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import Image from 'next/image';
+import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
+import GraphQLViewer from '@/components/GraphQLViewer'; // Assuming alias `@` is configured
 
-type User = {
-  id: number;
-  name: string;
-  createdAt: string;
-};
+// Define a basic type for Movie data received from GraphQL
+// Match the structure defined in your GraphQL query
+interface MovieData {
+  id: string;
+  title: string;
+  director: string;
+  releaseYear: number;
+  books: { id: string; title: string }[]; // Include related books if fetched
+}
 
-export default function Home() {
-  const [users, setUsers] = useState<User[]>([]);
-  const [name, setName] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-
-  // ユーザー一覧を取得
-  const fetchUsers = async () => {
-    try {
-      setLoading(true);
-      const response = await fetch('/api/users');
-      const data = await response.json();
-      setUsers(data || []);
-    } catch (err) {
-      console.error('Error fetching users:', err);
-      setError('ユーザー情報の取得に失敗しました。');
-    } finally {
-      setLoading(false);
-    }
+// Define the structure of the GraphQL response (data or errors)
+interface GraphQLResponse {
+  data?: {
+    movies?: MovieData[];
   };
+  errors?: { message: string }[];
+}
 
-  // ユーザーを作成
-  const createUser = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!name.trim()) return;
 
-    try {
-      const response = await fetch('/api/users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name })
-      });
+export default function MoviesPage() {
+  const [movies, setMovies] = useState<MovieData[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null); // For fetch errors
+  const [gqlRequest, setGqlRequest] = useState<string | null>(null);
+  const [gqlResponse, setGqlResponse] = useState<any | null>(null); // Store the full response
+  const [gqlError, setGqlError] = useState<string | null>(null);   // For GraphQL errors in the response
 
-      if (response.ok) {
-        setName('');
-        fetchUsers();
-      } else {
-        const errorData = await response.json();
-        setError(errorData.error || 'ユーザー作成に失敗しました。');
-      }
-    } catch (err) {
-      console.error('Error creating user:', err);
-      setError('ユーザー作成に失敗しました。');
-    }
-  };
-
-  // 初回マウント時にユーザー一覧を取得
   useEffect(() => {
-    fetchUsers();
-  }, []);
+    const fetchMovies = async () => {
+      setLoading(true);
+      setError(null);
+      setGqlError(null);
+      setGqlResponse(null); // Clear previous response
+
+      const query = `
+        query GetMovies {
+          movies {
+            id
+            title
+            director
+            releaseYear
+            books { # Include books for potential display
+              id
+              title
+            }
+          }
+        }
+      `;
+      setGqlRequest(query); // Store the request query
+
+      try {
+        const res = await fetch('/api/graphql', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ query }),
+        });
+
+        if (!res.ok) {
+          throw new Error(`HTTP error! status: ${res.status}`);
+        }
+
+        const result: GraphQLResponse = await res.json();
+        setGqlResponse(result); // Store the full response
+
+        if (result.errors) {
+          // Handle GraphQL errors
+          console.error('GraphQL Errors:', result.errors);
+          setGqlError(result.errors.map(e => e.message).join('\n'));
+          setMovies([]); // Clear movies on GraphQL error
+        } else if (result.data?.movies) {
+          // Handle successful data fetch
+          setMovies(result.data.movies);
+          setGqlError(null); // Clear any previous GraphQL error
+        } else {
+          // Handle unexpected response structure
+          console.error("Unexpected response structure:", result);
+          setGqlError("Received unexpected data structure from API.");
+          setMovies([]);
+        }
+
+      } catch (err: any) {
+        console.error('Fetch Error:', err);
+        setError(err.message || 'Failed to fetch movies.');
+        setGqlError(null); // Clear GraphQL error on fetch error
+        setMovies([]); // Clear movies on fetch error
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchMovies();
+  }, []); // Empty dependency array means this runs once on mount
 
   return (
-    <div className="max-w-4xl mx-auto py-8 px-4">
-      <header className="mb-8">
-        <h1 className="text-3xl font-bold mb-2">100日チャレンジ - Next.js + Prisma</h1>
-        <p className="text-gray-600 dark:text-gray-300">
-          このプロジェクトはNext.js、TypeScript、Prisma、SQLiteを使用した100日チャレンジのテンプレートです。
-        </p>
-      </header>
+    <div className="flex flex-1 h-[calc(100vh-theme(space.16))]"> {/* Adjust height based on header */}
+      {/* Left Column: Movie List */}
+      <div className="w-2/3 pr-4 overflow-y-auto">
+        <h2 className="text-2xl font-bold mb-4">Movies</h2>
+        {loading && <p className="text-gray-500">Loading movies...</p>}
+        {error && <p className="text-red-500">Error fetching movies: {error}</p>}
 
-      <div className="flex flex-col md:flex-row gap-8">
-        <div className="flex-1">
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-md mb-6">
-            <h2 className="text-xl font-semibold mb-4">ユーザー作成</h2>
-            {error && <p className="text-red-500 mb-4">{error}</p>}
-            <form onSubmit={createUser} className="flex gap-2">
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="ユーザー名"
-                className="flex-1 px-4 py-2 border rounded dark:bg-gray-700 dark:border-gray-600"
-              />
-              <button
-                type="submit"
-                className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded"
-              >
-                追加
-              </button>
-            </form>
-          </div>
-
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-md">
-            <h2 className="text-xl font-semibold mb-4">ユーザー一覧</h2>
-            {loading ? (
-              <p>読み込み中...</p>
-            ) : users.length === 0 ? (
-              <p>ユーザーがいません。新しいユーザーを追加してください。</p>
-            ) : (
-              <ul className="divide-y dark:divide-gray-700">
-                {users.map((user) => (
-                  <li key={user.id} className="py-3">
-                    <p className="font-medium">{user.name}</p>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">
-                      ID: {user.id} | 作成日: {new Date(user.createdAt).toLocaleString()}
+        {!loading && !error && (
+          <ul className="space-y-3">
+            {movies.length > 0 ? (
+              movies.map((movie) => (
+                <li key={movie.id} className="bg-white p-4 rounded shadow hover:shadow-md transition-shadow">
+                  {/* Link to detail page (implement later) */}
+                  <Link href={`/movies/${movie.id}`} className="text-blue-600 hover:underline">
+                    <h3 className="text-lg font-semibold">{movie.title} ({movie.releaseYear})</h3>
+                  </Link>
+                  <p className="text-gray-600 text-sm">Directed by: {movie.director}</p>
+                  {/* Optional: Display related books count or titles */}
+                  {movie.books && movie.books.length > 0 && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Related Books: {movie.books.length}
                     </p>
-                  </li>
-                ))}
-              </ul>
+                  )}
+                </li>
+              ))
+            ) : (
+              // Display message if no movies found after loading (and no error)
+              <p className="text-gray-500">No movies found.</p>
             )}
-          </div>
+          </ul>
+        )}
+        {/* Add Movie Button */}
+        <div className="mt-6">
+          <Link href="/movies/add">
+            <button className="px-4 py-2 bg-blue-600 text-white rounded shadow hover:bg-blue-700">
+              Add New Movie
+            </button>
+          </Link>
         </div>
+      </div>
 
-        <div className="flex-1">
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-md">
-            <h2 className="text-xl font-semibold mb-4">テンプレートの使い方</h2>
-            <ul className="space-y-3">
-              <li>
-                <strong>データモデル:</strong> <code>prisma/schema.prisma</code> でデータモデルを定義
-              </li>
-              <li>
-                <strong>API:</strong> <code>app/api/</code> にエンドポイントを追加
-              </li>
-              <li>
-                <strong>UI開発:</strong> <code>app/</code> にページを追加、<code>components/</code> に共通コンポーネントを配置
-              </li>
-              <li>
-                <strong>DB操作:</strong> <code>lib/db.ts</code> の Prisma Client を使用
-              </li>
-            </ul>
-            <div className="mt-6">
-              <a
-                href="https://github.com/lirlia/100day_challenge_backend"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-blue-500 hover:underline"
-              >
-                → GitHubリポジトリを見る
-              </a>
-            </div>
-          </div>
+      {/* Right Column: GraphQL Viewer */}
+      <div className="w-1/3 pl-4 border-l border-gray-300 h-full">
+        <div className="sticky top-0 h-full"> {/* Make viewer sticky within its column */}
+          <GraphQLViewer
+            requestQuery={gqlRequest}
+            responseJson={gqlResponse}
+            error={gqlError || error} // Show fetch error or GraphQL error
+          />
         </div>
       </div>
     </div>

@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
+import Link from "next/link";
+import { Toaster } from 'react-hot-toast';
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -17,6 +19,7 @@ export default function RootLayout({
   return (
     <html lang="ja">
       <body className={`${inter.className} flex h-screen bg-gray-100`}>
+        <Toaster position="top-right" />
         {/* Left Column (Navigation + Main Content Area) */}
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* TODO: Add Navigation Header/Sidebar if needed */}
@@ -24,7 +27,9 @@ export default function RootLayout({
             <h1 className="text-xl font-semibold">GraphQL Media App</h1>
             {/* Simple Navigation for now */}
             <nav className="mt-2">
-              <a href="/movies" className="text-blue-600 hover:underline mr-4">Movies</a>
+              <Link href="/" className="text-blue-600 hover:underline mr-4">
+                Movies
+              </Link>
               <a href="/books" className="text-blue-600 hover:underline">Books</a>
             </nav>
           </header>

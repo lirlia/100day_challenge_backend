@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import GraphQLViewer from '@/components/GraphQLViewer';
+import { toast } from 'react-hot-toast';
 
 // Define the structure of the GraphQL response for addBook
 interface AddBookResponse {
@@ -81,20 +82,24 @@ export default function AddBookPage() {
         console.error('GraphQL Errors:', result.errors);
         setGqlError(result.errors.map(e => e.message).join('\n'));
         setError('Failed to add book due to GraphQL errors.');
+        toast.error('Failed to add book due to GraphQL errors.');
       } else if (result.data?.addBook) {
         console.log('Book added:', result.data.addBook);
         setGqlError(null);
+        toast.success('Book added successfully!');
         router.push('/books'); // Redirect to books list
       } else {
         console.error("Unexpected response structure:", result);
         setGqlError("Received unexpected data structure from API.");
         setError('Failed to add book. Unexpected API response.');
+        toast.error('Failed to add book. Unexpected API response.');
       }
 
     } catch (err: any) {
       console.error('Submission Error:', err);
       setError(err.message || 'Failed to submit the form.');
       setGqlError(null);
+      toast.error('Failed to add book.');
     } finally {
       setSubmitting(false);
     }

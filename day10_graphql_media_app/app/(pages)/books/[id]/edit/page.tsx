@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import GraphQLViewer from '@/components/GraphQLViewer';
 import Link from 'next/link';
+import { toast } from 'react-hot-toast';
 
 // Types
 interface BookData {
@@ -165,13 +166,13 @@ export default function EditBookPage() {
     try {
       const result = await executeGraphQL<MutationResponse>(mutation, variables);
       if (result.data?.updateBook) {
-        alert('Book updated successfully!');
+        toast.success('Book updated successfully!');
         router.push(`/books/${bookId}`); // Redirect to detail page
       } else {
         throw new Error('Failed to update book or unexpected response.');
       }
     } catch (err) {
-      alert('Failed to update book.');
+      toast.error('Failed to update book.');
     } finally {
       setLoading(false);
     }
@@ -184,9 +185,9 @@ export default function EditBookPage() {
 
 
   return (
-    <div className="flex flex-1 h-[calc(100vh-theme(space.16))]">
-      {/* Left Column: Edit Form */}
-      <div className="w-2/3 pr-4 overflow-y-auto">
+    <div className="flex flex-col md:flex-row flex-1 h-[calc(100vh-theme(space.16))]">
+      {/* Left Column: Edit Form (Takes full width on small screens) */}
+      <div className="w-full md:w-2/3 pr-0 md:pr-4 overflow-y-auto mb-4 md:mb-0">
         {error && <p className="mb-4 text-red-500 bg-red-100 p-3 rounded">Error: {error}</p>}
 
         <h2 className="text-2xl font-bold mb-6">Edit Book</h2>
@@ -244,8 +245,8 @@ export default function EditBookPage() {
         )}
       </div>
 
-      {/* Right Column: GraphQL Viewer */}
-      <div className="w-1/3 pl-4 border-l border-gray-300 h-full">
+      {/* Right Column: GraphQL Viewer (Takes full width on small screens) */}
+      <div className="w-full md:w-1/3 pl-0 md:pl-4 border-t md:border-t-0 md:border-l border-gray-300 h-auto md:h-full">
         <div className="sticky top-0 h-full">
           <GraphQLViewer
             requestQuery={gqlRequest}

@@ -1,8 +1,9 @@
 import { ApolloServer } from '@apollo/server';
 import { startServerAndCreateNextHandler } from '@as-integrations/next';
 import { gql } from 'graphql-tag'; // Or import from @apollo/server if preferred
-import { prisma } from '@/lib/db';
-import { Prisma } from '@prisma/client'; // Prisma Namespace をインポート
+import { PrismaClient, Prisma } from '@prisma/client'; // Correct import path
+
+const prisma = new PrismaClient();
 
 // Type Definitions (Schema)
 const typeDefs = gql`
@@ -66,24 +67,40 @@ const typeDefs = gql`
 // Resolvers
 const resolvers = {
  Query: {
-    movies: async () => {
-        // Include related books when fetching movies
-      return await prisma.movie.findMany({ include: { books: true } });
+    movies: async (_: any, args: { titleContains?: string }) => {
+      const whereCondition: Prisma.MovieWhereInput = {};
+      if (args.titleContains && args.titleContains.trim() !== '') {
+        whereCondition.title = {
+          contains: args.titleContains,
+        };
+      }
+      return prisma.movie.findMany({
+        where: whereCondition,
+        include: { books: true }, // Include related books
+      });
     },
-    movie: async (_: any, { id }: { id: string }) => {
-      return await prisma.movie.findUnique({
-        where: { id: parseInt(id, 10) },
+    movie: async (_: any, args: { id: string }) => {
+      return prisma.movie.findUnique({
+        where: { id: parseInt(args.id, 10) },
         // Include related books when fetching a single movie
         include: { books: true },
       });
     },
-    books: async () => {
-        // Include related movies when fetching books
-      return await prisma.book.findMany({ include: { movies: true } });
+    books: async (_: any, args: { titleContains?: string }) => {
+      const whereCondition: Prisma.BookWhereInput = {};
+      if (args.titleContains && args.titleContains.trim() !== '') {
+        whereCondition.title = {
+          contains: args.titleContains,
+        };
+      }
+      return prisma.book.findMany({
+        where: whereCondition,
+        include: { movies: true },
+      });
     },
-    book: async (_: any, { id }: { id: string }) => {
-      return await prisma.book.findUnique({
-        where: { id: parseInt(id, 10) },
+    book: async (_: any, args: { id: string }) => {
+      return prisma.book.findUnique({
+        where: { id: parseInt(args.id, 10) },
         // Include related movies when fetching a single book
         include: { movies: true },
       });
@@ -94,7 +111,7 @@ const resolvers = {
       _: any,
       { title, director, releaseYear }: { title: string; director: string; releaseYear: number } // Basic types
     ) => {
-      return await prisma.movie.create({
+      return prisma.movie.create({
         data: { title, director, releaseYear },
       });
     },
@@ -112,12 +129,12 @@ const resolvers = {
       if (Object.keys(dataToUpdate).length === 0) {
           console.warn(`UpdateMovie called for id ${id} with no fields to update.`);
           // Return type needs to match the Promise signature
-          const movie = await prisma.movie.findUnique({ where: { id: parseInt(id, 10) }});
+          const movie = prisma.movie.findUnique({ where: { id: parseInt(id, 10) }});
           return movie ? movie : null;
       }
 
       try {
-         return await prisma.movie.update({
+         return prisma.movie.update({
             where: { id: parseInt(id, 10) },
             data: dataToUpdate,
           });
@@ -134,7 +151,7 @@ const resolvers = {
     deleteMovie: async (_: any, { id }: { id: string }) => {
         try {
             // Return the deleted movie data
-            const deletedMovie = await prisma.movie.delete({
+            const deletedMovie = prisma.movie.delete({
                 where: { id: parseInt(id, 10) },
             });
             return deletedMovie;
@@ -152,7 +169,7 @@ const resolvers = {
       _: any,
       { title, author, publicationYear }: { title: string; author: string; publicationYear: number } // Basic types
     ) => {
-      return await prisma.book.create({
+      return prisma.book.create({
         data: { title, author, publicationYear },
       });
     },
@@ -168,113 +185,15 @@ const resolvers = {
 
          if (Object.keys(dataToUpdate).length === 0) {
              console.warn(`UpdateBook called for id ${id} with no fields to update.`);
-             const book = await prisma.book.findUnique({ where: { id: parseInt(id, 10) }});
+             const book = prisma.book.findUnique({ where: { id: parseInt(id, 10) }});
              return book ? book : null;
          }
 
         try {
-            return await prisma.book.update({
+            return prisma.book.update({
                 where: { id: parseInt(id, 10) },
                 data: dataToUpdate,
             });
         } catch (error: any) {
              if (error.code === 'P2025') {
-                console.error(`Book with id ${id} not found for update.`);
-                return null;
-           }
-            console.error(`Error updating book with id ${id}:`, error);
-            throw new Error('Failed to update book');
-        }
-    },
-     deleteBook: async (_: any, { id }: { id: string }) => {
-         try {
-            const deletedBook = await prisma.book.delete({
-                where: { id: parseInt(id, 10) },
-            });
-            return deletedBook;
-        } catch (error: any) {
-            if (error.code === 'P2025') {
-                console.warn(`Book with id ${id} not found for deletion.`);
-                return null;
-            }
-            console.error(`Error deleting book with id ${id}:`, error);
-            throw new Error('Failed to delete book');
-        }
-    },
-    relateMovieBook: async (
-      _: any,
-      { movieId, bookId }: { movieId: string; bookId: string }
-    ) => {
-        try {
-            return await prisma.movie.update({
-                where: { id: parseInt(movieId, 10) },
-                data: {
-                    books: {
-                        connect: { id: parseInt(bookId, 10) },
-                    },
-                },
-                include: { books: true }, // Include related books in the response
-            });
-        } catch (error) {
-            console.error(`Error relating movie ${movieId} and book ${bookId}:`, error);
-            // Could return null or throw a more specific error based on the cause
-             throw new Error('Failed to relate movie and book');
-        }
-    },
-    unrelateMovieBook: async (
-      _: any,
-      { movieId, bookId }: { movieId: string; bookId: string }
-    ) => {
-        try {
-            return await prisma.movie.update({
-                where: { id: parseInt(movieId, 10) },
-                data: {
-                    books: {
-                        disconnect: { id: parseInt(bookId, 10) },
-                    },
-                },
-                include: { books: true }, // Include related books in the response
-            });
-        } catch (error) {
-             console.error(`Error unrelating movie ${movieId} and book ${bookId}:`, error);
-              throw new Error('Failed to unrelate movie and book');
-        }
-    },
-  },
-  // Prisma typically handles resolving scalar fields automatically.
-  // Explicit resolvers for relations (Movie.books, Book.movies) are usually
-  // only needed if you want custom logic beyond what `include` provides.
-  // Since we are using `include` in the parent resolvers (Query.movies, Query.movie, etc.),
-  // these explicit resolvers are generally not necessary here.
-
-  // Example if explicit resolvers were needed:
-  // Movie: {
-  //   books: async (parent: Movie): Promise<Book[]> => {
-  //     // This would fetch books related to the parent movie
-  //     // Note: This might lead to N+1 query problems if not handled carefully.
-  //     // Using `include` in the parent resolver is often more efficient.
-  //     return await prisma.movie.findUnique({ where: { id: parent.id } }).books() ?? [];
-  //   },
-  // },
-  // Book: {
-  //   movies: async (parent: Book): Promise<Movie[]> => {
-  //     return await prisma.book.findUnique({ where: { id: parent.id } }).movies() ?? [];
-  //   },
-  // },
-};
-
-
-// Create Apollo Server instance
-const server = new ApolloServer({
-  typeDefs,
-  resolvers,
-});
-
-// Create Next.js handler
-// We need variable assignment for correct type inference with startServerAndCreateNextHandler
-const handler = startServerAndCreateNextHandler(server, {
-    // context: async (req, res) => ({ req, res }), // Add context if needed
-});
-
-// Export the handler for GET and POST requests
-export { handler as GET, handler as POST };
+                console.error(`Book with id ${id} not found for update.`

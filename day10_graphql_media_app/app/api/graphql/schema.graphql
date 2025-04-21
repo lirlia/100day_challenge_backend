@@ -1,0 +1,6 @@
+type Query {
+  movies(titleContains: String): [Movie!]!
+  movie(id: ID!): Movie
+  books(titleContains: String): [Book!]!
+  book(id: ID!): Book
+}

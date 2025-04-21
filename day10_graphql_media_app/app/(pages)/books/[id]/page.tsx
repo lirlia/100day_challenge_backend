@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import GraphQLViewer from '@/components/GraphQLViewer';
+import { toast } from 'react-hot-toast';
 
 // Types matching GraphQL schema
 interface MovieBasic {
@@ -182,10 +183,12 @@ export default function BookDetailPage() {
       // Manually set the request for the viewer
       setGqlRequest(`mutation DeleteBook($id: ID!) { deleteBook(id: $id) { id } } Variables: ${JSON.stringify({ id: bookId }, null, 2)}`);
       await executeGraphQL<MutationResponse>(mutation, { id: bookId });
-      alert('Book deleted successfully!');
+      // alert('Book deleted successfully!');
+      toast.success('Book deleted successfully!');
       router.push('/books');
     } catch (err) {
-      alert('Failed to delete book.');
+      // alert('Failed to delete book.');
+      toast.error('Failed to delete book.');
     }
   };
 
@@ -216,13 +219,15 @@ export default function BookDetailPage() {
         movieId: selectedMovieToRelate,
         bookId: bookId,
       });
-      alert('Movie related successfully!');
+      // alert('Movie related successfully!');
+      toast.success('Movie related successfully!');
       setSelectedMovieToRelate('');
       // Refetch book details to show the updated related movies list
       await fetchBookAndMovies();
 
     } catch (err) {
-      alert('Failed to relate movie.');
+      // alert('Failed to relate movie.');
+      toast.error('Failed to relate movie.');
     }
   };
 
@@ -250,11 +255,13 @@ export default function BookDetailPage() {
         movieId: movieId,
         bookId: bookId,
       });
-      alert('Movie unrelated successfully!');
+      // alert('Movie unrelated successfully!');
+      toast.success('Movie unrelated successfully!');
       // Refetch book details to update the UI
       await fetchBookAndMovies();
     } catch (err) {
-      alert('Failed to unrelate movie.');
+      // alert('Failed to unrelate movie.');
+      toast.error('Failed to unrelate movie.');
     }
   };
 
@@ -268,9 +275,9 @@ export default function BookDetailPage() {
   const availableMoviesToRelate = allMovies.filter(m => !relatedMovieIds.has(m.id));
 
   return (
-    <div className="flex flex-1 h-[calc(100vh-theme(space.16))]">
-      {/* Left Column: Book Details & Actions */}
-      <div className="w-2/3 pr-4 overflow-y-auto">
+    <div className="flex flex-col md:flex-row flex-1 h-[calc(100vh-theme(space.16))]">
+      {/* Left Column: Book Details & Actions (Takes full width on small screens) */}
+      <div className="w-full md:w-2/3 pr-0 md:pr-4 overflow-y-auto mb-4 md:mb-0">
         {error && <p className="mb-4 text-red-500 bg-red-100 p-3 rounded">Error: {error}</p>}
 
         {/* Book Info */}
@@ -350,8 +357,8 @@ export default function BookDetailPage() {
 
       </div>
 
-      {/* Right Column: GraphQL Viewer */}
-      <div className="w-1/3 pl-4 border-l border-gray-300 h-full">
+      {/* Right Column: GraphQL Viewer (Takes full width on small screens) */}
+      <div className="w-full md:w-1/3 pl-0 md:pl-4 border-t md:border-t-0 md:border-l border-gray-300 h-auto md:h-full">
         <div className="sticky top-0 h-full">
           <GraphQLViewer
             requestQuery={gqlRequest}
