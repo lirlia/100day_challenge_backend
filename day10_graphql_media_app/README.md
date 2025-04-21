@@ -2,6 +2,10 @@
 
 GraphQL API を使った映画・書籍情報アプリ。
 
+https://github.com/user-attachments/assets/4ce089ef-d787-4525-ad00-fb642b5da8e7
+
+[100日チャレンジ day10](https://zenn.dev/gin_nazo/scraps/244831e544a295)
+
 ## 目的
 
 GraphQLのスキーマ設計、リゾルバーの実装、Next.js Route Handler での GraphQL サーバー構築を通じて、GraphQL API の基本的な仕組みと利点を学習する。映画と書籍の情報を関連付けて取得・表示するシンプルなフロントエンドも作成する。

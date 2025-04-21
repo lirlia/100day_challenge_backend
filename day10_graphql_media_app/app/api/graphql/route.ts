@@ -63,7 +63,6 @@ const resolvers = {
         console.log('[Resolver: books] Applying title filter:', args.titleContains); // Add log
         whereCondition.title = {
           contains: args.titleContains,
-          mode: 'insensitive',
         };
       }
       try {
