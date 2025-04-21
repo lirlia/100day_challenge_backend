@@ -71,7 +71,8 @@ export default function MoviesPage() {
     setError(null);
 
     // Construct the request body conditionally
-    const bodyPayload: { query: string; variables?: Record<string, any> | null } = { query: dedentedQuery }; // Use dedented query here too
+    // Send the ORIGINAL query to the server, not the dedented one
+    const bodyPayload: { query: string; variables?: Record<string, any> | null } = { query: query }; // Use original query
     if (variables) { // Only add variables key if it's not null/undefined
       bodyPayload.variables = variables;
     }
@@ -80,7 +81,7 @@ export default function MoviesPage() {
       const res = await fetch('/api/graphql', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(bodyPayload), // Send the conditionally constructed body
+        body: JSON.stringify(bodyPayload), // Send the body with the original query
       });
 
       if (!res.ok) {
@@ -114,13 +115,15 @@ export default function MoviesPage() {
   // --- Fetch Movies --- (Depends on debouncedSearchTerm)
   const fetchMovies = useCallback(async () => {
     setLoading(true);
+    // Remove JS comments, use # for GraphQL comments if needed
     const query = `
-      query GetMovies($titleContains: String) {
-        movies(titleContains: $titleContains) {
+      query GetMoviesSimple {
+        movies {
           id
           title
           director
           releaseYear
+          # Re-enable books field
           books {
             id
             title
@@ -129,33 +132,27 @@ export default function MoviesPage() {
       }
     `;
 
-    // Prepare variables, only include titleContains if it's not empty
-    const variables: { titleContains?: string } = {};
-    if (debouncedSearchTerm.trim() !== '') {
-      variables.titleContains = debouncedSearchTerm;
-    }
-
+    // variables を渡さない
     try {
-      const result = await executeGraphQL<MoviesResponse>(query, Object.keys(variables).length > 0 ? variables : null);
+      // executeGraphQL の第2引数を削除 (または null を明示)
+      const result = await executeGraphQL<MoviesResponse>(query); // variables を渡さない
       if (result.data?.movies) {
         setMovies(result.data.movies);
       } else {
-        // Handle case where no movies are returned (e.g., search yields no results)
         setMovies([]);
         console.log("No movies found or returned from query.");
       }
     } catch (err) {
       setMovies([]); // Clear movies on error
       console.error("Failed to fetch movies:", err);
-      // Error state is handled by executeGraphQL
     } finally {
       setLoading(false);
     }
-  }, [debouncedSearchTerm]); // Depend on the debounced search term
+  }, []); // 依存配列を空にする (初回のみ実行)
 
   useEffect(() => {
     fetchMovies();
-  }, [fetchMovies]);
+  }, [fetchMovies]); // 初回のみ実行
 
 
   // --- Render Logic ---

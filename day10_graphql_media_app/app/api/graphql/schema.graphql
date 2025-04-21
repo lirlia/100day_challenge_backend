@@ -1,6 +1,57 @@
+# schema.graphql
+
+# Scalars representing date/time, replace with custom scalar if precise handling is needed
+scalar DateTime
+
+type Movie {
+  id: ID!
+  title: String!
+  director: String!
+  releaseYear: Int!
+  books: [Book!] # Related books
+  createdAt: DateTime!
+  updatedAt: DateTime!
+}
+
+type Book {
+  id: ID!
+  title: String!
+  author: String!
+  publicationYear: Int!
+  movies: [Movie!] # Related movies
+  createdAt: DateTime!
+  updatedAt: DateTime!
+}
+
 type Query {
+  # Updated to match the resolver arguments
   movies(titleContains: String): [Movie!]!
   movie(id: ID!): Movie
   books(titleContains: String): [Book!]!
   book(id: ID!): Book
+}
+
+input MovieUpdateInput {
+  title: String
+  director: String
+  releaseYear: Int
+}
+
+input BookUpdateInput {
+  title: String
+  author: String
+  publicationYear: Int
+}
+
+type Mutation {
+  addMovie(title: String!, director: String!, releaseYear: Int!): Movie!
+  updateMovie(id: ID!, input: MovieUpdateInput): Movie
+  deleteMovie(id: ID!): Movie
+
+  addBook(title: String!, author: String!, publicationYear: Int!): Book!
+  updateBook(id: ID!, input: BookUpdateInput): Book
+  deleteBook(id: ID!): Book
+
+  relateMovieBook(movieId: ID!, bookId: ID!): Movie
+  unrelateMovieBook(movieId: ID!, bookId: ID!): Movie
 }
