@@ -216,8 +216,8 @@ export default function GameClient() {
 
   return (
     <div className="flex flex-col md:flex-row gap-8">
-      {/* 左ペイン: ゲーム画面 */}
-      <div className={`flex-1 flex flex-col items-center p-4 bg-gray-800 rounded-lg shadow-lg border-4 ${isHistoryView ? 'border-blue-500' : 'border-gray-600'} transition-colors`} style={{ aspectRatio: '1 / 1.2' }}>
+      {/* Left Pane */}
+      <div className={`flex-1 flex flex-col items-center p-4 bg-gray-800 rounded-lg shadow-lg border-4 ${isHistoryView ? 'border-blue-500' : 'border-gray-600'} transition-colors`}>
         <div className="w-full flex justify-between items-center mb-4 px-2">
           <span className="text-lg font-semibold text-gray-300">
             Moves: {displayedMoves} {isHistoryView ? `(Viewing Seq ${displaySequence})` : ''}
@@ -240,7 +240,7 @@ export default function GameClient() {
             <p className="text-red-400 text-xl">{error}</p>
           </div>
         ) : displayedBoard ? (
-          <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${BOARD_SIZE}, 1fr)` }}>
+          <div className="grid gap-1 mt-8 mb-auto" style={{ gridTemplateColumns: `repeat(${BOARD_SIZE}, 1fr)` }}>
             {displayedBoard.map((rowArr, rowIndex) =>
               rowArr.map((isOn, colIndex) => (
                 <button
@@ -265,13 +265,9 @@ export default function GameClient() {
             <p>You solved the puzzle in {moves} moves!</p>
           </div>
         )}
-
-        <div className="mt-auto w-full flex justify-center items-end h-16">
-          <div className="w-24 h-8 bg-gray-700 rounded-t-lg border-x-2 border-t-2 border-gray-600 shadow-inner"></div>
-        </div>
       </div>
 
-      {/* 右ペイン: 履歴 */}
+      {/* Right Pane */}
       <div className="w-full md:w-1/3 p-4 bg-gray-700 rounded-lg shadow-lg flex flex-col">
         <div className="flex justify-between items-center mb-4">
             <h2 className="text-xl font-semibold text-gray-200">History</h2>
