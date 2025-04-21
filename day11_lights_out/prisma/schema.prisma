@@ -1,0 +1,35 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// イベントストア用の汎用モデル
+model DomainEvent {
+  id        String   @id @default(cuid())
+  gameId    String   // どのゲームセッションのイベントか
+  type      String   // イベントの種類 (e.g., "GameInitialized", "LightToggled", "GameWon")
+  payload   Json     // イベント固有のデータ (e.g., { row: 1, col: 2 } for LightToggled)
+  sequence  Int      // 同一 gameId 内でのイベント発生順序 (1始まり)
+  createdAt DateTime @default(now())
+
+  @@index([gameId, sequence]) // gameId と順序で検索・ソートするため
+  @@unique([gameId, sequence]) // 同一ゲーム内でシーケンス番号は一意
+}
