@@ -115,15 +115,14 @@ export default function MoviesPage() {
   // --- Fetch Movies --- (Depends on debouncedSearchTerm)
   const fetchMovies = useCallback(async () => {
     setLoading(true);
-    // Remove JS comments, use # for GraphQL comments if needed
+    // Restore original query with variables
     const query = `
-      query GetMoviesSimple {
-        movies {
+      query GetMovies($titleContains: String) {
+        movies(titleContains: $titleContains) {
           id
           title
           director
           releaseYear
-          # Re-enable books field
           books {
             id
             title
@@ -132,10 +131,15 @@ export default function MoviesPage() {
       }
     `;
 
-    // variables を渡さない
+    // Restore variables logic
+    const variables: { titleContains?: string } = {};
+    if (debouncedSearchTerm.trim() !== '') {
+      variables.titleContains = debouncedSearchTerm;
+    }
+
     try {
-      // executeGraphQL の第2引数を削除 (または null を明示)
-      const result = await executeGraphQL<MoviesResponse>(query); // variables を渡さない
+      // Pass variables if they exist (null otherwise, handled by executeGraphQL internally potentially)
+      const result = await executeGraphQL<MoviesResponse>(query, Object.keys(variables).length > 0 ? variables : null);
       if (result.data?.movies) {
         setMovies(result.data.movies);
       } else {
@@ -148,11 +152,11 @@ export default function MoviesPage() {
     } finally {
       setLoading(false);
     }
-  }, []); // 依存配列を空にする (初回のみ実行)
+  }, [debouncedSearchTerm]); // Restore dependency on debouncedSearchTerm
 
   useEffect(() => {
     fetchMovies();
-  }, [fetchMovies]); // 初回のみ実行
+  }, [fetchMovies]); // Keep dependency on fetchMovies
 
 
   // --- Render Logic ---

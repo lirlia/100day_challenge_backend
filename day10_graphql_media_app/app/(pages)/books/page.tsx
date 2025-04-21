@@ -123,19 +123,31 @@ export default function BooksPage() {
   // --- Fetch Books --- (Depends on debouncedSearchTerm)
   const fetchBooks = useCallback(async () => {
     setLoading(true);
+    // Restore original query with variables
     const query = `
-      query GetBooksSimple {
-        books {
+      query GetBooks($titleContains: String) {
+        books(titleContains: $titleContains) {
           id
           title
           author
           publicationYear
+          movies {
+            id
+            title
+          }
         }
       }
     `;
 
+    // Restore variables logic
+    const variables: { titleContains?: string } = {};
+    if (debouncedSearchTerm.trim() !== '') {
+      variables.titleContains = debouncedSearchTerm;
+    }
+
     try {
-      const result = await executeGraphQL<BooksResponse>(query);
+      // Pass variables if they exist
+      const result = await executeGraphQL<BooksResponse>(query, Object.keys(variables).length > 0 ? variables : null);
       if (result.data?.books) {
         setBooks(result.data.books);
       } else {
@@ -148,11 +160,11 @@ export default function BooksPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [debouncedSearchTerm]); // Restore dependency
 
   useEffect(() => {
     fetchBooks();
-  }, [fetchBooks]);
+  }, [fetchBooks]); // Keep dependency
 
 
   // --- Render Logic ---

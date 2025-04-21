@@ -244,11 +244,7 @@ export default function BookDetailPage() {
     const mutation = `
         mutation RelateMovieBook($movieId: ID!, $bookId: ID!) {
             relateMovieBook(movieId: $movieId, bookId: $bookId) {
-                id # Only need ID to confirm success
-                # books { # We don't need the movie's book list here
-                #      id
-                #      title
-                #  }
+                id
             }
         }
       `;
@@ -297,11 +293,7 @@ export default function BookDetailPage() {
     const mutation = `
         mutation UnrelateMovieBook($movieId: ID!, $bookId: ID!) {
             unrelateMovieBook(movieId: $movieId, bookId: $bookId) {
-                id # Only need ID to confirm success
-                # books { # We don't need the movie's book list here
-                #      id
-                #      title
-                #  }
+                id
             }
         }
       `;

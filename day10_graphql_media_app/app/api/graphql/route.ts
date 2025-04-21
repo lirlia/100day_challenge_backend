@@ -25,7 +25,6 @@ const resolvers = {
         console.log('[Resolver: movies] Applying title filter:', args.titleContains); // Add log
         whereCondition.title = {
           contains: args.titleContains,
-          mode: 'insensitive', // Add case-insensitive search like in books
         };
       }
       console.log('[Resolver: movies] Executing findMany with where:', whereCondition); // Add log

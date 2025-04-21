@@ -234,7 +234,7 @@ export default function MovieDetailPage() {
         mutation RelateMovieBook($movieId: ID!, $bookId: ID!) {
             relateMovieBook(movieId: $movieId, bookId: $bookId) {
                 id
-                title # Include fields needed for state update
+                title
                 director
                 releaseYear
                 books {
@@ -278,7 +278,7 @@ export default function MovieDetailPage() {
         mutation UnrelateMovieBook($movieId: ID!, $bookId: ID!) {
             unrelateMovieBook(movieId: $movieId, bookId: $bookId) {
                  id
-                 title # Include fields needed for state update
+                 title
                  director
                  releaseYear
                  books {
