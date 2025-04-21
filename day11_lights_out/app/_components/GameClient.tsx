@@ -1,314 +1,267 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
-import {
-  Board,
-  BOARD_SIZE,
-  buildStateFromEvents,
-  PersistedGameEvent, // DBから取得するイベントの型
-  isGameWon,
-  LightToggledPayload, // Payload の型をインポート
-} from '../_lib/gameLogic'; // 型や関数をインポート
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Board, BOARD_SIZE, buildStateFromEvents, isGameWon, solveLightsOut } from '../_lib/gameLogic';
+import { DomainEvent } from '../generated/prisma';
 
-// APIレスポンスの型定義
-interface NewGameResponse {
-  gameId: string;
-}
+// 座標の型定義
+type Coords = { row: number; col: number };
 
-interface MoveResponse {
-  latestSequence: number;
-}
-
-// ダミーの初期盤面 (API連携前)
-const dummyInitialBoard: Board = Array(BOARD_SIZE)
-  .fill(null)
-  .map(() => Array(BOARD_SIZE).fill(false));
-
-// ライト（ボタン）のスタイル
-const lightStyle = (isOn: boolean, isHistoryView: boolean): string => {
-  return `
-    w-12 h-12 border border-gray-400 rounded-md transition-colors duration-150
-    flex items-center justify-center text-xl font-bold
-    ${isOn ? 'bg-yellow-400 shadow-inner' : 'bg-gray-600 shadow-md'}
-    ${!isHistoryView ? 'hover:bg-opacity-80 active:scale-95' : ''}
-     disabled:opacity-50 ${isHistoryView ? 'cursor-default' : 'disabled:cursor-not-allowed'}
-  `;
-};
-
-export default function GameClient() {
-  const [gameId, setGameId] = useState<string | null>(null);
-  const [events, setEvents] = useState<PersistedGameEvent[]>([]);
-  const [moves, setMoves] = useState<number>(0); // 最新の手数
-  const [isWon, setIsWon] = useState<boolean>(false); // 最新のクリア状態
+export default function GameClient({ gameId }: { gameId: string }) {
+  console.log('GameClient mounted with gameId:', gameId); // gameId 確認ログ
+  // 状態管理
+  const [events, setEvents] = useState<DomainEvent[]>([]);
+  const [moves, setMoves] = useState<number>(0);
+  const [isWon, setIsWon] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [isProcessingMove, setIsProcessingMove] = useState<boolean>(false);
+  const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  const [displaySequence, setDisplaySequence] = useState<number | null>(null); // 表示対象のシーケンス番号 (null は最新)
+  const [displaySequence, setDisplaySequence] = useState<number | undefined>(undefined);
+  const [hintCoords, setHintCoords] = useState<Coords | null>(null);
+  const hintTimeoutId = useRef<NodeJS.Timeout | null>(null);
 
-  // 表示する盤面状態を計算 (イベント履歴と表示シーケンスに依存)
-  const displayedBoard: Board | null = useMemo(() => {
-    console.log(`useMemo triggered. Events count: ${events.length}, Display Sequence: ${displaySequence}`); // ★ログ追加
-
-    // イベントがまだ読み込まれていない場合は null
-    if (events.length === 0) {
-      console.log("useMemo: No events yet, returning null."); // ★ログ追加
+  // 表示用の盤面状態を計算 (メモ化)
+  const displayedBoard = useMemo(() => {
+    console.log('Calculating displayedBoard with events:', events); // イベント確認ログ
+    if (!events.length) {
+      console.log('No events found, returning null for displayedBoard.');
       return null;
     }
-
     try {
-      // targetSequence は null または number. null なら最新状態を意味するよう buildStateFromEvents に渡す
-      const targetSeq = displaySequence === null ? undefined : displaySequence;
-      console.log(`useMemo: Calling buildStateFromEvents for sequence: ${targetSeq === undefined ? 'latest' : targetSeq}`); // ★ログ追加
-
-      // buildStateFromEvents を呼び出し
-      const boardResult = buildStateFromEvents(events, targetSeq);
-
-      console.log(`useMemo: buildStateFromEvents returned ${boardResult ? 'a board' : 'null/error'}.`); // ★ログ追加
-      return boardResult; // 計算結果を返す
-
-    } catch (err) {
-      console.error('Failed to build board state in useMemo:', err);
-      setError('盤面状態の構築中にエラーが発生しました。useMemo'); // エラー源を明記
-      return null; // エラー時は null を返す
+      const board = buildStateFromEvents(events, displaySequence);
+      console.log('Successfully built board state:', board); // 構築成功ログ
+      return board;
+    } catch (e) {
+      console.error('Error building board state:', e); // エラーログ
+      setError('Failed to build board state.'); // エラー状態を設定
+      return null;
     }
-  }, [events, displaySequence]); // 依存配列は events と displaySequence
+  }, [events, displaySequence]);
 
-  // 表示中の手数
+  // 表示用の手数を計算 (メモ化)
   const displayedMoves = useMemo(() => {
-      if (!displaySequence) return moves; // 最新状態なら state の手数
-      return events.filter(e => e.type === 'LightToggled' && e.sequence <= displaySequence).length;
-  }, [events, displaySequence, moves]);
+    if (displaySequence === undefined) return moves;
+    return events.filter(e => e.type === 'LightToggled' && e.sequence <= displaySequence).length;
+  }, [events, moves, displaySequence]);
 
-  const isHistoryView = displaySequence !== null;
-
-  // 特定の gameId のイベントを取得し、状態を更新する関数
-  const fetchEventsAndUpdateState = useCallback(async (currentGameId: string) => {
-    if (!currentGameId) return;
-    // イベント取得中は表示シーケンスを最新に戻す
-    setDisplaySequence(null);
-    try {
-      const response = await fetch(`/api/games/${currentGameId}/events`);
-      if (!response.ok) {
-        if (response.status === 404) {
-          setError(`Game ${currentGameId} not found or has no events yet.`);
-          setEvents([]);
-          setMoves(0);
-          setIsWon(false);
-          return;
-        }
-        throw new Error(`Failed to fetch events: ${response.statusText}`);
-      }
-
-      const fetchedEvents: PersistedGameEvent[] = await response.json();
-      console.log('Fetched events:', JSON.stringify(fetchedEvents, null, 2));
-
-      if (fetchedEvents.length > 0) {
-        const parsedEvents = fetchedEvents.map(event => ({
-          ...event,
-          payload: typeof event.payload === 'string' ? JSON.parse(event.payload) : event.payload,
-        }));
-
-        setEvents(parsedEvents); // イベント state を更新
-
-        // 最新状態を計算して moves と isWon state を更新 (表示盤面は useMemo が担当)
-        console.log(`Building latest board state for ${parsedEvents.length} events...`);
-        const latestBoard = buildStateFromEvents(parsedEvents); // 最新を計算
-        console.log('Built latest board:', JSON.stringify(latestBoard, null, 2));
-        console.log('Finished building latest board state.');
-        // setBoard(latestBoard); // ★ 不要なので削除
-
-        const latestMoveCount = parsedEvents.filter(e => e.type === 'LightToggled').length;
-        const latestIsWon = isGameWon(latestBoard);
-        setMoves(latestMoveCount); // 最新の手数を保存
-        setIsWon(latestIsWon); // 最新のクリア状態を保存
-      } else {
-        setEvents([]);
-        setMoves(0);
-        setIsWon(false);
-      }
-    } catch (err) {
-      setError('イベント履歴の取得または状態の構築に失敗しました。');
-      console.error(err);
-      setEvents([]); // エラー時はクリア
-      setMoves(0);
-      setIsWon(false);
+  // イベントを取得して状態を更新する関数
+  const fetchEventsAndUpdateState = useCallback(async () => {
+    if (!gameId) {
+      console.warn('fetchEventsAndUpdateState called without gameId');
+      setIsLoading(false);
+      setError('Game ID is missing.');
+      return;
     }
-  }, []);
-
-
-  // ゲームの初期化処理
-  const initializeGame = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    setGameId(null);
-    setEvents([]);
-    setMoves(0);
-    setIsWon(false);
-    setDisplaySequence(null); // 表示シーケンスもリセット
-
+    console.log(`Fetching events for gameId: ${gameId}...`);
     try {
-      const response = await fetch('/api/games', { method: 'POST' });
+      // setIsLoading(true); // useEffect で設定するので不要
+      const response = await fetch(`/api/games/${gameId}/events`);
+      console.log('Fetch response status:', response.status); // レスポンスステータス確認
       if (!response.ok) {
-        console.error('initializeGame failed', response.status, response.statusText);
-        setError('ゲームの初期化に失敗しました。');
-        setIsLoading(false);
-        return;
+        throw new Error(`Failed to fetch events (status: ${response.status})`);
       }
-      const data: NewGameResponse = await response.json();
-      setGameId(data.gameId);
-      await fetchEventsAndUpdateState(data.gameId);
-
-    } catch (err) {
-      setError('ゲームの初期化に失敗しました。');
-      console.error(err);
+      const newEvents = await response.json() as DomainEvent[];
+      console.log('Fetched events data:', newEvents); // ★取得したイベントデータ確認
+      if (!Array.isArray(newEvents)) {
+        throw new Error('Invalid events data received from API');
+      }
+      setEvents(newEvents);
+      setMoves(newEvents.filter(e => e.type === 'LightToggled').length);
+      setIsWon(newEvents.some(e => e.type === 'GameWon'));
+      setError(null); // 成功したらエラークリア
+    } catch (e) {
+      console.error('Error fetching events:', e);
+      setError(e instanceof Error ? e.message : 'Unknown error fetching events');
+      setEvents([]); // エラー時はイベントを空にする
     } finally {
       setIsLoading(false);
     }
-  }, [fetchEventsAndUpdateState]);
+  }, [gameId]);
 
-  // 初回レンダリング時にゲームを初期化
+  // 初期化時にイベントを取得
   useEffect(() => {
-    initializeGame();
-  }, [initializeGame]);
+    console.log('GameClient useEffect triggered with gameId:', gameId);
+    if (gameId) { // gameId が存在する場合のみ実行
+        setIsLoading(true); // ローディング開始
+        fetchEventsAndUpdateState();
+    } else {
+        console.warn("GameClient mounted without valid gameId.");
+        setIsLoading(false); // gameId がなければローディング終了
+        setError("Game ID is missing."); // エラー表示
+    }
+    // クリーンアップ関数でタイムアウトをクリア
+    return () => {
+      if (hintTimeoutId.current) {
+        clearTimeout(hintTimeoutId.current);
+      }
+    };
+  }, [gameId, fetchEventsAndUpdateState]);
 
-  // ライトクリック処理
+  // ライトをクリックしたときの処理
   const handleLightClick = async (row: number, col: number) => {
-    if (isHistoryView || !gameId || isProcessingMove || isWon) return;
-
-    setIsProcessingMove(true);
-    setError(null);
-
+    if (isProcessing || isWon || displaySequence !== undefined || !gameId) return;
+    setIsProcessing(true);
     try {
       const response = await fetch(`/api/games/${gameId}/moves`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ row, col }),
       });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to process move');
-      }
-      await fetchEventsAndUpdateState(gameId);
-
-    } catch (err: any) {
-      setError(`操作に失敗しました: ${err.message}`);
-      console.error(err);
+      if (!response.ok) throw new Error('Failed to process move');
+      await fetchEventsAndUpdateState(); // 状態を再取得
+    } catch (e) {
+      console.error('Error processing move:', e);
+      setError(e instanceof Error ? e.message : 'Unknown error processing move');
     } finally {
-      setIsProcessingMove(false);
+      setIsProcessing(false);
     }
   };
 
-  // 新しいゲームボタンの処理
-  const handleNewGame = () => {
-    initializeGame();
+  // ヒントボタンのクリックハンドラ
+  const handleHintClick = useCallback(() => {
+    if (!displayedBoard || isWon || displaySequence !== undefined) return;
+
+    // 解法を計算
+    const solution = solveLightsOut(displayedBoard);
+    if (!solution) {
+      console.error('No solution found!');
+      alert('Could not find a solution for the current board.'); // ユーザーへのフィードバック
+      return;
+    }
+
+    // 最初に押すべきボタンを探す
+    let nextMove: Coords | null = null;
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        if (solution[r][c]) {
+          nextMove = { row: r, col: c };
+          break;
+        }
+      }
+      if (nextMove) break;
+    }
+
+    if (!nextMove) {
+      // すべてクリア済みか、解法はあるが押す必要がない場合 (理論上は起こらないはず)
+      console.log('Board is already solved or no next move needed according to solver.');
+      alert('The board seems to be solved already!');
+      return;
+    }
+
+    // 既存のタイマーをクリア
+    if (hintTimeoutId.current) {
+      clearTimeout(hintTimeoutId.current);
+    }
+
+    // ヒントを表示し、3秒後に消す
+    setHintCoords(nextMove);
+    hintTimeoutId.current = setTimeout(() => {
+      setHintCoords(null);
+    }, 3000);
+  }, [displayedBoard, isWon, displaySequence]);
+
+  // ライトのスタイルを計算する関数
+  const lightStyle = (isOn: boolean, row: number, col: number) => {
+    const isHint = hintCoords?.row === row && hintCoords?.col === col;
+    return {
+      width: '50px',
+      height: '50px',
+      backgroundColor: isOn ? '#ffeb3b' : '#424242',
+      border: isHint ? '3px solid #4caf50' : '1px solid #212121',
+      borderRadius: '4px',
+      cursor: isProcessing || isWon || displaySequence !== undefined ? 'default' : 'pointer',
+      transition: 'all 0.3s ease',
+      animation: isHint ? 'pulse 1.5s infinite' : undefined,
+    };
   };
 
-  // 履歴クリック処理
-  const handleHistoryClick = (sequence: number) => {
-    setDisplaySequence(sequence);
-  };
-
-  // 最新の状態に戻る処理
-  const handleBackToLatest = () => {
-    setDisplaySequence(null);
-  };
+  if (isLoading) return <div className="text-center p-4">Loading Game...</div>;
+  // エラー表示を改善
+  if (error) return <div className="text-center p-4 text-red-500">Error: {error} <button onClick={fetchEventsAndUpdateState} className="ml-2 px-2 py-1 bg-blue-500 text-white rounded">Retry</button></div>;
+  if (!displayedBoard) return <div className="text-center p-4">No game state available</div>;
 
   return (
-    <div className="flex flex-col md:flex-row gap-8">
-      {/* Left Pane */}
-      <div className={`flex-1 flex flex-col items-center p-4 bg-gray-800 rounded-lg shadow-lg border-4 ${isHistoryView ? 'border-blue-500' : 'border-gray-600'} transition-colors`}>
-        <div className="w-full flex justify-between items-center mb-4 px-2">
-          <span className="text-lg font-semibold text-gray-300">
-            Moves: {displayedMoves} {isHistoryView ? `(Viewing Seq ${displaySequence})` : ''}
-          </span>
+    <div className="container mx-auto p-4">
+      <div className="text-center mb-6">
+        <h1 className="text-3xl font-bold mb-4">Lights Out Game</h1>
+        <div className="flex justify-center gap-4 mb-4">
           <button
-            onClick={handleNewGame}
-            disabled={isLoading || isProcessingMove}
-            className="px-4 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded shadow disabled:opacity-50 disabled:cursor-not-allowed"
+            onClick={() => setDisplaySequence(undefined)}
+            disabled={displaySequence === undefined}
+            className={`px-4 py-2 rounded ${
+              displaySequence === undefined
+                ? 'bg-blue-600 text-white'
+                : 'bg-blue-200 hover:bg-blue-300'
+            }`}
           >
-            New Game
+            Current
+          </button>
+          <button
+            onClick={() => {
+              const maxSeq = Math.max(...events.map(e => e.sequence), 0); // 空配列対策
+              setDisplaySequence(s =>
+                s === undefined ? maxSeq : Math.max(0, s - 1) // 初期化イベント(seq=0)も考慮
+              );
+            }}
+            disabled={!events.length}
+            className="px-4 py-2 rounded bg-gray-200 hover:bg-gray-300"
+          >
+            ←
+          </button>
+          <button
+            onClick={() => {
+              const maxSeq = Math.max(...events.map(e => e.sequence), 0);
+              setDisplaySequence(s =>
+                s === undefined ? undefined : Math.min(maxSeq, s + 1)
+              );
+            }}
+            disabled={!events.length || displaySequence === undefined || displaySequence === Math.max(...events.map(e => e.sequence), 0)}
+            className="px-4 py-2 rounded bg-gray-200 hover:bg-gray-300 disabled:opacity-50"
+          >
+            →
+          </button>
+          <button
+            onClick={handleHintClick}
+            disabled={isWon || displaySequence !== undefined}
+            className={`px-4 py-2 rounded ${
+              isWon || displaySequence !== undefined
+                ? 'bg-gray-400 cursor-not-allowed'
+                : 'bg-green-500 hover:bg-green-600 text-white'
+            }`}
+          >
+            Hint
           </button>
         </div>
-
-        {isLoading ? (
-          <div className="flex-grow flex items-center justify-center">
-            <p className="text-white text-xl">Loading Game...</p>
-          </div>
-        ) : error ? (
-          <div className="flex-grow flex items-center justify-center p-4 text-center">
-            <p className="text-red-400 text-xl">{error}</p>
-          </div>
-        ) : displayedBoard ? (
-          <div className="grid gap-1 mt-8 mb-auto" style={{ gridTemplateColumns: `repeat(${BOARD_SIZE}, 1fr)` }}>
-            {displayedBoard.map((rowArr, rowIndex) =>
-              rowArr.map((isOn, colIndex) => (
-                <button
-                  key={`${rowIndex}-${colIndex}`}
-                  onClick={() => handleLightClick(rowIndex, colIndex)}
-                  className={lightStyle(isOn, isHistoryView)}
-                  disabled={isHistoryView || isProcessingMove || isWon}
-                >
-                </button>
-              ))
-            )}
-          </div>
-        ) : (
-           <div className="flex-grow flex items-center justify-center">
-            <p className="text-white text-xl">Initializing board...</p>
-          </div>
-        )}
-
-        {isWon && !isHistoryView && (
-          <div className="mt-4 p-4 bg-green-600 text-white text-center rounded shadow w-full">
-            <h2 className="text-2xl font-bold">Congratulations!</h2>
-            <p>You solved the puzzle in {moves} moves!</p>
-          </div>
-        )}
-      </div>
-
-      {/* Right Pane */}
-      <div className="w-full md:w-1/3 p-4 bg-gray-700 rounded-lg shadow-lg flex flex-col">
-        <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-semibold text-gray-200">History</h2>
-            {isHistoryView && (
-                <button
-                    onClick={handleBackToLatest}
-                    className="px-3 py-1 text-sm bg-gray-600 hover:bg-gray-500 text-white rounded shadow"
-                >
-                    Back to Latest
-                </button>
-            )}
-        </div>
-        <div className="flex-grow h-96 overflow-y-auto bg-gray-800 p-2 rounded text-sm">
-          {events.length === 0 && !isLoading && (
-             <p className="text-gray-400 p-2">No history yet.</p>
-          )}
-          <ul>
-            {events.map((event) => {
-               if (event.type === 'GameInitialized') {
-                   return (
-                       <li key={event.id} className={`p-1 border-b border-gray-700 text-gray-500 ${displaySequence === event.sequence ? 'bg-blue-900' : ''}`}>
-                           Seq {event.sequence}: Game Start
-                       </li>
-                   );
-               }
-               const isSelected = displaySequence === event.sequence;
-               return (
-                   <li
-                       key={event.id}
-                       onClick={() => handleHistoryClick(event.sequence)}
-                       className={`p-1 border-b border-gray-700 text-gray-300 hover:bg-gray-600 cursor-pointer ${isSelected ? 'bg-blue-900 font-semibold' : ''}`}
-                    >
-                     Seq {event.sequence}: {event.type}
-                     {event.type === 'LightToggled' && ` (${(event.payload as LightToggledPayload).row}, ${(event.payload as LightToggledPayload).col})`}
-                     {event.type === 'GameWon' && ' - Solved!'}
-                   </li>
-               );
-            })}
-          </ul>
+        <div className="mb-4">
+          Moves: {displayedMoves}
+          {isWon && <span className="ml-2 text-green-500">🎉 Cleared!</span>}
+          {displaySequence !== undefined && <span className="ml-2 text-gray-500">(History Seq: {displaySequence})</span>}
         </div>
       </div>
+
+      <div className="flex flex-col items-center gap-1">
+        {displayedBoard.map((row, r) => (
+          <div key={r} className="flex gap-1">
+            {row.map((isOn, c) => (
+              <button
+                key={`${r}-${c}`}
+                onClick={() => handleLightClick(r, c)}
+                disabled={isProcessing || isWon || displaySequence !== undefined}
+                style={lightStyle(isOn, r, c)}
+                className="focus:outline-none"
+              />
+            ))}
+          </div>
+        ))}
+      </div>
+
+      <style jsx global>{`
+        @keyframes pulse {
+          0% { transform: scale(1); }
+          50% { transform: scale(1.1); }
+          100% { transform: scale(1); }
+        }
+      `}</style>
     </div>
   );
 }

@@ -11,21 +11,22 @@ export async function GET(
   const params = await rawParams;
   const gameId = params.gameId;
 
+  if (!gameId) {
+    return NextResponse.json({ error: 'Game ID is required' }, { status: 400 });
+  }
+
   try {
     const events = await prisma.domainEvent.findMany({
       where: { gameId },
       orderBy: { sequence: 'asc' }, // シーケンス順で取得
     });
 
-    if (events.length === 0) {
-      // ゲームが存在しない、またはイベントがまだない場合
-      // Game Not Found の方が適切かもしれないが、空配列を返す仕様でも良い
-      return NextResponse.json([], { status: 404 }); // 空配列と 404 を返す
-    }
+    // イベントが見つからなくても 200 OK で空配列を返す
+    // if (events.length === 0) {
+      // return NextResponse.json([], { status: 404 }); // 404 にしない
+    // }
 
-    // イベント履歴を JSON として返す
-    // payload は JSON 文字列として DB に保存されているので、そのまま返す
-    // クライアント側で必要に応じてパースする
+    // payload は JSON 型 (Prisma が自動でパース/シリアライズするはず)
     return NextResponse.json(events);
 
   } catch (error) {

@@ -21,14 +21,28 @@ model User {
   updatedAt DateTime @updatedAt
 }
 
+model Game {
+  id                String   @id @default(cuid())
+  currentBoardState Json?    // 現在の盤面の状態 (省略可能、イベントから再構築できるため)
+  isWon             Boolean  @default(false) // ゲームがクリアされたかどうか
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // リレーションを有効化
+  events            DomainEvent[] @relation("GameEvents")
+}
+
 // イベントストア用の汎用モデル
 model DomainEvent {
   id        String   @id @default(cuid())
   gameId    String   // どのゲームセッションのイベントか
   type      String   // イベントの種類 (e.g., "GameInitialized", "LightToggled", "GameWon")
   payload   Json     // イベント固有のデータ (e.g., { row: 1, col: 2 } for LightToggled)
-  sequence  Int      // 同一 gameId 内でのイベント発生順序 (1始まり)
+  sequence  Int      // 同一 gameId 内でのイベント発生順序 (0始まり)
   createdAt DateTime @default(now())
+
+  // リレーションを有効化
+  game      Game     @relation("GameEvents", fields: [gameId], references: [id])
 
   @@index([gameId, sequence]) // gameId と順序で検索・ソートするため
   @@unique([gameId, sequence]) // 同一ゲーム内でシーケンス番号は一意
