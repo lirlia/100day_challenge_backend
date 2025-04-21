@@ -46,9 +46,28 @@ export default function BooksPage() {
 
   // --- GraphQL Query Helper ---
   // (Assume executeGraphQL exists and works as before)
-  const executeGraphQL = async <T,>(query: string, variables?: Record<string, any>): Promise<T> => {
-    const operationType = query.trim().startsWith('mutation') ? 'Mutation' : 'Query';
-    let requestStringToDisplay = `${operationType}:\n${query}`;
+  const executeGraphQL = async <T,>(query: string, variables?: Record<string, any> | null): Promise<T> => {
+
+    // --- Refined Dedent logic for display --- START
+    const trimmedQuery = query.trim();
+    const lines = trimmedQuery.split('\n');
+    const nonEmptyLines = lines.filter(line => line.trim() !== '');
+    let dedentedQuery = trimmedQuery;
+
+    if (nonEmptyLines.length > 0) {
+      const minIndent = nonEmptyLines.reduce((min, line) => {
+        const currentIndent = line.match(/^\s*/)![0].length;
+        return Math.min(min, currentIndent);
+      }, Infinity);
+
+      if (minIndent > 0 && minIndent !== Infinity) {
+        dedentedQuery = lines.map(line => line.slice(minIndent)).join('\n');
+      }
+    }
+    // --- Refined Dedent logic for display --- END
+
+    const operationType = dedentedQuery.startsWith('mutation') ? 'Mutation' : 'Query';
+    let requestStringToDisplay = `${operationType}:\n${dedentedQuery}`; // Use dedented query
     if (variables) {
       requestStringToDisplay += `\nVariables: ${JSON.stringify(variables, null, 2)}`;
     }
@@ -57,11 +76,20 @@ export default function BooksPage() {
     setGqlError(null);
     setError(null);
 
+    setLoading(true);
+    setError(null);
+
+    // Construct the request body conditionally
+    const bodyPayload: { query: string; variables?: Record<string, any> | null } = { query: trimmedQuery }; // Use trimmed query here too
+    if (variables) { // Only add variables key if it's not null/undefined
+      bodyPayload.variables = variables;
+    }
+
     try {
       const res = await fetch('/api/graphql', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, variables }),
+        body: JSON.stringify(bodyPayload), // Send the conditionally constructed body
       });
 
       if (!res.ok) {
@@ -96,27 +124,18 @@ export default function BooksPage() {
   const fetchBooks = useCallback(async () => {
     setLoading(true);
     const query = `
-      query GetBooks($titleContains: String) {
-        books(titleContains: $titleContains) {
+      query GetBooksSimple {
+        books {
           id
           title
           author
           publicationYear
-          movies {
-            id
-            title
-          }
         }
       }
     `;
 
-    const variables: { titleContains?: string } = {};
-    if (debouncedSearchTerm.trim() !== '') {
-      variables.titleContains = debouncedSearchTerm;
-    }
-
     try {
-      const result = await executeGraphQL<BooksResponse>(query, Object.keys(variables).length > 0 ? variables : undefined);
+      const result = await executeGraphQL<BooksResponse>(query);
       if (result.data?.books) {
         setBooks(result.data.books);
       } else {
@@ -129,7 +148,7 @@ export default function BooksPage() {
     } finally {
       setLoading(false);
     }
-  }, [debouncedSearchTerm]); // Depend on debounced term
+  }, []);
 
   useEffect(() => {
     fetchBooks();
@@ -140,7 +159,7 @@ export default function BooksPage() {
   return (
     <div className="flex flex-1 h-[calc(100vh-theme(space.16))]">
       {/* Left Column: Book List & Add Button */}
-      <div className="w-2/3 pr-4 overflow-y-auto">
+      <div className="w-1/2 pr-4 overflow-y-auto">
         <h2 className="text-2xl font-bold mb-6">Books</h2>
 
         {/* Search Input */}
@@ -166,9 +185,6 @@ export default function BooksPage() {
                   <h3 className="text-xl font-semibold text-green-600 hover:underline mb-1">{book.title} ({book.publicationYear})</h3>
                 </Link>
                 <p className="text-gray-600 text-sm mb-1">By: {book.author}</p>
-                <p className="text-gray-600 text-sm">
-                  Related Movies: {book.movies.length > 0 ? book.movies.map(m => m.title).join(', ') : 'None'}
-                </p>
               </li>
             ))}
           </ul>
@@ -187,7 +203,7 @@ export default function BooksPage() {
       </div>
 
       {/* Right Column: GraphQL Viewer */}
-      <div className="w-1/3 pl-4 border-l border-gray-300 h-full">
+      <div className="w-1/2 pl-4 border-l border-gray-300 h-full">
         <div className="sticky top-0 h-full">
           <GraphQLViewer
             requestQuery={gqlRequest}

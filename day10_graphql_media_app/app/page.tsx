@@ -1,140 +1,207 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import GraphQLViewer from '@/components/GraphQLViewer'; // Assuming alias `@` is configured
+import GraphQLViewer from '@/components/GraphQLViewer';
 
-// Define a basic type for Movie data received from GraphQL
-// Match the structure defined in your GraphQL query
-interface MovieData {
+// Types matching GraphQL schema
+interface BookBasic {
+  id: string;
+  title: string;
+}
+interface Movie {
   id: string;
   title: string;
   director: string;
   releaseYear: number;
-  books: { id: string; title: string }[]; // Include related books if fetched
+  books: BookBasic[];
 }
-
-// Define the structure of the GraphQL response (data or errors)
-interface GraphQLResponse {
+interface MoviesResponse {
   data?: {
-    movies?: MovieData[];
+    movies?: Movie[];
   };
   errors?: { message: string }[];
 }
 
 
 export default function MoviesPage() {
-  const [movies, setMovies] = useState<MovieData[]>([]);
+  const [movies, setMovies] = useState<Movie[]>([]);
+  const [searchTerm, setSearchTerm] = useState<string>('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null); // For fetch errors
+  const [error, setError] = useState<string | null>(null);
   const [gqlRequest, setGqlRequest] = useState<string | null>(null);
-  const [gqlResponse, setGqlResponse] = useState<any | null>(null); // Store the full response
-  const [gqlError, setGqlError] = useState<string | null>(null);   // For GraphQL errors in the response
+  const [gqlResponse, setGqlResponse] = useState<any | null>(null);
+  const [gqlError, setGqlError] = useState<string | null>(null);
 
+  // Debounce effect
   useEffect(() => {
-    const fetchMovies = async () => {
-      setLoading(true);
-      setError(null);
-      setGqlError(null);
-      setGqlResponse(null); // Clear previous response
+    const handler = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+    }, 500); // Wait 500ms after user stops typing
 
-      const query = `
-        query GetMovies {
-          movies {
+    // Cleanup function to cancel the timeout if searchTerm changes again
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [searchTerm]);
+
+  // --- GraphQL Query Helper ---
+  // (Assume executeGraphQL exists and works as before)
+  const executeGraphQL = async <T,>(query: string, variables?: Record<string, any> | null): Promise<T> => {
+
+    // --- Dedent logic for display --- START
+    const lines = query.trim().split('\n');
+    const minIndent = lines.reduce((min, line) => {
+      if (line.trim() === '') return min; // Skip empty lines
+      const currentIndent = line.match(/^\s*/)![0].length;
+      return Math.min(min, currentIndent);
+    }, Infinity);
+    const dedentedQuery = lines.map(line => line.slice(minIndent)).join('\n');
+    // --- Dedent logic for display --- END
+
+    const operationType = dedentedQuery.startsWith('mutation') ? 'Mutation' : 'Query';
+    let requestStringToDisplay = `${operationType}:\n${dedentedQuery}`; // Use dedented query
+    if (variables) {
+      requestStringToDisplay += `\nVariables: ${JSON.stringify(variables, null, 2)}`;
+    }
+    setGqlRequest(requestStringToDisplay);
+    setGqlResponse(null);
+    setGqlError(null);
+    setError(null);
+
+    // Construct the request body conditionally
+    const bodyPayload: { query: string; variables?: Record<string, any> | null } = { query: dedentedQuery }; // Use dedented query here too
+    if (variables) { // Only add variables key if it's not null/undefined
+      bodyPayload.variables = variables;
+    }
+
+    try {
+      const res = await fetch('/api/graphql', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(bodyPayload), // Send the conditionally constructed body
+      });
+
+      if (!res.ok) {
+        throw new Error(`HTTP error! status: ${res.status}`);
+      }
+
+      const result = await res.json();
+      setGqlResponse(result);
+
+      if (result.errors) {
+        console.error('GraphQL Errors:', result.errors);
+        const errorMessages = result.errors.map((e: { message: string }) => e.message).join('\n');
+        setGqlError(errorMessages);
+        throw new Error(errorMessages);
+      }
+      if (!result.data) {
+        if (!query.trim().startsWith("mutation")) {
+          throw new Error('No data returned from GraphQL query.');
+        }
+      }
+      return result;
+
+    } catch (err: any) {
+      console.error('GraphQL Execution Error:', err);
+      setError(err.message || 'An error occurred.');
+      setGqlError(err.message || 'An error occurred.');
+      throw err;
+    }
+  };
+
+  // --- Fetch Movies --- (Depends on debouncedSearchTerm)
+  const fetchMovies = useCallback(async () => {
+    setLoading(true);
+    const query = `
+      query GetMovies($titleContains: String) {
+        movies(titleContains: $titleContains) {
+          id
+          title
+          director
+          releaseYear
+          books {
             id
             title
-            director
-            releaseYear
-            books { # Include books for potential display
-              id
-              title
-            }
           }
         }
-      `;
-      setGqlRequest(query); // Store the request query
-
-      try {
-        const res = await fetch('/api/graphql', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ query }),
-        });
-
-        if (!res.ok) {
-          throw new Error(`HTTP error! status: ${res.status}`);
-        }
-
-        const result: GraphQLResponse = await res.json();
-        setGqlResponse(result); // Store the full response
-
-        if (result.errors) {
-          // Handle GraphQL errors
-          console.error('GraphQL Errors:', result.errors);
-          setGqlError(result.errors.map(e => e.message).join('\n'));
-          setMovies([]); // Clear movies on GraphQL error
-        } else if (result.data?.movies) {
-          // Handle successful data fetch
-          setMovies(result.data.movies);
-          setGqlError(null); // Clear any previous GraphQL error
-        } else {
-          // Handle unexpected response structure
-          console.error("Unexpected response structure:", result);
-          setGqlError("Received unexpected data structure from API.");
-          setMovies([]);
-        }
-
-      } catch (err: any) {
-        console.error('Fetch Error:', err);
-        setError(err.message || 'Failed to fetch movies.');
-        setGqlError(null); // Clear GraphQL error on fetch error
-        setMovies([]); // Clear movies on fetch error
-      } finally {
-        setLoading(false);
       }
-    };
+    `;
 
+    // Prepare variables, only include titleContains if it's not empty
+    const variables: { titleContains?: string } = {};
+    if (debouncedSearchTerm.trim() !== '') {
+      variables.titleContains = debouncedSearchTerm;
+    }
+
+    try {
+      const result = await executeGraphQL<MoviesResponse>(query, Object.keys(variables).length > 0 ? variables : null);
+      if (result.data?.movies) {
+        setMovies(result.data.movies);
+      } else {
+        // Handle case where no movies are returned (e.g., search yields no results)
+        setMovies([]);
+        console.log("No movies found or returned from query.");
+      }
+    } catch (err) {
+      setMovies([]); // Clear movies on error
+      console.error("Failed to fetch movies:", err);
+      // Error state is handled by executeGraphQL
+    } finally {
+      setLoading(false);
+    }
+  }, [debouncedSearchTerm]); // Depend on the debounced search term
+
+  useEffect(() => {
     fetchMovies();
-  }, []); // Empty dependency array means this runs once on mount
+  }, [fetchMovies]);
 
+
+  // --- Render Logic ---
   return (
-    <div className="flex flex-1 h-[calc(100vh-theme(space.16))]"> {/* Adjust height based on header */}
-      {/* Left Column: Movie List */}
-      <div className="w-2/3 pr-4 overflow-y-auto">
-        <h2 className="text-2xl font-bold mb-4">Movies</h2>
-        {loading && <p className="text-gray-500">Loading movies...</p>}
-        {error && <p className="text-red-500">Error fetching movies: {error}</p>}
+    <div className="flex flex-1 h-[calc(100vh-theme(space.16))]">
+      {/* Left Column: Movie List & Add Button */}
+      <div className="w-1/2 pr-4 overflow-y-auto"> {/* Width 1/2 */}
+        <h2 className="text-2xl font-bold mb-6">Movies</h2>
 
-        {!loading && !error && (
-          <ul className="space-y-3">
-            {movies.length > 0 ? (
-              movies.map((movie) => (
-                <li key={movie.id} className="bg-white p-4 rounded shadow hover:shadow-md transition-shadow">
-                  {/* Link to detail page (implement later) */}
-                  <Link href={`/movies/${movie.id}`} className="text-blue-600 hover:underline">
-                    <h3 className="text-lg font-semibold">{movie.title} ({movie.releaseYear})</h3>
-                  </Link>
-                  <p className="text-gray-600 text-sm">Directed by: {movie.director}</p>
-                  {/* Optional: Display related books count or titles */}
-                  {movie.books && movie.books.length > 0 && (
-                    <p className="text-xs text-gray-500 mt-1">
-                      Related Books: {movie.books.length}
-                    </p>
-                  )}
-                </li>
-              ))
-            ) : (
-              // Display message if no movies found after loading (and no error)
-              <p className="text-gray-500">No movies found.</p>
-            )}
+        {/* Search Input */}
+        <div className="mb-4">
+          <input
+            type="search"
+            placeholder="Search movies by title..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+          />
+        </div>
+
+        {loading ? (
+          <p className="text-gray-500">Loading movies...</p>
+        ) : error ? (
+          <p className="text-red-500">Error: {error}</p>
+        ) : movies.length > 0 ? (
+          <ul className="space-y-4">
+            {movies.map((movie) => (
+              <li key={movie.id} className="bg-white p-4 rounded shadow hover:shadow-md transition-shadow">
+                <Link href={`/movies/${movie.id}`}>
+                  <h3 className="text-xl font-semibold text-indigo-600 hover:underline mb-1">{movie.title} ({movie.releaseYear})</h3>
+                </Link>
+                <p className="text-gray-600 text-sm mb-1">Directed by: {movie.director}</p>
+                <p className="text-gray-600 text-sm">
+                  Related Books: {movie.books.length > 0 ? movie.books.map(b => b.title).join(', ') : 'None'}
+                </p>
+              </li>
+            ))}
           </ul>
+        ) : (
+          <p className="text-gray-500">No movies found{debouncedSearchTerm ? ` matching "${debouncedSearchTerm}"` : ''}.</p>
         )}
-        {/* Add Movie Button */}
+
+        {/* Add New Movie Button */}
         <div className="mt-6">
           <Link href="/movies/add">
-            <button className="px-4 py-2 bg-blue-600 text-white rounded shadow hover:bg-blue-700">
+            <button className="px-4 py-2 bg-indigo-600 text-white rounded shadow hover:bg-indigo-700">
               Add New Movie
             </button>
           </Link>
@@ -142,12 +209,12 @@ export default function MoviesPage() {
       </div>
 
       {/* Right Column: GraphQL Viewer */}
-      <div className="w-1/3 pl-4 border-l border-gray-300 h-full">
-        <div className="sticky top-0 h-full"> {/* Make viewer sticky within its column */}
+      <div className="w-1/2 pl-4 border-l border-gray-300 h-full"> {/* Width 1/2 */}
+        <div className="sticky top-0 h-full">
           <GraphQLViewer
             requestQuery={gqlRequest}
             responseJson={gqlResponse}
-            error={gqlError || error} // Show fetch error or GraphQL error
+            error={gqlError}
           />
         </div>
       </div>
