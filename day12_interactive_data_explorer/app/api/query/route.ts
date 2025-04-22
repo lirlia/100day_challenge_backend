@@ -102,19 +102,26 @@ function escapeSqlIdentifier(identifier: string): string {
 }
 
 function buildSelectClause(aggregations?: Aggregation[], groups?: string[]): string {
+    const groupCols = groups ? groups.map(escapeSqlIdentifier).join(', ') : '';
+
     if (aggregations && aggregations.length > 0) {
-        const groupCols = groups ? groups.map(escapeSqlIdentifier).join(', ') : ''; // Use helper
+        // Case 1: Aggregations are present
         const aggCols = aggregations.map(agg => {
             const func = agg.function.toUpperCase();
-            // Handle COUNT(*) separately, don't quote '*'
             const colIdentifier = agg.column === '*' ? '*' : escapeSqlIdentifier(agg.column);
-            const alias = escapeSqlIdentifier(agg.alias); // Use helper
-            // Ensure COUNT(*) doesn't become COUNT(""*"")
+            const alias = escapeSqlIdentifier(agg.alias);
             return `${func}(${colIdentifier}) AS ${alias}`;
         }).join(', ');
         return groupCols ? `${groupCols}, ${aggCols}` : aggCols;
     }
-    return '*'; // Default to selecting all if no aggregations
+
+    if (groupCols) {
+        // Case 2: No Aggregations, but Groups are present -> Select only group columns
+        return groupCols;
+    }
+
+    // Case 3: No Aggregations and No Groups -> Select all
+    return '*';
 }
 
 function buildWhereClause(filters?: Filter[]): string {
