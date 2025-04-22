@@ -185,7 +185,7 @@ export default function Home() {
   return (
     <div className="container mx-auto p-4">
       <header className="mb-6">
-        <h1 className="text-2xl font-bold">Interactive Data Explorer</h1>
+        <h1 className="text-2xl font-bold">Day12 Interactive Data Explorer</h1>
       </header>
 
       {error && (
@@ -286,7 +286,7 @@ export default function Home() {
                 {/* Generated SQL */}
                 <div>
                   <h3 className="text-lg font-medium mb-1">Generated SQL</h3>
-                  <pre className="text-xs bg-gray-100 dark:bg-gray-900 p-3 rounded overflow-x-auto">
+                  <pre className="text-xs bg-gray-100 dark:bg-gray-900 p-3 rounded overflow-x-auto whitespace-pre-wrap break-words">
                     <code>{queryResult.generatedSql}</code>
                   </pre>
                 </div>
