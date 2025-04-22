@@ -1,0 +1,41 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+@tailwind utilities;
+
+/* Message Arrow Animation */
+@keyframes dashdraw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.message-arrow-line {
+  stroke-dasharray: 500; /* 線が描画される軌跡の長さ (十分な値) */
+  stroke-dashoffset: 500; /* 最初は線が見えない状態 */
+  animation: dashdraw 0.5s linear forwards; /* アニメーションを適用 */
+}
