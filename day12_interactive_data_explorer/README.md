@@ -4,7 +4,7 @@
 
 ユーザーが複数のデータセット（CSV形式）から一つを選択し、Webブラウザ上のGUIを通じてデータのフィルタリング、グループ化、集計条件を指定し、その結果をテーブルおよびグラフ形式でインタラクティブに探索できるツールです。バックエンドでDuckDBを利用し、SQLを直接書かずにデータ分析を行います。
 
-![Screenshot](https://github.com/user-attachments/assets/03916f6e-0253-4a8c-aea3-8fb597a6abf9)
+https://github.com/user-attachments/assets/03916f6e-0253-4a8c-aea3-8fb597a6abf9
 
 [100日チャレンジ day12 (GUIベースのインタラクティブ・データ探索ツール)](https://zenn.dev/gin_nazo/scraps/18e06e899e1420)
 
