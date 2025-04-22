@@ -24,12 +24,12 @@ const EventLogView: React.FC<{ events: SimulationEvent[] }> = ({ events }) => {
   return (
     <div ref={logContainerRef} className="flex-1 bg-white border border-gray-300 rounded p-2 overflow-y-auto text-sm font-mono">
       {events.slice().reverse().map((event: SimulationEvent, index: number) => ( // Added types
-         <p key={events.length - 1 - index} className="text-xs mb-1 whitespace-pre-wrap break-words"> {/* 改行と折り返し */}
+         (<p key={events.length - 1 - index} className="text-xs mb-1 whitespace-pre-wrap break-words"> {/* 改行と折り返し */}
            <span className="text-gray-500 mr-1">[{event.timestamp.toString().padStart(4, '0')}]</span> {/* タイムスタンプ表示 */}
            {event.description}
-         </p>
+         </p>)
       ))}
-       {events.length === 0 && <p className="text-gray-400">No events yet...</p>}
+      {events.length === 0 && <p className="text-gray-400">No events yet...</p>}
     </div>
   );
 };
@@ -116,7 +116,6 @@ export default function RaftSimulatorPage() {
         <h1 className="text-xl font-bold">Day 13: Raft Simulator</h1>
         <span className="font-mono text-sm">Time: {simulationState.currentTime}</span>
       </header>
-
       <main className="flex flex-1 overflow-hidden">
         {/* Simulation Area (Board) */}
         <section className="flex-1 bg-gray-50 m-4 border border-gray-300 rounded shadow-inner relative overflow-auto cursor-grab active:cursor-grabbing">
@@ -176,9 +175,9 @@ export default function RaftSimulatorPage() {
           {/* Nodes */}
           {simulationState.nodes.map((node: RaftNodeData) => (
             // 外側の div でクリックイベントを処理し、NodeView に isSelected を渡す
-            <div key={node.id} onClick={() => handleNodeClick(node.id)} style={{ zIndex: 5 }} >
-                <NodeView node={node} isSelected={selectedNodeId === node.id} />
-            </div>
+            (<div key={node.id} onClick={() => handleNodeClick(node.id)} style={{ zIndex: 5 }} >
+              <NodeView node={node} isSelected={selectedNodeId === node.id} />
+            </div>)
           ))}
           {/* TODO: Render RPC Arrows */}
           {/* TODO: Implement Drag and Drop for Nodes */}
