@@ -1,4 +1,4 @@
-import { NodeId, Term, NodeState, LogEntry, RaftNodeData, RequestVoteArgs, AppendEntriesArgs, RequestVoteReply, AppendEntriesReply } from '../types/raft';
+import { NodeId, Term, NodeState, LogEntry, RaftNodeData, RequestVoteArgs, RequestVoteReply, AppendEntriesArgs, AppendEntriesReply, Point } from '../types/raft';
 
 // ノードの初期状態を作成する関数
 export const createInitialNodeData = (id: NodeId, x: number, y: number): RaftNodeData => ({
@@ -123,8 +123,7 @@ export const handleRequestVote = (node: RaftNodeData, args: RequestVoteArgs): { 
     type: 'RequestVoteReply',
     term: term, // 自身の現在の(更新後の)Termを返す
     voteGranted: voteGranted,
-    from: updatedNode.id,
-    to: args.candidateId,
+    voterId: updatedNode.id,
   };
 
   return { newNodeData: updatedNode, reply };
@@ -210,9 +209,8 @@ export const handleAppendEntries = (node: RaftNodeData, args: AppendEntriesArgs)
         type: 'AppendEntriesReply',
         term: term, // 自身の現在の(更新後の)Termを返す
         success: success,
-        matchIndex: matchIndex, // Raft仕様にはないが、リーダーがnextIndexを効率的に更新するために含めることが多い
-        from: updatedNode.id,
-        to: args.leaderId,
+        followerId: updatedNode.id,
+        ...(success ? { lastLogIndexIncluded: updatedNode.log.length - 1 } : { conflictTerm: updatedNode.log[updatedNode.log.length - 1].term, conflictIndex: updatedNode.log.length - 1 }),
     };
 
     return { newNodeData: updatedNode, reply };

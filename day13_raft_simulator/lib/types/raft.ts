@@ -18,6 +18,12 @@ export interface LogEntry {
   index: number; // ログ内でのインデックス (便宜上追加)
 }
 
+// UI表示用の座標
+export interface Point { // ★★★ Point の定義を追加 ★★★
+    x: number;
+    y: number;
+}
+
 // RequestVote RPC の引数
 export interface RequestVoteArgs {
   type: 'RequestVote';
@@ -32,8 +38,7 @@ export interface RequestVoteReply {
   type: 'RequestVoteReply';
   term: Term;
   voteGranted: boolean;
-  from: NodeId; // 応答元ノードID (シミュレーション用)
-  to: NodeId; // 宛先ノードID (シミュレーション用)
+  voterId: NodeId; // ★★★ voterId を追加 ★★★
 }
 
 // AppendEntries RPC の引数
@@ -52,9 +57,11 @@ export interface AppendEntriesReply {
   type: 'AppendEntriesReply';
   term: Term;
   success: boolean;
-  matchIndex: number; // 成功した場合、一致した最新のログインデックス (シミュレーション用)
-  from: NodeId; // 応答元ノードID (シミュレーション用)
-  to: NodeId; // 宛先ノードID (シミュレーション用)
+  followerId: NodeId; // ★★★ followerId を追加 ★★★
+  // オプションのフィールド
+  conflictTerm?: Term;
+  conflictIndex?: number;
+  lastLogIndexIncluded?: number;
 }
 
 // クライアントからのリクエスト (シミュレーション用)
@@ -86,4 +93,16 @@ export interface RaftNodeData {
     // タイマー情報 (可視化用)
     electionTimeoutRemaining?: number; // 残り時間など (オプション)
     isLeader?: boolean; // リーダーかどうかを明確にするフラグ (オプション)
+}
+
+// UI表示用のRPCデータ (矢印など)
+export interface RpcData { // ★★★ RpcData の定義を追加 ★★★
+    id: string; // 一意なID (アニメーションや識別用)
+    from: NodeId;
+    to: NodeId | 'broadcast';
+    type: RPCMessage['type'] | ClientRequest['type'];
+    term: Term;
+    timestamp: number; // 送信開始/完了タイムスタンプ
+    // success?: boolean; // RpcArrow で使う場合はこれも追加検討
+    // duration?: number; // 転送にかかる時間 (ティック)
 }
