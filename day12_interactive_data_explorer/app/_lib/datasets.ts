@@ -1,5 +1,5 @@
-import fs from 'fs/promises';
-import path from 'path';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 
 export interface DatasetInfo {
   id: string;
@@ -19,8 +19,8 @@ async function listAllDatasetFiles(): Promise<DatasetInfo[]> {
         const filePath = path.join('data', file); // Relative path
         return { id, name: file, path: filePath };
       });
-    } catch (error: any) {
-      if (error.code === 'ENOENT') {
+    } catch (error: unknown) {
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
           console.warn(`Data directory not found: ${dataDir}`);
           return [];
       }
@@ -44,7 +44,6 @@ export async function getAllDatasets(): Promise<DatasetInfo[]> {
     if (allDatasetsCache && (now - cacheTimestamp < ALL_DATASETS_CACHE_DURATION)) {
         return allDatasetsCache;
     }
-    console.log('Refreshing all datasets list...');
     allDatasetsCache = await listAllDatasetFiles();
     cacheTimestamp = now;
     return allDatasetsCache;

@@ -58,7 +58,7 @@ export default function Home() {
   // 初回マウント時にユーザー一覧を取得
   useEffect(() => {
     fetchUsers();
-  }, []);
+  }, [fetchUsers]);
 
   return (
     <div className="max-w-4xl mx-auto py-8 px-4">
