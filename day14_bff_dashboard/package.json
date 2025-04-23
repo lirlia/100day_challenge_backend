@@ -1,0 +1,34 @@
+{
+  "name": "day14_bff_dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --turbopack",
+    "build": "next build",
+    "start": "next start",
+    "lint": "biome lint .",
+    "format": "biome format . --write",
+    "check": "biome check --apply ."
+  },
+  "dependencies": {
+    "next": "15.3.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@prisma/client": "^6.6.0",
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^22.14.1",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "biome": "^0.2.2",
+    "prisma": "^6.6.0",
+    "tailwindcss": "^4",
+    "tsx": "^4.16.0",
+    "typescript": "^5"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  }
+}
