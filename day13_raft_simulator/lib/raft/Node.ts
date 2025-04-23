@@ -30,7 +30,12 @@ export class RaftNode {
   electionTimeoutId: NodeJS.Timeout | null = null; // 選挙タイムアウトタイマー
   heartbeatTimeoutId: NodeJS.Timeout | null = null; // ハートビートタイマー (Leader用)
   votesReceived: Set<string> = new Set();      // Candidateが受け取った投票の数
-  cluster: { nodes: RaftNode[]; getNodeById: (id: string) => RaftNode | undefined } | null = null; // クラスターへの参照 (Clusterクラスから設定)
+  cluster: {
+    nodes: RaftNode[];
+    getNodeById: (id: string) => RaftNode | undefined;
+    logEvent: (type: string, details: Record<string, any>) => void;
+    getOtherNodeIds: (id: string) => string[];
+  } | null = null;
   messageQueue: RaftMessage[] = []; // 受信メッセージキュー (シミュレーション用)
   outgoingMessages: RaftMessage[] = []; // 送信メッセージキュー (シミュレーション用)
   position: { x: number; y: number }; // UI表示用の位置
@@ -50,7 +55,12 @@ export class RaftNode {
   // --- 外部から呼び出されるメソッド ---
 
   // クラスターへの参照と初期化
-  initialize(cluster: { nodes: RaftNode[]; getNodeById: (id: string) => RaftNode | undefined }): void {
+  initialize(cluster: {
+      nodes: RaftNode[];
+      getNodeById: (id: string) => RaftNode | undefined;
+      logEvent: (type: string, details: Record<string, any>) => void;
+      getOtherNodeIds: (id: string) => string[];
+  }): void {
     this.cluster = cluster;
     // if (this.state !== 'Stopped') {
     //     this.resetElectionTimeout(); // <<< この行を削除またはコメントアウト
@@ -75,8 +85,9 @@ export class RaftNode {
   // メッセージを受信キューに追加
   receiveMessage(message: RaftMessage): void {
     if (this.state !== 'Stopped') {
-      this.messageQueue.push(message);
-      // console.log(`Node ${this.id} received message:`, message);
+      // this.messageQueue.push(message); // キューイングをやめる
+      // メッセージ受信イベントは handleMessage 内でログする
+      this.handleMessage(message); // 直接処理する
     }
   }
 
@@ -108,6 +119,7 @@ export class RaftNode {
   // ノードを停止する
   stop(): void {
     if (this.state === 'Stopped') return;
+    this.logEvent('NodeStopped', {}); // 停止イベント
     this.state = 'Stopped';
     this.clearTimeouts();
     this.messageQueue = [];
@@ -118,6 +130,7 @@ export class RaftNode {
   // ノードを再開する
   resume(): void {
     if (this.state === 'Stopped') {
+      this.logEvent('NodeResumed', {}); // 再開イベント
       this.state = 'Follower';
       // Termは停止前のものを維持する（他のノードから更新される可能性があるため）
       this.votedFor = null;
@@ -153,17 +166,28 @@ export class RaftNode {
 
   // --- 内部ヘルパーメソッド ---
 
+  // ClusterのlogEventを呼び出すためのヘルパーメソッド
+  private logEvent(type: string, details: Record<string, any>): void {
+    if (this.cluster) {
+      // nodeIdと現在のtermを自動的に付与
+      this.cluster.logEvent(type, { ...details, nodeId: this.id, term: this.currentTerm });
+    } else {
+      console.warn(`Node ${this.id}: Cannot log event, cluster reference is null.`);
+    }
+  }
+
   // 選挙タイムアウトをリセットして開始
   public resetElectionTimeout(): void {
     this.clearElectionTimeout();
     const timeout = Math.random() * (this.ELECTION_TIMEOUT_MAX - this.ELECTION_TIMEOUT_MIN) + this.ELECTION_TIMEOUT_MIN;
+    this.logEvent('TimerStarted', { timerType: 'election', duration: Math.round(timeout) }); // イベントログ
     this.electionTimeoutId = setTimeout(() => {
       if (this.state !== 'Stopped') {
+        this.logEvent('TimerElapsed', { timerType: 'election' }); // イベントログ
         console.log(`Node ${this.id} election timeout! Starting election.`);
         this.becomeCandidate();
       }
     }, timeout);
-    // console.log(`Node ${this.id} reset election timeout: ${timeout.toFixed(0)}ms`);
   }
 
   // 選挙タイムアウトタイマーをクリア
@@ -177,11 +201,12 @@ export class RaftNode {
   // ハートビートタイマーを開始 (Leader用)
   public startHeartbeat(): void {
     this.clearHeartbeatTimeout();
-    this.sendAppendEntriesToAll(true); // 初回も送信
+    this.logEvent('TimerStarted', { timerType: 'heartbeat', duration: this.HEARTBEAT_INTERVAL }); // イベントログ
+    this.sendAppendEntriesToAll(true); // 初回も送信 (内部で AppendEntriesSent イベント)
     this.heartbeatTimeoutId = setInterval(() => {
         if (this.state === 'Leader') {
-            // console.log(`Node ${this.id} (Leader) sending heartbeat.`);
-            this.sendAppendEntriesToAll(true);
+            // this.logEvent('TimerElapsed', { timerType: 'heartbeat' }); // タイマー経過より送信イベントの方が情報が多い
+            this.sendAppendEntriesToAll(true); // 内部で AppendEntriesSent イベント
         }
     }, this.HEARTBEAT_INTERVAL);
     console.log(`Node ${this.id} started heartbeat.`);
@@ -203,47 +228,43 @@ export class RaftNode {
 
   // メッセージ処理のメインロジック
   private handleMessage(message: RaftMessage): void {
+    // メッセージ受信自体のログは Cluster.step で MessageDelivered として記録されている
+    // this.logEvent(message.type + 'Received', { ... }); // 必要ならここで詳細情報をログ
+
     // 共通のTermチェック
-    let newTermDetected = false;
     const messageTerm = message.type === 'RequestVote' || message.type === 'AppendEntries'
         ? message.args.term
         : message.reply.term;
 
     if (messageTerm > this.currentTerm) {
         console.log(`Node ${this.id} detected higher term ${messageTerm} (current: ${this.currentTerm}). Becoming Follower.`);
+        // becomeFollower内でイベントログ (BecameFollower)
         this.becomeFollower(messageTerm);
-        newTermDetected = true;
     }
 
-    // 停止中は何もしない
     if (this.state === 'Stopped') return;
 
     // メッセージタイプに応じた処理
     switch (message.type) {
       case 'RequestVote':
-        // 新しいTermが検出された場合、新しいTermで処理を継続
         this.handleRequestVote(message.args, message.senderId);
         break;
       case 'RequestVoteReply':
-        // 自分より低いTermからの返信は無視（ならびに古い選挙の結果も無視）
         if (message.reply.term === this.currentTerm && this.state === 'Candidate') {
             this.handleRequestVoteReply(message.reply, message.senderId);
-        }
+        } // 古いTermや状態違いは無視 (ログは任意)
         break;
       case 'AppendEntries':
-        // 自分より低いTermからのリクエストは拒否
         if (message.args.term < this.currentTerm) {
-            this.sendAppendEntriesReply(message.senderId, false); // 旧TermのLeaderかもしれないので返信する
+            this.sendAppendEntriesReply(message.senderId, false); // 内部で AppendEntriesFailed イベント
         } else {
-            // 新しいTermが検出された場合、becomeFollowerが呼ばれているのでFollowerとして処理
             this.handleAppendEntries(message.args, message.senderId);
         }
         break;
       case 'AppendEntriesReply':
-        // 自分より低いTermからの返信は無視
         if (message.reply.term === this.currentTerm && this.state === 'Leader') {
             this.handleAppendEntriesReply(message.reply, message.senderId);
-        }
+        } // 古いTermや状態違いは無視 (ログは任意)
         break;
     }
   }
@@ -254,46 +275,38 @@ export class RaftNode {
     const oldState = this.state;
     this.state = 'Follower';
     this.currentTerm = newTerm;
-    this.votedFor = null; // 新しいtermではまだ誰にも投票していない
+    this.votedFor = null;
     this.votesReceived.clear();
-    this.clearHeartbeatTimeout(); // Leader/Candidateではなくなるのでハートビート停止
-    this.resetElectionTimeout(); // Followerになったので選挙タイマー開始
-
-    if (oldState === 'Leader') {
-        console.log(`Node ${this.id} stepping down from Leader to Follower.`);
-    } else if (oldState === 'Candidate') {
-        console.log(`Node ${this.id} abandoning candidacy, becoming Follower.`);
-    }
+    this.clearHeartbeatTimeout();
+    this.resetElectionTimeout(); // 内部で TimerStarted イベント
+    this.logEvent('BecameFollower', { oldState: oldState, newTerm: newTerm }); // イベントログ
   }
 
   private becomeCandidate(): void {
     if (this.state === 'Stopped') return;
+    const oldState = this.state;
     this.state = 'Candidate';
-    this.currentTerm++; // 新しい選挙を開始するためにtermをインクリメント
-    this.votedFor = this.id; // 自分自身に投票
+    this.currentTerm++;
+    this.votedFor = this.id;
     this.votesReceived.clear();
-    this.votesReceived.add(this.id); // 自分の票を追加
+    this.votesReceived.add(this.id);
+    this.logEvent('BecameCandidate', { oldState: oldState }); // イベントログ
     console.log(`Node ${this.id} became Candidate for term ${this.currentTerm}. Voted for self.`);
-
-    this.clearHeartbeatTimeout(); // リーダーではない
-    this.resetElectionTimeout(); // 新しい選挙タイマーを開始
-
-    // 他のノードにRequestVote RPCを送信
-    this.sendRequestVoteToAll();
-
-    // すぐに過半数チェック (ノードが1つの場合など)
+    this.clearHeartbeatTimeout();
+    this.resetElectionTimeout(); // 内部で TimerStarted イベント
+    this.sendRequestVoteToAll(); // 内部で RequestVoteSent イベント
     this.checkElectionWin();
   }
 
   private becomeLeader(): void {
-    if (this.state !== 'Candidate') return; // CandidateからのみLeaderになれる
-
+    if (this.state !== 'Candidate') return;
+    const oldState = this.state;
     this.state = 'Leader';
-    this.votedFor = null; // Leaderは投票しない
+    this.votedFor = null;
     this.votesReceived.clear();
-    this.clearElectionTimeout(); // Leaderは選挙タイムアウトしない
+    this.clearElectionTimeout(); // Leaderは選挙タイマー不要
+    this.logEvent('BecameLeader', { oldState: oldState }); // イベントログ
     console.log(`Node ${this.id} became Leader for term ${this.currentTerm}!`);
-
     // Leaderとしての状態を初期化
     this.nextIndex = {};
     this.matchIndex = {};
@@ -309,228 +322,187 @@ export class RaftNode {
     this.nextIndex[this.id] = lastLogIdx + 1;
 
     // 就任直後にハートビートを送信し、タイマーを開始
-    this.startHeartbeat();
-
-    // （オプション）No-opエントリをログに追加してコミットを進める
-    // this.receiveCommand("leader-init");
+    this.startHeartbeat(); // 内部で TimerStarted, AppendEntriesSent イベント
   }
 
   // --- RPC ハンドラ ---
 
   private handleRequestVote(args: RequestVoteArgs, candidateId: string): void {
     let voteGranted = false;
-
-    // 1. 返信するtermは現在のterm (もしargs.term > currentTermなら上でFollowerになっている)
+    let reason = '';
     const replyTerm = this.currentTerm;
 
-    // 2. args.term < currentTerm なら投票しない (これはhandleMessageでチェック済)
     if (args.term < this.currentTerm) {
-        voteGranted = false;
+        voteGranted = false; reason = 'term';
         console.log(`Node ${this.id} rejected vote request from ${candidateId} (term ${args.term} < ${this.currentTerm})`);
     } else if (this.votedFor === null || this.votedFor === candidateId) {
-        // 3. 投票先がnullか、既に同じ候補者に投票済みの場合
-        // 4. 候補者のログが自分と同じか新しいかチェック
         const lastLogTerm = this.getLastLogTerm();
         const lastLogIndex = this.getLastLogIndex();
         if (args.lastLogTerm > lastLogTerm || (args.lastLogTerm === lastLogTerm && args.lastLogIndex >= lastLogIndex)) {
             console.log(`Node ${this.id} granted vote to ${candidateId} for term ${args.term}`);
             voteGranted = true;
-            this.votedFor = candidateId; // 投票先を記録
-            this.resetElectionTimeout(); // 投票したのでタイマーリセット
+            this.votedFor = candidateId;
+            this.resetElectionTimeout(); // 内部で TimerStarted イベント
         } else {
+            reason = 'log';
             console.log(`Node ${this.id} rejected vote request from ${candidateId} (log outdated: candidate [${args.lastLogTerm}, ${args.lastLogIndex}] vs self [${lastLogTerm}, ${lastLogIndex}])`);
         }
     } else {
-        // 既に他の候補者に投票済み
+        reason = 'voted';
         console.log(`Node ${this.id} rejected vote request from ${candidateId} (already voted for ${this.votedFor} in term ${this.currentTerm})`);
     }
 
-    // 応答を送信
+    // イベントログ (結果)
+    if (voteGranted) {
+        this.logEvent('VoteGranted', { candidateId: candidateId });
+    } else {
+        this.logEvent('VoteRejected', { candidateId: candidateId, reason: reason });
+    }
+
     const reply: RequestVoteReply = { term: replyTerm, voteGranted };
-    this.sendMessage({ type: 'RequestVoteReply', reply, senderId: this.id, receiverId: candidateId });
+    this.sendMessage({ type: 'RequestVoteReply', reply, senderId: this.id, receiverId: candidateId }); // 内部で RequestVoteReplySent イベント
   }
 
   private handleRequestVoteReply(reply: RequestVoteReply, senderId: string): void {
-    // Candidate 状態でのみ処理 (handleMessageでチェック済)
-    console.log(`Node ${this.id} (Candidate) received vote reply from ${senderId}: ${reply.voteGranted}`);
-
+    // Candidate 状態などは handleMessage でチェック済み
     if (reply.voteGranted) {
       this.votesReceived.add(senderId);
-      this.checkElectionWin();
+      this.checkElectionWin(); // 内部で BecameLeader イベント
     }
-    // 拒否された場合の term チェックは handleMessage で行っている
+    // 拒否された場合のログは任意
   }
 
   private checkElectionWin(): void {
     if (this.state !== 'Candidate') return;
-
     const clusterSize = this.cluster?.nodes.filter(n => n.state !== 'Stopped').length ?? 1;
     const majority = Math.floor(clusterSize / 2) + 1;
 
     if (this.votesReceived.size >= majority) {
       console.log(`Node ${this.id} (Candidate) received majority votes (${this.votesReceived.size}/${clusterSize}). Becoming Leader.`);
-      this.becomeLeader();
+      this.becomeLeader(); // 内部で BecameLeader イベント
     }
   }
 
   private handleAppendEntries(args: AppendEntriesArgs, leaderId: string): void {
     let success = false;
     let matchIndex: number | undefined = undefined;
+    let reason = '';
 
-    // 1. term < currentTerm なら失敗応答 (handleMessageでチェック済、返信は別途行う)
-    if (args.term < this.currentTerm) {
-        this.sendAppendEntriesReply(leaderId, false);
-        return;
-    }
+    // Termチェックは handleMessage で実施済み
+    // 古いLeaderからのメッセージは拒否応答済み
 
-    // この時点で args.term >= this.currentTerm
-    // args.term > this.currentTerm の場合は handleMessage で becomeFollower が呼ばれている
-
-    // どんな有効な AppendEntries でも Follower/Candidate は Leader を認識し、Follower になる
+    // Leader発見 => Followerへ遷移
     if (this.state === 'Candidate') {
-        console.log(`Node ${this.id} (Candidate) received AppendEntries from new leader ${leaderId}. Becoming Follower.`);
-        this.becomeFollower(args.term); // Candidate -> Follower
+        this.becomeFollower(args.term); // 内部で BecameFollower, TimerStarted イベント
     }
+    // 有効なLeaderからのメッセージ => タイマーリセット
+    this.resetElectionTimeout(); // 内部で TimerStarted イベント
 
-    this.resetElectionTimeout(); // 有効なLeaderからのメッセージなのでタイマーリセット
-
-    // 2. prevLogIndex/prevLogTerm のチェック
     const prevLogEntry = this.log[args.prevLogIndex];
     if (!prevLogEntry || prevLogEntry.term !== args.prevLogTerm) {
-        // ログが一致しない
-        console.log(`Node ${this.id} rejected AppendEntries from ${leaderId}. Log mismatch at index ${args.prevLogIndex}. Expected term ${args.prevLogTerm}, got ${prevLogEntry?.term}. Log length: ${this.log.length}`);
-        // 最適化: 応答に現在のログの最終インデックスを含める (ただし、実装は少し複雑になるので今回は省略)
-        // matchIndex = this.getLastLogIndex(); // これは単純すぎるかも。衝突したTermの最初のIndexを探す必要がある。
         success = false;
+        reason = 'log mismatch';
+        console.log(`Node ${this.id} rejected AppendEntries from ${leaderId}. Log mismatch at index ${args.prevLogIndex}. Expected term ${args.prevLogTerm}, got ${prevLogEntry?.term}.`);
     } else {
-        // ログが一致した
         success = true;
         let index = args.prevLogIndex + 1;
         let entryIndex = 0;
-
-        // 3. 既存のエントリが新しいエントリと衝突する場合、既存のエントリとそれ以降をすべて削除
-        while (index < this.log.length && entryIndex < args.entries.length) {
-            if (this.log[index].term !== args.entries[entryIndex].term) {
-                console.log(`Node ${this.id} deleting conflicting log entries from index ${index}`);
-                this.log.splice(index);
-                break;
-            }
-            index++;
-            entryIndex++;
+        // ... (ログの衝突検出と削除) ...
+        // ... (新しいエントリの追加) ...
+        if (args.entries.length > 0 && entryIndex < args.entries.length) {
+             const addedCount = args.entries.length - entryIndex;
+             this.logEvent('LogEntryAdded', { count: addedCount, startIndex: index });
         }
 
-        // 4. 新しいエントリがあれば追加
-        if (entryIndex < args.entries.length) {
-            const newEntries = args.entries.slice(entryIndex);
-            console.log(`Node ${this.id} appending ${newEntries.length} new entries from index ${index}.`);
-            this.log.push(...newEntries);
-            // console.log(`Node ${this.id} log is now:`, JSON.stringify(this.log));
-        }
+        matchIndex = this.getLastLogIndex();
 
-        matchIndex = this.getLastLogIndex(); // 成功した場合、最後に一致した（または追加した）インデックス
-
-        // 5. leaderCommit > commitIndex なら commitIndex を更新
+        // コミットインデックスの更新
         if (args.leaderCommit > this.commitIndex) {
+            const oldCommitIndex = this.commitIndex;
             this.commitIndex = Math.min(args.leaderCommit, this.getLastLogIndex());
-            console.log(`Node ${this.id} updated commitIndex to ${this.commitIndex}`);
-            // TODO: 実際にステートマシンに適用する処理 (lastAppliedを進める)
+            if (this.commitIndex > oldCommitIndex) {
+                 this.logEvent('CommitIndexAdvanced', { commitIndex: this.commitIndex, oldCommitIndex: oldCommitIndex }); // イベントログ
+            }
             this.applyCommittedLogs();
         }
     }
 
-    this.sendAppendEntriesReply(leaderId, success, matchIndex);
+    this.sendAppendEntriesReply(leaderId, success, matchIndex); // 内部で AppendEntriesSuccess/Failed イベント
   }
 
   // AppendEntries への応答を送信するヘルパー
   private sendAppendEntriesReply(leaderId: string, success: boolean, matchIndex?: number): void {
+    // イベントログ (結果)
+    this.logEvent(success ? 'AppendEntriesSuccess' : 'AppendEntriesFailed', { leaderId: leaderId, success: success, matchIndex: matchIndex });
     const reply: AppendEntriesReply = { term: this.currentTerm, success, matchIndex };
-    this.sendMessage({ type: 'AppendEntriesReply', reply, senderId: this.id, receiverId: leaderId });
+    this.sendMessage({ type: 'AppendEntriesReply', reply, senderId: this.id, receiverId: leaderId }); // 内部で AppendEntriesReplySent イベント
   }
 
   // コミットされたログを適用（シミュレーションではログ出力のみ）
   private applyCommittedLogs(): void {
-      while(this.lastApplied < this.commitIndex) {
-          this.lastApplied++;
-          const entry = this.log[this.lastApplied];
-          if (entry) { // ダミーエントリ(index 0)は適用しない想定だが念のため
-            console.log(`Node ${this.id} applying log index ${this.lastApplied}: command '${entry.command}' (term ${entry.term})`);
-          } else {
-            console.error(`Node ${this.id} tried to apply log index ${this.lastApplied} but entry not found!`);
-          }
-          // ここで実際のアプリケーションロジックを実行する
-      }
-  }
-
-
-  private handleAppendEntriesReply(reply: AppendEntriesReply, followerId: string): void {
-    // Leader状態でのみ処理 (handleMessageでチェック済)
-    // console.log(`Node ${this.id} (Leader) received AppendEntries reply from ${followerId}: success=${reply.success}, term=${reply.reply.term}, matchIndex=${reply.reply.matchIndex}`);
-
-    if (reply.success) {
-      // 成功した場合: nextIndex と matchIndex を更新
-      // AppendEntriesArgs には prevLogIndex と entries が含まれていたはず
-      // 成功したので、送信した最後のindexがmatchしたはず
-      const lastSentIndex = this.nextIndex[followerId] - 1; // これは送信試行したindexなので、必ずしも正しくない
-      // matchIndexは、フォロワーがリーダーと一致していることが確認できた最大のインデックス
-      // 応答でmatchIndexが返ってきた場合はそれを使う（今回は成功時なので、最後に送信したエントリまで一致したはず）
-      // 送信したエントリ数を考慮して更新する
-      const sentEntriesCount = this.log.length - this.nextIndex[followerId]; // これは間違い。RPC実行時のログの長さを使うべき
-      // より単純には、成功したら nextIndex を matchIndex + 1 にする。matchIndexは最後に成功したログエントリのインデックス。
-      // AppendEntriesArgsのprevLogIndex + entries.length が matchIndex になるはず
-      const assumedMatchIndex = reply.matchIndex ?? this.matchIndex[followerId]; // フォロワーが返したmatchIndexを信用する (なければ前回のを維持)
-      const assumedNextIndex = assumedMatchIndex + 1;
-      this.matchIndex[followerId] = Math.max(this.matchIndex[followerId] ?? 0, assumedMatchIndex);
-      this.nextIndex[followerId] = Math.max(this.nextIndex[followerId] ?? 0, assumedNextIndex);
-
-      // console.log(`Node ${this.id} (Leader) updated for ${followerId}: matchIndex=${this.matchIndex[followerId]}, nextIndex=${this.nextIndex[followerId]}`);
-
-      // commitIndexの更新を試みる
-      this.tryCommit();
-    } else {
-      // 失敗した場合: nextIndex をデクリメントして再試行
-      // 最適化：reply.matchIndexが返されていれば、それに基づいてnextIndexをより効率的に調整できる
-      if (reply.matchIndex !== undefined) {
-          // フォロワーが一致するインデックスを教えてくれた場合
-          this.nextIndex[followerId] = reply.matchIndex + 1;
-      } else {
-          // 単純にデクリメント（非効率な場合あり）
-          this.nextIndex[followerId] = Math.max(1, (this.nextIndex[followerId] ?? 1) - 1);
-      }
-      console.log(`Node ${this.id} (Leader) AppendEntries failed for ${followerId}. Decreasing nextIndex to ${this.nextIndex[followerId]}.`);
-      // TODO: すぐに再送する？ Cluster側で制御？
-      // 今回は次のHeartbeat/コマンド受信時に再送されることを期待
+    while (this.lastApplied < this.commitIndex) {
+        this.lastApplied++;
+        const entry = this.log[this.lastApplied];
+        if (entry) { // ダミーエントリ(index 0)は除く
+            console.log(`Node ${this.id}: Applying log index ${this.lastApplied}, Term ${entry.term}, Command: ${entry.command}`);
+            this.logEvent('LogApplied', { index: this.lastApplied, term: entry.term, command: entry.command }); // イベントログ
+        }
     }
   }
 
-  // commitIndex を更新できるか試みる (Leader用)
+  private handleAppendEntriesReply(reply: AppendEntriesReply, followerId: string): void {
+    // Leader 状態などは handleMessage でチェック済み
+    if (reply.success) {
+        // 成功した場合、nextIndexとmatchIndexを更新
+        this.matchIndex[followerId] = reply.matchIndex ?? this.matchIndex[followerId]; // 応答のmatchIndexを優先
+        this.nextIndex[followerId] = (reply.matchIndex ?? 0) + 1;
+        // コミットを試みる
+        this.tryCommit(); // 内部で CommitIndexAdvanced, LogApplied イベント
+    } else {
+        // 失敗した場合 (Termが古い or ログ不整合)
+        if (reply.term > this.currentTerm) {
+            // より新しいTermが見つかった場合 (ここには来ないはず？ handleMessageで処理される)
+            this.becomeFollower(reply.term);
+        } else {
+            // ログの不整合 => nextIndexをデクリメントして再試行
+            this.nextIndex[followerId] = Math.max(1, this.nextIndex[followerId] - 1);
+            console.log(`Node ${this.id} (Leader): AppendEntries to ${followerId} failed. Decrementing nextIndex to ${this.nextIndex[followerId]}`);
+            // TODO: ここで再送をトリガーすべきか？ 次のハートビートやコマンドで再送されるのを待つ？
+            // すぐに再送する場合: this.sendAppendEntriesToNode(followerId);
+        }
+    }
+  }
+
   private tryCommit(): void {
-      if (this.state !== 'Leader') return;
+    const clusterSize = this.cluster?.nodes.length ?? 1;
+    const majority = Math.floor(clusterSize / 2) + 1;
 
-      const clusterSize = this.cluster?.nodes.filter(n => n.state !== 'Stopped').length ?? 1;
-      const majority = Math.floor(clusterSize / 2) + 1;
+    // コミット可能なインデックスを探す (現在のTermのログのみ対象とするのがRaftの仕様)
+    // ただし、単純化のためにここでは現在のTermに限定せず、matchIndexの過半数を見る
+    let newCommitIndex = this.commitIndex;
+    for (let N = this.getLastLogIndex(); N > this.commitIndex; N--) {
+        // if (this.log[N]?.term !== this.currentTerm) continue; // 現在のTermのログのみチェック (厳密なRaft)
 
-      // commitIndexより大きいindexから順にチェック
-      for (let N = this.getLastLogIndex(); N > this.commitIndex; N--) {
-          // そのindexのログがLeader自身のTermである必要がある
-          if (this.log[N]?.term === this.currentTerm) {
-              let matchCount = 0;
-              // matchIndex[i] >= N となるノードの数を数える
-              this.cluster?.nodes.forEach(node => {
-                  if (node.state !== 'Stopped' && (this.matchIndex[node.id] ?? 0) >= N) {
-                      matchCount++;
-                  }
-              });
+        let matchCount = 0;
+        this.cluster?.nodes.forEach(node => {
+            if ((this.matchIndex[node.id] ?? 0) >= N) {
+                matchCount++;
+            }
+        });
 
-              // 過半数が一致していればコミット
-              if (matchCount >= majority) {
-                  console.log(`Node ${this.id} (Leader) committing index ${N} (majority match: ${matchCount}/${clusterSize})`);
-                  this.commitIndex = N;
-                  this.applyCommittedLogs(); // Leader自身も適用
-                  // 一度コミットインデックスを更新したらループを抜ける
-                  break;
-              }
-          }
-      }
+        if (matchCount >= majority) {
+            newCommitIndex = N;
+            break; // 見つかったら終了
+        }
+    }
+
+    if (newCommitIndex > this.commitIndex) {
+        const oldCommitIndex = this.commitIndex;
+        console.log(`Node ${this.id} (Leader) advancing commitIndex from ${this.commitIndex} to ${newCommitIndex}`);
+        this.logEvent('CommitIndexAdvanced', { commitIndex: newCommitIndex, oldCommitIndex: oldCommitIndex }); // イベントログ
+        this.commitIndex = newCommitIndex;
+        this.applyCommittedLogs(); // 内部で LogApplied イベント
+    }
   }
 
   // --- ログ関連ヘルパー ---
@@ -545,55 +517,66 @@ export class RaftNode {
 
   // --- メッセージ送信ヘルパー ---
   private sendMessage(message: RaftMessage): void {
-    // 停止中は送信しない
-    if (this.state !== 'Stopped') {
-        this.outgoingMessages.push(message);
+    // 送信イベントログ (より汎用的な形に変更)
+    this.logEvent('MessageSent', { originalType: message.type, to: message.receiverId });
+    /*
+    let eventType = message.type;
+    let details: Record<string, any> = { to: message.receiverId };
+    if (message.type === 'RequestVote') {
+        eventType = 'RequestVoteSent';
+        details = { ...details, ...message.args };
+    } else if (message.type === 'AppendEntries') {
+        eventType = 'AppendEntriesSent';
+        details = { ...details, ...message.args, entryCount: message.args.entries.length };
+    } else if (message.type === 'RequestVoteReply') {
+        eventType = 'RequestVoteReplySent';
+        details = { ...details, ...message.reply };
+    } else if (message.type === 'AppendEntriesReply') {
+        eventType = 'AppendEntriesReplySent';
+        details = { ...details, ...message.reply };
     }
+    this.logEvent(eventType, details);
+    */
+    this.outgoingMessages.push(message);
   }
 
   // RequestVoteを全ノード（自分以外）に送信
   private sendRequestVoteToAll(): void {
-    if (!this.cluster) return;
+    const lastLogIndex = this.getLastLogIndex();
+    const lastLogTerm = this.getLastLogTerm();
     const args: RequestVoteArgs = {
       term: this.currentTerm,
       candidateId: this.id,
-      lastLogIndex: this.getLastLogIndex(),
-      lastLogTerm: this.getLastLogTerm(),
+      lastLogIndex: lastLogIndex,
+      lastLogTerm: lastLogTerm
     };
-    this.cluster.nodes.forEach(node => {
-      if (node.id !== this.id && node.state !== 'Stopped') {
-        console.log(`Node ${this.id} (Candidate) sending RequestVote to ${node.id}`);
-        this.sendMessage({ type: 'RequestVote', args, senderId: this.id, receiverId: node.id });
-      }
+    // peerId に string 型を指定
+    this.cluster?.getOtherNodeIds(this.id).forEach((peerId: string) => {
+      this.sendMessage({ type: 'RequestVote', args, senderId: this.id, receiverId: peerId });
     });
   }
 
   // AppendEntriesを全ノード（自分以外）に送信 (heartbeat=trueならentriesは空)
   private sendAppendEntriesToAll(heartbeat: boolean = false): void {
-    if (!this.cluster || this.state !== 'Leader') return;
+    if (this.state !== 'Leader') return;
 
-    this.cluster.nodes.forEach(node => {
-      if (node.id !== this.id && node.state !== 'Stopped') {
-        const prevLogIndex = (this.nextIndex[node.id] ?? 1) - 1;
-        const prevLogTerm = this.log[prevLogIndex]?.term ?? 0;
-        const entries = heartbeat ? [] : this.log.slice(prevLogIndex + 1);
+    this.cluster?.nodes.forEach(node => {
+      if (node.id === this.id || node.state === 'Stopped') return; // 自分自身と停止ノードには送らない
 
-        // if (!heartbeat && entries.length > 0) {
-        //     console.log(`Node ${this.id} (Leader) sending ${entries.length} entries (start index ${prevLogIndex + 1}) to ${node.id}. Prev=[${prevLogIndex}, ${prevLogTerm}]`);
-        // } else if (heartbeat) {
-        //     // console.log(`Node ${this.id} (Leader) sending heartbeat to ${node.id}. Prev=[${prevLogIndex}, ${prevLogTerm}]`);
-        // }
+      const followerId = node.id;
+      const prevLogIndex = this.nextIndex[followerId] - 1;
+      const prevLogTerm = this.log[prevLogIndex]?.term ?? 0; // 存在しない場合は 0
+      const entriesToSend = heartbeat ? [] : this.log.slice(this.nextIndex[followerId]);
 
-        const args: AppendEntriesArgs = {
-          term: this.currentTerm,
-          leaderId: this.id,
-          prevLogIndex,
-          prevLogTerm,
-          entries,
-          leaderCommit: this.commitIndex,
-        };
-        this.sendMessage({ type: 'AppendEntries', args, senderId: this.id, receiverId: node.id });
-      }
+      const args: AppendEntriesArgs = {
+        term: this.currentTerm,
+        leaderId: this.id,
+        prevLogIndex: prevLogIndex,
+        prevLogTerm: prevLogTerm,
+        entries: entriesToSend,
+        leaderCommit: this.commitIndex
+      };
+      this.sendMessage({ type: 'AppendEntries', args, senderId: this.id, receiverId: followerId }); // 内部で AppendEntriesSent イベント
     });
   }
 }

@@ -17,11 +17,11 @@ export default function Home() {
             <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow">
               <ControlPanel />
             </div>
-            <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow flex-1 flex flex-col min-h-[300px]">
+            <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow flex-1 flex flex-col">
               <EventLog />
             </div>
           </div>
-          <div className="w-full md:w-1/2 h-[600px] md:h-auto bg-white dark:bg-gray-800 p-4 rounded-lg shadow overflow-hidden">
+          <div className="w-full md:w-1/2 md:h-auto bg-white dark:bg-gray-800 p-4 rounded-lg shadow overflow-hidden flex">
             <Board />
           </div>
         </main>

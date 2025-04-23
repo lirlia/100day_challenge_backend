@@ -7,6 +7,13 @@ import { RaftCluster } from '../lib/raft/Cluster'; // '@/' を使用
 import { RaftNodeInfo, RaftMessage, SimulationEvent } from '../lib/raft/types'; // '@/' を使用
 import { RaftNode } from '../lib/raft/Node'; // RaftNode 型をインポート
 
+// イベントフィルターカテゴリーの型
+export type EventFilterCategory = 'StateChange' | 'Voting' | 'LogReplication' | 'Timer' | 'Messaging' | 'Cluster';
+
+// デフォルトで表示するフィルターカテゴリー
+const DEFAULT_ACTIVE_FILTERS: Set<EventFilterCategory> = new Set([
+  'StateChange', 'Voting', 'LogReplication', 'Cluster'
+]);
 
 interface RaftContextProps {
   cluster: RaftCluster | null;
@@ -15,6 +22,7 @@ interface RaftContextProps {
   events: SimulationEvent[];
   isRunning: boolean;
   simulationSpeed: number; // ステップ間の待機時間(ms)
+  activeFilters: Set<EventFilterCategory>; // フィルター状態を追加
   startSimulation: () => void;
   pauseSimulation: () => void;
   stepSimulation: () => void;
@@ -26,6 +34,7 @@ interface RaftContextProps {
   resumeNode: (nodeId: string) => void;
   sendCommandToLeader: (command?: string) => void;
   updateNodePosition: (nodeId: string, position: { x: number, y: number }) => void;
+  setActiveFilters: (updater: (prevFilters: Set<EventFilterCategory>) => Set<EventFilterCategory>) => void; // フィルター更新関数を追加
 }
 
 const RaftContext = createContext<RaftContextProps | undefined>(undefined);
@@ -40,7 +49,13 @@ export const RaftProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [events, setEvents] = useState<SimulationEvent[]>([]);
   const [isRunning, setIsRunning] = useState<boolean>(false);
   const [simulationSpeed, setSimulationSpeed] = useState<number>(DEFAULT_SIMULATION_SPEED);
+  const [activeFilters, setActiveFiltersState] = useState<Set<EventFilterCategory>>(DEFAULT_ACTIVE_FILTERS); // フィルター状態
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // setActiveFilters を安全に更新するためのラッパー
+  const setActiveFilters = useCallback((updater: (prevFilters: Set<EventFilterCategory>) => Set<EventFilterCategory>) => {
+    setActiveFiltersState(prev => updater(new Set(prev))); // 常に新しいSetインスタンスを作成
+  }, []);
 
   // 初期化
   useEffect(() => {
@@ -52,10 +67,10 @@ export const RaftProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const runStep = useCallback(() => {
     if (!cluster) return;
-    const { nodeInfos: updatedNodeInfos, messages: currentMessages, events: currentEvents } = cluster.step();
-    setNodeInfos([...updatedNodeInfos]); // 新しい配列を作成して状態更新をトリガー
-    setMessages(currentMessages); // 現在のステップで配信されたメッセージのみ表示
-    setEvents([...currentEvents]); // イベントログを更新
+    const { nodeInfos: updatedNodeInfos, messages: currentMessages, events: currentLog } = cluster.step();
+    setNodeInfos([...updatedNodeInfos]);
+    setMessages(currentMessages);
+    setEvents([...currentLog]);
   }, [cluster]);
 
 
@@ -213,6 +228,7 @@ export const RaftProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     events,
     isRunning,
     simulationSpeed,
+    activeFilters,
     startSimulation,
     pauseSimulation,
     stepSimulation,
@@ -224,6 +240,7 @@ export const RaftProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     resumeNode,
     sendCommandToLeader,
     updateNodePosition,
+    setActiveFilters,
   };
 
   return <RaftContext.Provider value={value}>{children}</RaftContext.Provider>;
