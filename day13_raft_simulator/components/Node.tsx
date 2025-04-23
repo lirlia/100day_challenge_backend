@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
-import { useDrag, DragSourceMonitor } from 'react-dnd'; // DragSourceMonitor を追加
+import React, { useState, useRef } from 'react';
+import { useDrag, DragSourceMonitor } from 'react-dnd';
 // import { RaftNodeInfo } from '@/lib/raft/types'; // パスは後で修正
 // import { useRaft } from '@/context/RaftContext'; // パスは後で修正
 import { RaftNodeInfo } from '../lib/raft/types'; // 相対パス
@@ -18,8 +18,8 @@ export const ItemTypes = {
 
 // useDrag の item の型
 interface DragItem {
-    id: string;
-    type: string;
+  id: string;
+  type: string;
 }
 
 // ノードの状態に応じた色
@@ -34,14 +34,17 @@ export const Node: React.FC<NodeProps> = ({ nodeInfo }) => {
   const { stopNode, resumeNode, removeNode, sendCommandToLeader } = useRaft();
   const [showContextMenu, setShowContextMenu] = useState(false);
   const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 });
+  const divRef = useRef<HTMLDivElement>(null);
 
   const [{ isDragging }, drag] = useDrag(() => ({
     type: ItemTypes.NODE,
-    item: { id: nodeInfo.id, type: ItemTypes.NODE } as DragItem, // 型アサーション追加
-    collect: (monitor: DragSourceMonitor<DragItem, unknown>) => ({ // monitor の型を明示
+    item: { id: nodeInfo.id, type: ItemTypes.NODE } as DragItem,
+    collect: (monitor: DragSourceMonitor<DragItem, unknown>) => ({
       isDragging: !!monitor.isDragging(),
     }),
   }));
+
+  drag(divRef);
 
   const handleContextMenu = (event: React.MouseEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -68,8 +71,8 @@ export const Node: React.FC<NodeProps> = ({ nodeInfo }) => {
   };
 
   const handleSendCommand = () => {
-      sendCommandToLeader(); // Contextに関数を呼び出す
-      closeContextMenu();
+    sendCommandToLeader(); // Contextに関数を呼び出す
+    closeContextMenu();
   }
 
   // ログの表示を簡略化 (最新5件程度)
@@ -77,12 +80,10 @@ export const Node: React.FC<NodeProps> = ({ nodeInfo }) => {
 
   return (
     <div
-      ref={drag}
-      className={`absolute p-3 rounded-full shadow-lg cursor-grab ${
-        stateColors[nodeInfo.state]
-      } text-white text-xs flex flex-col items-center justify-center border-2 border-black ${
-        isDragging ? 'opacity-50' : 'opacity-100'
-      }`}
+      ref={divRef}
+      className={`absolute p-3 rounded-full shadow-lg cursor-grab ${stateColors[nodeInfo.state]
+        } text-white text-xs flex flex-col items-center justify-center border-2 border-black ${isDragging ? 'opacity-50' : 'opacity-100'
+        }`}
       style={{
         left: `${nodeInfo.position.x}px`,
         top: `${nodeInfo.position.y}px`,
@@ -95,17 +96,18 @@ export const Node: React.FC<NodeProps> = ({ nodeInfo }) => {
       <div className="font-bold text-sm mb-1">{nodeInfo.id}</div>
       <div>T:{nodeInfo.currentTerm}</div>
       <div className="text-center text-[10px] overflow-hidden whitespace-nowrap overflow-ellipsis w-full" title={nodeInfo.state}>
-          {nodeInfo.state}
+        {nodeInfo.state}
       </div>
       <div className="text-[8px] mt-1">C:{nodeInfo.commitIndex}</div>
 
       {/* コンテキストメニュー */}
       {showContextMenu && (
         <div
-          className="absolute z-10 bg-white text-black rounded shadow-lg border border-gray-300 text-xs py-1"
-          style={{ left: `${contextMenuPos.x - nodeInfo.position.x}px`, top: `${contextMenuPos.y - nodeInfo.position.y}px` }}
+          className="absolute z-50 bg-white text-black rounded shadow-lg border border-gray-300 text-xs py-1"
+          // style={{ left: `${contextMenuPos.x - nodeInfo.position.x}px`, top: `${contextMenuPos.y - nodeInfo.position.y}px` }}
+          // ノードの右下に固定で表示するように変更 (デバッグ用)
+          style={{ left: '100%', top: '100%', marginLeft: '5px', marginTop: '5px' }}
           onClick={(e) => e.stopPropagation()} // メニュー内クリックで閉じないように
-          onMouseLeave={closeContextMenu} // メニュー外に出たら閉じる
         >
           <button onClick={handleStopResume} className="block w-full text-left px-3 py-1 hover:bg-gray-100">
             {nodeInfo.state === 'Stopped' ? 'Resume' : 'Stop'}

@@ -62,13 +62,26 @@ export const RaftProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const startSimulation = useCallback(() => {
     if (isRunning || !cluster) return;
     setIsRunning(true);
-    // 既存のインターバルがあればクリア
+
+    // タイマーを開始する必要があるノードを起動
+    cluster.nodes.forEach(node => {
+      if (node.state !== 'Stopped' && node.electionTimeoutId === null && node.state !== 'Leader') {
+        node.resetElectionTimeout();
+      }
+      // Leaderのハートビートも再開する必要があればここで行うが、
+      // Leaderへの遷移時にstartHeartbeatが呼ばれるので通常は不要かもしれない
+      // if (node.state === 'Leader' && node.heartbeatTimeoutId === null) {
+      //     node.startHeartbeat();
+      // }
+    });
+
+    // 既存のインターバルがあればクリア (念のため)
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
     }
     // 新しいインターバルを開始
     intervalRef.current = setInterval(runStep, simulationSpeed);
-     // 即座に1ステップ実行して開始をわかりやすくする
+    // 即座に1ステップ実行して開始をわかりやすくする
     runStep();
   }, [isRunning, cluster, runStep, simulationSpeed]);
 
@@ -79,97 +92,107 @@ export const RaftProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       clearInterval(intervalRef.current);
       intervalRef.current = null;
     }
-  }, [isRunning]);
+    // 全ノードのタイマーを停止
+    cluster?.nodes.forEach(node => node.clearTimeouts());
+    console.log('Simulation paused, timers cleared.');
+  }, [isRunning, cluster]);
 
   const stepSimulation = useCallback(() => {
     if (isRunning || !cluster) return; // 実行中はステップ実行しない
+
+    // タイマーを開始する必要があるノードを起動 (ステップ実行の場合も必要)
+    cluster.nodes.forEach(node => {
+      if (node.state !== 'Stopped' && node.electionTimeoutId === null && node.state !== 'Leader') {
+        node.resetElectionTimeout();
+      }
+    });
+
     runStep();
   }, [isRunning, cluster, runStep]);
 
   const resetSimulation = useCallback((nodeCount: number = INITIAL_NODE_COUNT) => {
-    pauseSimulation(); // 実行中なら停止
+    pauseSimulation(); // 実行中なら停止 (ここでタイマーもクリアされる)
     if (cluster) {
-        cluster.reset(nodeCount);
-        setNodeInfos(cluster.getAllNodeInfo());
-        setMessages([]);
-        setEvents([...cluster.eventLog]);
+      cluster.reset(nodeCount);
+      setNodeInfos(cluster.getAllNodeInfo());
+      setMessages([]);
+      setEvents([...cluster.eventLog]);
     } else {
-        // clusterがnullの場合（初期化前など、通常はないはず）
-        const newCluster = new RaftCluster(nodeCount);
-        setCluster(newCluster);
-        setNodeInfos(newCluster.getAllNodeInfo());
-        setMessages([]);
-        setEvents([...newCluster.eventLog]);
+      const newCluster = new RaftCluster(nodeCount);
+      setCluster(newCluster);
+      setNodeInfos(newCluster.getAllNodeInfo());
+      setMessages([]);
+      setEvents([...newCluster.eventLog]);
     }
   }, [cluster, pauseSimulation]);
 
   // シミュレーション速度の変更
   const handleSetSimulationSpeed = useCallback((speed: number) => {
-      const newSpeed = Math.max(50, speed); // 最低速度制限
-      setSimulationSpeed(newSpeed);
-      // 実行中ならインターバルを再設定
-      if (isRunning) {
-          if (intervalRef.current) {
-              clearInterval(intervalRef.current);
-          }
-          intervalRef.current = setInterval(runStep, newSpeed);
+    const newSpeed = Math.max(50, speed); // 最低速度制限
+    setSimulationSpeed(newSpeed);
+    // 実行中ならインターバルを再設定
+    if (isRunning) {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
       }
+      intervalRef.current = setInterval(runStep, newSpeed);
+    }
   }, [isRunning, runStep]);
 
   // ノード追加
   const addNode = useCallback(() => {
-      if (!cluster) return;
-      cluster.addNode();
-      setNodeInfos(cluster.getAllNodeInfo());
+    if (!cluster) return;
+    cluster.addNode();
+    setNodeInfos(cluster.getAllNodeInfo());
   }, [cluster]);
 
   // ノード削除
   const removeNode = useCallback((nodeId: string) => {
-      if (!cluster) return;
-      cluster.removeNode(nodeId);
-      setNodeInfos(cluster.getAllNodeInfo());
-      setMessages([]); // 削除されたノード関連のメッセージが残らないようにクリア
+    if (!cluster) return;
+    cluster.removeNode(nodeId);
+    setNodeInfos(cluster.getAllNodeInfo());
+    setMessages([]); // 削除されたノード関連のメッセージが残らないようにクリア
   }, [cluster]);
 
   // ノード停止
   const stopNode = useCallback((nodeId: string) => {
-      if (!cluster) return;
-      cluster.stopNode(nodeId);
-      setNodeInfos(cluster.getAllNodeInfo());
-      setMessages([]); // 停止したノード関連のメッセージが残らないようにクリア
+    if (!cluster) return;
+    cluster.stopNode(nodeId);
+    setNodeInfos(cluster.getAllNodeInfo());
+    setMessages([]); // 停止したノード関連のメッセージが残らないようにクリア
   }, [cluster]);
 
-    // ノード再開
+  // ノード再開
   const resumeNode = useCallback((nodeId: string) => {
-      if (!cluster) return;
-      cluster.resumeNode(nodeId);
-      setNodeInfos(cluster.getAllNodeInfo());
+    if (!cluster) return;
+    cluster.resumeNode(nodeId);
+    setNodeInfos(cluster.getAllNodeInfo());
   }, [cluster]);
 
   // コマンド送信
   const sendCommandToLeader = useCallback((command?: string) => {
-      if (!cluster) return;
-      const success = cluster.sendCommandToLeader(command);
-      if (success) {
-          // コマンド送信が成功したら即座に状態を更新（特にログ）
-          setNodeInfos(cluster.getAllNodeInfo());
-          // イベントログも更新されるはずなので取得
-          setEvents([...cluster.eventLog]);
-      }
+    if (!cluster) return;
+    const success = cluster.sendCommandToLeader(command);
+    if (success) {
+      // コマンド送信が成功したら即座に状態を更新（特にログ）
+      setNodeInfos(cluster.getAllNodeInfo());
+      // イベントログも更新されるはずなので取得
+      setEvents([...cluster.eventLog]);
+    }
   }, [cluster]);
 
-   // ノードの位置更新 (D&D用)
-   const updateNodePosition = useCallback((nodeId: string, position: { x: number, y: number }) => {
-        if (!cluster) return;
-        const node = cluster.getNodeById(nodeId);
-        if (node) {
-            node.updatePosition(position);
-            // UI表示のためにnodeInfosを更新
-            setNodeInfos(prevInfos => prevInfos.map(info =>
-                info.id === nodeId ? { ...info, position } : info
-            ));
-        }
-   }, [cluster]);
+  // ノードの位置更新 (D&D用)
+  const updateNodePosition = useCallback((nodeId: string, position: { x: number, y: number }) => {
+    if (!cluster) return;
+    const node = cluster.getNodeById(nodeId);
+    if (node) {
+      node.updatePosition(position);
+      // UI表示のためにnodeInfosを更新
+      setNodeInfos(prevInfos => prevInfos.map(info =>
+        info.id === nodeId ? { ...info, position } : info
+      ));
+    }
+  }, [cluster]);
 
 
   // コンポーネントのアンマウント時にインターバルをクリア

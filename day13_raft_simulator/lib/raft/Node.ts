@@ -52,9 +52,9 @@ export class RaftNode {
   // クラスターへの参照と初期化
   initialize(cluster: { nodes: RaftNode[]; getNodeById: (id: string) => RaftNode | undefined }): void {
     this.cluster = cluster;
-    if (this.state !== 'Stopped') {
-        this.resetElectionTimeout();
-    }
+    // if (this.state !== 'Stopped') {
+    //     this.resetElectionTimeout(); // <<< この行を削除またはコメントアウト
+    // }
   }
 
   // シミュレーションの1ステップを実行
@@ -154,7 +154,7 @@ export class RaftNode {
   // --- 内部ヘルパーメソッド ---
 
   // 選挙タイムアウトをリセットして開始
-  private resetElectionTimeout(): void {
+  public resetElectionTimeout(): void {
     this.clearElectionTimeout();
     const timeout = Math.random() * (this.ELECTION_TIMEOUT_MAX - this.ELECTION_TIMEOUT_MIN) + this.ELECTION_TIMEOUT_MIN;
     this.electionTimeoutId = setTimeout(() => {
@@ -175,7 +175,7 @@ export class RaftNode {
   }
 
   // ハートビートタイマーを開始 (Leader用)
-  private startHeartbeat(): void {
+  public startHeartbeat(): void {
     this.clearHeartbeatTimeout();
     this.sendAppendEntriesToAll(true); // 初回も送信
     this.heartbeatTimeoutId = setInterval(() => {
@@ -196,7 +196,7 @@ export class RaftNode {
   }
 
   // すべてのタイマーをクリア
-  private clearTimeouts(): void {
+  public clearTimeouts(): void {
     this.clearElectionTimeout();
     this.clearHeartbeatTimeout();
   }
