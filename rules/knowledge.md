@@ -1,8 +1,3 @@
----
-description:
-globs:
-alwaysApply: true
----
 # 過去実装したアプリの一覧
 
 | Day | アプリケーション / テーマ        | 主な技術 / コンセプト                                                                 |

@@ -1,0 +1,11 @@
+---
+description: 必ず参照すべきファイル
+globs: **/*
+alwaysApply: true
+---
+
+以下のファイルを参照してください。
+
+@rules/base.md
+@rules/directory-layout.md
+@rules/knowledge.md

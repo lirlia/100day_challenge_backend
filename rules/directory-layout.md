@@ -1,8 +1,3 @@
----
-description: 
-globs: 
-alwaysApply: true
----
 ## ディレクトリ構成
 
 Next.js App Router の標準的な構成をベースに、シンプルさを保ちます。
