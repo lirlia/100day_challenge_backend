@@ -48,21 +48,40 @@ async function getPokemonData(id: number) {
     const pokemon = await pokedex.getPokemonByName(id.toString());
     const species = await pokedex.getPokemonSpeciesByName(id.toString());
 
-    // 日本語名を取得 (存在しない場合は null)
     const nameJaEntry = species.names.find((name) => name.language.name === "ja-Hrkt");
     const nameJa = nameJaEntry ? nameJaEntry.name : null;
 
-    // タイプ名を取得
+    // タイプ名 (英語)
     const types = pokemon.types.map((typeInfo) => typeInfo.type.name);
+    // タイプ名 (日本語)
+    const typesJaPromises = pokemon.types.map(async (typeInfo) => {
+      try {
+        const typeData = await pokedex.getTypeByName(typeInfo.type.name);
+        const jaNameEntry = typeData.names.find(n => n.language.name === 'ja-Hrkt' || n.language.name === 'ja');
+        return jaNameEntry ? jaNameEntry.name : typeInfo.type.name; // 日本語名なければ英語名
+      } catch (err) {
+        console.error(`Error fetching Japanese name for type ${typeInfo.type.name}:`, err);
+        return typeInfo.type.name; // エラー時も英語名
+      }
+    });
+    const typesJa = await Promise.all(typesJaPromises);
 
-    // 特性名を取得
-    const abilities = pokemon.abilities.map(
-      (abilityInfo) => abilityInfo.ability.name
-    );
+    // 特性名 (英語)
+    const abilities = pokemon.abilities.map((abilityInfo) => abilityInfo.ability.name);
+    // 特性名 (日本語)
+    const abilitiesJaPromises = pokemon.abilities.map(async (abilityInfo) => {
+      try {
+        const abilityData = await pokedex.getAbilityByName(abilityInfo.ability.name);
+        const jaNameEntry = abilityData.names.find(n => n.language.name === 'ja-Hrkt' || n.language.name === 'ja');
+        return jaNameEntry ? jaNameEntry.name : abilityInfo.ability.name;
+      } catch (err) {
+        console.error(`Error fetching Japanese name for ability ${abilityInfo.ability.name}:`, err);
+        return abilityInfo.ability.name;
+      }
+    });
+    const abilitiesJa = await Promise.all(abilitiesJaPromises);
 
-    // 画像URLを取得 (公式アートワーク, なければデフォルトスプライト)
     const imageUrl = pokemon.sprites.other?.["official-artwork"]?.front_default ?? pokemon.sprites.front_default;
-
 
     const data = {
       id: pokemon.id,
@@ -70,6 +89,8 @@ async function getPokemonData(id: number) {
       nameJa: nameJa,
       types: types,
       abilities: abilities,
+      typesJa: typesJa,
+      abilitiesJa: abilitiesJa,
       imageUrl: imageUrl,
       height: pokemon.height,
       weight: pokemon.weight,

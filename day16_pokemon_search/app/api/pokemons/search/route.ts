@@ -26,10 +26,12 @@ export async function GET(request: Request) {
   if (query) {
     // bool クエリの should 句で各フィールドに対する match クエリを OR 条件で指定
     esQuery.bool.should = [
-      { match: { name:   { query: query, boost: 2 } } }, // 英語名
-      { prefix: { "nameJa.keyword": { value: query } } }, // prefix クエリに変更 (keyword フィールドを使用)
-      { term:  { types:  { value: query } } }, // タイプ (keyword なので term クエリ)
-      { term:  { abilities: { value: query } } } // 特性 (keyword なので term クエリ)
+      { match:  { name:   { query: query } } }, // 英語名 (boost 削除)
+      { match:  { nameJa: { query: query, boost: 2 } } }, // 日本語名 (match クエリ, boost=2)
+      { term:   { types:  { value: query } } },
+      { term:   { abilities: { value: query } } },
+      { term:   { typesJa: { value: query } } },
+      { term:   { abilitiesJa: { value: query } } }
     ];
     // should 句のいずれか一つにマッチすればよいため、minimum_should_match を 1 に設定
     esQuery.bool.minimum_should_match = 1;

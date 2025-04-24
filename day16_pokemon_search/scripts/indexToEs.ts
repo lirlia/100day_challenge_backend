@@ -67,6 +67,8 @@ async function main() {
             },
             types: { type: "keyword" },
             abilities: { type: "keyword" },
+            typesJa: { type: "keyword" },
+            abilitiesJa: { type: "keyword" },
             imageUrl: { type: "keyword", index: false },
             height: { type: "integer" },
             weight: { type: "integer" },
@@ -90,6 +92,8 @@ async function main() {
         ...doc,
         types: typeof doc.types === 'string' ? JSON.parse(doc.types) : doc.types,
         abilities: typeof doc.abilities === 'string' ? JSON.parse(doc.abilities) : doc.abilities,
+        typesJa: doc.typesJa && typeof doc.typesJa === 'string' ? JSON.parse(doc.typesJa) : doc.typesJa,
+        abilitiesJa: doc.abilitiesJa && typeof doc.abilitiesJa === 'string' ? JSON.parse(doc.abilitiesJa) : doc.abilitiesJa,
       },
     ]);
 

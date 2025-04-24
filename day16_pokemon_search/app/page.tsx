@@ -12,14 +12,20 @@ interface Pokemon {
   imageUrl: string | null;
   height: number | null;
   weight: number | null;
+  typesJa?: string[];
 }
 
-// 初代のタイプ一覧 (英語名)
-const pokemonTypes = [
-  'normal', 'fire', 'water', 'electric', 'grass', 'ice',
-  'fighting', 'poison', 'ground', 'flying', 'psychic', 'bug',
-  'rock', 'ghost', 'dragon', 'dark', 'steel', 'fairy'
-];
+// 英語名と日本語名のマッピング
+const typeMapping: { [key: string]: string } = {
+  normal: 'ノーマル', fire: 'ほのお', water: 'みず', electric: 'でんき',
+  grass: 'くさ', ice: 'こおり', fighting: 'かくとう', poison: 'どく',
+  ground: 'じめん', flying: 'ひこう', psychic: 'エスパー', bug: 'むし',
+  rock: 'いわ', ghost: 'ゴースト', dragon: 'ドラゴン', dark: 'あく',
+  steel: 'はがね', fairy: 'フェアリー'
+};
+
+// 選択肢用の配列 (表示順序維持のため)
+const pokemonTypesForSelect = Object.keys(typeMapping);
 
 export default function Home() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -83,9 +89,9 @@ export default function Home() {
             className="p-2 border rounded bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="">タイプで絞り込み</option>
-            {pokemonTypes.map(type => (
+            {pokemonTypesForSelect.map(type => (
               <option key={type} value={type}>
-                {type.charAt(0).toUpperCase() + type.slice(1)} {/* 先頭大文字 */}
+                {typeMapping[type] || type}
               </option>
             ))}
           </select>
@@ -115,14 +121,21 @@ export default function Home() {
               loading="lazy"
               onError={(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }} // 画像エラー時の代替
             />
-            <h2 className="text-xl font-semibold text-center capitalize mb-1">{pokemon.name}</h2>
-            {pokemon.nameJa && <p className="text-sm text-gray-600 text-center mb-2">{pokemon.nameJa}</p>}
+            <h2 className="text-xl font-semibold text-center mb-1">
+              {pokemon.nameJa || pokemon.name}
+              {pokemon.nameJa && pokemon.name &&
+                <span className="text-sm text-gray-500 font-normal ml-1 capitalize">({pokemon.name})</span>
+              }
+            </h2>
             <div className="flex justify-center gap-1 flex-wrap mb-2">
-              {pokemon.types.map(type => (
-                <span key={type} className={`px-2 py-0.5 rounded-full text-xs text-white type-${type}`}>
-                  {type}
-                </span>
-              ))}
+              {(pokemon.typesJa || pokemon.types).map((type, index) => {
+                const typeEn = pokemon.types[index];
+                return (
+                  <span key={`${type}-${index}`} className={`px-2 py-0.5 rounded-full text-xs text-white type-${typeEn}`}>
+                    {type}
+                  </span>
+                );
+              })}
             </div>
             {/* 必要であれば特性なども表示 */}
             {/* <p className="text-xs text-gray-500">Abilities: {pokemon.abilities.join(', ')}</p> */}

@@ -25,8 +25,10 @@ model Pokemon {
   id          Int      @id // PokeAPI の ID をそのまま使う
   name        String   @unique // 英語名 (例: bulbasaur)
   nameJa      String?  // 日本語名 (例: フシギダネ)
-  types       Json     // タイプ名の配列 (JSON型に変更)
-  abilities   Json     // 特性名の配列 (JSON型に変更)
+  types       Json     // タイプ名の配列 (JSON型, 英語)
+  abilities   Json     // 特性名の配列 (JSON型, 英語)
+  typesJa     Json?    // 日本語タイプ名の配列 (JSON型)
+  abilitiesJa Json?    // 日本語特性名の配列 (JSON型)
   imageUrl    String?  // 画像URL
   height      Int?     // 高さ (decimetres)
   weight      Int?     // 重さ (hectograms)
