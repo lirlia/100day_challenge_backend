@@ -1,0 +1,35 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Pokemon {
+  id          Int      @id // PokeAPI の ID をそのまま使う
+  name        String   @unique // 英語名 (例: bulbasaur)
+  nameJa      String?  // 日本語名 (例: フシギダネ)
+  types       Json     // タイプ名の配列 (JSON型に変更)
+  abilities   Json     // 特性名の配列 (JSON型に変更)
+  imageUrl    String?  // 画像URL
+  height      Int?     // 高さ (decimetres)
+  weight      Int?     // 重さ (hectograms)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}

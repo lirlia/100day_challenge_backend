@@ -1,0 +1,40 @@
+{
+  "name": "day16_pokemon_search",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3001",
+    "build": "next build",
+    "start": "next start",
+    "lint": "biome lint .",
+    "format": "biome format . --write",
+    "check": "biome check --apply .",
+    "es:up": "docker compose up -d --wait",
+    "es:down": "docker compose down",
+    "seed": "tsx scripts/seed.ts",
+    "index-es": "tsx -r dotenv/config scripts/indexToEs.ts"
+  },
+  "dependencies": {
+    "@elastic/elasticsearch": "^8.18.1",
+    "@prisma/client": "^6.6.0",
+    "next": "15.3.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "22.14.1",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "biome": "^0.2.2",
+    "dotenv": "^16.5.0",
+    "prisma": "^6.6.0",
+    "tailwindcss": "^4",
+    "tsx": "^4.16.0",
+    "typescript": "^5"
+  },
+  "prisma": {
+    "seed": "echo \"Run 'npm run seed' instead.\" && exit 1"
+  }
+}

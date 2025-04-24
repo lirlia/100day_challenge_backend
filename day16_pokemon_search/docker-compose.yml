@@ -1,0 +1,33 @@
+version: '3.8'
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.14.0
+    container_name: elasticsearch_day16
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m # メモリ制限 (必要に応じて調整)
+      - ELASTIC_PASSWORD= # xpack.security.enabled=false の場合は不要だが念のため空に
+      - xpack.security.http.ssl.enabled=false
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    command: >
+      bash -c "
+      if [ ! -d /usr/share/elasticsearch/plugins/analysis-kuromoji ]; then
+        echo 'Installing analysis-kuromoji plugin...';
+        elasticsearch-plugin install analysis-kuromoji;
+      fi &&
+      elasticsearch
+      "
+
+volumes:
+  es_data:
+    driver: local
