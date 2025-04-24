@@ -17,18 +17,6 @@ https://github.com/user-attachments/assets/55145312-1435-4a19-997b-8cc38ccfcd17
 - ポケモンデータの検索
 - MCP プロトコルを使用したデータ操作
 
-## ER図
-
-```mermaid
-erDiagram
-    Pokemon {
-        int id PK
-        string name
-        string type
-        int level
-    }
-```
-
 ## シーケンス図
 
 ```mermaid
@@ -36,12 +24,12 @@ sequenceDiagram
     participant User
     participant Client
     participant Server
-    participant Database
+    participant PokemonAPI
 
     User->>Client: リクエスト送信
     Client->>Server: MCPリクエスト
-    Server->>Database: データ取得
-    Database-->>Server: データ返却
+    Server->>PokemonAPI: データ取得
+    PokemonAPI-->>Server: データ返却
     Server-->>Client: MCPレスポンス
     Client-->>User: 結果表示
 ```
