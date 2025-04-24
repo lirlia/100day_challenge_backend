@@ -1,0 +1,61 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ApplicationStatus Enum Definition
+enum ApplicationStatus {
+  APPLIED                       // 申込受付
+  SCREENING                     // 初期審査中
+  IDENTITY_VERIFICATION_PENDING // 本人確認待ち
+  CREDIT_CHECK                  // 信用情報照会中
+  MANUAL_REVIEW                 // 手動審査中
+  APPROVED                      // 承認済み
+  CARD_ISSUING                  // カード発行準備中
+  CARD_SHIPPED                  // カード発送済み
+  ACTIVE                        // 有効化済み
+  REJECTED                      // 否決済み
+  CANCELLED                     // 申込キャンセル
+}
+
+// Credit Card Application Model
+model CreditCardApplication {
+  id             String                @id @default(uuid())
+  applicantName  String
+  applicantEmail String                @unique // Email should be unique for simplicity
+  status         ApplicationStatus     @default(APPLIED)
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  histories      ApplicationHistory[]
+}
+
+// Application History Model
+model ApplicationHistory {
+  id            String             @id @default(uuid())
+  applicationId String
+  fromStatus    ApplicationStatus? // Initial state might be null
+  toStatus      ApplicationStatus
+  timestamp     DateTime           @default(now())
+  notes         String?
+  application   CreditCardApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId, timestamp])
+}
