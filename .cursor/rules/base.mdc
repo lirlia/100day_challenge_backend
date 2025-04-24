@@ -1,6 +1,6 @@
 ---
-description: 
-globs: 
+description:
+globs:
 alwaysApply: true
 ---
 # Your rule content
@@ -24,8 +24,9 @@ alwaysApply: true
 - アーキテクチャはシンプルさを保ち、厳密なレイヤリングは不要です。
 - 起動はローカルでのみ行うためSSLなどは不要です。
 - サーバの起動は別のターミナルで行い、curl などのテストが成立するようにしてください
+  - 起動時は作業をしている dayX_xxxx のディレクトリに移動してから実施してください
+- サーバは localhost:3001 で起動してください
 - 画像は https://picsum.photos のものを直接リンクで使用してください
-- サーバは localhost:3001 で起動てください
 
 ## デザイン
 
