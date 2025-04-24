@@ -99,7 +99,7 @@ alwaysApply: true
 
 8. **ドキュメント作成**
    - README の更新
-   - rules/knowledge.md の更新
+   - .cursor/rules/knowledge.mdc の更新
 
 
 ## 気をつけること
