@@ -1,6 +1,6 @@
 ---
-description: 
-globs: 
+description:
+globs:
 alwaysApply: true
 ---
 # 過去実装したアプリの一覧
@@ -21,3 +21,4 @@ alwaysApply: true
 | 12  | インタラクティブデータエクスプローラ | Next.js, DuckDB, Chart.js, TailwindCSS                                                |
 | 13  | Raft分散合意シミュレータ       | Next.js, TypeScript, TailwindCSS, React DnD, React Context, Raftアルゴリズム視覚化      |
 | 14  | BFF Dashboard               | Next.js, TypeScript, Prisma, SQLite, TailwindCSS, BFFパターン                         |
+| 15  | クレジットカード申請ワークフロー | Next.js, TypeScript, Prisma, SQLite, TailwindCSS, 独自のステート管理                     |
