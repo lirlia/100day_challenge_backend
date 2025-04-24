@@ -90,7 +90,7 @@ export default function Home() {
 
   return (
     <div className="container mx-auto p-4">
-      <h1 className="text-3xl font-bold mb-6 text-center">ポケモン図鑑検索 (Elasticsearch)</h1>
+      <h1 className="text-3xl font-bold mb-6 text-center">Day16 ポケモン図鑑検索 (Elasticsearch)</h1>
 
       {/* 検索フォーム (form タグは残しても良いが onSubmit は不要) */}
       <div className="mb-8 p-4 bg-gray-100 rounded-lg shadow-md">

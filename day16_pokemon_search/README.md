@@ -4,6 +4,11 @@
 Next.js, TypeScript, Prisma (SQLite), Tailwind CSS, Elasticsearch を使用して、ポケモン図鑑検索アプリケーションを開発します。
 PokeAPI から取得したポケモンデータを SQLite に保存し、そのデータを Elasticsearch にインデックスして日本語対応の検索機能を提供します。
 
+
+https://github.com/user-attachments/assets/3893f432-1a53-418f-ae8e-ba0d1931c288
+
+[100日チャレンジ day16](https://zenn.dev/gin_nazo/scraps/b27182c74f3324)
+
 ## 機能一覧
 - ポケモン一覧表示 (Elasticsearch から取得、ID 順)
 - キーワード検索 (Elasticsearch):
