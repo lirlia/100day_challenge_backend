@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, FormEvent } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 // ポケモンの型 (API レスポンスの型)
 interface Pokemon {
@@ -27,17 +27,40 @@ const typeMapping: { [key: string]: string } = {
 // 選択肢用の配列 (表示順序維持のため)
 const pokemonTypesForSelect = Object.keys(typeMapping);
 
+// Debounce hook (カスタムフック)
+function useDebounce<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState<T>(value);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+
+    // コンポーネントのアンマウント時、または value/delay 変更前にタイマーをクリア
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [value, delay]);
+
+  return debouncedValue;
+}
+
 export default function Home() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedType, setSelectedType] = useState('');
   const [pokemons, setPokemons] = useState<Pokemon[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // TODO: Add state for pagination if needed for listing
+
+  // デバウンスされた検索語とタイプを取得 (300ms 遅延)
+  const debouncedSearchTerm = useDebounce(searchTerm, 300);
+  const debouncedSelectedType = useDebounce(selectedType, 300); // タイプ選択もデバウンス
 
   const fetchPokemons = useCallback(async (query: string, type: string) => {
+    // ローディング表示は即時反映させたいので、ここでは isDebouncing は見ない
     setIsLoading(true);
     setError(null);
+    console.log(`Fetching with debounced values: query='${query}', type='${type}'`);
     try {
       const params = new URLSearchParams();
       if (query) params.set('query', query);
@@ -53,28 +76,24 @@ export default function Home() {
     } catch (err: any) {
       console.error("Fetch error:", err);
       setError(err.message || 'An unknown error occurred');
-      setPokemons([]); // エラー時はリストをクリア
+      setPokemons([]);
     } finally {
       setIsLoading(false);
     }
   }, []);
 
-  // 初期表示時に全件取得 (または検索 API で空クエリ)
+  // デバウンスされた値が変更されたら API を呼び出す
   useEffect(() => {
-    fetchPokemons('', ''); // 初回は空クエリで検索
-  }, [fetchPokemons]);
-
-  const handleSearch = (event: FormEvent) => {
-    event.preventDefault();
-    fetchPokemons(searchTerm, selectedType);
-  };
+    // 初回マウント時や値が空の時も検索を実行
+    fetchPokemons(debouncedSearchTerm, debouncedSelectedType);
+  }, [debouncedSearchTerm, debouncedSelectedType, fetchPokemons]);
 
   return (
     <div className="container mx-auto p-4">
       <h1 className="text-3xl font-bold mb-6 text-center">ポケモン図鑑検索 (Elasticsearch)</h1>
 
-      {/* 検索フォーム */}
-      <form onSubmit={handleSearch} className="mb-8 p-4 bg-gray-100 rounded-lg shadow-md">
+      {/* 検索フォーム (form タグは残しても良いが onSubmit は不要) */}
+      <div className="mb-8 p-4 bg-gray-100 rounded-lg shadow-md">
         <div className="flex flex-wrap gap-4 items-center">
           <input
             type="text"
@@ -95,15 +114,8 @@ export default function Home() {
               </option>
             ))}
           </select>
-          <button
-            type="submit"
-            disabled={isLoading}
-            className="p-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isLoading ? '検索中...' : '検索'}
-          </button>
         </div>
-      </form>
+      </div>
 
       {/* 結果表示 */}
       {error && <p className="text-red-500 text-center mb-4">エラー: {error}</p>}
@@ -115,11 +127,11 @@ export default function Home() {
         {pokemons.map((pokemon) => (
           <div key={pokemon.id} className="border rounded-lg p-4 shadow hover:shadow-lg transition-shadow bg-white">
             <img
-              src={pokemon.imageUrl || '/placeholder.png'} // placeholder 画像を用意する場合
+              src={pokemon.imageUrl || '/placeholder.png'}
               alt={pokemon.name}
               className="w-32 h-32 mx-auto mb-2 object-contain"
               loading="lazy"
-              onError={(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }} // 画像エラー時の代替
+              onError={(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }}
             />
             <h2 className="text-xl font-semibold text-center mb-1">
               {pokemon.nameJa || pokemon.name}
@@ -137,20 +149,16 @@ export default function Home() {
                 );
               })}
             </div>
-            {/* 必要であれば特性なども表示 */}
-            {/* <p className="text-xs text-gray-500">Abilities: {pokemon.abilities.join(', ')}</p> */}
           </div>
         ))}
       </div>
 
-      {/* ローディングスピナー (中央表示) */}
+      {/* ローディング表示は isLoading で制御 (変更なし) */}
       {isLoading && (
-        <div className="flex justify-center items-center mt-8">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+        <div className="flex justify-center items-center my-4">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
         </div>
       )}
-
-      {/* TODO: Add pagination controls if using listing API */}
 
       {/* タイプ別背景色定義 (globals.css または style タグ) */}
       <style jsx global>{`

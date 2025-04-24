@@ -1,11 +1,11 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getElasticClient } from "@/lib/elasticsearch";
 // import type { SearchHit } from "@elastic/elasticsearch/lib/api/types"; // パス変更のためコメントアウト
 // import type { SearchHit } from "@elastic/elasticsearch"; // 型インポート削除
 
 const INDEX_NAME = "pokemons";
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   const client = getElasticClient();
   const { searchParams } = new URL(request.url);
   const query = searchParams.get("query") || ""; // 検索キーワード
@@ -19,24 +19,49 @@ export async function GET(request: Request) {
       must: [], // AND 条件
       should: [], // OR 条件 (スコアに影響)
       filter: [], // AND 条件 (スコアに影響しない)
+      minimum_should_match: 1,
     },
   };
 
   // キーワード検索条件
   if (query) {
-    // bool クエリの should 句で各フィールドに対する match クエリを OR 条件で指定
-    esQuery.bool.should = [
-      { match:  { name:   { query: query } } }, // 英語名 (boost 削除)
-      { match:  { nameJa: { query: query, boost: 2 } } }, // 日本語名 (match クエリ, boost=2)
-      { term:   { types:  { value: query } } },
-      { term:   { abilities: { value: query } } },
-      { term:   { typesJa: { value: query } } },
-      { term:   { abilitiesJa: { value: query } } }
-    ];
-    // should 句のいずれか一つにマッチすればよいため、minimum_should_match を 1 に設定
-    esQuery.bool.minimum_should_match = 1;
+    esQuery.bool.should.push(
+      {
+        match: {
+          name: {
+            query: query,
+            boost: 1, // 英語名は boost 1
+          },
+        },
+      },
+      {
+        match: {
+          nameJa: {
+            query: query,
+            boost: 2 // 日本語名は boost 2
+          },
+        },
+      },
+      {
+        term: {
+          types: {
+            value: query,
+          },
+        },
+      },
+      {
+        term: {
+          abilities: {
+            value: query,
+          },
+        },
+      }
+      // TODO: typesJa, abilitiesJa も検索対象に含めるか検討
+    );
   } else {
-    // キーワードがない場合は should 句は空
+    // クエリがない場合は minimum_should_match を 0 にして filter のみ有効にするか、
+    // もしくは should を空にする (タイプ絞り込みのみの場合)
+    esQuery.bool.minimum_should_match = 0; // タイプ絞り込みのみの場合は filter が機能するように
   }
 
   // タイプ絞り込み条件

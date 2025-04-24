@@ -48,6 +48,20 @@ async function main() {
                   "lowercase",
                 ],
               },
+              ngram_analyzer: {
+                type: "custom",
+                tokenizer: "ngram_tokenizer",
+                filter: ["lowercase"]
+              },
+            },
+            tokenizer: {
+              ngram_tokenizer: {
+                type: "ngram",
+                min_gram: 2,
+                max_gram: 2,
+                token_chars: ["letter", "digit", "punctuation", "symbol", "custom"],
+                custom_token_chars: "ー",
+              },
             },
           },
         },
@@ -57,7 +71,7 @@ async function main() {
             name: { type: "keyword" },
             nameJa: {
               type: "text",
-              analyzer: "kuromoji_analyzer",
+              analyzer: "ngram_analyzer",
               fields: {
                 keyword: {
                   type: "keyword",
