@@ -1,5 +1,9 @@
 # Day 15: クレジットカード発行ワークフローシステム
 
+https://github.com/user-attachments/assets/adc79e3e-213a-42a0-a7e0-4da11e1aaee9
+
+[100日チャレンジ day15](https://zenn.dev/gin_nazo/scraps/59c9f6ada2fb25)
+
 ## 1. 概要
 
 クレジットカードの申し込みを受け付け、審査、発行、有効化に至るまでのワークフローを管理するシステムです。ステートマシンを用いて申請の状態遷移を管理し、各段階で実行可能なアクションを制御します。
