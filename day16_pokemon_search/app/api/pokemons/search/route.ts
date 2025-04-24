@@ -88,7 +88,7 @@ export async function GET(request: NextRequest) {
     const result = await client.search({
       index: INDEX_NAME,
       query: finalQuery, // 修正したクエリを使用
-      size: 100,
+      size: 151,
       sort: [
         { _score: { order: "desc" } },
         { id: { order: "asc" } },
