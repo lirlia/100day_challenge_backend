@@ -38,6 +38,7 @@ const actionDisplayNames: Record<ActionName, string> = {
   CancelApplication: '申込キャンセル',
   RejectScreening: '初期審査否決',
   BackToScreening: '初期審査へ差戻し',
+  DeleteApplication: '削除',
 };
 // ---------------------------
 
@@ -50,12 +51,11 @@ export default function AdminPage() {
   const [applications, setApplications] = useState<CreditCardApplication[]>([]);
   const [selectedApplication, setSelectedApplication] = useState<ApplicationWithHistory | null>(null);
   const [newAppName, setNewAppName] = useState('');
-  const [newAppEmail, setNewAppEmail] = useState('');
   const [isLoadingList, setIsLoadingList] = useState(false);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [allowedActions, setAllowedActions] = useState<ActionName[]>([]);
-  const [actionNotes, setActionNotes] = useState(''); // For adding notes during transition
+  const [actionNotes, setActionNotes] = useState('');
 
   // Fetch application list on initial load and after updates
   useEffect(() => {
@@ -113,22 +113,21 @@ export default function AdminPage() {
   const handleCreateApplication = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (!newAppName || !newAppEmail) {
-      setError("Name and Email are required.");
+    if (!newAppName) {
+      setError("Name is required.");
       return;
     }
     try {
       const res = await fetch('/api/applications', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ applicantName: newAppName, applicantEmail: newAppEmail }),
+        body: JSON.stringify({ applicantName: newAppName }),
       });
       if (!res.ok) {
         const errorData = await res.text();
         throw new Error(`Failed to create application: ${res.status} ${errorData}`);
       }
       setNewAppName('');
-      setNewAppEmail('');
       fetchApplications(); // Refresh list
     } catch (err: any) {
       setError(err.message);
@@ -142,31 +141,64 @@ export default function AdminPage() {
     setSelectedApplication({ ...app, histories: selectedApplication?.id === app.id ? selectedApplication.histories : [] });
   };
 
-  const handlePerformAction = async (action: ActionName) => {
+  const handleDeleteApplication = async () => {
     if (!selectedApplication) return;
+
+    // Confirmation dialog
+    if (!window.confirm(`本当に申請 ID: ${selectedApplication.id.substring(0, 8)}... を削除しますか？`)) {
+      return;
+    }
+
     setError(null);
-    setIsLoadingDetail(true); // Indicate loading during action
+    setIsLoadingDetail(true); // Use loading state for delete action
     try {
-      const res = await fetch(`/api/applications/${selectedApplication.id}`,
-        {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action, notes: actionNotes }),
-        }
-      );
+      const res = await fetch(`/api/applications/${selectedApplication.id}`, {
+        method: 'DELETE',
+      });
+
       if (!res.ok) {
         const errorData = await res.text();
-        throw new Error(`Action '${action}' failed: ${res.status} ${errorData}`);
+        // Handle 404 specifically if needed, though button shouldn't show if already deleted?
+        throw new Error(`削除に失敗しました: ${res.status} ${errorData || 'Unknown error'}`);
       }
-      // Success: Fetch updated details to reflect the new state
+
+      // Success: Clear selection and refresh list
+      setSelectedApplication(null);
+      await fetchApplications();
+
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setIsLoadingDetail(false);
+    }
+  };
+
+  const handlePerformAction = async (action: ActionName) => {
+    if (!selectedApplication) return;
+    // Prevent trying to PATCH with DeleteApplication
+    if (action === 'DeleteApplication') {
+      console.warn('Delete action should use handleDeleteApplication');
+      return;
+    }
+    setError(null);
+    setIsLoadingDetail(true);
+    try {
+      const res = await fetch(`/api/applications/${selectedApplication.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, notes: actionNotes }),
+      });
+      if (!res.ok) {
+        const errorData = await res.text();
+        throw new Error(`アクション '${actionDisplayNames[action]}' に失敗しました: ${res.status} ${errorData}`);
+      }
       await fetchApplicationDetail(selectedApplication.id);
-      setActionNotes(''); // Clear notes field
-      // Also refresh the main list in case status changed
+      setActionNotes('');
       await fetchApplications();
     } catch (err: any) {
       setError(err.message);
     } finally {
-      // Keep loading state until fetchApplicationDetail finishes in success/error cases
+      // Keep loading state
     }
   };
 
@@ -179,6 +211,7 @@ export default function AdminPage() {
 
         {/* Create New Application Form */}
         <div className="mb-6 p-4 bg-white rounded shadow">
+          <h2 className="text-xl font-semibold mb-2">Create New Application</h2>
           <form onSubmit={handleCreateApplication} className="space-y-2">
             <div>
               <label htmlFor="appName" className="block text-sm font-medium text-gray-700">Applicant Name:</label>
@@ -187,17 +220,6 @@ export default function AdminPage() {
                 id="appName"
                 value={newAppName}
                 onChange={(e) => setNewAppName(e.target.value)}
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                required
-              />
-            </div>
-            <div>
-              <label htmlFor="appEmail" className="block text-sm font-medium text-gray-700">Applicant Email:</label>
-              <input
-                type="email"
-                id="appEmail"
-                value={newAppEmail}
-                onChange={(e) => setNewAppEmail(e.target.value)}
                 className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
                 required
               />
@@ -214,7 +236,7 @@ export default function AdminPage() {
         {/* Application List */}
         <div className="mb-6 p-4 bg-white rounded shadow">
           <h2 className="text-xl font-semibold mb-2">Applications</h2>
-          {isLoadingList && <p>Loading applications...</p>}
+          {/* {isLoadingList && <p>Loading applications...</p>} */}
           {error && <p className="text-red-500">Error: {error}</p>}
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
@@ -249,19 +271,19 @@ export default function AdminPage() {
         {selectedApplication && (
           <div className="p-4 bg-white rounded shadow">
             <h2 className="text-xl font-semibold mb-2">Details (ID: {selectedApplication.id.substring(0, 8)}...)</h2>
-            {isLoadingDetail && <p>Loading details...</p>}
-            <p><strong>Applicant:</strong> {selectedApplication.applicantName} ({selectedApplication.applicantEmail})</p>
+            {/* {isLoadingDetail && <p>Loading details...</p>} */}
+            <p><strong>Applicant:</strong> {selectedApplication.applicantName}</p>
             <p><strong>Status:</strong> <span className="font-semibold">{statusDisplayNames[selectedApplication.status]}</span></p>
             <p><strong>Created:</strong> {new Date(selectedApplication.createdAt).toLocaleString()}</p>
             <p><strong>Updated:</strong> {new Date(selectedApplication.updatedAt).toLocaleString()}</p>
 
-            {/* Action Buttons */}
+            {/* State Transition Action Buttons */}
             <div className="mt-4">
-              <h3 className="text-lg font-semibold mb-2">Perform Action:</h3>
+              <h3 className="text-lg font-semibold mb-2">状態遷移アクション:</h3>
               {allowedActions.length > 0 ? (
                 <div className="space-y-2">
                   <textarea
-                    placeholder="Add optional notes for this transition..."
+                    placeholder="任意: 状態遷移に関するメモ..."
                     value={actionNotes}
                     onChange={(e) => setActionNotes(e.target.value)}
                     rows={2}
@@ -272,7 +294,7 @@ export default function AdminPage() {
                       <button
                         key={action}
                         onClick={() => handlePerformAction(action)}
-                        className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
+                        className={`px-3 py-1 text-white rounded hover:opacity-80 disabled:opacity-50 bg-green-600`}
                         disabled={isLoadingDetail}
                       >
                         {actionDisplayNames[action]}
@@ -281,8 +303,22 @@ export default function AdminPage() {
                   </div>
                 </div>
               ) : (
-                <p className="text-gray-500">No actions available for the current status.</p>
+                <p className="text-gray-500">現在の状態から実行可能な状態遷移はありません。</p>
               )}
+            </div>
+
+            {/* Delete Action Button (Always shown when selected, separated) */}
+            <div className="mt-6 border-t pt-4">
+              <h3 className="text-lg font-semibold mb-2 text-red-700">削除アクション:</h3>
+              <button
+                key="DeleteApplicationButton"
+                onClick={handleDeleteApplication}
+                className={`px-3 py-1 text-white rounded hover:opacity-80 disabled:opacity-50 bg-red-600`}
+                disabled={isLoadingDetail}
+              >
+                {actionDisplayNames['DeleteApplication']}
+              </button>
+              <p className="text-xs text-gray-500 mt-1">注意: この操作は元に戻せません。</p>
             </div>
 
             {/* History */}

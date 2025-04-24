@@ -21,17 +21,16 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { applicantName, applicantEmail } = body;
+    const { applicantName } = body;
 
-    if (!applicantName || !applicantEmail) {
-      return new NextResponse("Name and email are required", { status: 400 });
+    if (!applicantName) {
+      return new NextResponse("Name is required", { status: 400 });
     }
 
     // 最初の状態遷移履歴も同時に作成する
     const newApplication = await prisma.creditCardApplication.create({
       data: {
         applicantName,
-        applicantEmail,
         status: ApplicationStatus.APPLIED, // 初期状態
         histories: {
           create: [
@@ -50,16 +49,6 @@ export async function POST(req: Request) {
 
     return NextResponse.json(newApplication, { status: 201 });
   } catch (error: any) {
-    // Prisma のユニーク制約違反エラーハンドリング (メールアドレス重複)
-    if (error instanceof Prisma.PrismaClientKnownRequestError) {
-      // Check if target exists and is an array before calling includes
-      if (error.code === 'P2002' &&
-          error.meta?.target &&
-          Array.isArray(error.meta.target) &&
-          error.meta.target.includes('applicantEmail')) {
-        return new NextResponse("Email address already in use", { status: 409 }); // Conflict
-      }
-    }
     console.error("[API_APPLICATIONS_POST]", error);
     return new NextResponse("Internal Server Error", { status: 500 });
   }

@@ -40,7 +40,6 @@ enum ApplicationStatus {
 model CreditCardApplication {
   id             String                @id @default(uuid())
   applicantName  String
-  applicantEmail String                @unique // Email should be unique for simplicity
   status         ApplicationStatus     @default(APPLIED)
   createdAt      DateTime              @default(now())
   updatedAt      DateTime              @updatedAt

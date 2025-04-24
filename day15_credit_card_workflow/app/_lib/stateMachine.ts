@@ -18,7 +18,8 @@ export type ActionName =
   | 'ActivateCard'
   | 'CancelApplication'
   | 'RejectScreening'
-  | 'BackToScreening';
+  | 'BackToScreening'
+  | 'DeleteApplication';
 
 // 状態遷移ルール: Map<現在の状態, Map<アクション名, 次の状態>>
 const transitions = new Map<ApplicationStatus, Map<ActionName, ApplicationStatus>>();
@@ -31,7 +32,7 @@ transitions.set(ApplicationStatus.APPLIED, new Map([
 
 transitions.set(ApplicationStatus.SCREENING, new Map([
   ['RequestIdentityVerification', ApplicationStatus.IDENTITY_VERIFICATION_PENDING],
-  ['StartCreditCheck', ApplicationStatus.CREDIT_CHECK], // 本人確認不要の場合
+  ['StartCreditCheck', ApplicationStatus.CREDIT_CHECK],
   ['RejectScreening', ApplicationStatus.REJECTED],
   ['CancelApplication', ApplicationStatus.CANCELLED],
 ]));
@@ -52,7 +53,7 @@ transitions.set(ApplicationStatus.CREDIT_CHECK, new Map([
 transitions.set(ApplicationStatus.MANUAL_REVIEW, new Map([
   ['ApproveManually', ApplicationStatus.APPROVED],
   ['RejectManually', ApplicationStatus.REJECTED],
-  ['BackToScreening', ApplicationStatus.SCREENING], // 差戻し
+  ['BackToScreening', ApplicationStatus.SCREENING],
   ['CancelApplication', ApplicationStatus.CANCELLED],
 ]));
 
@@ -69,6 +70,7 @@ transitions.set(ApplicationStatus.CARD_SHIPPED, new Map([
 ]));
 
 // ACTIVE, REJECTED, CANCELLED からの遷移は定義しない（終端状態）
+// Resetもこれらの状態からは許可しない (addResetTransition で制御)
 
 /**
  * 指定されたアクションが現在の状態から可能か検証し、可能であれば次の状態を返す
@@ -98,12 +100,13 @@ export function canTransition(
 }
 
 /**
- * 指定された状態から実行可能なアクション名のリストを取得する
- * （UIでボタンを表示するために使用）
- * @param currentStatus 現在の状態
- * @returns 実行可能なアクション名の配列
+ * 指定された状態から実行可能な「状態遷移」アクション名のリストを取得する
+ * (削除アクションは含まない)
  */
 export function getAllowedActions(currentStatus: ApplicationStatus): ActionName[] {
-    const possibleActions = transitions.get(currentStatus);
-    return possibleActions ? Array.from(possibleActions.keys()) : [];
+    const possibleStateTransitions = transitions.get(currentStatus);
+    const allowed = possibleStateTransitions ? Array.from(possibleStateTransitions.keys()) : [];
+
+    // Filter out DeleteApplication just in case it was accidentally added to transitions map
+    return allowed.filter(action => action !== 'DeleteApplication');
 }

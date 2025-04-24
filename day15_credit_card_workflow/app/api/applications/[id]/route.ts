@@ -41,8 +41,8 @@ export async function PATCH(
 ) {
   try {
     // Ensure params are awaited before accessing properties in newer Next.js versions
-    await params;
-    const id = params.id;
+    const awaitedParams = await params;
+    const id = awaitedParams.id;
     // In Next.js 15+, route params might be async, ensure awaited if needed
     // await params; // Uncomment if using Next.js 15+ features causing issues
 
@@ -101,6 +101,36 @@ export async function PATCH(
   } catch (error) {
     console.error("[API_APPLICATIONS_ID_PATCH]", error);
     // エラーハンドリング (例: DBエラーなど) をここに追加可能
+    return new NextResponse("Internal Server Error", { status: 500 });
+  }
+}
+
+// DELETE /api/applications/[id] - 申請を削除
+export async function DELETE(
+  req: Request,
+  { params }: { params: { id: string } }
+) {
+  try {
+    // Ensure params are awaited before accessing properties in newer Next.js versions
+    await params;
+    const id = params.id;
+
+    // Check if application exists before trying to delete (optional but good practice)
+    const application = await prisma.creditCardApplication.findUnique({ where: { id } });
+    if (!application) {
+      return new NextResponse("Application not found", { status: 404 });
+    }
+
+    // Delete the application
+    // Related ApplicationHistory records will be deleted automatically due to onDelete: Cascade
+    await prisma.creditCardApplication.delete({
+        where: { id }
+    });
+
+    return new NextResponse(null, { status: 204 }); // No Content on successful deletion
+
+  } catch (error) {
+    console.error("[API_APPLICATIONS_ID_DELETE]", error);
     return new NextResponse("Internal Server Error", { status: 500 });
   }
 }
