@@ -4,14 +4,13 @@ Please refer to the information under the `rules` directory for detailed guideli
 
 ## Directory Structure
 ```
-/rules
-  ├── rule1.md
-  ├── rule2.md
+/.cursor/rules
+  ├── rule1.mdc
+  ├── rule2.mdc
   └── ...
 ```
 
 Ensure to review the files in the `rules` directory for specific details.
-
 
 ## base rule
 
