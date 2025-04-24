@@ -3,7 +3,10 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
+	"sync"
 
+	pokego "github.com/JoshGuarino/PokeGo/pkg"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
@@ -11,53 +14,71 @@ import (
 func main() {
 	// Create a new MCP server
 	s := server.NewMCPServer(
-		"Calculator Demo",
+		"Pokemon Demo",
 		"1.0.0",
 		server.WithResourceCapabilities(true, true),
 		server.WithLogging(),
 		server.WithRecovery(),
 	)
+	client := pokego.NewClient()
 
-	// Add a calculator tool
-	calculatorTool := mcp.NewTool("calculate",
-		mcp.WithDescription("Perform basic arithmetic operations"),
-		mcp.WithString("operation",
+	pokemonList, err := client.Pokemon.GetPokemonSpeciesList(150, 0)
+	if err != nil {
+		fmt.Printf("Error fetching Pokémon list: %v\n", err)
+		return
+	}
+
+	pokemons := []string{}
+	mu := sync.Mutex{}
+	wg := &sync.WaitGroup{}
+
+	wg.Add(len(pokemonList.Results))
+	for _, pokemon := range pokemonList.Results {
+		go func(pokemonName string) {
+			species, err := client.Pokemon.GetPokemonSpecies(pokemonName)
+			if err != nil {
+				wg.Done()
+				return
+			}
+			jaName := ""
+			for _, n := range species.Names {
+				if n.Language.Name == "ja" || n.Language.Name == "ja-Hrkt" {
+					jaName = n.Name
+					break
+				}
+			}
+			if jaName == "" {
+				jaName = pokemonName // fallback to English name
+			}
+			mu.Lock()
+			pokemons = append(pokemons, jaName)
+			mu.Unlock()
+			wg.Done()
+		}(pokemon.Name)
+	}
+	wg.Wait()
+
+	pokemonTool := mcp.NewTool("pokemon",
+		mcp.WithDescription("return pokemon"),
+		mcp.WithString("pokemon name",
 			mcp.Required(),
-			mcp.Description("The operation to perform (add, subtract, multiply, divide)"),
-			mcp.Enum("add", "subtract", "multiply", "divide"),
-		),
-		mcp.WithNumber("x",
-			mcp.Required(),
-			mcp.Description("First number"),
-		),
-		mcp.WithNumber("y",
-			mcp.Required(),
-			mcp.Description("Second number"),
+			mcp.Description("Name of the Pokémon"),
 		),
 	)
 
 	// Add the calculator handler
-	s.AddTool(calculatorTool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		op := request.Params.Arguments["operation"].(string)
-		x := request.Params.Arguments["x"].(float64)
-		y := request.Params.Arguments["y"].(float64)
+	s.AddTool(pokemonTool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		name := request.Params.Arguments["pokemon name"].(string)
 
-		var result float64
-		switch op {
-		case "add":
-			result = x + y
-		case "subtract":
-			result = x - y
-		case "multiply":
-			result = x * y
-		case "divide":
-			if y == 0 {
-				return mcp.NewToolResultError("cannot divide by zero"), nil
+		result := []string{}
+		for _, pokemon := range pokemons {
+			// 一部でも含んでいたら返す
+			if strings.Contains(pokemon, name) {
+				result = append(result, pokemon)
 			}
-			result = x / y
 		}
 
-		return mcp.NewToolResultText(fmt.Sprintf("%.2f", result)), nil
+		return mcp.NewToolResultText(strings.Join(result, "\n")), nil
 	})
 
 	// Start the server

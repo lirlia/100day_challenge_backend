@@ -2,7 +2,10 @@ module day17
 
 go 1.24.2
 
-require github.com/mark3labs/mcp-go v0.23.1
+require (
+	github.com/JoshGuarino/PokeGo v1.0.1
+	github.com/mark3labs/mcp-go v0.23.1
+)
 
 require (
 	github.com/google/uuid v1.6.0 // indirect
