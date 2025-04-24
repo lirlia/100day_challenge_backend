@@ -4,6 +4,11 @@
 
 このアプリケーションは、Backend for Frontend (BFF) パターンを実装したシンプルなダッシュボードです。フロントエンド (Next.js App Router ページ) は単一の BFF API エンドポイントにリクエストを送信し、BFF は複数のコア API から必要なデータを集約してフロントエンドに返します。これにより、フロントエンドの負荷軽減と関心事の分離を目指します。
 
+
+https://github.com/user-attachments/assets/eddcd447-bfd4-4fdf-8015-c166d496f61d
+
+[100日チャレンジ day14](https://zenn.dev/gin_nazo/scraps/a1f3424135b058)
+
 ## 主な機能
 
 -   ユーザー固有のダッシュボード情報を表示
