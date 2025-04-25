@@ -1,0 +1,52 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id       Int       @id @default(autoincrement())
+  email    String    @unique
+  name     String?
+  posts    Post[] // ユーザーが作成した投稿 (1対多)
+  comments Comment[] // ユーザーが作成したコメント (1対多)
+  profile  Profile? // ユーザーのプロフィール (1対1)
+}
+
+model Profile {
+  id     Int     @id @default(autoincrement())
+  bio    String?
+  userId Int     @unique // Userへのリレーション (必須)
+  user   User    @relation(fields: [userId], references: [id])
+}
+
+model Post {
+  id        Int       @id @default(autoincrement())
+  title     String
+  content   String?
+  published Boolean   @default(false)
+  authorId  Int // Userへのリレーション (必須)
+  author    User      @relation(fields: [authorId], references: [id])
+  comments  Comment[] // 投稿へのコメント (1対多)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Comment {
+  id        Int      @id @default(autoincrement())
+  text      String
+  postId    Int // Postへのリレーション (必須)
+  post      Post     @relation(fields: [postId], references: [id])
+  authorId  Int // Userへのリレーション (必須)
+  author    User     @relation(fields: [authorId], references: [id])
+  createdAt DateTime @default(now())
+}
