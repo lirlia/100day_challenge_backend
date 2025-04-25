@@ -10,16 +10,16 @@ async function main() {
   await prisma.post.deleteMany({});
   await prisma.profile.deleteMany({});
   await prisma.user.deleteMany({});
-  console.log('Deleted existing data.');
+  console.log('既存データを削除しました。');
 
-  // Create Users and Profiles
+  // ユーザーとプロフィールを作成
   const alice = await prisma.user.create({
     data: {
       email: 'alice@example.com',
-      name: 'Alice',
+      name: 'アリス',
       profile: {
         create: {
-          bio: 'Loves coding and cats.',
+          bio: 'コードを書くのと猫が好きです。',
         },
       },
     },
@@ -29,10 +29,10 @@ async function main() {
   const bob = await prisma.user.create({
     data: {
       email: 'bob@example.com',
-      name: 'Bob',
+      name: 'ボブ',
       profile: {
         create: {
-          bio: 'Enjoys hiking and photography.',
+          bio: 'ハイキングと写真撮影が好きです。',
         },
       },
     },
@@ -42,18 +42,18 @@ async function main() {
   const charlie = await prisma.user.create({
     data: {
       email: 'charlie@example.com',
-      name: 'Charlie',
-      // Charlie has no profile initially
+      name: 'チャーリー',
+      // チャーリーは初期プロフィールなし
     },
   });
 
   console.log({ alice, bob, charlie });
 
-  // Create Posts
+  // 投稿を作成
   const post1 = await prisma.post.create({
     data: {
-      title: 'First Post by Alice',
-      content: 'This is the content of the first post.',
+      title: 'アリスの最初の投稿',
+      content: 'これは最初の投稿の内容です。',
       published: true,
       authorId: alice.id,
     },
@@ -61,8 +61,8 @@ async function main() {
 
   const post2 = await prisma.post.create({
     data: {
-      title: "Bob's Adventure",
-      content: 'Exploring the mountains.',
+      title: 'ボブの冒険',
+      content: '山を探検中。',
       published: true,
       authorId: bob.id,
     },
@@ -70,8 +70,8 @@ async function main() {
 
   const post3 = await prisma.post.create({
     data: {
-      title: "Alice's Second Post",
-      content: 'More thoughts on coding.',
+      title: 'アリスの2番目の投稿',
+      content: 'コーディングについてもう少し。',
       published: false,
       authorId: alice.id,
     },
@@ -79,10 +79,10 @@ async function main() {
 
   console.log({ post1, post2, post3 });
 
-  // Create Comments
+  // コメントを作成
   const comment1 = await prisma.comment.create({
     data: {
-      text: 'Great post, Alice!',
+      text: '素晴らしい投稿ですね、アリスさん！',
       postId: post1.id,
       authorId: bob.id,
     },
@@ -90,7 +90,7 @@ async function main() {
 
   const comment2 = await prisma.comment.create({
     data: {
-      text: 'Interesting perspective.',
+      text: '興味深い視点です。',
       postId: post1.id,
       authorId: charlie.id,
     },
@@ -98,7 +98,7 @@ async function main() {
 
   const comment3 = await prisma.comment.create({
     data: {
-      text: 'Amazing photos!',
+      text: 'すごい写真！',
       postId: post2.id,
       authorId: alice.id,
     },
