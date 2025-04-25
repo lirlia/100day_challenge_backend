@@ -4,81 +4,88 @@ Stripe API の `expand` パラメータのように、関連データを動的�
 
 ## 機能
 
-- 投稿 (`Post`)、ユーザー (`User`)、プロフィール (`Profile`)、コメント (`Comment`) の CRUD API (GET のみ実装)
-- GET リクエスト時に `expand` クエリパラメータで関連データを指定して展開
-  - 例: `/api/posts?expand=author,comments`
-- `max_depth` クエリパラメータで展開する階層の深さを制限
-  - 例: `/api/posts?expand=comments.author.profile&max_depth=2` (コメントの作者プロフィールは展開されない)
-
-## 技術スタック
-
-- Next.js (App Router)
-- TypeScript
-- Prisma
-- SQLite
-- Tailwind CSS
+- 投稿 (`Post`)、ユーザー (`User`)、プロフィール (`Profile`)、コメント (`Comment`) のデータモデルに基づいた REST API。
+- `/api/posts` エンドポイントで投稿一覧を取得。
+- GET リクエスト時に `expand` クエリパラメータで関連データを指定して展開。
+  - カンマ区切りで複数の関連を指定可能。
+  - ドット (`.`) でネストした関連を指定可能 (例: `comments.author`)。
+- `max_depth` クエリパラメータで展開する階層の深さを制限 (デフォルト: 2)。
 
 ## アプリケーション概要
 
-*ここに、この日に作成するアプリケーションの簡単な説明を記述します。*
+このアプリケーションは、ブログ投稿とその関連データ（著者、コメント、プロファイル）を管理するシンプルなシステムです。最大の特徴は、`/api/posts` エンドポイントにおいて `expand` と `max_depth` クエリパラメータを使用することで、取得するデータの構造を柔軟に制御できる点です。これにより、クライアントは必要なデータだけを効率的に取得できます。
+ルートページ (`/`) では、この機能を利用した投稿一覧が表示され、チェックボックスで展開する関連データをインタラクティブに選択できます。
 
-## 機能一覧
+## API エンドポイント
 
-*ここに、実装した機能の一覧を記述します。*
+### `GET /api/posts`
 
-- 機能1
-- 機能2
-- ...
+投稿の一覧を取得します。
 
-## ER図
+#### クエリパラメータ
 
-*ここに、Mermaid 形式で ER 図を記述します。*
+- `expand` (string, オプショナル):
+  - カンマ区切りで展開したい関連名を指定します。
+  - ネストした関連はドット (`.`) で繋げます。
+  - 指定可能な関連名: `author`, `comments`, `comments.author`, `comments.author.profile` など (スキーマに定義されているもの)
+  - 例: `/api/posts?expand=author` (各投稿に著者情報を付与)
+  - 例: `/api/posts?expand=author,comments.author` (各投稿に著者情報と、各コメントにそのコメントの著者情報を付与)
+- `max_depth` (number, オプショナル):
+  - `expand` で展開する階層の最大深度を指定します。
+  - デフォルトは `2` です。
+  - 例: `/api/posts?expand=comments.author.profile&max_depth=3` (コメントの著者のプロフィールまで展開)
+  - 例: `/api/posts?expand=comments.author.profile&max_depth=2` (コメントの著者まで展開、プロフィールは展開されない)
 
-```mermaid
-erDiagram
-    // 例: User モデル
-    User {
-        int id PK
-        string name
-        datetime createdAt
-        datetime updatedAt
-    }
+#### レスポンス
+
+- 成功時 (200 OK): Post オブジェクトの配列。`expand` パラメータに基づいて関連データが含まれます。
+- エラー時 (500 Internal Server Error): エラー情報を含む JSON オブジェクト。
+
+## データモデル (Prisma)
+
+```prisma
+model User {
+  id       Int       @id @default(autoincrement())
+  email    String    @unique
+  name     String?
+  posts    Post[]
+  comments Comment[]
+  profile  Profile?
+}
+
+model Profile {
+  id     Int     @id @default(autoincrement())
+  bio    String?
+  userId Int     @unique
+  user   User    @relation(fields: [userId], references: [id])
+}
+
+model Post {
+  id        Int       @id @default(autoincrement())
+  title     String
+  content   String?
+  published Boolean   @default(false)
+  authorId  Int
+  author    User      @relation(fields: [authorId], references: [id])
+  comments  Comment[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Comment {
+  id        Int      @id @default(autoincrement())
+  text      String
+  postId    Int
+  post      Post     @relation(fields: [postId], references: [id])
+  authorId  Int
+  author    User     @relation(fields: [authorId], references: [id])
+  createdAt DateTime @default(now())
+}
 ```
-
-## シーケンス図 (オプション)
-
-*必要であれば、主要な処理フローのシーケンス図を Mermaid 形式で記述します。*
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant Frontend
-    participant API
-    participant Database
-
-    User->>Frontend: 操作
-    Frontend->>API: リクエスト
-    API->>Database: データ操作
-    Database-->>API: 結果
-    API-->>Frontend: レスポンス
-    Frontend-->>User: 表示更新
-```
-
-## データモデル
-
-*ここに、主要なデータモデルの概要を記述します。*
-
-- モデル1: 説明
-- モデル2: 説明
-- ...
 
 ## 画面構成
 
-*ここに、作成する主要な画面とその概要を記述します。*
-
-- 画面1: 説明
-- 画面2: 説明
-- ...
+- `/`: 投稿一覧ページ。投稿のタイトル、内容、作成者、コメントなどを表示します。ページ上部のチェックボックスで、表示する関連データ（`expand` パラメータ）を動的に変更できます。
 
 ## 使用技術スタック (テンプレート標準)
 
@@ -100,8 +107,10 @@ sequenceDiagram
 
 2. **データベースの準備**
    ```bash
-   # 初回またはスキーマ変更時
-   npm run db:seed
+   # スキーマをDBに適用
+   npx prisma migrate deploy
+   # シードデータを投入 (既存データは削除されます)
+   npx prisma db seed
    ```
 
 3. **開発サーバーを起動**
@@ -115,3 +124,4 @@ sequenceDiagram
 - このテンプレートはローカル開発環境を主眼としています。
 - 本番デプロイには追加の考慮が必要です。
 - エラーハンドリングやセキュリティは簡略化されています。
+- Linter エラー (Prisma 型インポート) が残っていますが、動作には影響しない見込みです。
