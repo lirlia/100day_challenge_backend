@@ -2,6 +2,10 @@
 
 Stripe API の `expand` パラメータのように、関連データを動的に展開できる REST API を実装します。
 
+https://github.com/user-attachments/assets/c130485b-7fa5-4929-90ff-760a053e4215
+
+[100日チャレンジ day18](https://zenn.dev/gin_nazo/scraps/f84a82218807b9)
+
 ## 機能
 
 - 投稿 (`Post`)、ユーザー (`User`)、プロフィール (`Profile`)、コメント (`Comment`) のデータモデルに基づいた REST API。
