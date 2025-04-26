@@ -9,4 +9,4 @@ LLMで生成したコードを置いています。
 
 
 コードベースの詳細はこちら
-https://github.com/lirlia/100day_challenge_backend
+- https://deepwiki.com/lirlia/100day_challenge_backend
