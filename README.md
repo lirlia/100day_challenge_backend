@@ -6,3 +6,7 @@ LLMで生成したコードを置いています。
 質が悪いです。
 
 嘘のREADMEがあったりするので信用しないでください。
+
+
+コードベースの詳細はこちら
+https://github.com/lirlia/100day_challenge_backend
