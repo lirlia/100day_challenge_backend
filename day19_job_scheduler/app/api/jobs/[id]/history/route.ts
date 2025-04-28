@@ -28,6 +28,16 @@ export async function GET(
     const history = await prisma.jobHistory.findMany({
       where: { jobId: id },
       orderBy: { startedAt: 'desc' },
+      select: {
+        id: true,
+        jobId: true,
+        startedAt: true,
+        finishedAt: true,
+        status: true,
+        output: true,
+        error: true,
+        createdAt: true
+      }
     });
 
     return NextResponse.json<ApiResponse<typeof history>>({

@@ -1,98 +1,84 @@
 # Day19 - ジョブスケジューラ
 
-このプロジェクトは [Next.js](https://nextjs.org) (App Router)、TypeScript、Prisma、SQLite を使用した簡易的なジョブスケジューラです。タスクを定期的または特定の時間に実行するスケジューリング機能を提供します。
+このアプリケーションは、定期的なタスク実行を管理するためのジョブスケジューラシステムです。バックエンドのメンテナンスやデータ処理などの定期的なタスクを自動化するのに役立ちます。
 
-## アプリケーション概要
+https://github.com/user-attachments/assets/064ef09e-0cb2-4986-a946-e8e05530945f
 
-シンプルなジョブスケジューラシステムで、ユーザーがタスクを登録し、一定の時間間隔または特定の時間に実行されるようスケジュールできるアプリケーションです。ジョブの実行はシミュレーションとして表現され、実行履歴がデータベースに記録されます。
+[100日チャレンジ day19 (ジョブスケジューラー)](https://zenn.dev/gin_nazo/scraps/0b7c4232cf4a15)
 
-## 機能一覧
+## 主な機能
 
-- ジョブの作成・編集・削除
-- スケジュール設定（一回のみ実行、定期実行）
-- ジョブの有効/無効切り替え
-- ジョブの手動実行
-- ジョブの実行履歴表示
-- ジョブのステータス管理（待機中、実行中、成功、失敗）
+- **ジョブ作成・管理**: コマンド、実行スケジュール、説明などを含むジョブを作成・管理
+- **さまざまなスケジュールタイプ**:
+  - 一度だけ実行（once）
+  - 間隔実行（interval）- 秒、分、時間、日単位で設定可能
+  - （将来拡張）クロン式（cron）- より複雑なスケジュール設定が可能
+- **ジョブの有効化・無効化**: 任意のタイミングでジョブを一時停止/再開
+- **手動実行**: スケジュールとは別に、必要に応じてジョブを手動で即時実行
+- **実行履歴**: 各ジョブの実行履歴（開始・終了時間、成功/失敗のステータス、出力/エラーメッセージ）を記録
+- **スケジューラエンジン**: 実行時間が到来したジョブを自動的に検知して実行
 
-## ER図
+## 技術スタック
 
-```mermaid
-erDiagram
-    Job {
-        String id PK
-        String name
-        String description
-        String command
-        String scheduleType
-        DateTime scheduledAt
-        Int interval
-        String intervalUnit
-        Boolean isActive
-        DateTime lastRunAt
-        DateTime nextRunAt
-        DateTime createdAt
-        DateTime updatedAt
-    }
-    
-    JobHistory {
-        String id PK
-        String jobId FK
-        DateTime startedAt
-        DateTime finishedAt
-        String status
-        String log
-        DateTime createdAt
-    }
-    
-    Job ||--o{ JobHistory : "has"
-```
+- **フレームワーク**: Next.js (App Router)
+- **言語**: TypeScript
+- **データベース**: SQLite（Prisma ORM経由でアクセス）
+- **UIフレームワーク**: Tailwind CSS
+- **ジョブ実行**: Node.js の child_process モジュールを使用
 
 ## データモデル
 
-- **Job**: ジョブの基本情報とスケジュール設定を管理
-  - スケジュールタイプ: 'once'(一回のみ) または 'interval'(定期実行)
-  - 間隔単位: 'minute', 'hour', 'day'
+### Job（ジョブ）
 
-- **JobHistory**: ジョブの実行履歴
-  - ステータス: 'running', 'success', 'failed'
+- `id`: ジョブの一意識別子
+- `name`: ジョブの名前
+- `description`: ジョブの説明
+- `command`: 実行するコマンド
+- `scheduleType`: スケジュールタイプ（'once', 'interval', 'cron'）
+- `scheduledAt`: 一度だけ実行の場合の実行予定時間
+- `interval`: 間隔実行の場合の間隔値
+- `intervalUnit`: 間隔の単位（'seconds', 'minutes', 'hours', 'days'）
+- `isActive`: ジョブの有効/無効状態
+- `lastRunAt`: 最後に実行された時間
+- `nextRunAt`: 次回の実行予定時間
+- `createdAt`: 作成日時
+- `updatedAt`: 更新日時
 
-## 画面構成
+### JobHistory（ジョブ実行履歴）
 
-- **ジョブ一覧画面**: 全てのジョブとそのステータスを表示
-- **ジョブ作成/編集フォーム**: 新規ジョブの作成と既存ジョブの編集
-- **ジョブ詳細画面**: ジョブの詳細情報と実行履歴を表示
+- `id`: 履歴の一意識別子
+- `jobId`: 関連するジョブのID
+- `startedAt`: 実行開始時間
+- `finishedAt`: 実行終了時間
+- `status`: 実行ステータス（'running', 'success', 'failed'）
+- `output`: 実行時の標準出力
+- `error`: 実行時のエラー出力
+- `createdAt`: 作成日時
 
-## 使用技術スタック
+## API エンドポイント
 
-- フレームワーク: Next.js (App Router)
-- 言語: TypeScript
-- DB: SQLite
-- ORM: Prisma
-- API実装: Next.js Route Handlers
-- スタイリング: Tailwind CSS
-- パッケージ管理: npm
+- `GET /api/jobs`: すべてのジョブを取得
+- `POST /api/jobs`: 新しいジョブを作成
+- `GET /api/jobs/:id`: 特定のジョブの詳細を取得
+- `PUT /api/jobs/:id`: ジョブを更新
+- `DELETE /api/jobs/:id`: ジョブを削除
+- `GET /api/jobs/:id/history`: ジョブの実行履歴を取得
+- `POST /api/jobs/:id/run`: ジョブを手動で実行
+- `POST /api/jobs/:id/toggle`: ジョブの有効/無効を切り替え
+- `GET /api/scheduler/check`: スケジューラをチェックして実行すべきジョブを実行
 
-## 開始方法
+## 使用方法
 
-1. **依存パッケージをインストール**
-   ```bash
-   npm install
-   ```
+1. ホームページでジョブの一覧を確認
+2. 「新規ジョブ作成」ボタンからジョブを作成
+3. ジョブの詳細ページでジョブの情報や実行履歴を確認
+4. ジョブの有効/無効を切り替えたり、手動実行したりすることが可能
+5. 実行履歴から過去の実行結果を確認可能
 
-2. **データベースの準備**
-   ```bash
-   npx prisma migrate deploy
-   ```
+## 将来の拡張可能性
 
-3. **開発サーバーを起動**
-   ```bash
-   npm run dev
-   ```
-   ブラウザで [http://localhost:3001](http://localhost:3001) を開くと結果が表示されます。
-
-## 技術的な実装メモ
-
-- ジョブの実行は実際にはシミュレーションのみ（ステータス更新と履歴記録）
-- クライアントからのポーリングでジョブ状態を更新
-- ジョブの次回実行時間はサーバーサイドで計算
+- クロン式によるより柔軟なスケジュール設定
+- ジョブ間の依存関係の設定
+- 通知機能（失敗時にメール/Slack通知など）
+- より詳細なモニタリングダッシュボード
+- 分散環境でのジョブ実行

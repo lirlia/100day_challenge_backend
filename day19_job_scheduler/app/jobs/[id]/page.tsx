@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 
 type Job = {
@@ -30,9 +30,12 @@ type JobHistory = {
   error: string | null;
 };
 
-export default function JobDetailPage({ params }: { params: { id: string } }) {
+export default function JobDetailPage() {
   const router = useRouter();
-  const { id } = params;
+  // useParamsを使用してルートパラメータにアクセス
+  const params = useParams();
+  const id = params.id as string;
+
   const [job, setJob] = useState<Job | null>(null);
   const [history, setHistory] = useState<JobHistory[]>([]);
   const [loading, setLoading] = useState(true);
@@ -139,22 +142,24 @@ export default function JobDetailPage({ params }: { params: { id: string } }) {
 
   // 初回マウント時にデータを取得
   useEffect(() => {
-    const loadData = async () => {
-      setLoading(true);
-      await fetchJobDetails();
-      await fetchJobHistory();
-      setLoading(false);
-    };
+    if (id) {
+      const loadData = async () => {
+        setLoading(true);
+        await fetchJobDetails();
+        await fetchJobHistory();
+        setLoading(false);
+      };
 
-    loadData();
+      loadData();
 
-    // 定期的にデータを更新（5秒ごと）
-    const intervalId = setInterval(() => {
-      fetchJobDetails();
-      fetchJobHistory();
-    }, 5000);
+      // 定期的にデータを更新（5秒ごと）
+      const intervalId = setInterval(() => {
+        fetchJobDetails();
+        fetchJobHistory();
+      }, 5000);
 
-    return () => clearInterval(intervalId);
+      return () => clearInterval(intervalId);
+    }
   }, [id]);
 
   // 日時のフォーマット
@@ -162,6 +167,10 @@ export default function JobDetailPage({ params }: { params: { id: string } }) {
     if (!dateString) return '未設定';
     return new Date(dateString).toLocaleString('ja-JP');
   };
+
+  if (!id) {
+    return <div className="text-center py-6">ジョブIDが見つかりません</div>;
+  }
 
   if (loading) {
     return <div className="text-center py-6">読み込み中...</div>;
@@ -213,8 +222,8 @@ export default function JobDetailPage({ params }: { params: { id: string } }) {
               <p className="mt-1">
                 <span
                   className={`inline-block rounded-full px-3 py-1 text-xs ${job.isActive
-                    ? 'bg-green-100 text-green-800'
-                    : 'bg-gray-100 text-gray-800'
+                      ? 'bg-green-100 text-green-800'
+                      : 'bg-gray-100 text-gray-800'
                     }`}
                 >
                   {job.isActive ? '有効' : '無効'}
@@ -240,7 +249,11 @@ export default function JobDetailPage({ params }: { params: { id: string } }) {
               <div className="mb-4">
                 <h4 className="text-sm font-medium text-gray-500">実行間隔</h4>
                 <p className="mt-1">
-                  {job.interval} {job.intervalUnit === 'minute' ? '分' : job.intervalUnit === 'hour' ? '時間' : '日'}
+                  {job.interval} {
+                    job.intervalUnit === 'second' ? '秒' :
+                      job.intervalUnit === 'minute' ? '分' :
+                        job.intervalUnit === 'hour' ? '時間' : '日'
+                  }
                 </p>
               </div>
             )}

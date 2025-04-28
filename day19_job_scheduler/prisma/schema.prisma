@@ -45,6 +45,7 @@ model JobHistory {
   startedAt   DateTime
   finishedAt  DateTime?
   status      String    // 'running', 'success', 'failed'
-  log         String?
+  output      String?
+  error       String?
   createdAt   DateTime  @default(now())
 }
