@@ -1,0 +1,50 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Job {
+  id            String       @id @default(uuid())
+  name          String
+  description   String?
+  command       String
+  scheduleType  String       // 'once' または 'interval'
+  scheduledAt   DateTime?    // 一回のみ実行の場合の予定時刻
+  interval      Int?         // 定期実行の場合の間隔（数値）
+  intervalUnit  String?      // 'minute', 'hour', 'day'
+  isActive      Boolean      @default(true)
+  lastRunAt     DateTime?    // 最後に実行された時刻
+  nextRunAt     DateTime?    // 次回実行予定時刻
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  histories     JobHistory[]
+}
+
+model JobHistory {
+  id          String    @id @default(uuid())
+  job         Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  jobId       String
+  startedAt   DateTime
+  finishedAt  DateTime?
+  status      String    // 'running', 'success', 'failed'
+  log         String?
+  createdAt   DateTime  @default(now())
+}
