@@ -18,11 +18,11 @@ export default function HomePage() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [processingJobs, setProcessingJobs] = useState<Record<string, { toggling?: boolean, running?: boolean }>>({});
 
   // ジョブ一覧を取得
   const fetchJobs = async () => {
     try {
-      setLoading(true);
       const response = await fetch('/api/jobs');
       const data = await response.json();
 
@@ -34,55 +34,105 @@ export default function HomePage() {
     } catch (error) {
       console.error('Error fetching jobs:', error);
       setError('ジョブの取得中にエラーが発生しました');
-    } finally {
-      setLoading(false);
     }
   };
 
   // ジョブの有効/無効を切り替え
   const toggleJobStatus = async (id: string) => {
     try {
+      // 処理中状態を設定
+      setProcessingJobs(prev => ({
+        ...prev,
+        [id]: { ...prev[id], toggling: true }
+      }));
+      setError(null);
+
       const response = await fetch(`/api/jobs/${id}/toggle`, {
         method: 'POST',
       });
       const data = await response.json();
 
       if (data.success) {
-        // ジョブ一覧を更新
-        fetchJobs();
+        // ジョブのデータを更新
+        setJobs(prevJobs =>
+          prevJobs.map(job =>
+            job.id === id ? { ...job, isActive: !job.isActive, nextRunAt: data.data.nextRunAt } : job
+          )
+        );
       } else {
         setError(data.error || 'ジョブの状態変更に失敗しました');
       }
     } catch (error) {
       console.error('Error toggling job status:', error);
       setError('ジョブの状態変更中にエラーが発生しました');
+    } finally {
+      // 処理中状態を解除
+      setProcessingJobs(prev => ({
+        ...prev,
+        [id]: { ...prev[id], toggling: false }
+      }));
     }
   };
 
   // ジョブを手動実行
   const runJob = async (id: string) => {
     try {
+      // 処理中状態を設定
+      setProcessingJobs(prev => ({
+        ...prev,
+        [id]: { ...prev[id], running: true }
+      }));
+      setError(null);
+
       const response = await fetch(`/api/jobs/${id}/run`, {
         method: 'POST',
       });
       const data = await response.json();
 
       if (data.success) {
-        alert('ジョブの実行を開始しました');
-        // ジョブ一覧を更新
-        fetchJobs();
+        // 成功メッセージを表示
+        const message = document.createElement('div');
+        message.className = 'fixed top-4 right-4 bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded z-50';
+        message.innerHTML = 'ジョブの実行を開始しました';
+        document.body.appendChild(message);
+
+        // 2秒後にメッセージを消す
+        setTimeout(() => {
+          if (message.parentNode) {
+            message.parentNode.removeChild(message);
+          }
+        }, 2000);
+
+        // 少し待ってからジョブリストを更新（実行中状態に更新）
+        setTimeout(() => {
+          fetchJobs();
+        }, 1000);
       } else {
         setError(data.error || 'ジョブの実行に失敗しました');
       }
     } catch (error) {
       console.error('Error running job:', error);
       setError('ジョブの実行中にエラーが発生しました');
+    } finally {
+      // 処理中状態を解除
+      setTimeout(() => {
+        setProcessingJobs(prev => ({
+          ...prev,
+          [id]: { ...prev[id], running: false }
+        }));
+      }, 1500);
     }
   };
 
   // マウント時とポーリングでジョブ一覧を取得
   useEffect(() => {
-    fetchJobs();
+    const loadData = async () => {
+      setLoading(true);
+      await fetchJobs();
+      setLoading(false);
+    };
+
+    loadData();
 
     // 10秒ごとにジョブ一覧を更新
     const intervalId = setInterval(() => {
@@ -112,6 +162,11 @@ export default function HomePage() {
   const formatDate = (dateString: string | null) => {
     if (!dateString) return '未設定';
     return new Date(dateString).toLocaleString('ja-JP');
+  };
+
+  // ジョブが処理中かどうかを確認するヘルパー関数
+  const isProcessingJob = (id: string, type: 'toggling' | 'running') => {
+    return processingJobs[id]?.[type] === true;
   };
 
   return (
@@ -167,8 +222,8 @@ export default function HomePage() {
                   <td className="py-2 px-4 border-b">
                     <span
                       className={`inline-block rounded-full px-3 py-1 text-xs ${job.isActive
-                          ? 'bg-green-100 text-green-800'
-                          : 'bg-gray-100 text-gray-800'
+                        ? 'bg-green-100 text-green-800'
+                        : 'bg-gray-100 text-gray-800'
                         }`}
                     >
                       {job.isActive ? '有効' : '無効'}
@@ -180,22 +235,39 @@ export default function HomePage() {
                     <div className="flex space-x-2">
                       <button
                         onClick={() => toggleJobStatus(job.id)}
-                        className={`text-xs py-1 px-2 rounded ${job.isActive
-                            ? 'bg-orange-100 text-orange-800 hover:bg-orange-200'
-                            : 'bg-green-100 text-green-800 hover:bg-green-200'
-                          }`}
+                        disabled={isProcessingJob(job.id, 'toggling')}
+                        className={`text-xs py-1 px-2 rounded relative ${job.isActive
+                          ? 'bg-orange-100 text-orange-800 hover:bg-orange-200'
+                          : 'bg-green-100 text-green-800 hover:bg-green-200'
+                          } ${isProcessingJob(job.id, 'toggling') ? 'opacity-70 cursor-wait' : ''}`}
                       >
                         {job.isActive ? '無効化' : '有効化'}
+                        {isProcessingJob(job.id, 'toggling') && (
+                          <span className="absolute inset-0 flex items-center justify-center">
+                            <svg className="animate-spin h-3 w-3 text-current" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                            </svg>
+                          </span>
+                        )}
                       </button>
                       <button
                         onClick={() => runJob(job.id)}
-                        disabled={!job.isActive}
-                        className={`text-xs py-1 px-2 rounded ${job.isActive
-                            ? 'bg-blue-100 text-blue-800 hover:bg-blue-200'
-                            : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                        disabled={!job.isActive || isProcessingJob(job.id, 'running')}
+                        className={`text-xs py-1 px-2 rounded relative ${job.isActive && !isProcessingJob(job.id, 'running')
+                          ? 'bg-blue-100 text-blue-800 hover:bg-blue-200'
+                          : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                           }`}
                       >
                         実行
+                        {isProcessingJob(job.id, 'running') && (
+                          <span className="absolute inset-0 flex items-center justify-center">
+                            <svg className="animate-spin h-3 w-3 text-blue-800" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                            </svg>
+                          </span>
+                        )}
                       </button>
                       <Link
                         href={`/jobs/${job.id}`}

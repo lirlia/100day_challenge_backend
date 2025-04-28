@@ -37,11 +37,12 @@ export default function JobDetailPage({ params }: { params: { id: string } }) {
   const [history, setHistory] = useState<JobHistory[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [isRunning, setIsRunning] = useState(false);
 
   // ジョブの詳細を取得
   const fetchJobDetails = async () => {
     try {
-      setLoading(true);
       const response = await fetch(`/api/jobs/${id}`);
       const data = await response.json();
 
@@ -53,8 +54,6 @@ export default function JobDetailPage({ params }: { params: { id: string } }) {
     } catch (error) {
       console.error('Error fetching job:', error);
       setError('ジョブの取得中にエラーが発生しました');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -77,51 +76,85 @@ export default function JobDetailPage({ params }: { params: { id: string } }) {
   // ジョブの有効/無効を切り替え
   const toggleJobStatus = async () => {
     try {
+      setIsUpdating(true);
+      setError(null);
+
       const response = await fetch(`/api/jobs/${id}/toggle`, {
         method: 'POST',
       });
       const data = await response.json();
 
       if (data.success) {
-        // ジョブ情報を更新
-        fetchJobDetails();
+        // データのみを更新
+        setJob(data.data);
       } else {
         setError(data.error || 'ジョブの状態変更に失敗しました');
       }
     } catch (error) {
       console.error('Error toggling job status:', error);
       setError('ジョブの状態変更中にエラーが発生しました');
+    } finally {
+      setIsUpdating(false);
     }
   };
 
   // ジョブを手動実行
   const runJob = async () => {
     try {
+      setIsRunning(true);
+      setError(null);
+
       const response = await fetch(`/api/jobs/${id}/run`, {
         method: 'POST',
       });
       const data = await response.json();
 
       if (data.success) {
-        alert('ジョブの実行を開始しました');
-        // ジョブ情報と履歴を更新
+        // 成功メッセージを表示（ユーザーに通知）
+        const message = document.createElement('div');
+        message.className = 'fixed top-4 right-4 bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded z-50';
+        message.innerHTML = '実行を開始しました';
+        document.body.appendChild(message);
+
+        // 2秒後にメッセージを消す
         setTimeout(() => {
-          fetchJobDetails();
-          fetchJobHistory();
-        }, 1000); // 少し待ってから更新
+          if (message.parentNode) {
+            message.parentNode.removeChild(message);
+          }
+        }, 2000);
+
+        // ジョブ情報と履歴を更新
+        await fetchJobDetails();
+        await fetchJobHistory();
       } else {
         setError(data.error || 'ジョブの実行に失敗しました');
       }
     } catch (error) {
       console.error('Error running job:', error);
       setError('ジョブの実行中にエラーが発生しました');
+    } finally {
+      setIsRunning(false);
     }
   };
 
-  // マウント時にジョブ詳細と履歴を取得
+  // 初回マウント時にデータを取得
   useEffect(() => {
-    fetchJobDetails();
-    fetchJobHistory();
+    const loadData = async () => {
+      setLoading(true);
+      await fetchJobDetails();
+      await fetchJobHistory();
+      setLoading(false);
+    };
+
+    loadData();
+
+    // 定期的にデータを更新（5秒ごと）
+    const intervalId = setInterval(() => {
+      fetchJobDetails();
+      fetchJobHistory();
+    }, 5000);
+
+    return () => clearInterval(intervalId);
   }, [id]);
 
   // 日時のフォーマット
@@ -180,8 +213,8 @@ export default function JobDetailPage({ params }: { params: { id: string } }) {
               <p className="mt-1">
                 <span
                   className={`inline-block rounded-full px-3 py-1 text-xs ${job.isActive
-                      ? 'bg-green-100 text-green-800'
-                      : 'bg-gray-100 text-gray-800'
+                    ? 'bg-green-100 text-green-800'
+                    : 'bg-gray-100 text-gray-800'
                     }`}
                 >
                   {job.isActive ? '有効' : '無効'}
@@ -227,23 +260,40 @@ export default function JobDetailPage({ params }: { params: { id: string } }) {
         <div className="mt-6 flex space-x-4">
           <button
             onClick={toggleJobStatus}
-            className={`px-4 py-2 rounded ${job.isActive
+            disabled={isUpdating}
+            className={`px-4 py-2 rounded relative ${job.isActive
                 ? 'bg-orange-100 text-orange-800 hover:bg-orange-200'
                 : 'bg-green-100 text-green-800 hover:bg-green-200'
-              }`}
+              } ${isUpdating ? 'opacity-70 cursor-wait' : ''}`}
           >
             {job.isActive ? 'ジョブを無効化' : 'ジョブを有効化'}
+            {isUpdating && (
+              <span className="absolute inset-0 flex items-center justify-center">
+                <svg className="animate-spin h-5 w-5 text-current" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                </svg>
+              </span>
+            )}
           </button>
 
           <button
             onClick={runJob}
-            disabled={!job.isActive}
-            className={`px-4 py-2 rounded ${job.isActive
+            disabled={!job.isActive || isRunning}
+            className={`px-4 py-2 rounded relative ${job.isActive && !isRunning
                 ? 'bg-blue-500 text-white hover:bg-blue-600'
                 : 'bg-gray-100 text-gray-400 cursor-not-allowed'
               }`}
           >
             ジョブを実行
+            {isRunning && (
+              <span className="absolute inset-0 flex items-center justify-center">
+                <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                </svg>
+              </span>
+            )}
           </button>
         </div>
       </div>
@@ -276,10 +326,10 @@ export default function JobDetailPage({ params }: { params: { id: string } }) {
                     <td className="py-2 px-4 border-b">
                       <span
                         className={`inline-block rounded-full px-3 py-1 text-xs ${item.status === 'success'
-                            ? 'bg-green-100 text-green-800'
-                            : item.status === 'running'
-                              ? 'bg-blue-100 text-blue-800'
-                              : 'bg-red-100 text-red-800'
+                          ? 'bg-green-100 text-green-800'
+                          : item.status === 'running'
+                            ? 'bg-blue-100 text-blue-800'
+                            : 'bg-red-100 text-red-800'
                           }`}
                       >
                         {item.status === 'success'
