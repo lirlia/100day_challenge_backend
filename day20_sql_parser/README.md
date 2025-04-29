@@ -3,6 +3,10 @@
 Go言語でSQLクエリ（主にSELECT文のサブセット）をパースし、AST（抽象構文木）を生成し、基本的なスキーマ定義に基づいてバリデーションを行うシンプルなツールです。
 バリデーションはリアルタイムで行われ、Web UI上で結果を確認できます。
 
+https://github.com/user-attachments/assets/3555b690-dc55-4d7b-981e-18c6821abf99
+
+[100日チャレンジ day20](https://zenn.dev/gin_nazo/scraps/47f9e612a3609b)
+
 ## 主な機能
 
 - **SQL パース:** `SELECT`, `FROM`, `WHERE`, `ORDER BY`, `LIMIT` 句を含む単純なSELECT文を解析。
