@@ -2,7 +2,6 @@ package validator
 
 import (
 	"strings"
-	"fmt" // デバッグ用にインポート
 	"github.com/your_username/day20_sql_parser/ast"
 	"github.com/your_username/day20_sql_parser/schema"
 	"github.com/your_username/day20_sql_parser/token"
@@ -157,18 +156,13 @@ func (v *Validator) Validate(program *ast.Program) []*ValidationError {
 // 複雑な式（Infix, Prefix）は、それらをVisitする際に型が計算されマップに格納される想定です。
 func (v *Validator) evaluateType(expr ast.Expression) schema.DataType {
 	if expr == nil {
-		fmt.Printf("[Debug EvaluateType] Input expr is nil, returning UNKNOWN\n")
 		return schema.UNKNOWN
 	}
 
-	fmt.Printf("[Debug EvaluateType] Evaluating type for expression: %T %p %s\n", expr, expr, expr.String())
-
 	// キャッシュ確認
 	if dt, ok := v.expressionTypes[expr]; ok {
-		fmt.Printf("[Debug EvaluateType] Cache HIT for %p (%s) -> %s\n", expr, expr.String(), dt)
 		return dt
 	}
-	fmt.Printf("[Debug EvaluateType] Cache MISS for %p (%s)\n", expr, expr.String())
 
 	// キャッシュになければ基本ノードを評価
 	var dt schema.DataType = schema.UNKNOWN
@@ -205,7 +199,6 @@ func (v *Validator) evaluateType(expr ast.Expression) schema.DataType {
 				if isAlias {
 					dt = aliasType
 				} else {
-					// エラーは VisitIdentifier で追加されるのでここでは追加しない
 					// UNKNOWN のままにする
 				}
 			}
@@ -223,7 +216,6 @@ func (v *Validator) evaluateType(expr ast.Expression) schema.DataType {
 	// default: // Infix, Prefix などはそれぞれの Visit メソッドで評価・格納される
 	}
 
-	fmt.Printf("[Debug EvaluateType] Caching type for %p (%s) -> %s\n", expr, expr.String(), dt)
 	v.expressionTypes[expr] = dt // 評価結果をキャッシュ
 	return dt
 }
@@ -374,9 +366,6 @@ func (v *Validator) VisitInfixExpression(node *ast.InfixExpression) bool {
 	// 子ノードのWalkが完了しているので、expressionTypesに型情報があるはず
 	leftType := v.evaluateType(node.Left)
 	rightType := v.evaluateType(node.Right)
-
-	fmt.Printf("[Debug VisitInfix] Operator: '%s', Left Expr: %T %p (%s), Left Type: %s, Right Expr: %T %p (%s), Right Type: %s\n",
-		node.Operator, node.Left, node.Left, node.Left.String(), leftType, node.Right, node.Right, node.Right.String(), rightType)
 
 	// オペランドのどちらかの型が不明な場合はエラー（ただし、すでにaddErrorされている可能性あり）
 	// if leftType == schema.UNKNOWN || rightType == schema.UNKNOWN {
