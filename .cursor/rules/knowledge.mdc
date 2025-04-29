@@ -25,3 +25,4 @@ alwaysApply: true
 | 16  | ElasticSearch によるポケモン図鑑 | Next.js, Prisma, SQLite, ElasticSearch, TailwindCSS, 日本語での全文検索  |
 | 17  | MCP Pokémon                  | Go, MCP Protocol, Makefile                                                   |
 | 18  | Expandable REST API           | Next.js, Prisma, SQLite, TailwindCSS, 動的データ展開 (`expand`, `max_depth`)          |
+| 19  | ジョブスケジューラ             | Next.js, TypeScript, Prisma, SQLite, TailwindCSS, 非同期ジョブ実行、スケジューリング       |
