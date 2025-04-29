@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>SQL Validator (Go Day 20)</title>
+    <title>Day 20 - SQL Validator</title>
     <style>
         body { font-family: sans-serif; margin: 20px; background-color: #f4f4f4; color: #333; }
         h1 { color: #0056b3; }
@@ -16,6 +16,7 @@
             font-family: monospace;
             font-size: 1em;
         }
+        /* ボタンは不要になるためコメントアウト
         button {
             padding: 10px 20px;
             background-color: #007bff;
@@ -28,8 +29,12 @@
         button:hover {
             background-color: #0056b3;
         }
-        .result {
+        */
+        .result-container {
             margin-top: 20px;
+            min-height: 100px; /* 結果表示エリアの最小高さを確保 */
+        }
+        .result {
             padding: 15px;
             border-radius: 5px;
             border: 1px solid;
@@ -68,51 +73,129 @@
             white-space: pre-wrap;
         }
         strong { font-weight: bold; }
+        .status-indicator { /* 処理中インジケータ (オプション) */
+            margin-top: 10px;
+            font-style: italic;
+            color: #6c757d;
+        }
     </style>
 </head>
 <body>
     <h1>SQL Validator (Go Day 20)</h1>
-    <p>Enter SQL to validate against the sample schema (users, products, orders).</p>
-    <form method="POST" action="/">
-        <textarea name="sql" placeholder="SELECT id, name FROM users ORDER BY name DESC LIMIT 5;">{{ .SQL }}</textarea><br>
-        <button type="submit">Validate SQL</button>
-    </form>
+    <p>Enter SQL to validate against the sample schema (users, products, orders). Validation occurs automatically as you type.</p>
+    <textarea id="sqlInput" name="sql" placeholder="SELECT id, name FROM users ORDER BY name DESC LIMIT 5;">{{ .SQL }}</textarea><br>
+    <!-- <button type="submit">Validate SQL</button> -->
 
-    {{/* 結果表示エリア: POSTリクエスト後にSQLが空でない場合のみ表示 */}}
-    {{ if .SQL }}
-        <div class="result {{ if .IsValid }}valid{{ else }}invalid{{ end }}">
-            <h2>Validation Result</h2>
-            {{ if .IsValid }}
-                <p><strong>Valid SQL!</strong></p>
-            {{ else }}
-                <p><strong>Invalid SQL. Errors found:</strong></p>
+    {{/* 結果表示エリア (JavaScriptで更新) */}}
+    <div id="resultContainer" class="result-container">
+        {{/* 初期状態またはJS無効時用のメッセージ (任意) */}}
+        <!-- <p>Validation results will appear here.</p> -->
+    </div>
 
-                {{/* パースエラーがある場合 */}}
-                {{ if .ParseErrs }}
-                    <p><strong>Parser Errors:</strong> (Validation could not proceed)</p>
-                    <ul class="parse-error-list">
-                        {{ range .ParseErrs }}
-                            <li class="parse-error-item">{{ . }}</li>
-                        {{ end }}
-                    </ul>
-                 {{ end }}
+    <script>
+        const sqlInput = document.getElementById('sqlInput');
+        const resultContainer = document.getElementById('resultContainer');
+        let debounceTimeout;
 
-                 {{/* バリデーションエラーがある場合 (パース成功時のみ) */}}
-                 {{ if .Errors }}
-                     <p><strong>Validation Errors:</strong></p>
-                     <ul class="error-list">
-                         {{ range .Errors }}
-                             <li class="error-item">{{ . }}</li>
-                         {{ end }}
-                     </ul>
-                 {{ end }}
+        // --- Debounce Function ---
+        function debounce(func, delay) {
+            return function(...args) {
+                clearTimeout(debounceTimeout);
+                debounceTimeout = setTimeout(() => {
+                    func.apply(this, args);
+                }, delay);
+            };
+        }
 
-                 {{/* パースエラーもバリデーションエラーもないが、 IsValid が false の場合 (念のため) */}}
-                 {{ if not .ParseErrs | and (not .Errors) }}
-                     <p class="error-item">Validation failed, but no specific errors were reported.</p>
-                 {{ end }}
-            {{ end }}
-        </div>
-    {{ end }}
+        // --- Validation Function ---
+        async function validateSQL() {
+            const sql = sqlInput.value.trim();
+            resultContainer.innerHTML = '<p class="status-indicator">Validating...</p>'; // 処理中表示
+
+            if (!sql) {
+                resultContainer.innerHTML = ''; // 空なら結果エリアも空に
+                return;
+            }
+
+            try {
+                const response = await fetch('/validate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ sql: sql }),
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const result = await response.json();
+                displayResult(result);
+
+            } catch (error) {
+                console.error('Validation request failed:', error);
+                resultContainer.innerHTML = `<div class="result invalid"><p><strong>Error:</strong> Could not connect to the validation server. ${error.message}</p></div>`;
+            }
+        }
+
+        // --- Display Result Function ---
+        function displayResult(result) {
+            let html = '';
+            if (result.isValid) {
+                html = '<div class="result valid"><p><strong>Valid SQL!</strong></p></div>';
+            } else {
+                html = '<div class="result invalid">';
+                html += '<p><strong>Invalid SQL. Errors found:</strong></p>';
+
+                if (result.parseErrors && result.parseErrors.length > 0) {
+                    html += '<p><strong>Parser Errors:</strong> (Validation could not proceed)</p>';
+                    html += '<ul class="parse-error-list">';
+                    result.parseErrors.forEach(err => {
+                        html += `<li class="parse-error-item">${escapeHtml(err)}</li>`;
+                    });
+                    html += '</ul>';
+                }
+
+                if (result.errors && result.errors.length > 0) {
+                    html += '<p><strong>Validation Errors:</strong></p>';
+                    html += '<ul class="error-list">';
+                    result.errors.forEach(err => {
+                        html += `<li class="error-item">${escapeHtml(err)}</li>`;
+                    });
+                    html += '</ul>';
+                }
+
+                 if (!(result.parseErrors && result.parseErrors.length > 0) && !(result.errors && result.errors.length > 0)) {
+                     html += '<p class="error-item">Validation failed, but no specific errors were reported.</p>';
+                 }
+
+                html += '</div>';
+            }
+            resultContainer.innerHTML = html;
+        }
+
+        // --- HTML Escaping Function ---
+        function escapeHtml(unsafe) {
+            if (typeof unsafe !== 'string') return unsafe; // 文字列以外はそのまま返す
+            return unsafe
+                 .replace(/&/g, "&amp;")
+                 .replace(/</g, "&lt;")
+                 .replace(/>/g, "&gt;")
+                 .replace(/"/g, "&quot;")
+                 .replace(/'/g, "&#039;");
+         }
+
+        // --- Event Listener ---
+        // 500ミリ秒のデバウンスを設定
+        sqlInput.addEventListener('input', debounce(validateSQL, 500));
+
+        // 初期ロード時にもバリデーションを実行 (任意)
+        // if (sqlInput.value.trim()) {
+        //     validateSQL();
+        // }
+
+    </script>
+
 </body>
 </html>

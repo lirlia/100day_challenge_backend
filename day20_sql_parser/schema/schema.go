@@ -10,7 +10,8 @@ const (
 	INTEGER
 	TEXT
 	BOOLEAN
-	// TODO: 必要に応じて他の型 (e.g., REAL, DATE, TIMESTAMP) を追加
+	FLOAT                  // 浮動小数点数
+	// TODO: 必要に応じて他の型 (e.g., DATE, TIMESTAMP) を追加
 )
 
 // String は DataType を文字列で返します。
@@ -22,6 +23,8 @@ func (dt DataType) String() string {
 		return "TEXT"
 	case BOOLEAN:
 		return "BOOLEAN"
+	case FLOAT:
+		return "FLOAT"
 	default:
 		return "UNKNOWN"
 	}

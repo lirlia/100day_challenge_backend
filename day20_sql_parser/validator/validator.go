@@ -2,7 +2,7 @@ package validator
 
 import (
 	"strings"
-	// "fmt" // 未使用なので削除
+	"fmt" // デバッグ用にインポート
 	"github.com/your_username/day20_sql_parser/ast"
 	"github.com/your_username/day20_sql_parser/schema"
 	"github.com/your_username/day20_sql_parser/token"
@@ -157,13 +157,18 @@ func (v *Validator) Validate(program *ast.Program) []*ValidationError {
 // 複雑な式（Infix, Prefix）は、それらをVisitする際に型が計算されマップに格納される想定です。
 func (v *Validator) evaluateType(expr ast.Expression) schema.DataType {
 	if expr == nil {
+		fmt.Printf("[Debug EvaluateType] Input expr is nil, returning UNKNOWN\n")
 		return schema.UNKNOWN
 	}
 
+	fmt.Printf("[Debug EvaluateType] Evaluating type for expression: %T %p %s\n", expr, expr, expr.String())
+
 	// キャッシュ確認
 	if dt, ok := v.expressionTypes[expr]; ok {
+		fmt.Printf("[Debug EvaluateType] Cache HIT for %p (%s) -> %s\n", expr, expr.String(), dt)
 		return dt
 	}
+	fmt.Printf("[Debug EvaluateType] Cache MISS for %p (%s)\n", expr, expr.String())
 
 	// キャッシュになければ基本ノードを評価
 	var dt schema.DataType = schema.UNKNOWN
@@ -218,6 +223,7 @@ func (v *Validator) evaluateType(expr ast.Expression) schema.DataType {
 	// default: // Infix, Prefix などはそれぞれの Visit メソッドで評価・格納される
 	}
 
+	fmt.Printf("[Debug EvaluateType] Caching type for %p (%s) -> %s\n", expr, expr.String(), dt)
 	v.expressionTypes[expr] = dt // 評価結果をキャッシュ
 	return dt
 }
@@ -365,96 +371,99 @@ func (v *Validator) VisitPrefixExpression(node *ast.PrefixExpression) bool {
 }
 
 func (v *Validator) VisitInfixExpression(node *ast.InfixExpression) bool {
-	// Walkの順序変更により、左右の子ノードは既にVisitされ、型が評価されているはず
+	// 子ノードのWalkが完了しているので、expressionTypesに型情報があるはず
 	leftType := v.evaluateType(node.Left)
 	rightType := v.evaluateType(node.Right)
-	resultType := schema.UNKNOWN // デフォルトは不明
 
-	// オペランドの少なくとも一方が UNKNOWN なら、型チェックはスキップ（既に他のエラーが出ている可能性）
-	if leftType == schema.UNKNOWN || rightType == schema.UNKNOWN {
-		// ただし、IS NULL/IS NOT NULL は特別扱い
-		if node.Operator == "IS" {
-			// 右辺が NULL キーワードかチェック
-			isNullKeyword := false
-			if identRight, ok := node.Right.(*ast.Identifier); ok {
-				if identRight.Token.Type == token.IDENT && strings.ToUpper(identRight.Token.Literal) == "NULL" {
-					isNullKeyword = true
-				}
-			}
-			if !isNullKeyword {
-				// 右辺が NOT NULL かもチェック (簡易)
-				isNotNull := false
-				if prefixRight, ok := node.Right.(*ast.PrefixExpression); ok && prefixRight.Operator == "NOT" {
-					if identRightRight, ok := prefixRight.Right.(*ast.Identifier); ok {
-						if identRightRight.Token.Type == token.IDENT && strings.ToUpper(identRightRight.Token.Literal) == "NULL" {
-							isNotNull = true
-						}
-					}
-				}
+	fmt.Printf("[Debug VisitInfix] Operator: '%s', Left Expr: %T %p (%s), Left Type: %s, Right Expr: %T %p (%s), Right Type: %s\n",
+		node.Operator, node.Left, node.Left, node.Left.String(), leftType, node.Right, node.Right, node.Right.String(), rightType)
 
-				if !isNotNull {
-					v.addError(node.Right.TokenLiteral(), "Operator IS currently only supports IS NULL or IS NOT NULL", node.Right.String())
-				}
-			}
-			v.expressionTypes[node] = schema.BOOLEAN // 結果はBOOLEAN
-			return true
-		}
-		v.expressionTypes[node] = schema.UNKNOWN
-		return true
-	}
+	// オペランドのどちらかの型が不明な場合はエラー（ただし、すでにaddErrorされている可能性あり）
+	// if leftType == schema.UNKNOWN || rightType == schema.UNKNOWN {
+	//     // ここでエラーを追加すると重複する可能性があるため、一旦コメントアウト
+	//     // v.addError(node.Token, "Could not determine type for one or both operands of %s", node.Operator)
+	//     v.expressionTypes[node] = schema.UNKNOWN // 結果もUNKNOWN
+	//     return true // 検証は続行
+	// }
 
-	switch node.Operator {
+	var resultType schema.DataType = schema.UNKNOWN
+	operator := strings.ToUpper(node.Operator) // 演算子を大文字に変換して比較
+
+	switch operator { // 比較対象を大文字にした演算子に変更
+	// --- 算術演算子 ---
 	case "+", "-", "*", "/":
-		if leftType != schema.INTEGER || rightType != schema.INTEGER {
-			v.addError(node.Token, "Arithmetic operator '%s' requires INTEGER operands, got %s and %s",
-				node.Operator, leftType, rightType)
+		if leftType != schema.INTEGER && leftType != schema.FLOAT { // 簡単のためFLOATも許容
+			v.addError(node.Token, "Left operand for '%s' must be numeric, got %s", node.Operator, leftType)
 		}
-		resultType = schema.INTEGER // 算術演算の結果は INTEGER
-	case "=", "<>", "!=": // =, <> は比較
-		// 基本的に同じ型同士を比較
-		if leftType != rightType {
-			v.addError(node.Token, "Comparison operator '%s' requires operands of the same type, got %s and %s",
-				node.Operator, leftType, rightType)
+		if rightType != schema.INTEGER && rightType != schema.FLOAT {
+			v.addError(node.Token, "Right operand for '%s' must be numeric, got %s", node.Operator, rightType)
 		}
-		resultType = schema.BOOLEAN // 比較の結果は BOOLEAN
-	case "<", ">", "<=", ">=":
-		// 数値またはテキスト同士の比較
-		if !((leftType == schema.INTEGER && rightType == schema.INTEGER) ||
-			(leftType == schema.TEXT && rightType == schema.TEXT)) {
-			v.addError(node.Token, "Comparison operator '%s' requires INTEGER or TEXT operands of the same type, got %s and %s",
-				node.Operator, leftType, rightType)
+		// 簡単のため、結果は常に INTEGER とする (本来は FLOAT になる場合もある)
+		resultType = schema.INTEGER // ここでは簡単化
+
+	// --- 比較演算子 ---
+	case "=", "!=", "<", ">", "<=", ">=", "<>": // <> も追加
+		// 型比較: 基本的に同じ型同士での比較を想定
+		compatible := false
+		if leftType == rightType {
+			compatible = true
+		} else if (leftType == schema.INTEGER && rightType == schema.FLOAT) || (leftType == schema.FLOAT && rightType == schema.INTEGER) {
+			compatible = true // 数値型同士はOK
+		} // 他の互換性ルールがあれば追加
+
+		if !compatible && leftType != schema.UNKNOWN && rightType != schema.UNKNOWN { // 型が不明でない場合のみ互換性エラーを出す
+			// 互換性のない型の比較はエラー
+			v.addError(node.Token, "Cannot compare values of type %s and %s using '%s'", leftType, rightType, node.Operator)
 		}
+		// 比較演算子の結果は常に BOOLEAN
 		resultType = schema.BOOLEAN
+
+	// --- 論理演算子 ---
 	case "AND", "OR":
-		if leftType != schema.BOOLEAN || rightType != schema.BOOLEAN {
-			v.addError(node.Token, "Logical operator '%s' requires BOOLEAN operands, got %s and %s",
-				node.Operator, leftType, rightType)
+		if leftType != schema.BOOLEAN && leftType != schema.UNKNOWN { // UNKNOWN を許容（エラーはオペランド側で報告される）
+			v.addError(node.Token, "Left operand for '%s' must be boolean, got %s", node.Operator, leftType)
 		}
+		if rightType != schema.BOOLEAN && rightType != schema.UNKNOWN { // UNKNOWN を許容
+			v.addError(node.Token, "Right operand for '%s' must be boolean, got %s", node.Operator, rightType)
+		}
+		// 論理演算子の結果は BOOLEAN
 		resultType = schema.BOOLEAN
-	case "LIKE":
-		if leftType != schema.TEXT || rightType != schema.TEXT {
-			v.addError(node.Token, "Operator LIKE requires TEXT operands, got %s and %s", leftType, rightType)
-		}
-		resultType = schema.BOOLEAN
-	case "IS":
-		// ここに来る場合は leftType と rightType が UNKNOWN でない場合
-		// 右辺が NULL キーワードであることを期待する (IS NOT NULL は PrefixExpression として処理される想定だったが Parser 修正必要かも)
-		isNullKeyword := false
-		if identRight, ok := node.Right.(*ast.Identifier); ok {
-			if identRight.Token.Type == token.IDENT && strings.ToUpper(identRight.Token.Literal) == "NULL" {
-				isNullKeyword = true
-			}
-		}
-		if !isNullKeyword {
-			v.addError(node.Right.TokenLiteral(), "Operator IS currently only supports IS NULL (or IS NOT NULL)", node.Right.String())
-		}
-		resultType = schema.BOOLEAN
+
+
+	// --- その他の演算子 (LIKE, IN など) ---
+	// case "LIKE": // LIKE は特殊な文字列比較
+	// 	if leftType != schema.TEXT {
+	// 		v.addError(node.Token, "Left operand for 'LIKE' must be TEXT, got %s", leftType)
+	// 	}
+	// 	if rightType != schema.TEXT { // パターンも TEXT
+	// 		v.addError(node.Token, "Right operand (pattern) for 'LIKE' must be TEXT, got %s", rightType)
+	// 	}
+	// 	resultType = schema.BOOLEAN
+	// case "IN":
+	// 	// IN (value1, value2, ...)
+	// 	// 右辺がリストまたはサブクエリになる。パーサーが対応していないため、ここでは未実装。
+	// 	// 右辺が TupleExpression のようなノードになると仮定すると...
+	// 	// if tupleExpr, ok := node.Right.(*ast.TupleExpression); ok {
+	// 	// 	for _, elem := range tupleExpr.Elements {
+	// 	// 		elemType := v.evaluateType(elem)
+	// 	// 		if elemType != leftType {
+	// 	// 			// エラー: INリスト内の型が左辺と不一致
+	// 	// 		}
+	// 	// 	}
+	// 	// } else {
+	// 	// 	// エラー: IN の右辺がリスト形式ではない
+	// 	// }
+	// 	// resultType = schema.BOOLEAN
+	// 	v.addError(node.Token, "'IN' operator validation is not yet implemented") // 未実装
+
 	default:
 		v.addError(node.Token, "Unknown infix operator: %s", node.Operator)
 	}
 
+	// このInfixExpression自体の型を記録
 	v.expressionTypes[node] = resultType
-	return true
+
+	return true // 子要素の巡回は Walk 関数で制御されるため、常に true を返す
 }
 
 func (v *Validator) VisitOrderByExpression(node *ast.OrderByExpression) bool {
