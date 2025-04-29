@@ -3,7 +3,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useUserStore } from '@/lib/store/userStore';
 import { Reservation, Facility } from '@prisma/client'; // Assuming types
-import { format } from 'date-fns';
+import { format } from 'date-fns/format'; // Correct import
+import { ja } from 'date-fns/locale/ja'; // Import Japanese locale
 
 // Type for reservation with facility details
 interface MyReservation extends Omit<Reservation, 'startTime' | 'endTime'> {
@@ -46,7 +47,7 @@ const MyReservationsPage = () => {
   }, [fetchMyReservations]); // Refetch when user changes
 
   const handleCancel = async (reservationId: number) => {
-    if (!confirm('Are you sure you want to cancel this reservation?')) return;
+    if (!confirm('この予約をキャンセルしてもよろしいですか？')) return;
 
     setError(null);
     try {
@@ -54,7 +55,7 @@ const MyReservationsPage = () => {
         method: 'DELETE',
       });
       if (!response.ok) {
-         let errorMsg = 'Failed to cancel reservation';
+        let errorMsg = '予約のキャンセルに失敗しました';
         try {
           const errorData = await response.json();
           errorMsg = errorData.error || errorMsg;
@@ -69,18 +70,18 @@ const MyReservationsPage = () => {
   };
 
   if (!currentUser) {
-    return <p>Please select a user from the header to see your reservations.</p>;
+    return <p>マイ予約を表示するには、ヘッダーからユーザーを選択してください。</p>;
   }
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-4">My Reservations ({currentUser.name})</h1>
+      <h1 className="text-2xl font-bold mb-4">マイ予約 ({currentUser.name})</h1>
 
-      {isLoading && <p>Loading reservations...</p>}
-      {error && <p className="text-red-500 mb-4">Error: {error}</p>}
+      {isLoading && <p>予約情報を読み込み中...</p>}
+      {error && <p className="text-red-500 mb-4">エラー: {error}</p>}
 
       {!isLoading && myReservations.length === 0 && !error && (
-        <p>You have no upcoming reservations.</p>
+        <p>予約はありません。</p>
       )}
 
       {!isLoading && myReservations.length > 0 && (
@@ -90,15 +91,15 @@ const MyReservationsPage = () => {
               <div>
                 <p className="font-semibold text-lg">{reservation.facility.name}</p>
                 <p className="text-gray-700">
-                  {format(new Date(reservation.startTime), 'PPP p')} - {format(new Date(reservation.endTime), 'p')}
+                  {format(new Date(reservation.startTime), 'PPP p', { locale: ja })} - {format(new Date(reservation.endTime), 'p', { locale: ja })}
                 </p>
-                <p className="text-sm text-gray-500">Booked on: {format(new Date(reservation.createdAt), 'PP')}</p>
+                <p className="text-sm text-gray-500">予約日時: {format(new Date(reservation.createdAt), 'PP', { locale: ja })}</p>
               </div>
               <button
                 onClick={() => handleCancel(reservation.id)}
                 className="ml-4 py-1 px-3 border border-red-500 text-red-500 rounded hover:bg-red-50 text-sm"
               >
-                Cancel Reservation
+                予約をキャンセル
               </button>
             </li>
           ))}

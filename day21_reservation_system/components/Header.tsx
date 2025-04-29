@@ -28,18 +28,18 @@ const Header = () => {
     <header className="bg-gray-800 text-white p-4 shadow-md">
       <div className="container mx-auto flex justify-between items-center">
         <Link href="/" className="text-xl font-bold">
-          Day21 - Facility Reservation
+          Day21 - 設備予約システム
         </Link>
         <nav className="flex space-x-4 items-center">
           <Link href="/facilities" className="hover:text-gray-300">
-            Facilities
+            設備管理
           </Link>
           <Link href="/reservations/my" className="hover:text-gray-300">
-            My Reservations
+            マイ予約
           </Link>
           <div className="flex items-center space-x-2">
             <label htmlFor="user-select" className="text-sm">
-              Current User:
+              操作ユーザー:
             </label>
             <select
               id="user-select"
@@ -49,7 +49,7 @@ const Header = () => {
               disabled={availableUsers.length === 0}
             >
               {availableUsers.length === 0 && (
-                <option value="">Loading...</option>
+                <option value="">読み込み中...</option>
               )}
               {availableUsers.map((user) => (
                 <option key={user.id} value={user.id}>

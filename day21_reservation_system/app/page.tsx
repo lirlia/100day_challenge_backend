@@ -64,9 +64,9 @@ export default function Home() {
   return (
     <div className="max-w-4xl mx-auto py-8 px-4">
       <header className="mb-8">
-        <h1 className="text-3xl font-bold mb-2">Welcome to the Facility Reservation System</h1>
+        <h1 className="text-3xl font-bold mb-2">設備予約システムへようこそ</h1>
         <p className="text-gray-600 dark:text-gray-300">
-          Use the navigation above or the links below to manage facilities and book reservations.
+          上のナビゲーションまたは以下のリンクを使用して、設備の管理や予約を行ってください。
         </p>
       </header>
 
@@ -145,16 +145,16 @@ export default function Home() {
       </div>
 
       <div className="mt-8">
-        <h2 className="text-xl font-semibold mb-4">主要ページへのリンク</h2>
+        <h2 className="text-xl font-semibold mb-4">主要ページ</h2>
         <ul className="list-disc list-inside space-y-2">
           <li>
             <Link href="/facilities" className="text-blue-600 hover:underline">
-              View & Manage Facilities
+              設備の表示・管理
             </Link>
           </li>
           <li>
             <Link href="/reservations/my" className="text-blue-600 hover:underline">
-              View My Reservations
+              マイ予約の表示
             </Link>
           </li>
         </ul>

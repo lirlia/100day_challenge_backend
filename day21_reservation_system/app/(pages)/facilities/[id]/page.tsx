@@ -9,20 +9,20 @@ import {
   View,
   Views,
   NavigateAction,
-  DateRange
+  DateRange,
+  Messages
 } from 'react-big-calendar'; // Import necessary types
 import { format } from 'date-fns/format';
 import { parse } from 'date-fns/parse';
 import { startOfWeek } from 'date-fns/startOfWeek';
 import { getDay } from 'date-fns/getDay';
-import { enUS } from 'date-fns/locale/en-US';
+import { ja } from 'date-fns/locale/ja'; // Import Japanese locale
 import { Facility, Reservation, User } from '@prisma/client'; // Assuming types are available
 import { useUserStore } from '@/lib/store/userStore';
 
-// Setup the localizer by providing the moment Object
-// to the correct localizer.
+// Setup the localizer with Japanese locale
 const locales = {
-  'en-US': enUS,
+  'ja': ja,
 };
 const localizer = dateFnsLocalizer({
   format,
@@ -31,6 +31,24 @@ const localizer = dateFnsLocalizer({
   getDay,
   locales,
 });
+
+// Define Japanese messages for the calendar UI
+const messages: Messages = {
+  allDay: '終日',
+  previous: '前へ',
+  next: '次へ',
+  today: '今日',
+  month: '月',
+  week: '週',
+  day: '日',
+  agenda: 'AGENDA', // アジェンダ表示はそのまま英語にするか、'予定一覧' などに
+  date: '日付',
+  time: '時間',
+  event: '予約', // Changed from イベント
+  noEventsInRange: 'この期間に予約はありません。',
+  showMore: total => `他 ${total} 件`,
+  // Add other translations as needed based on RBC documentation/defaults
+};
 
 // Type extending Reservation with User and Facility details for calendar display
 interface ReservationWithDetails extends Omit<Reservation, 'startTime' | 'endTime'> {
@@ -106,7 +124,7 @@ const FacilityDetailPage = () => {
          start: new Date(r.startTime),
          end: new Date(r.endTime),
          // Create a title for the calendar event
-         title: `Reserved by ${r.user?.name || 'Unknown'}`,
+         title: `${r.user?.name || '不明なユーザー'} による予約`,
        }));
        console.log('Formatted reservations for calendar:', formattedReservations);
        setReservations(formattedReservations);
@@ -123,7 +141,7 @@ const FacilityDetailPage = () => {
   // useEffect to set initial viewRange on mount
   useEffect(() => {
     // Calculate initial range based on defaultView ('week') and calendarDate
-    const startOfWeekDate = startOfWeek(calendarDate, { locale: locales['en-US'] });
+    const startOfWeekDate = startOfWeek(calendarDate, { locale: locales['ja'] });
     const endOfWeekDate = new Date(startOfWeekDate);
     endOfWeekDate.setDate(endOfWeekDate.getDate() + 6); // Week view = 7 days
     endOfWeekDate.setHours(23, 59, 59, 999); // End of the last day
@@ -172,7 +190,7 @@ const FacilityDetailPage = () => {
           console.error("Invalid range received from onRangeChange", range);
           // Fallback to current week
           const today = new Date();
-          startDate = startOfWeek(today, { locale: locales['en-US'] });
+          startDate = startOfWeek(today, { locale: locales['ja'] });
           endDate = new Date(startDate);
           endDate.setDate(endDate.getDate() + 6);
           endDate.setHours(23, 59, 59, 999);
@@ -184,7 +202,7 @@ const FacilityDetailPage = () => {
   const handleSelectSlot = useCallback(
     async ({ start, end }: { start: Date; end: Date }) => {
       if (!currentUser) {
-        alert('Please select a user from the header first.');
+        alert('最初にヘッダーから操作ユーザーを選択してください。');
         return;
       }
       if (!facility) return;
@@ -235,18 +253,16 @@ const FacilityDetailPage = () => {
 
       } catch (err: any) {
         setError(err.message || 'An unknown error occurred during booking');
-        alert(`Booking failed: ${err.message}`);
+        alert(`予約に失敗しました: ${err.message}`);
       }
     },
     [currentUser, facility, id, calendarDate], // Keep necessary dependencies
   );
 
  const handleSelectEvent = useCallback((event: ReservationWithDetails) => {
-    // Optional: Show details or allow cancellation if current user matches
-    const details = `Reservation Details:\nFacility: ${event.facility.name}\nUser: ${event.user.name}\nTime: ${format(event.start, 'Pp')} - ${format(event.end, 'Pp')}`;
+    const details = `予約詳細:\n設備: ${event.facility.name}\nユーザー: ${event.user.name}\n時間: ${format(event.start, 'Pp', { locale: ja })} - ${format(event.end, 'p', { locale: ja })}`;
     alert(details);
-    // Implement cancellation logic here if needed
- }, []);
+ }, [ja]); // Add ja locale to dependencies
 
  // handleNavigate only updates the central date, range change handles fetch
  const handleNavigate = useCallback((newDate: Date, view: View, action: NavigateAction) => {
@@ -281,12 +297,12 @@ const FacilityDetailPage = () => {
   );
 
   // Adjusted loading condition
-  if (isLoading && !reservations.length) { // Simpler check: Show loading if actively fetching and no reservations yet
-      return <p>Loading calendar data...</p>;
+  if (isLoading && !reservations.length) {
+      return <p>カレンダーデータを読み込み中...</p>;
   }
-  if (error && !facility) return <p className="text-red-500">Error: {error}</p>;
-  if (!id) return <p>Facility ID missing.</p>; // Added check for ID presence
-  if (!facility && !isLoading) return <p>Facility not found.</p>; // Show not found only if not loading
+  if (error && !facility) return <p className="text-red-500">エラー: {error}</p>;
+  if (!id) return <p>設備IDが見つかりません。</p>;
+  if (!facility && !isLoading) return <p>設備が見つかりません。</p>;
 
   return (
     <div>
@@ -295,15 +311,14 @@ const FacilityDetailPage = () => {
             <h1 className="text-2xl font-bold mb-2">{facility.name}</h1>
             <p className="text-gray-700 mb-1">{facility.description}</p>
             <p className="text-sm text-gray-500 mb-4">
-               Capacity: {facility.capacity ?? 'N/A'} | Availability: {facility.availableStartTime ?? 'Any'} - {facility.availableEndTime ?? 'Any'}
+               定員: {facility.capacity ?? '未設定'} | 利用可能時間: {facility.availableStartTime ?? '指定なし'} - {facility.availableEndTime ?? '指定なし'}
             </p>
          </>
        ) : (
-          // Show placeholder or loading for facility details if needed
-          <h1 className="text-2xl font-bold mb-2">Loading Facility...</h1>
+          <h1 className="text-2xl font-bold mb-2">設備情報を読み込み中...</h1>
        )}
 
-       {error && <p className="text-red-500 mb-4">Error loading reservations: {error}</p>}
+       {error && <p className="text-red-500 mb-4">予約情報の読み込み/更新エラー: {error}</p>}
 
       <div className="h-[600px] bg-white p-4 rounded shadow">
          <Calendar
@@ -321,11 +336,15 @@ const FacilityDetailPage = () => {
             onRangeChange={handleRangeChange}
             // Set default view and ensure it's consistent
             defaultView={Views.WEEK} // Explicitly use Views enum
-            views={[Views.MONTH, Views.WEEK, Views.DAY, Views.AGENDA]} // Define available views
+            views={[Views.MONTH, Views.WEEK, Views.DAY]} // Define available views
             // Add key to force re-render on ID change if necessary, though useEffect handles data fetch
             key={id}
             // Add the eventPropGetter
             eventPropGetter={eventPropGetter}
+            // Pass the Japanese messages
+            messages={messages}
+            // Set culture prop for internal formatting if needed (though localizer handles most)
+            culture='ja'
         />
       </div>
     </div>

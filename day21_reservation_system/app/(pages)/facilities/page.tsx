@@ -105,14 +105,14 @@ const FacilitiesPage = () => {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-4">Manage Facilities</h1>
+      <h1 className="text-2xl font-bold mb-4">設備管理</h1>
 
       {/* Facility Creation Form */}
       <div className="mb-8 p-4 border rounded shadow-sm bg-white">
-        <h2 className="text-xl font-semibold mb-3">Add New Facility</h2>
+        <h2 className="text-xl font-semibold mb-3">新規設備追加</h2>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
-            <label htmlFor="name" className="block text-sm font-medium text-gray-700">Name <span className="text-red-500">*</span></label>
+            <label htmlFor="name" className="block text-sm font-medium text-gray-700">設備名 <span className="text-red-500">*</span></label>
             <input
               type="text"
               id="name"
@@ -123,7 +123,7 @@ const FacilitiesPage = () => {
             />
           </div>
           <div>
-            <label htmlFor="description" className="block text-sm font-medium text-gray-700">Description</label>
+            <label htmlFor="description" className="block text-sm font-medium text-gray-700">説明</label>
             <textarea
               id="description"
               value={description}
@@ -134,7 +134,7 @@ const FacilitiesPage = () => {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label htmlFor="capacity" className="block text-sm font-medium text-gray-700">Capacity (Optional)</label>
+              <label htmlFor="capacity" className="block text-sm font-medium text-gray-700">定員 (任意)</label>
               <input
                 type="number"
                 id="capacity"
@@ -145,7 +145,7 @@ const FacilitiesPage = () => {
               />
             </div>
             <div>
-              <label htmlFor="start-time" className="block text-sm font-medium text-gray-700">Available Start Time (HH:mm, Optional)</label>
+              <label htmlFor="start-time" className="block text-sm font-medium text-gray-700">利用可能開始時間 (HH:mm, 任意)</label>
               <input
                 type="time"
                 id="start-time"
@@ -155,7 +155,7 @@ const FacilitiesPage = () => {
               />
             </div>
             <div>
-              <label htmlFor="end-time" className="block text-sm font-medium text-gray-700">Available End Time (HH:mm, Optional)</label>
+              <label htmlFor="end-time" className="block text-sm font-medium text-gray-700">利用可能終了時間 (HH:mm, 任意)</label>
               <input
                 type="time"
                 id="end-time"
@@ -165,21 +165,21 @@ const FacilitiesPage = () => {
               />
             </div>
           </div>
-          {error && <p className="text-red-500 text-sm mt-2">Error: {error}</p>}
+          {error && <p className="text-red-500 text-sm mt-2">エラー: {error}</p>}
           <button
             type="submit"
             disabled={isSubmitting}
             className="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
           >
-            {isSubmitting ? 'Adding...' : 'Add Facility'}
+            {isSubmitting ? '追加中...' : '設備を追加'}
           </button>
         </form>
       </div>
 
       {/* Facilities List */}
-      <h2 className="text-xl font-semibold mb-3">Existing Facilities</h2>
+      <h2 className="text-xl font-semibold mb-3">登録済み設備一覧</h2>
       {isLoading ? (
-        <p>Loading facilities...</p>
+        <p>設備情報を読み込み中...</p>
       ) : facilities.length > 0 ? (
         <ul className="space-y-3">
           {facilities.map((facility) => (
@@ -190,20 +190,20 @@ const FacilitiesPage = () => {
                 </Link>
                 <p className="text-sm text-gray-600">{facility.description}</p>
                 <p className="text-sm text-gray-500">
-                  Capacity: {facility.capacity ?? 'N/A'} | Availability: {facility.availableStartTime ?? 'Any'} - {facility.availableEndTime ?? 'Any'}
+                  定員: {facility.capacity ?? '未設定'} | 利用可能時間: {facility.availableStartTime ?? '指定なし'} - {facility.availableEndTime ?? '指定なし'}
                 </p>
               </div>
                <button
                   onClick={() => handleDelete(facility.id)}
                   className="ml-4 py-1 px-3 border border-red-500 text-red-500 rounded hover:bg-red-50 text-sm"
                >
-                  Delete
+                  削除
                </button>
             </li>
           ))}
         </ul>
       ) : (
-        <p>No facilities found. Add one using the form above.</p>
+        <p>登録されている設備はありません。上のフォームから追加してください。</p>
       )}
     </div>
   );
