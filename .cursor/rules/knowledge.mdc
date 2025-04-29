@@ -26,3 +26,4 @@ alwaysApply: true
 | 17  | MCP Pokémon                  | Go, MCP Protocol, Makefile                                                   |
 | 18  | Expandable REST API           | Next.js, Prisma, SQLite, TailwindCSS, 動的データ展開 (`expand`, `max_depth`)          |
 | 19  | ジョブスケジューラ             | Next.js, TypeScript, Prisma, SQLite, TailwindCSS, 非同期ジョブ実行、スケジューリング       |
+| 20  | SQL パーサー & バリデーター    | Go, 字句解析, 構文解析 (AST), 意味解析 (型チェック), Web UI (net/http, html/template) |
