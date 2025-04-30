@@ -68,8 +68,9 @@ export default function SimulationPanel() {
       // ログにイベントを追加
       addToLog(`ノード「${selectedNodeName}」で ${failureMessage} 障害が発生しました`);
 
-      // ノード一覧を更新
+      // ノード一覧を更新 (SimulationPanel内のドロップダウン用)
       fetchNodes();
+      window.dispatchEvent(new CustomEvent('nodes-updated')); // イベント発行
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -110,8 +111,9 @@ export default function SimulationPanel() {
       // ログにイベントを追加
       addToLog(`ノード「${selectedNodeName}」が復旧しました`);
 
-      // ノード一覧を更新
+      // ノード一覧を更新 (SimulationPanel内のドロップダウン用)
       fetchNodes();
+      window.dispatchEvent(new CustomEvent('nodes-updated')); // イベント発行
     } catch (err) {
       setError((err as Error).message);
     } finally {

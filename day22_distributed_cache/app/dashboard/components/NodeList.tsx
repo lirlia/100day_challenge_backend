@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import type { Node as CacheNode } from '../../lib/types';
 
 export default function NodeList() {
@@ -13,7 +13,7 @@ export default function NodeList() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // ノード一覧の取得
-  const fetchNodes = async () => {
+  const fetchNodes = useCallback(async () => {
     console.log('[fetchNodes] Start');
     try {
       setLoading(true);
@@ -49,7 +49,7 @@ export default function NodeList() {
       setLoading(false);
     }
     console.log('[fetchNodes] End');
-  };
+  }, []);
 
   // ノードの追加
   const handleAddNode = async () => {
@@ -147,7 +147,21 @@ export default function NodeList() {
   // 初回ロード時にノード一覧を取得
   useEffect(() => {
     fetchNodes();
-  }, []);
+    console.log('[NodeList] Initial fetchNodes called.');
+
+    const handleNodesUpdate = () => {
+      console.log('[NodeList] Received nodes-updated event. Fetching nodes...');
+      fetchNodes();
+    };
+
+    window.addEventListener('nodes-updated', handleNodesUpdate);
+
+    // クリーンアップ関数
+    return () => {
+      console.log('[NodeList] Removing event listener for nodes-updated.');
+      window.removeEventListener('nodes-updated', handleNodesUpdate);
+    };
+  }, [fetchNodes]);
 
   return (
     <div className="space-y-4">

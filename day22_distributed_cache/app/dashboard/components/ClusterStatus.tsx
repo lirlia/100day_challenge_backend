@@ -146,7 +146,7 @@ export default function ClusterStatus() {
       </div>
 
       {/* ノード別統計 */}
-      <div className="bg-white rounded-lg shadow overflow-hidden">
+      {/* <div className="bg-white rounded-lg shadow overflow-hidden">
         <div className="px-4 py-5 sm:px-6">
           <h3 className="text-lg font-medium text-gray-900">Node Statistics</h3>
         </div>
@@ -190,10 +190,10 @@ export default function ClusterStatus() {
             </tbody>
           </table>
         </div>
-      </div>
+      </div> */}
 
       {/* クラスタイベント */}
-      {/* <div className="bg-white rounded-lg shadow overflow-hidden">
+      <div className="bg-white rounded-lg shadow overflow-hidden">
         <div className="px-4 py-5 sm:px-6">
           <h3 className="text-lg font-medium text-gray-900">Recent Cluster Events</h3>
         </div>
@@ -235,7 +235,7 @@ export default function ClusterStatus() {
             </tbody>
           </table>
         </div>
-      </div> */}
+      </div>
     </div>
   );
 }
