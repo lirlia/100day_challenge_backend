@@ -42,6 +42,7 @@ alwaysApply: true
 | ORM            | Prisma                   | TypeScriptとの親和性が高く、型安全なDBアクセス、マイグレーション機能 |
 | API実装        | Next.js Route Handlers   | フレームワーク標準機能でシンプル                                  |
 | スタイリング   | Tailwind CSS             | 迅速なUI構築が可能                                                |
+|                |                          | **v4以降**: `app/globals.css` では `@import "tailwindcss";` を使用 |
 | パッケージ管理 | npm                      | Node.js標準                                                       |
 | タスクランナー | npm scripts              | `package.json` で完結                                             |
 | ホットリロード | `next dev`               | Next.js 標準機能                                                  |
