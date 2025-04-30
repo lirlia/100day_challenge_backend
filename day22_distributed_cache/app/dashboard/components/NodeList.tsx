@@ -9,38 +9,61 @@ export default function NodeList() {
   const [error, setError] = useState<string | null>(null);
   const [newNodeName, setNewNodeName] = useState('');
   const [newNodeWeight, setNewNodeWeight] = useState(100);
-  const [isAdding, setIsAdding] = useState(false);
+  const [isFormVisible, setIsFormVisible] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // ノード一覧の取得
   const fetchNodes = async () => {
+    console.log('[fetchNodes] Start');
     try {
       setLoading(true);
+      setError(null);
+      const startTime = Date.now();
       const response = await fetch('/api/cluster/nodes');
 
+      const duration = Date.now() - startTime;
+      console.log(`[fetchNodes] GET /api/cluster/nodes completed in ${duration}ms. Status: ${response.status}`);
+
       if (!response.ok) {
-        throw new Error(`Failed to fetch nodes: ${response.status}`);
+        const errorData = await response.json().catch(() => ({ error: `Failed to fetch nodes: ${response.status}` }));
+        console.error('[fetchNodes] API Error:', errorData);
+        throw new Error(errorData.error || `Failed to fetch nodes: ${response.status}`);
       }
 
       const data = await response.json();
-      setNodes(data.nodes || []);
-      setError(null);
+      console.log('[fetchNodes] API Success. Data received:', data);
+      if (Array.isArray(data.nodes)) {
+        setNodes(data.nodes);
+        console.log('[fetchNodes] setNodes called with:', data.nodes);
+      } else {
+        console.error('[fetchNodes] Expected data.nodes to be an array, but got:', data.nodes);
+        setNodes([]);
+        throw new Error('Received invalid node data format from server.');
+      }
     } catch (err) {
       setError((err as Error).message);
-      console.error('Failed to fetch nodes:', err);
+      console.error('[fetchNodes] Caught error:', err);
+      setNodes([]);
     } finally {
+      console.log('[fetchNodes] Finally block reached. setLoading(false)');
       setLoading(false);
     }
+    console.log('[fetchNodes] End');
   };
 
   // ノードの追加
   const handleAddNode = async () => {
+    console.log('[handleAddNode] Start');
     if (!newNodeName.trim()) {
       alert('ノード名を入力してください');
+      console.log('[handleAddNode] Validation failed');
       return;
     }
 
     try {
-      setIsAdding(true);
+      setIsSubmitting(true);
+      console.log('[handleAddNode] setIsSubmitting(true)');
+      const startTime = Date.now();
       const response = await fetch('/api/cluster/nodes', {
         method: 'POST',
         headers: {
@@ -52,22 +75,34 @@ export default function NodeList() {
         }),
       });
 
+      const duration = Date.now() - startTime;
+      console.log(`[handleAddNode] POST /api/cluster/nodes completed in ${duration}ms. Status: ${response.status}`);
+
       if (!response.ok) {
-        throw new Error(`Failed to add node: ${response.status}`);
+        const errorData = await response.json().catch(() => ({ error: `Failed to add node: ${response.status}` }));
+        console.error('[handleAddNode] API Error:', errorData);
+        throw new Error(errorData.error || `Failed to add node: ${response.status}`);
       }
 
+      console.log('[handleAddNode] API Success. Resetting form.');
       // フォームをリセット
       setNewNodeName('');
       setNewNodeWeight(100);
+      setIsFormVisible(false);
 
+      console.log('[handleAddNode] Calling fetchNodes...');
       // ノード一覧を再取得
       fetchNodes();
+      console.log('[handleAddNode] fetchNodes completed.');
+
     } catch (err) {
       alert(`Error: ${(err as Error).message}`);
-      console.error('Failed to add node:', err);
+      console.error('[handleAddNode] Caught error:', err);
     } finally {
-      setIsAdding(false);
+      console.log('[handleAddNode] Finally block reached. setIsSubmitting(false)');
+      setIsSubmitting(false);
     }
+    console.log('[handleAddNode] End');
   };
 
   // ノードの削除
@@ -119,14 +154,18 @@ export default function NodeList() {
       <div className="flex justify-between items-center">
         <h2 className="text-xl font-bold">ノード一覧</h2>
         <button
-          onClick={() => setIsAdding(!isAdding)}
+          onClick={() => {
+            console.log('[Toggle Button] Clicked. Current isFormVisible:', isFormVisible);
+            setIsFormVisible(!isFormVisible);
+            console.log('[Toggle Button] New isFormVisible:', !isFormVisible);
+          }}
           className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm"
         >
-          {isAdding ? 'キャンセル' : '+ ノード追加'}
+          {isFormVisible ? 'キャンセル' : '+ ノード追加'}
         </button>
       </div>
 
-      {isAdding && (
+      {isFormVisible && (
         <div className="bg-blue-50 p-4 rounded-md border border-blue-200 mb-4">
           <h3 className="text-lg font-medium mb-2">新規ノード追加</h3>
           <div className="flex flex-col md:flex-row gap-3">
@@ -153,11 +192,15 @@ export default function NodeList() {
             </div>
             <div className="flex items-end">
               <button
-                onClick={handleAddNode}
-                disabled={isAdding}
+                onClick={(e) => {
+                  console.log('[Add Button] Clicked. Event:', e);
+                  console.log('[Add Button] Current isSubmitting state:', isSubmitting);
+                  handleAddNode();
+                }}
+                disabled={isSubmitting}
                 className="w-full md:w-auto px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md"
               >
-                {isAdding ? '追加中...' : '追加'}
+                {isSubmitting ? '追加中...' : '追加'}
               </button>
             </div>
           </div>

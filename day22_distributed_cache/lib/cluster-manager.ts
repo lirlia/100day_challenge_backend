@@ -482,15 +482,11 @@ class ClusterManager {
       // 配置バージョンを更新
       this.placementVersion++;
 
-      // データの再配置をスケジュール
-      await this.scheduleDataRebalancing();
+      // データのリバランスをスケジュール (await を外してバックグラウンド実行)
+      this.scheduleDataRebalancing();
 
       // イベントログに記録
-      await this.logClusterEvent('node_added', {
-        nodeId: newNode.id,
-        name: newNode.name,
-        placementVersion: this.placementVersion,
-      });
+      await this.logClusterEvent('node_added', { nodeId: nodeData.id, name: nodeData.name });
 
       return nodeData;
     } catch (error) {
