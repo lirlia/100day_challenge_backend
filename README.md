@@ -36,3 +36,4 @@ LLMで生成したコードを置いています。
 | Day20| SQL Parser & Validator (Go)       | <video src="https://github.com/user-attachments/assets/3555b690-dc55-4d7b-981e-18c6821abf99" > |
 | Day21| Facility Reservation System       | <video src="https://github.com/user-attachments/assets/e1d4485c-fc05-4269-ae3d-35a82f3ee0c4" > |
 | Day22 | Distributed Cache                | <video src="https://github.com/user-attachments/assets/48828a01-2b67-42ca-b961-df16551d5d01" > |
+| Day23 | Image Resizer API                 | (動画URL未設定) |
