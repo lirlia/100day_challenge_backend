@@ -9,6 +9,10 @@
 
 応答生成（Generation）の部分は、実際のLLMを使用せず、検索されたドキュメントを用いた固定テンプレートによるシミュレーションとして実装されます。
 
+https://github.com/user-attachments/assets/6a5ebcf5-f39e-4a47-a239-6d2bccafe3d1
+
+[100日チャレンジ day24](https://zenn.dev/gin_nazo/scraps/98b9241d068d2b)
+
 ## 知識ソース
 
 知識ベースは、以下のWikipediaページのテキストコンテンツから構成されます。

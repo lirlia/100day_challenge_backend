@@ -37,3 +37,4 @@ LLMで生成したコードを置いています。
 | Day21| Facility Reservation System       | <video src="https://github.com/user-attachments/assets/e1d4485c-fc05-4269-ae3d-35a82f3ee0c4" > |
 | Day22 | Distributed Cache                | <video src="https://github.com/user-attachments/assets/48828a01-2b67-42ca-b961-df16551d5d01" > |
 | Day23 | Image Resizer API                 | <video src="https://github.com/user-attachments/assets/1ae0d748-ad32-4f64-ac13-d3dffe13d385" > |
+| Day24 | Simple RAG (Retrieval-Augmented Generation) System (Vector Search Version) | <video src="https://github.com/user-attachments/assets/6a5ebcf5-f39e-4a47-a239-6d2bccafe3d1" > |
