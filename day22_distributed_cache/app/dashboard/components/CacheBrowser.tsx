@@ -308,8 +308,8 @@ export default function CacheBrowser() {
                 <dt className="text-sm font-medium text-gray-500">データソース</dt>
                 <dd className="mt-1">
                   <span className={`px-2 py-1 text-xs font-semibold rounded-full ${currentView.metadata.source === 'primary'
-                      ? 'bg-green-100 text-green-800'
-                      : 'bg-blue-100 text-blue-800'
+                    ? 'bg-green-100 text-green-800'
+                    : 'bg-blue-100 text-blue-800'
                     }`}>
                     {formatSource(currentView.metadata.source)}
                   </span>
@@ -372,8 +372,8 @@ export default function CacheBrowser() {
             <div className="py-2 text-gray-500 text-center">キャッシュが存在しません</div>
           ) : (
             <ul className="space-y-2 max-h-96 overflow-y-auto">
-              {cacheItems.map((item) => (
-                <li key={item.key} className="border-b last:border-b-0 border-gray-100 pb-2">
+              {cacheItems.map((item, index) => (
+                <li key={`${item.key}-${index}`} className="border-b last:border-b-0 border-gray-100 pb-2">
                   <button
                     onClick={() => {
                       setCacheKey(item.key);
@@ -385,8 +385,8 @@ export default function CacheBrowser() {
                       <span className="text-blue-600 font-medium">{item.key}</span>
                       {item.metadata.source && (
                         <span className={`text-xs px-1.5 py-0.5 rounded-full ${item.metadata.source === 'primary'
-                            ? 'bg-green-100 text-green-800'
-                            : 'bg-blue-100 text-blue-800'
+                          ? 'bg-green-100 text-green-800'
+                          : 'bg-blue-100 text-blue-800'
                           }`}>
                           {formatSource(item.metadata.source)}
                         </span>
