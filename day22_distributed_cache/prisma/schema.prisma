@@ -1,0 +1,68 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Node {
+  id          String       @id @default(uuid())
+  name        String
+  status      String       @default("active") // active, down, slow, partitioned
+  weight      Int          @default(100)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  cacheItems  CacheItem[]
+  replications Replication[]
+}
+
+model CacheItem {
+  id          String       @id @default(uuid())
+  key         String
+  value       String
+  node        Node         @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  nodeId      String
+  expiresAt   DateTime?
+  version     Int          @default(1)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  replications Replication[]
+
+  @@unique([nodeId, key])
+  @@index([key])
+  @@index([expiresAt])
+}
+
+model Replication {
+  id          String       @id @default(uuid())
+  cacheItem   CacheItem    @relation(fields: [cacheItemId], references: [id], onDelete: Cascade)
+  cacheItemId String
+  node        Node         @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  nodeId      String
+  version     Int          @default(1)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@unique([nodeId, cacheItemId])
+  @@index([nodeId])
+  @@index([cacheItemId])
+}
+
+model ClusterEvent {
+  id          String       @id @default(uuid())
+  type        String       // node_added, node_removed, rebalance_started, etc.
+  payload     String       // JSON string with event details
+  createdAt   DateTime     @default(now())
+
+  @@index([type])
+  @@index([createdAt])
+}
