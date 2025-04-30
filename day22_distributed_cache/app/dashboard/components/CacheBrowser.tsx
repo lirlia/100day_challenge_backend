@@ -175,12 +175,6 @@ export default function CacheBrowser() {
     return `${days}日${hours % 24}時間`;
   };
 
-  // レプリケーションのソースを表示用に整形
-  const formatSource = (source: string | undefined): string => {
-    if (!source) return '-';
-    return source === 'primary' ? 'プライマリ' : 'レプリカ';
-  };
-
   // 初回ロード時に全キャッシュを取得
   useEffect(() => {
     fetchAllCacheItems();
@@ -305,15 +299,8 @@ export default function CacheBrowser() {
               </div>
 
               <div>
-                <dt className="text-sm font-medium text-gray-500">データソース</dt>
-                <dd className="mt-1">
-                  <span className={`px-2 py-1 text-xs font-semibold rounded-full ${currentView.metadata.source === 'primary'
-                    ? 'bg-green-100 text-green-800'
-                    : 'bg-blue-100 text-blue-800'
-                    }`}>
-                    {formatSource(currentView.metadata.source)}
-                  </span>
-                </dd>
+                <dt className="text-sm font-medium text-gray-500">ノード名</dt>
+                <dd className="mt-1">{currentView.metadata.nodeName}</dd>
               </div>
 
               <div>
@@ -383,14 +370,10 @@ export default function CacheBrowser() {
                   >
                     <div className="flex justify-between items-center">
                       <span className="text-blue-600 font-medium">{item.key}</span>
-                      {item.metadata.source && (
-                        <span className={`text-xs px-1.5 py-0.5 rounded-full ${item.metadata.source === 'primary'
-                          ? 'bg-green-100 text-green-800'
-                          : 'bg-blue-100 text-blue-800'
-                          }`}>
-                          {formatSource(item.metadata.source)}
-                        </span>
-                      )}
+                      {/* ノード名を表示 */}
+                      <span className="text-xs bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded-full">
+                        {item.metadata.nodeName}
+                      </span>
                     </div>
                     <div className="text-xs text-gray-500 mt-1">
                       TTL: {formatTTL(item.metadata.expiresAt)}

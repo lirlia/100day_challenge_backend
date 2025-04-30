@@ -136,6 +136,9 @@ class ClusterManager {
           key,
         },
       },
+      include: {
+        node: true,
+      },
     });
 
     if (!sourceItem) return false;
@@ -146,6 +149,10 @@ class ClusterManager {
         where: {
           nodeId: targetNodeId,
           cacheItemId: sourceItem.id,
+        },
+        include: {
+          cacheItem: true,
+          node: true,
         },
       });
 
@@ -204,6 +211,9 @@ class ClusterManager {
           key,
         },
       },
+      include: {
+        node: true,
+      },
     });
 
     // データが見つからない場合、レプリカノードを確認
@@ -218,11 +228,12 @@ class ClusterManager {
           where: {
             nodeId: replicaNode.id,
             cacheItem: {
-              key,
+              key: key,
             },
           },
           include: {
-            cacheItem: true,
+            cacheItem: { include: { node: true } },
+            node: true,
           },
         });
 
@@ -250,6 +261,7 @@ class ClusterManager {
               createdAt: item.createdAt.toISOString(),
               updatedAt: item.updatedAt.toISOString(),
               source: 'replica',  // レプリカからの読み取りを示す
+              nodeName: replication.node.name,
             },
           };
         }
@@ -275,6 +287,7 @@ class ClusterManager {
         createdAt: cacheItem.createdAt.toISOString(),
         updatedAt: cacheItem.updatedAt.toISOString(),
         source: 'primary',  // プライマリからの読み取りを示す
+        nodeName: cacheItem.node.name,
       },
     };
   }

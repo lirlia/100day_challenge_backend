@@ -21,6 +21,7 @@ export async function GET(request: NextRequest) {
   try {
     // すべてのキャッシュアイテムを取得
     const cacheItems = await prisma.cacheItem.findMany({
+      include: { node: true },
       orderBy: { updatedAt: 'desc' },
     });
 
@@ -44,6 +45,7 @@ export async function GET(request: NextRequest) {
             createdAt: item.createdAt.toISOString(),
             updatedAt: item.updatedAt.toISOString(),
             source: isPrimary ? 'primary' : 'replica',
+            nodeName: item.node.name,
           },
         };
       })

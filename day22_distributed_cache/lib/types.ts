@@ -22,6 +22,7 @@ export interface CacheItemMetadata {
   updatedAt: string;
   /** データソース */
   source?: 'primary' | 'replica';
+  nodeName: string;
 }
 
 /**
