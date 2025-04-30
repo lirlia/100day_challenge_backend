@@ -1,55 +1,34 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Node } from '../../lib/types';
+import type { Node as CacheNode } from '../../lib/types';
 
 export default function NodeList() {
-  const [nodes, setNodes] = useState<Node[]>([]);
+  const [nodes, setNodes] = useState<CacheNode[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showAddModal, setShowAddModal] = useState(false);
   const [newNodeName, setNewNodeName] = useState('');
-  const [newNodeWeight, setNewNodeWeight] = useState('100');
+  const [newNodeWeight, setNewNodeWeight] = useState(100);
+  const [isAdding, setIsAdding] = useState(false);
 
   // ノード一覧の取得
   const fetchNodes = async () => {
     try {
       setLoading(true);
       const response = await fetch('/api/cluster/nodes');
+
       if (!response.ok) {
-        throw new Error('ノード情報の取得に失敗しました');
+        throw new Error(`Failed to fetch nodes: ${response.status}`);
       }
+
       const data = await response.json();
       setNodes(data.nodes || []);
-      // アクティブノードの数をカウント (ダッシュボード表示用)
-      const activeNodesCount = data.nodes.filter((node: Node) => node.status === 'active').length;
-      document.getElementById('active-nodes-count')!.textContent = activeNodesCount.toString();
+      setError(null);
     } catch (err) {
       setError((err as Error).message);
+      console.error('Failed to fetch nodes:', err);
     } finally {
       setLoading(false);
-    }
-  };
-
-  // ノードの削除
-  const handleDeleteNode = async (nodeId: string) => {
-    if (!confirm('このノードを削除してもよろしいですか？')) {
-      return;
-    }
-
-    try {
-      const response = await fetch(`/api/cluster/nodes/${nodeId}`, {
-        method: 'DELETE',
-      });
-
-      if (!response.ok) {
-        throw new Error('ノードの削除に失敗しました');
-      }
-
-      // 成功したら一覧を更新
-      fetchNodes();
-    } catch (err) {
-      alert((err as Error).message);
     }
   };
 
@@ -61,6 +40,7 @@ export default function NodeList() {
     }
 
     try {
+      setIsAdding(true);
       const response = await fetch('/api/cluster/nodes', {
         method: 'POST',
         headers: {
@@ -68,263 +48,192 @@ export default function NodeList() {
         },
         body: JSON.stringify({
           name: newNodeName,
-          weight: parseInt(newNodeWeight),
+          weight: newNodeWeight,
         }),
       });
 
       if (!response.ok) {
-        throw new Error('ノードの追加に失敗しました');
+        throw new Error(`Failed to add node: ${response.status}`);
       }
 
-      // 成功したらモーダルを閉じて一覧を更新
-      setShowAddModal(false);
+      // フォームをリセット
       setNewNodeName('');
-      setNewNodeWeight('100');
+      setNewNodeWeight(100);
+
+      // ノード一覧を再取得
       fetchNodes();
     } catch (err) {
-      alert((err as Error).message);
+      alert(`Error: ${(err as Error).message}`);
+      console.error('Failed to add node:', err);
+    } finally {
+      setIsAdding(false);
     }
   };
 
-  // ノード障害のシミュレーション
-  const handleSimulateFailure = async (nodeId: string, type: 'down' | 'slow' | 'partition') => {
+  // ノードの削除
+  const handleRemoveNode = async (nodeId: string) => {
+    if (!confirm('このノードを削除してもよろしいですか？')) {
+      return;
+    }
+
     try {
-      const response = await fetch('/api/simulation/failure', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          nodeId,
-          type,
-        }),
+      const response = await fetch(`/api/cluster/nodes/${nodeId}`, {
+        method: 'DELETE',
       });
 
       if (!response.ok) {
-        throw new Error('障害シミュレーションに失敗しました');
+        throw new Error(`Failed to remove node: ${response.status}`);
       }
 
-      // 成功したら一覧を更新
+      // ノード一覧を再取得
       fetchNodes();
     } catch (err) {
-      alert((err as Error).message);
+      alert(`Error: ${(err as Error).message}`);
+      console.error('Failed to remove node:', err);
     }
   };
 
-  // ノード復旧のシミュレーション
-  const handleSimulateRecovery = async (nodeId: string) => {
-    try {
-      const response = await fetch('/api/simulation/recover', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          nodeId,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error('復旧シミュレーションに失敗しました');
-      }
-
-      // 成功したら一覧を更新
-      fetchNodes();
-    } catch (err) {
-      alert((err as Error).message);
-    }
-  };
-
-  // ノード追加モーダルのトグル
-  useEffect(() => {
-    const addNodeBtn = document.getElementById('add-node-btn');
-    if (addNodeBtn) {
-      addNodeBtn.addEventListener('click', () => setShowAddModal(true));
-    }
-    return () => {
-      if (addNodeBtn) {
-        addNodeBtn.removeEventListener('click', () => setShowAddModal(true));
-      }
-    };
-  }, []);
-
-  // 初期データの取得
-  useEffect(() => {
-    fetchNodes();
-    // 30秒ごとに自動更新
-    const interval = setInterval(fetchNodes, 30000);
-    return () => clearInterval(interval);
-  }, []);
-
-  // ノードの状態に応じたスタイルとラベルを取得
-  const getNodeStatusStyle = (status: string) => {
+  // ノードの状態に基づいて色を決定
+  const getStatusColor = (status: string): string => {
     switch (status) {
       case 'active':
-        return {
-          bg: 'bg-green-100',
-          border: 'border-green-300',
-          text: 'text-green-800',
-          label: 'アクティブ',
-        };
+        return 'bg-green-100 text-green-800 border-green-200';
       case 'down':
-        return {
-          bg: 'bg-red-100',
-          border: 'border-red-300',
-          text: 'text-red-800',
-          label: '停止中',
-        };
+        return 'bg-red-100 text-red-800 border-red-200';
       case 'slow':
-        return {
-          bg: 'bg-yellow-100',
-          border: 'border-yellow-300',
-          text: 'text-yellow-800',
-          label: '低速',
-        };
+        return 'bg-yellow-100 text-yellow-800 border-yellow-200';
       case 'partitioned':
-        return {
-          bg: 'bg-orange-100',
-          border: 'border-orange-300',
-          text: 'text-orange-800',
-          label: 'ネットワーク分断',
-        };
+        return 'bg-purple-100 text-purple-800 border-purple-200';
       default:
-        return {
-          bg: 'bg-gray-100',
-          border: 'border-gray-300',
-          text: 'text-gray-800',
-          label: '不明',
-        };
+        return 'bg-gray-100 text-gray-800 border-gray-200';
     }
   };
 
+  // 初回ロード時にノード一覧を取得
+  useEffect(() => {
+    fetchNodes();
+  }, []);
+
   return (
-    <>
-      {loading && nodes.length === 0 ? (
-        <div className="text-center py-4 text-gray-500">読み込み中...</div>
-      ) : error ? (
-        <div className="text-center py-4 text-red-600">{error}</div>
-      ) : nodes.length === 0 ? (
-        <div className="text-center py-4 text-gray-500">ノードがありません</div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {nodes.map((node) => {
-            const statusStyle = getNodeStatusStyle(node.status);
-            return (
-              <div
-                key={node.id}
-                className={`rounded-lg border ${statusStyle.border} overflow-hidden`}
-              >
-                <div className={`p-3 ${statusStyle.bg} ${statusStyle.text} font-medium flex justify-between items-center`}>
-                  <span>{node.name}</span>
-                  <span className="text-xs px-2 py-1 rounded-full bg-white">{statusStyle.label}</span>
-                </div>
-                <div className="p-3">
-                  <div className="text-xs text-gray-500 mb-2">ID: {node.id.substring(0, 8)}...</div>
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-sm">ウェイト:</span>
-                    <span className="font-medium">{node.weight}</span>
-                  </div>
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <h2 className="text-xl font-bold">ノード一覧</h2>
+        <button
+          onClick={() => setIsAdding(!isAdding)}
+          className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm"
+        >
+          {isAdding ? 'キャンセル' : '+ ノード追加'}
+        </button>
+      </div>
 
-                  <div className="mt-3 space-x-2 flex justify-end">
-                    {node.status === 'active' ? (
-                      <div className="dropdown relative">
-                        <button className="text-xs px-2 py-1 bg-yellow-50 text-yellow-700 border border-yellow-200 rounded hover:bg-yellow-100">
-                          障害シミュレーション ▼
-                        </button>
-                        <div className="dropdown-menu absolute right-0 mt-1 bg-white shadow-lg rounded border border-gray-200 hidden">
-                          <button
-                            onClick={() => handleSimulateFailure(node.id, 'down')}
-                            className="block w-full text-left text-xs px-3 py-2 hover:bg-gray-50"
-                          >
-                            停止
-                          </button>
-                          <button
-                            onClick={() => handleSimulateFailure(node.id, 'slow')}
-                            className="block w-full text-left text-xs px-3 py-2 hover:bg-gray-50"
-                          >
-                            低速化
-                          </button>
-                          <button
-                            onClick={() => handleSimulateFailure(node.id, 'partition')}
-                            className="block w-full text-left text-xs px-3 py-2 hover:bg-gray-50"
-                          >
-                            ネットワーク分断
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => handleSimulateRecovery(node.id)}
-                        className="text-xs px-2 py-1 bg-green-50 text-green-700 border border-green-200 rounded hover:bg-green-100"
-                      >
-                        復旧
-                      </button>
-                    )}
-                    <button
-                      onClick={() => handleDeleteNode(node.id)}
-                      className="text-xs px-2 py-1 bg-red-50 text-red-700 border border-red-200 rounded hover:bg-red-100"
-                    >
-                      削除
-                    </button>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* ノード追加モーダル */}
-      {showAddModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
-            <h3 className="text-lg font-semibold mb-4">新しいノードを追加</h3>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">ノード名</label>
-                <input
-                  type="text"
-                  value={newNodeName}
-                  onChange={(e) => setNewNodeName(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">ウェイト (1-1000)</label>
-                <input
-                  type="number"
-                  min="1"
-                  max="1000"
-                  value={newNodeWeight}
-                  onChange={(e) => setNewNodeWeight(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                />
-              </div>
+      {isAdding && (
+        <div className="bg-blue-50 p-4 rounded-md border border-blue-200 mb-4">
+          <h3 className="text-lg font-medium mb-2">新規ノード追加</h3>
+          <div className="flex flex-col md:flex-row gap-3">
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1">ノード名</label>
+              <input
+                type="text"
+                value={newNodeName}
+                onChange={(e) => setNewNodeName(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                placeholder="例: Node 4"
+              />
             </div>
-            <div className="mt-6 flex justify-end space-x-2">
-              <button
-                onClick={() => setShowAddModal(false)}
-                className="px-4 py-2 bg-gray-50 text-gray-700 rounded border border-gray-300"
-              >
-                キャンセル
-              </button>
+            <div className="w-full md:w-1/3">
+              <label className="block text-sm font-medium text-gray-700 mb-1">ウェイト</label>
+              <input
+                type="number"
+                value={newNodeWeight}
+                onChange={(e) => setNewNodeWeight(parseInt(e.target.value) || 100)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                min="1"
+                max="1000"
+              />
+            </div>
+            <div className="flex items-end">
               <button
                 onClick={handleAddNode}
-                className="px-4 py-2 bg-blue-600 text-white rounded"
+                disabled={isAdding}
+                className="w-full md:w-auto px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md"
               >
-                追加
+                {isAdding ? '追加中...' : '追加'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ドロップダウンメニューのためのスタイル */}
-      <style jsx>{`
-        .dropdown:hover .dropdown-menu {
-          display: block;
-        }
-      `}</style>
-    </>
+      {loading && nodes.length === 0 ? (
+        <div className="text-center py-4">ノード一覧を読み込み中...</div>
+      ) : error ? (
+        <div className="bg-red-50 border border-red-200 p-4 rounded-md text-red-700">
+          エラー: {error}
+          <button
+            onClick={fetchNodes}
+            className="ml-4 px-2 py-1 bg-red-100 hover:bg-red-200 rounded"
+          >
+            再試行
+          </button>
+        </div>
+      ) : nodes.length === 0 ? (
+        <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-md text-yellow-700">
+          ノードがありません。「ノード追加」をクリックして最初のノードを追加してください。
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  ID
+                </th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  ノード名
+                </th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  状態
+                </th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  ウェイト
+                </th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  操作
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {nodes.map((node) => (
+                <tr key={node.id}>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {node.id.slice(0, 8)}...
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                    {node.name}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm">
+                    <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(node.status)}`}>
+                      {node.status}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {node.weight}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm">
+                    <button
+                      onClick={() => handleRemoveNode(node.id)}
+                      className="text-red-600 hover:text-red-900"
+                      disabled={node.status !== 'active'}
+                    >
+                      削除
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
   );
 }

@@ -1,39 +1,48 @@
 'use client';
 
-import { useState } from 'react';
-import { CacheItemResponse } from '../../lib/types';
+import { useState, useEffect } from 'react';
+import type { CacheItemResponse } from '../../lib/types';
 
 export default function CacheBrowser() {
-  const [key, setKey] = useState('');
-  const [value, setValue] = useState('');
-  const [ttl, setTtl] = useState('');
+  const [cacheKey, setCacheKey] = useState('');
+  const [cacheValue, setCacheValue] = useState('');
+  const [ttl, setTtl] = useState('3600');
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<CacheItemResponse | null>(null);
+  const [cacheItems, setCacheItems] = useState<CacheItemResponse[]>([]);
+  const [recentKeys, setRecentKeys] = useState<string[]>([]);
+  const [currentView, setCurrentView] = useState<CacheItemResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [operation, setOperation] = useState<string | null>(null);
 
-  // キャッシュから値を取得
-  const handleGet = async () => {
-    if (!key) {
+  // キャッシュキーの取得処理
+  const handleGetCache = async (key: string) => {
+    if (!key.trim()) {
       setError('キーを入力してください');
       return;
     }
 
-    setOperation('get');
-    setLoading(true);
-    setError(null);
-    setResult(null);
-
     try {
-      const response = await fetch(`/api/cache/${encodeURIComponent(key)}`);
-      const data = await response.json();
+      setLoading(true);
+      setError(null);
 
-      if (!response.ok) {
-        throw new Error(data.error || 'キャッシュからの取得に失敗しました');
+      const response = await fetch(`/api/cache/${encodeURIComponent(key)}`);
+
+      if (response.status === 404) {
+        setError(`キー "${key}" は存在しません`);
+        setCurrentView(null);
+        return;
       }
 
-      setResult(data);
-      setValue(data.value);
+      if (!response.ok) {
+        throw new Error(`キャッシュの取得に失敗しました: ${response.status}`);
+      }
+
+      const data = await response.json();
+      setCurrentView(data);
+
+      // 最近アクセスしたキーリストに追加
+      if (!recentKeys.includes(key)) {
+        setRecentKeys([key, ...recentKeys].slice(0, 10));
+      }
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -41,77 +50,44 @@ export default function CacheBrowser() {
     }
   };
 
-  // キャッシュに値を設定
-  const handleSet = async () => {
-    if (!key) {
+  // キャッシュキーの設定処理
+  const handleSetCache = async () => {
+    if (!cacheKey.trim()) {
       setError('キーを入力してください');
       return;
     }
 
-    if (!value) {
+    if (!cacheValue.trim()) {
       setError('値を入力してください');
       return;
     }
 
-    setOperation('set');
-    setLoading(true);
-    setError(null);
-    setResult(null);
-
     try {
-      const payload: { value: string; ttl?: number } = { value };
+      setLoading(true);
+      setError(null);
 
-      if (ttl && !isNaN(parseInt(ttl))) {
-        payload.ttl = parseInt(ttl);
-      }
-
-      const response = await fetch(`/api/cache/${encodeURIComponent(key)}`, {
+      const response = await fetch(`/api/cache/${encodeURIComponent(cacheKey)}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          value: cacheValue,
+          ttl: parseInt(ttl) || 0,
+        }),
       });
 
-      const data = await response.json();
-
       if (!response.ok) {
-        throw new Error(data.error || 'キャッシュへの設定に失敗しました');
+        throw new Error(`キャッシュの設定に失敗しました: ${response.status}`);
       }
 
-      // 設定成功後に値を取得して表示
-      handleGet();
-    } catch (err) {
-      setError((err as Error).message);
-      setLoading(false);
-    }
-  };
+      // 保存成功したらキーを取得して表示
+      handleGetCache(cacheKey);
 
-  // キャッシュから値を削除
-  const handleDelete = async () => {
-    if (!key) {
-      setError('キーを入力してください');
-      return;
-    }
-
-    setOperation('delete');
-    setLoading(true);
-    setError(null);
-    setResult(null);
-
-    try {
-      const response = await fetch(`/api/cache/${encodeURIComponent(key)}`, {
-        method: 'DELETE',
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'キャッシュからの削除に失敗しました');
+      // 最近アクセスしたキーリストに追加
+      if (!recentKeys.includes(cacheKey)) {
+        setRecentKeys([cacheKey, ...recentKeys].slice(0, 10));
       }
-
-      setValue('');
-      setResult(null);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -119,120 +95,314 @@ export default function CacheBrowser() {
     }
   };
 
+  // キャッシュキーの削除処理
+  const handleDeleteCache = async (key: string) => {
+    if (!key.trim()) {
+      setError('キーを入力してください');
+      return;
+    }
+
+    if (!confirm(`キー "${key}" を削除してもよろしいですか？`)) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      const response = await fetch(`/api/cache/${encodeURIComponent(key)}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        throw new Error(`キャッシュの削除に失敗しました: ${response.status}`);
+      }
+
+      setCurrentView(null);
+
+      // 削除後に最新のキャッシュアイテムリストを更新
+      const updatedItems = cacheItems.filter(item => item.key !== key);
+      setCacheItems(updatedItems);
+
+      // 削除成功のメッセージ
+      setError(`キー "${key}" を削除しました`);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 全キャッシュの取得
+  const fetchAllCacheItems = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch('/api/cache');
+
+      if (!response.ok) {
+        throw new Error('キャッシュリストの取得に失敗しました');
+      }
+
+      const data = await response.json();
+      setCacheItems(data.items || []);
+    } catch (err) {
+      console.error('Error fetching cache items:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // TTLの表示形式を整形する
+  const formatTTL = (expiresAt: string | undefined): string => {
+    if (!expiresAt) return '無期限';
+
+    const expireTime = new Date(expiresAt).getTime();
+    const now = Date.now();
+    const diff = expireTime - now;
+
+    if (diff <= 0) return '期限切れ';
+
+    const seconds = Math.floor(diff / 1000);
+    if (seconds < 60) return `${seconds}秒`;
+
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}分${seconds % 60}秒`;
+
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}時間${minutes % 60}分`;
+
+    const days = Math.floor(hours / 24);
+    return `${days}日${hours % 24}時間`;
+  };
+
+  // レプリケーションのソースを表示用に整形
+  const formatSource = (source: string | undefined): string => {
+    if (!source) return '-';
+    return source === 'primary' ? 'プライマリ' : 'レプリカ';
+  };
+
+  // 初回ロード時に全キャッシュを取得
+  useEffect(() => {
+    fetchAllCacheItems();
+
+    // 30秒ごとに更新
+    const interval = setInterval(fetchAllCacheItems, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
   return (
-    <div className="space-y-4">
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">キー</label>
-        <input
-          type="text"
-          value={key}
-          onChange={(e) => setKey(e.target.value)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md"
-          placeholder="例: user:123, product:456"
-        />
-      </div>
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      {/* 左側: キャッシュ操作パネル */}
+      <div className="md:col-span-2 space-y-6">
+        <div className="bg-white p-6 rounded-lg shadow-md">
+          <h2 className="text-xl font-bold mb-4">キャッシュ操作</h2>
 
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">値</label>
-        <textarea
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md"
-          rows={3}
-          placeholder="例: {&quot;name&quot;: &quot;John&quot;, &quot;age&quot;: 30}"
-        />
-      </div>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                キー
+              </label>
+              <div className="flex">
+                <input
+                  type="text"
+                  value={cacheKey}
+                  onChange={(e) => setCacheKey(e.target.value)}
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-l-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="例: user:1234"
+                />
+                <button
+                  onClick={() => handleGetCache(cacheKey)}
+                  disabled={loading}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-r-md"
+                >
+                  取得
+                </button>
+              </div>
+            </div>
 
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          TTL (秒) <span className="text-xs text-gray-400">オプション</span>
-        </label>
-        <input
-          type="number"
-          value={ttl}
-          onChange={(e) => setTtl(e.target.value)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md"
-          placeholder="例: 3600 (1時間)"
-        />
-      </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                値
+              </label>
+              <textarea
+                value={cacheValue}
+                onChange={(e) => setCacheValue(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                rows={3}
+                placeholder="キャッシュの値"
+              />
+            </div>
 
-      <div className="flex space-x-2">
-        <button
-          onClick={handleGet}
-          disabled={loading}
-          className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded"
-        >
-          取得
-        </button>
-        <button
-          onClick={handleSet}
-          disabled={loading}
-          className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded"
-        >
-          設定
-        </button>
-        <button
-          onClick={handleDelete}
-          disabled={loading}
-          className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded"
-        >
-          削除
-        </button>
-      </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                TTL (秒)
+              </label>
+              <input
+                type="number"
+                value={ttl}
+                onChange={(e) => setTtl(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="3600"
+                min="0"
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                0を入力すると無期限になります
+              </p>
+            </div>
 
-      {loading && (
-        <div className="text-center py-4">
-          <div className="inline-block animate-spin h-5 w-5 border-2 border-gray-500 border-t-transparent rounded-full mr-2"></div>
-          処理中...
-        </div>
-      )}
+            <div className="flex justify-between items-center pt-2">
+              <button
+                onClick={handleSetCache}
+                disabled={loading}
+                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md"
+              >
+                {loading ? '処理中...' : '保存'}
+              </button>
 
-      {error && (
-        <div className="p-3 bg-red-50 border border-red-200 rounded-md text-red-700">
-          {error}
-        </div>
-      )}
-
-      {result && (
-        <div className="mt-4">
-          <div className="mb-2 font-medium">結果:</div>
-          <div className="p-3 bg-gray-50 border border-gray-200 rounded-md overflow-x-auto">
-            <pre className="text-sm">{JSON.stringify(result, null, 2)}</pre>
+              <button
+                onClick={() => handleDeleteCache(cacheKey)}
+                disabled={loading || !cacheKey.trim()}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md"
+              >
+                削除
+              </button>
+            </div>
           </div>
 
-          {result.metadata && (
-            <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-              <div className="bg-blue-50 border border-blue-100 rounded p-2">
-                <span className="font-medium text-blue-700">バージョン:</span>{' '}
-                <span>{result.metadata.version}</span>
-              </div>
-
-              {result.metadata.expiresAt && (
-                <div className="bg-blue-50 border border-blue-100 rounded p-2">
-                  <span className="font-medium text-blue-700">有効期限:</span>{' '}
-                  <span>{new Date(result.metadata.expiresAt).toLocaleString()}</span>
-                </div>
-              )}
-
-              <div className="bg-blue-50 border border-blue-100 rounded p-2">
-                <span className="font-medium text-blue-700">作成日時:</span>{' '}
-                <span>{new Date(result.metadata.createdAt).toLocaleString()}</span>
-              </div>
-
-              <div className="bg-blue-50 border border-blue-100 rounded p-2">
-                <span className="font-medium text-blue-700">更新日時:</span>{' '}
-                <span>{new Date(result.metadata.updatedAt).toLocaleString()}</span>
-              </div>
+          {error && (
+            <div className={`mt-4 p-3 rounded-md ${error.includes('削除しました') ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+              {error}
             </div>
           )}
         </div>
-      )}
 
-      {operation === 'delete' && !error && !loading && (
-        <div className="p-3 bg-green-50 border border-green-200 rounded-md text-green-700">
-          キャッシュから削除されました
+        {/* キャッシュ詳細表示 */}
+        {currentView && (
+          <div className="bg-white p-6 rounded-lg shadow-md">
+            <h2 className="text-xl font-bold mb-4">キャッシュ詳細</h2>
+
+            <dl className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-3">
+              <div className="col-span-2">
+                <dt className="text-sm font-medium text-gray-500">キー</dt>
+                <dd className="mt-1 text-lg font-medium">{currentView.key}</dd>
+              </div>
+
+              <div className="col-span-2">
+                <dt className="text-sm font-medium text-gray-500">値</dt>
+                <dd className="mt-1 p-2 bg-gray-50 border border-gray-200 rounded-md whitespace-pre-wrap break-words">
+                  {currentView.value}
+                </dd>
+              </div>
+
+              <div>
+                <dt className="text-sm font-medium text-gray-500">バージョン</dt>
+                <dd className="mt-1">{currentView.metadata.version}</dd>
+              </div>
+
+              <div>
+                <dt className="text-sm font-medium text-gray-500">TTL</dt>
+                <dd className="mt-1">{formatTTL(currentView.metadata.expiresAt)}</dd>
+              </div>
+
+              <div>
+                <dt className="text-sm font-medium text-gray-500">データソース</dt>
+                <dd className="mt-1">
+                  <span className={`px-2 py-1 text-xs font-semibold rounded-full ${currentView.metadata.source === 'primary'
+                      ? 'bg-green-100 text-green-800'
+                      : 'bg-blue-100 text-blue-800'
+                    }`}>
+                    {formatSource(currentView.metadata.source)}
+                  </span>
+                </dd>
+              </div>
+
+              <div>
+                <dt className="text-sm font-medium text-gray-500">作成日時</dt>
+                <dd className="mt-1">{new Date(currentView.metadata.createdAt).toLocaleString()}</dd>
+              </div>
+
+              <div>
+                <dt className="text-sm font-medium text-gray-500">更新日時</dt>
+                <dd className="mt-1">{new Date(currentView.metadata.updatedAt).toLocaleString()}</dd>
+              </div>
+            </dl>
+          </div>
+        )}
+      </div>
+
+      {/* 右側: キャッシュリスト */}
+      <div className="space-y-6">
+        {/* 最近アクセスしたキー */}
+        {recentKeys.length > 0 && (
+          <div className="bg-white p-6 rounded-lg shadow-md">
+            <h2 className="text-lg font-bold mb-3">最近アクセスしたキー</h2>
+            <ul className="space-y-2">
+              {recentKeys.map((key) => (
+                <li key={key}>
+                  <button
+                    onClick={() => {
+                      setCacheKey(key);
+                      handleGetCache(key);
+                    }}
+                    className="text-left w-full px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-md"
+                  >
+                    {key}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* すべてのキャッシュアイテム */}
+        <div className="bg-white p-6 rounded-lg shadow-md">
+          <div className="flex justify-between items-center mb-3">
+            <h2 className="text-lg font-bold">すべてのキャッシュ</h2>
+            <button
+              onClick={fetchAllCacheItems}
+              className="text-sm text-blue-600 hover:text-blue-800"
+            >
+              更新
+            </button>
+          </div>
+
+          {loading && cacheItems.length === 0 ? (
+            <div className="py-2 text-gray-500 text-center">読み込み中...</div>
+          ) : cacheItems.length === 0 ? (
+            <div className="py-2 text-gray-500 text-center">キャッシュが存在しません</div>
+          ) : (
+            <ul className="space-y-2 max-h-96 overflow-y-auto">
+              {cacheItems.map((item) => (
+                <li key={item.key} className="border-b last:border-b-0 border-gray-100 pb-2">
+                  <button
+                    onClick={() => {
+                      setCacheKey(item.key);
+                      setCurrentView(item);
+                    }}
+                    className="text-left w-full"
+                  >
+                    <div className="flex justify-between items-center">
+                      <span className="text-blue-600 font-medium">{item.key}</span>
+                      {item.metadata.source && (
+                        <span className={`text-xs px-1.5 py-0.5 rounded-full ${item.metadata.source === 'primary'
+                            ? 'bg-green-100 text-green-800'
+                            : 'bg-blue-100 text-blue-800'
+                          }`}>
+                          {formatSource(item.metadata.source)}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      TTL: {formatTTL(item.metadata.expiresAt)}
+                      {' | '}バージョン: {item.metadata.version}
+                    </div>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }

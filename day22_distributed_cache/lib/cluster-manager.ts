@@ -8,6 +8,7 @@ import type {
   ClusterEventType,
   FailureType,
   CacheItemResponse,
+  ReplicationStatus,
 } from './types';
 
 /**
@@ -19,6 +20,12 @@ class ClusterManager {
   private hashRing: HashRing;
   private nodesCache: Map<string, Node> = new Map();
   private initialized = false;
+  // 配置状態と健全性を追跡
+  private placementVersion = 1;
+  private replicationQueue: Array<{key: string, nodeId: string, targetNodeId: string}> = [];
+  // レプリケーション同期の間隔（ミリ秒）
+  private replicationInterval = 5000;
+  private replicationIntervalId: NodeJS.Timeout | null = null;
 
   private constructor() {
     this.hashRing = new HashRing();
@@ -72,8 +79,100 @@ class ClusterManager {
       });
     }
 
+    // レプリケーション同期ジョブを開始
+    this.startReplicationSyncJob();
+
     this.initialized = true;
     console.log(`Cluster initialized with ${nodes.length} nodes`);
+  }
+
+  /**
+   * レプリケーション同期ジョブを開始
+   */
+  private startReplicationSyncJob(): void {
+    if (this.replicationIntervalId) {
+      clearInterval(this.replicationIntervalId);
+    }
+
+    this.replicationIntervalId = setInterval(async () => {
+      await this.processReplicationQueue();
+    }, this.replicationInterval);
+
+    console.log('Started replication sync job');
+  }
+
+  /**
+   * レプリケーションキューの処理
+   */
+  private async processReplicationQueue(): Promise<void> {
+    if (this.replicationQueue.length === 0) return;
+
+    // キューから最大10個のタスクを取得
+    const tasks = this.replicationQueue.splice(0, 10);
+
+    // 各タスクを並行処理
+    await Promise.allSettled(
+      tasks.map(async (task) => {
+        try {
+          await this.replicateItem(task.key, task.nodeId, task.targetNodeId);
+        } catch (error) {
+          console.error(`Failed to replicate ${task.key} from ${task.nodeId} to ${task.targetNodeId}:`, error);
+          // 失敗したタスクは再キュー（先頭に戻す）
+          this.replicationQueue.unshift(task);
+        }
+      })
+    );
+  }
+
+  /**
+   * アイテムを別ノードにレプリケーション
+   */
+  private async replicateItem(key: string, sourceNodeId: string, targetNodeId: string): Promise<boolean> {
+    // ソースノードからデータを取得
+    const sourceItem = await prisma.cacheItem.findUnique({
+      where: {
+        nodeId_key: {
+          nodeId: sourceNodeId,
+          key,
+        },
+      },
+    });
+
+    if (!sourceItem) return false;
+
+    try {
+      // 既存のレプリケーションを確認
+      const existingReplication = await prisma.replication.findFirst({
+        where: {
+          nodeId: targetNodeId,
+          cacheItemId: sourceItem.id,
+        },
+      });
+
+      if (existingReplication) {
+        // バージョンが古い場合のみ更新
+        if (existingReplication.version < sourceItem.version) {
+          await prisma.replication.update({
+            where: { id: existingReplication.id },
+            data: { version: sourceItem.version },
+          });
+        }
+      } else {
+        // 新規レプリケーションを作成
+        await prisma.replication.create({
+          data: {
+            nodeId: targetNodeId,
+            cacheItemId: sourceItem.id,
+            version: sourceItem.version,
+          },
+        });
+      }
+
+      return true;
+    } catch (error) {
+      console.error(`Failed to replicate item ${key}:`, error);
+      return false;
+    }
   }
 
   /**
@@ -150,6 +249,7 @@ class ClusterManager {
               expiresAt: item.expiresAt?.toISOString(),
               createdAt: item.createdAt.toISOString(),
               updatedAt: item.updatedAt.toISOString(),
+              source: 'replica',  // レプリカからの読み取りを示す
             },
           };
         }
@@ -174,6 +274,7 @@ class ClusterManager {
         expiresAt: cacheItem.expiresAt?.toISOString(),
         createdAt: cacheItem.createdAt.toISOString(),
         updatedAt: cacheItem.updatedAt.toISOString(),
+        source: 'primary',  // プライマリからの読み取りを示す
       },
     };
   }
@@ -210,6 +311,8 @@ class ClusterManager {
         },
       });
 
+      let cacheItem;
+
       if (existingItem) {
         // バージョン競合チェック (オプションでバージョン指定がある場合)
         if (options?.version && existingItem.version > options.version) {
@@ -218,7 +321,7 @@ class ClusterManager {
         }
 
         // 既存アイテムの更新
-        await prisma.cacheItem.update({
+        cacheItem = await prisma.cacheItem.update({
           where: {
             id: existingItem.id,
           },
@@ -230,7 +333,7 @@ class ClusterManager {
         });
       } else {
         // 新規アイテムの作成
-        await prisma.cacheItem.create({
+        cacheItem = await prisma.cacheItem.create({
           data: {
             key,
             value,
@@ -241,13 +344,41 @@ class ClusterManager {
         });
       }
 
-      // レプリカの作成/更新は別の関数で実装予定
-      // この時点では基本機能のみ実装
+      // レプリケーションの作成・更新
+      await this.scheduleReplication(key, node.id, cacheItem.id);
+
+      // クラスタイベントを記録
+      await this.logClusterEvent('cache_updated', {
+        key,
+        nodeId: node.id,
+        version: cacheItem.version,
+      });
 
       return true;
     } catch (error) {
       console.error('Failed to set cache item:', error);
       return false;
+    }
+  }
+
+  /**
+   * レプリケーションのスケジュール
+   */
+  private async scheduleReplication(key: string, sourceNodeId: string, cacheItemId: string): Promise<void> {
+    // レプリカノードを取得
+    const replicaNodes = this.hashRing.getReplicaNodes(key);
+
+    // レプリカノードごとにレプリケーションをスケジュール
+    for (const replicaNode of replicaNodes) {
+      // 自分自身にはレプリケーションしない
+      if (replicaNode.id === sourceNodeId) continue;
+
+      // キューに追加
+      this.replicationQueue.push({
+        key,
+        nodeId: sourceNodeId,
+        targetNodeId: replicaNode.id,
+      });
     }
   }
 
@@ -276,15 +407,27 @@ class ClusterManager {
         return false;
       }
 
-      // キャッシュアイテムを削除
-      await prisma.cacheItem.delete({
-        where: {
-          id: existingItem.id,
-        },
-      });
+      // キャッシュアイテムに紐づくレプリケーションも含めて削除
+      await prisma.$transaction([
+        // レプリケーションを先に削除（外部キー制約のため）
+        prisma.replication.deleteMany({
+          where: {
+            cacheItemId: existingItem.id,
+          },
+        }),
+        // キャッシュアイテムを削除
+        prisma.cacheItem.delete({
+          where: {
+            id: existingItem.id,
+          },
+        }),
+      ]);
 
-      // レプリカの削除は別の関数で実装予定
-      // この時点では基本機能のみ実装
+      // クラスタイベントを記録
+      await this.logClusterEvent('cache_deleted', {
+        key,
+        nodeId: node.id,
+      });
 
       return true;
     } catch (error) {
@@ -336,10 +479,17 @@ class ClusterManager {
       this.nodesCache.set(newNode.id, nodeData);
       this.hashRing.addNode(nodeData);
 
+      // 配置バージョンを更新
+      this.placementVersion++;
+
+      // データの再配置をスケジュール
+      await this.scheduleDataRebalancing();
+
       // イベントログに記録
       await this.logClusterEvent('node_added', {
         nodeId: newNode.id,
         name: newNode.name,
+        placementVersion: this.placementVersion,
       });
 
       return nodeData;
@@ -364,21 +514,49 @@ class ClusterManager {
         return false;
       }
 
-      // このノードに属するキャッシュアイテムのリホーミングは別途実装予定
-      // この時点では基本機能のみ実装
+      // このノードに属するすべてのキャッシュアイテムを取得
+      const cacheItems = await prisma.cacheItem.findMany({
+        where: { nodeId },
+      });
+
+      // データのリホーミング
+      for (const item of cacheItems) {
+        // 新しいプライマリノードを特定
+        const newPrimaryNode = this.findNewPrimaryNodeForKey(item.key, nodeId);
+
+        if (newPrimaryNode) {
+          // 新しいプライマリノードにデータを移行
+          await this.migrateCacheItem(item, newPrimaryNode.id);
+        }
+      }
 
       // ノードの削除
-      await prisma.node.delete({
-        where: { id: nodeId },
-      });
+      await prisma.$transaction([
+        // このノードが保持するレプリケーションを削除
+        prisma.replication.deleteMany({
+          where: { nodeId },
+        }),
+        // このノードのキャッシュアイテムを削除
+        prisma.cacheItem.deleteMany({
+          where: { nodeId },
+        }),
+        // ノードを削除
+        prisma.node.delete({
+          where: { id: nodeId },
+        }),
+      ]);
 
       // キャッシュとハッシュリングから削除
       this.nodesCache.delete(nodeId);
       this.hashRing.removeNode(nodeId);
 
+      // 配置バージョンを更新
+      this.placementVersion++;
+
       // イベントログに記録
       await this.logClusterEvent('node_removed', {
         nodeId,
+        placementVersion: this.placementVersion,
       });
 
       return true;
@@ -386,6 +564,135 @@ class ClusterManager {
       console.error('Failed to remove node:', error);
       return false;
     }
+  }
+
+  /**
+   * キーの新しいプライマリノードを特定
+   */
+  private findNewPrimaryNodeForKey(key: string, excludeNodeId: string): Node | undefined {
+    // 現在のハッシュリングからノードを一時的に削除
+    this.hashRing.removeNode(excludeNodeId);
+
+    // 新しいプライマリノードを取得
+    const newPrimaryNode = this.hashRing.getNode(key);
+
+    // ノードを復元
+    const node = this.nodesCache.get(excludeNodeId);
+    if (node && node.status === 'active') {
+      this.hashRing.addNode(node);
+    }
+
+    return newPrimaryNode;
+  }
+
+  /**
+   * キャッシュアイテムを別ノードに移行
+   */
+  private async migrateCacheItem(item: any, newNodeId: string): Promise<boolean> {
+    try {
+      // 新しいノードに既に同じキーが存在しないか確認
+      const existingItem = await prisma.cacheItem.findUnique({
+        where: {
+          nodeId_key: {
+            nodeId: newNodeId,
+            key: item.key,
+          },
+        },
+      });
+
+      if (existingItem) {
+        // バージョンが古い場合のみ更新
+        if (existingItem.version < item.version) {
+          await prisma.cacheItem.update({
+            where: { id: existingItem.id },
+            data: {
+              value: item.value,
+              expiresAt: item.expiresAt,
+              version: item.version,
+            },
+          });
+        }
+      } else {
+        // 新規作成
+        await prisma.cacheItem.create({
+          data: {
+            key: item.key,
+            value: item.value,
+            nodeId: newNodeId,
+            expiresAt: item.expiresAt,
+            version: item.version,
+          },
+        });
+      }
+
+      return true;
+    } catch (error) {
+      console.error(`Failed to migrate cache item ${item.key}:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * データの再配置をスケジュール
+   */
+  private async scheduleDataRebalancing(): Promise<void> {
+    // すべてのキャッシュアイテムを取得
+    const allItems = await prisma.cacheItem.findMany();
+
+    // 各アイテムの新しい配置を計算
+    for (const item of allItems) {
+      const correctNode = this.getNodeForKey(item.key);
+
+      // 正しいノードが見つからない場合はスキップ
+      if (!correctNode) continue;
+
+      // 現在のノードと正しいノードが異なる場合、移行が必要
+      if (item.nodeId !== correctNode.id) {
+        await this.migrateCacheItem(item, correctNode.id);
+
+        // 古いデータを削除（移行後）
+        await prisma.cacheItem.delete({
+          where: { id: item.id },
+        });
+      }
+    }
+  }
+
+  /**
+   * レプリケーションステータスを取得
+   */
+  public async getReplicationStatus(): Promise<ReplicationStatus> {
+    const totalItems = await prisma.cacheItem.count();
+    const totalReplications = await prisma.replication.count();
+    const pendingReplications = this.replicationQueue.length;
+
+    const nodeStats = await prisma.node.findMany({
+      select: {
+        id: true,
+        name: true,
+        status: true,
+        _count: {
+          select: {
+            cacheItems: true,
+            replications: true,
+          },
+        },
+      },
+    });
+
+    return {
+      totalItems,
+      totalReplications,
+      pendingReplications,
+      placementVersion: this.placementVersion,
+      nodeStats: nodeStats.map(node => ({
+        nodeId: node.id,
+        name: node.name,
+        status: node.status as any,
+        primaryItems: node._count.cacheItems,
+        replicaItems: node._count.replications,
+      })),
+    };
   }
 
   /**
@@ -427,10 +734,35 @@ class ClusterManager {
         failureType: type,
       });
 
+      // 障害発生後にレプリケーション戦略を更新
+      if (status !== 'slow') {
+        // ダウンまたは分断の場合、そのノードのプライマリキャッシュを別ノードに移行
+        await this.handleNodeFailure(nodeId);
+      }
+
       return true;
     } catch (error) {
       console.error('Failed to simulate failure:', error);
       return false;
+    }
+  }
+
+  /**
+   * ノード障害時の処理
+   */
+  private async handleNodeFailure(nodeId: string): Promise<void> {
+    // 障害ノードが持つプライマリキャッシュを取得
+    const affectedItems = await prisma.cacheItem.findMany({
+      where: { nodeId },
+    });
+
+    // 各アイテムを新しいノードに移行
+    for (const item of affectedItems) {
+      const newPrimaryNode = this.findNewPrimaryNodeForKey(item.key, nodeId);
+
+      if (newPrimaryNode) {
+        await this.migrateCacheItem(item, newPrimaryNode.id);
+      }
     }
   }
 
@@ -468,10 +800,36 @@ class ClusterManager {
         nodeId,
       });
 
+      // 復旧後にレプリケーション戦略を更新
+      await this.handleNodeRecovery(nodeId);
+
       return true;
     } catch (error) {
       console.error('Failed to simulate recovery:', error);
       return false;
+    }
+  }
+
+  /**
+   * ノード復旧時の処理
+   */
+  private async handleNodeRecovery(nodeId: string): Promise<void> {
+    // すべてのキャッシュアイテムをチェック
+    const allItems = await prisma.cacheItem.findMany();
+
+    for (const item of allItems) {
+      const correctNode = this.getNodeForKey(item.key);
+
+      // 正しいノードが復旧したノードで、現在別のノードにある場合
+      if (correctNode?.id === nodeId && item.nodeId !== nodeId) {
+        // アイテムを正しいノードに移行
+        await this.migrateCacheItem(item, nodeId);
+
+        // 古いデータを削除
+        await prisma.cacheItem.delete({
+          where: { id: item.id },
+        });
+      }
     }
   }
 
@@ -491,6 +849,24 @@ class ClusterManager {
     } catch (error) {
       console.error('Failed to log cluster event:', error);
     }
+  }
+
+  /**
+   * クラスタイベント履歴を取得
+   * @param limit 取得数
+   */
+  public async getClusterEvents(limit = 50): Promise<any[]> {
+    const events = await prisma.clusterEvent.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+    });
+
+    return events.map(event => ({
+      id: event.id,
+      type: event.type,
+      payload: JSON.parse(event.payload),
+      createdAt: event.createdAt.toISOString(),
+    }));
   }
 }
 

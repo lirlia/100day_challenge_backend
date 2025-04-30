@@ -20,6 +20,8 @@ export interface CacheItemMetadata {
   createdAt: string;
   /** 更新日時 */
   updatedAt: string;
+  /** データソース */
+  source?: 'primary' | 'replica';
 }
 
 /**
@@ -78,7 +80,9 @@ export type ClusterEventType =
   | 'rebalance_started'
   | 'rebalance_completed'
   | 'node_down'
-  | 'node_recovered';
+  | 'node_recovered'
+  | 'cache_updated'
+  | 'cache_deleted';
 
 /**
  * クラスタイベント
@@ -103,3 +107,47 @@ export type FailureType = 'down' | 'slow' | 'partition';
  * キャッシュノード間の一貫性レベル
  */
 export type ConsistencyLevel = 'strong' | 'eventual';
+
+/**
+ * ノードごとのレプリケーション統計
+ */
+export interface NodeReplicationStat {
+  /** ノードID */
+  nodeId: string;
+  /** ノード名 */
+  name: string;
+  /** ノード状態 */
+  status: NodeStatus;
+  /** プライマリアイテム数 */
+  primaryItems: number;
+  /** レプリカアイテム数 */
+  replicaItems: number;
+}
+
+/**
+ * レプリケーションステータス
+ */
+export interface ReplicationStatus {
+  /** 総キャッシュアイテム数 */
+  totalItems: number;
+  /** 総レプリケーション数 */
+  totalReplications: number;
+  /** 保留中レプリケーション数 */
+  pendingReplications: number;
+  /** 配置バージョン */
+  placementVersion: number;
+  /** ノード別統計 */
+  nodeStats: NodeReplicationStat[];
+}
+
+/**
+ * レプリケーション設定
+ */
+export interface ReplicationConfig {
+  /** レプリカ数 */
+  replicaCount: number;
+  /** 同期間隔（ミリ秒） */
+  syncInterval: number;
+  /** 一貫性レベル */
+  consistencyLevel: ConsistencyLevel;
+}
