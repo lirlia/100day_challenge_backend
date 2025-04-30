@@ -28,3 +28,4 @@ alwaysApply: true
 | 19  | ジョブスケジューラ             | Next.js, TypeScript, Prisma, SQLite, TailwindCSS, 非同期ジョブ実行、スケジューリング       |
 | 20  | SQL パーサー & バリデーター    | Go, 字句解析, 構文解析 (AST), 意味解析 (型チェック), Web UI (net/http, html/template) |
 | 21  | 設備予約システム             | Next.js, Prisma, SQLite, react-big-calendar, date-fns, Zustand, TailwindCSS |
+| 22  | 分散キャッシュシステム        | Next.js, Prisma, SQLite, 一貫性ハッシュ, レプリケーション, 障害シミュレーション, TailwindCSS |
