@@ -145,26 +145,6 @@ export default function ClusterStatus() {
         </button>
       </div>
 
-      {/* 概要統計 */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="p-4 bg-white rounded-lg shadow">
-          <h3 className="text-sm font-medium text-gray-500">Total Items</h3>
-          <p className="text-2xl font-bold">{status.replication.totalItems}</p>
-        </div>
-        <div className="p-4 bg-white rounded-lg shadow">
-          <h3 className="text-sm font-medium text-gray-500">Total Replications</h3>
-          <p className="text-2xl font-bold">{status.replication.totalReplications}</p>
-        </div>
-        <div className="p-4 bg-white rounded-lg shadow">
-          <h3 className="text-sm font-medium text-gray-500">Pending Replications</h3>
-          <p className="text-2xl font-bold">{status.replication.pendingReplications}</p>
-        </div>
-        <div className="p-4 bg-white rounded-lg shadow">
-          <h3 className="text-sm font-medium text-gray-500">Placement Version</h3>
-          <p className="text-2xl font-bold">{status.replication.placementVersion}</p>
-        </div>
-      </div>
-
       {/* ノード別統計 */}
       <div className="bg-white rounded-lg shadow overflow-hidden">
         <div className="px-4 py-5 sm:px-6">
@@ -213,7 +193,7 @@ export default function ClusterStatus() {
       </div>
 
       {/* クラスタイベント */}
-      <div className="bg-white rounded-lg shadow overflow-hidden">
+      {/* <div className="bg-white rounded-lg shadow overflow-hidden">
         <div className="px-4 py-5 sm:px-6">
           <h3 className="text-lg font-medium text-gray-900">Recent Cluster Events</h3>
         </div>
@@ -255,7 +235,7 @@ export default function ClusterStatus() {
             </tbody>
           </table>
         </div>
-      </div>
+      </div> */}
     </div>
   );
 }

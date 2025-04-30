@@ -11,7 +11,7 @@ export const metadata = {
 export default function DashboardPage() {
   return (
     <div className="container mx-auto px-4 py-8">
-      <h1 className="text-4xl font-bold mb-8 text-center text-gray-800">分散キャッシュ管理ダッシュボード</h1>
+      {/* <h1 className="text-4xl font-bold mb-8 text-center text-gray-800">分散キャッシュ管理ダッシュボード</h1> */}
 
       <div className="flex flex-wrap -mx-3">
         <div className="w-full md:w-2/3 px-3 mb-6">
