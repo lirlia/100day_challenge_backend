@@ -3,8 +3,9 @@
 import { useState, useReducer, useCallback, useEffect } from 'react';
 
 type Protocol = 'HTTP/1.1' | 'HTTP/2' | 'HTTP/3';
+const protocols: Protocol[] = ['HTTP/1.1', 'HTTP/2', 'HTTP/3'];
 
-// --- Types (修正) ---
+// --- Types ---
 type ResourceStatus = 'idle' | 'requesting' | 'downloading' | 'completed' | 'error';
 
 interface ResourceType {
@@ -13,100 +14,100 @@ interface ResourceType {
   error?: string;
   startTime?: number;
   endTime?: number;
+  // ★ APIからの情報を追加 (HTTP/2, HTTP/3で利用)
+  simulatedPacketLoss?: boolean;
+  delayApplied?: number;
 }
 
-interface ConnectionType {
-  id: number;
-  activeRequestId: number | null;
-}
+// interface ConnectionType { // Not used currently
+//   id: number;
+//   activeRequestId: number | null;
+// }
 
-interface RequestStateType {
-    resourceId: number;
-    status: ResourceStatus;
-    progress?: number;
-    startTime?: number;
-    endTime?: number;
-}
+// interface RequestStateType { // Not used currently
+//     resourceId: number;
+//     status: ResourceStatus;
+//     progress?: number;
+//     startTime?: number;
+//     endTime?: number;
+// }
 
 interface SimulationState {
-    protocol: Protocol;
+    protocol: Protocol; // どのプロトコルの状態か
     resources: ResourceType[];
-    connections: ConnectionType[];
-    requests: RequestStateType[];
     isRunning: boolean;
     startTime: number | null;
     endTime: number | null;
     error?: string;
+    // ★ HTTP/1.1用: 接続数を保持 (UIから渡される)
+    maxConnections?: number;
 }
 
-type SimulationAction =
-  | { type: 'START_SIMULATION'; protocol: Protocol; numResources: number }
-  | { type: 'SET_RUNNING'; isRunning: boolean }
-  | { type: 'INIT_RESOURCES'; resources: ResourceType[] }
-  | { type: 'UPDATE_RESOURCE_STATUS'; id: number; status: ResourceStatus; time?: number; error?: string }
-  | { type: 'UPDATE_CONNECTION_STATUS'; connectionId: number; activeRequestId: number | null }
-  | { type: 'ADD_REQUEST'; request: RequestStateType }
-  | { type: 'UPDATE_REQUEST_STATUS'; resourceId: number; status: ResourceStatus; time?: number }
-  | { type: 'SIMULATION_COMPLETE'; time: number }
-  | { type: 'SIMULATION_ERROR'; error: string };
+// ★ 各プロトコルの状態を保持する型
+type AllSimulationStates = {
+    [key in Protocol]: SimulationState;
+};
 
-function simulationReducer(state: SimulationState, action: SimulationAction): SimulationState {
-  console.log('Reducer Action:', action); // Log all actions
+// ★ Actionに protocol を追加
+type EnhancedSimulationAction =
+  | ({ type: 'START_SIMULATION'; numResources: number; maxConnections?: number } & { protocol: Protocol }) // maxConnections追加
+  | ({ type: 'SET_RUNNING'; isRunning: boolean } & { protocol: Protocol })
+  | ({ type: 'INIT_RESOURCES'; resources: ResourceType[] } & { protocol: Protocol })
+  | ({ type: 'UPDATE_RESOURCE_STATUS'; id: number; status: ResourceStatus; time?: number; error?: string; resourceData?: Partial<ResourceType> } & { protocol: Protocol }) // resourceData追加
+  | ({ type: 'SIMULATION_COMPLETE'; time: number } & { protocol: Protocol })
+  | ({ type: 'SIMULATION_ERROR'; error: string } & { protocol: Protocol });
+
+// --- Helper: Create Initial State ---
+const createInitialState = (protocol: Protocol, maxConnections?: number): SimulationState => ({
+  protocol: protocol,
+  resources: [],
+  isRunning: false,
+  startTime: null,
+  endTime: null,
+  maxConnections: protocol === 'HTTP/1.1' ? maxConnections : undefined,
+});
+
+// --- Reducer Logic (Single Protocol) ---
+// 元のReducerロジックを単一プロトコル用に切り出す
+const singleSimulationReducerLogic = (state: SimulationState, action: EnhancedSimulationAction): SimulationState => {
+  // 自分宛のアクションでなければ状態を変更しない
+  if (action.protocol !== state.protocol) {
+    return state;
+  }
+  // console.log(`Reducer Logic (${state.protocol}):`, action);
+
   switch (action.type) {
     case 'START_SIMULATION':
       const initialResources = Array.from({ length: action.numResources }, (_, i) => ({
         id: i + 1,
         status: 'idle' as ResourceStatus,
       }));
-      console.log('Reducer: START_SIMULATION - Initial resources:', initialResources);
       return {
-        protocol: action.protocol,
+        ...state, // Keep protocol and potentially maxConnections
         resources: initialResources,
-        connections: [],
-        requests: [],
         isRunning: true,
         startTime: Date.now(),
         endTime: null,
         error: undefined,
+        maxConnections: action.maxConnections ?? state.maxConnections, // Update maxConnections if provided
       };
-    case 'SET_RUNNING':
-      return { ...state, isRunning: action.isRunning };
-    case 'INIT_RESOURCES':
-      return { ...state, resources: action.resources };
+    case 'SET_RUNNING': // Note: SIMULATION_COMPLETE/ERROR should set this
+        return { ...state, isRunning: action.isRunning };
+    // case 'INIT_RESOURCES': // START_SIMULATION で行うので不要かも
+    //   return { ...state, resources: action.resources };
     case 'UPDATE_RESOURCE_STATUS':
       return {
         ...state,
         resources: state.resources.map(r =>
           r.id === action.id ? {
             ...r,
+            ...action.resourceData, // ★ APIからの追加情報もマージ
             status: action.status,
             error: action.error,
+            // 開始/終了時間はアクションから提供される time を優先
             startTime: r.startTime ?? (action.status === 'requesting' ? action.time : undefined),
             endTime: action.status === 'completed' || action.status === 'error' ? action.time : r.endTime,
           } : r
-        ),
-      };
-    case 'UPDATE_CONNECTION_STATUS':
-      return {
-        ...state,
-        connections: state.connections.map(c =>
-          c.id === action.connectionId ? { ...c, activeRequestId: action.activeRequestId } : c
-        ),
-      };
-    case 'ADD_REQUEST':
-      if (state.requests.some(req => req.resourceId === action.request.resourceId)) {
-        return state;
-      }
-      return { ...state, requests: [...state.requests, action.request] };
-    case 'UPDATE_REQUEST_STATUS':
-      return {
-        ...state,
-        requests: state.requests.map(req =>
-          req.resourceId === action.resourceId ? {
-            ...req,
-            status: action.status,
-            endTime: (action.status === 'completed' || action.status === 'error') ? action.time : req.endTime
-          } : req
         ),
       };
     case 'SIMULATION_COMPLETE':
@@ -114,19 +115,31 @@ function simulationReducer(state: SimulationState, action: SimulationAction): Si
     case 'SIMULATION_ERROR':
       return { ...state, isRunning: false, error: action.error, endTime: Date.now() };
     default:
-      console.warn('Unhandled action type:', action);
+      // console.warn(`(${state.protocol}) Unhandled action type:`, action);
       return state;
   }
 }
 
+// --- Main Reducer (All Protocols) ---
+// 各プロトコルの状態を更新する新しいReducer
+function simulationReducer(state: AllSimulationStates, action: EnhancedSimulationAction): AllSimulationStates {
+    const targetProtocol = action.protocol;
+    return {
+        ...state,
+        [targetProtocol]: singleSimulationReducerLogic(state[targetProtocol], action)
+    };
+}
+
+
 // --- API Call Helper ---
+// 型定義を修正 (resourceId -> id, content -> data)
 const fetchResource = async (resourceId: number): Promise<{ id: number; data: string; simulatedPacketLoss: boolean; delayApplied: number }> => {
   const response = await fetch(`/api/resource/${resourceId}`);
   if (!response.ok) {
     throw new Error(`Failed to fetch resource ${resourceId}: ${response.statusText}`);
   }
   const data = await response.json();
-  console.log(`Fetched resource ${resourceId}`, data); // Log fetched data
+  // console.log(`Fetched resource ${resourceId}`, data);
   return {
       id: data.resourceId,
       data: data.content,
@@ -138,173 +151,157 @@ const fetchResource = async (resourceId: number): Promise<{ id: number; data: st
 
 // --- Simulation Logic ---
 
-// HTTP/1.1 シミュレーション
-const simulateHttp1_1 = async (dispatch: React.Dispatch<SimulationAction>, numResources: number, maxConnections: number = 6) => {
+// HTTP/1.1 シミュレーション (dispatchにprotocol追加)
+const simulateHttp1_1 = async (dispatch: React.Dispatch<EnhancedSimulationAction>, numResources: number, maxConnections: number = 6) => {
+  const protocol: Protocol = 'HTTP/1.1'; // ★ 明示
   const resourceIds = Array.from({ length: numResources }, (_, i) => i + 1);
   let activeConnections = 0;
   const requestQueue = [...resourceIds];
-  const processing = new Set<number>(); // 処理中のリソースID
+  const processing = new Set<number>();
 
   const processNext = async () => {
     while (activeConnections < maxConnections && requestQueue.length > 0) {
       activeConnections++;
       const resourceId = requestQueue.shift()!;
       processing.add(resourceId);
-
       const startTime = Date.now();
-      dispatch({ type: 'UPDATE_RESOURCE_STATUS', id: resourceId, status: 'requesting', time: startTime });
+      // ★ dispatch に protocol 追加
+      dispatch({ type: 'UPDATE_RESOURCE_STATUS', protocol, id: resourceId, status: 'requesting', time: startTime });
 
       try {
-        console.log(`HTTP/1.1: Requesting resource ${resourceId} (Connection ${activeConnections})`);
-        await fetchResource(resourceId);
-        const endTime = Date.now();
-        dispatch({ type: 'UPDATE_RESOURCE_STATUS', id: resourceId, status: 'completed', time: endTime });
-        console.log(`HTTP/1.1: Completed resource ${resourceId} in ${endTime - startTime}ms`);
+        const result = await fetchResource(resourceId); // ★ result を受け取る
+        const endTime = startTime + result.delayApplied; // API遅延を使う
+        // ★ dispatch に protocol 追加, resourceData 追加
+        dispatch({ type: 'UPDATE_RESOURCE_STATUS', protocol, id: resourceId, status: 'completed', time: endTime, resourceData: result });
       } catch (error: any) {
         const errorTime = Date.now();
-        dispatch({ type: 'UPDATE_RESOURCE_STATUS', id: resourceId, status: 'error', time: errorTime, error: error.message });
-        console.error(`HTTP/1.1: Error fetching resource ${resourceId}:`, error);
+        // ★ dispatch に protocol 追加
+        dispatch({ type: 'UPDATE_RESOURCE_STATUS', protocol, id: resourceId, status: 'error', time: errorTime, error: error.message });
       } finally {
         activeConnections--;
         processing.delete(resourceId);
-        // キューと処理中セットが空になったかチェック
         if (requestQueue.length === 0 && processing.size === 0) {
-          dispatch({ type: 'SIMULATION_COMPLETE', time: Date.now() });
-          console.log("HTTP/1.1 Simulation complete.");
+          // ★ dispatch に protocol 追加
+          dispatch({ type: 'SIMULATION_COMPLETE', protocol, time: Date.now() });
         } else {
-          // 次のリクエストを開始
           processNext();
         }
       }
     }
-     // もしループが終わっても処理中のものがあれば完了を待つ必要はない（非同期なので）
-     // ただし、すべてのリクエストが完了したかの判定は finally ブロック内で行う
   };
-
-  // 最初の並列リクエストを開始
   for (let i = 0; i < maxConnections && i < resourceIds.length; i++) {
      processNext();
   }
 };
 
-
-// HTTP/2 シミュレーション (修正: TCP HOL Blocking シミュレーション追加)
-const simulateHttp2 = async (dispatch: React.Dispatch<SimulationAction>, numResources: number) => {
+// HTTP/2 シミュレーション (dispatchにprotocol追加)
+const simulateHttp2 = async (dispatch: React.Dispatch<EnhancedSimulationAction>, numResources: number) => {
+  const protocol: Protocol = 'HTTP/2'; // ★ 明示
   const resourceIds = Array.from({ length: numResources }, (_, i) => i + 1);
   const promises: Promise<any>[] = [];
   const startTimes: { [key: number]: number } = {};
 
-  console.log("--- Starting HTTP/2 Simulation ---");
-
-  // リクエストを並行して開始し、開始時間を記録
   resourceIds.forEach(resourceId => {
     const startTime = Date.now();
     startTimes[resourceId] = startTime;
-    dispatch({ type: 'UPDATE_RESOURCE_STATUS', id: resourceId, status: 'requesting', time: startTime });
-    console.log(`HTTP/2: Requesting resource ${resourceId}`);
-    promises.push(fetchResource(resourceId).then(result => ({ ...result, type: 'success' as const })).catch(error => ({ id: resourceId, error, type: 'error' as const })));
+    // ★ dispatch に protocol 追加
+    dispatch({ type: 'UPDATE_RESOURCE_STATUS', protocol, id: resourceId, status: 'requesting', time: startTime });
+    promises.push(
+        fetchResource(resourceId)
+            .then(result => ({ ...result, type: 'success' as const, startTime })) // ★ startTime を含める
+            .catch(error => ({ id: resourceId, error, type: 'error' as const, startTime })) // ★ startTime を含める
+    );
   });
 
-  // すべての結果を待つ (成功/失敗問わず)
   const results = await Promise.allSettled(promises);
-  const completionTime = Date.now(); // 全リクエストが完了したおおよその時間
-  console.log("HTTP/2: All promises settled.", results);
+  let tcpHolBlockEndTime = 0;
+  const finalResults: Array<{ id: number, status: ResourceStatus, startTime: number, actualEndTime: number, effectiveEndTime: number, error?: string, resourceData?: Partial<ResourceType> }> = []; // resourceData追加
 
-  let tcpHolBlockEndTime = 0; // パケットロスによるブロックが発生した場合の完了時間
-  const finalResults: Array<{ id: number, status: ResourceStatus, startTime: number, actualEndTime: number, effectiveEndTime: number, error?: string, simulatedPacketLoss?: boolean }> = [];
-
-  // 1回目のループ: パケットロスが発生したリクエストの最大完了時間を見つける
-  results.forEach((settledResult, index) => {
-    const resourceId = resourceIds[index]; // ID特定
-    const startTime = startTimes[resourceId];
-
-    if (settledResult.status === 'fulfilled' && settledResult.value.type === 'success') {
+  // 1st pass: find max end time for requests with packet loss
+  results.forEach((settledResult) => {
+    if (settledResult.status === 'fulfilled') {
         const result = settledResult.value;
-        const actualEndTime = startTime + (result.delayApplied ?? 0); // APIが返した遅延から計算 (より正確な値)
-        // 本来は Date.now() を使うべきだが、API遅延を使う方がシミュレーションとして意図を反映しやすい
-        // const actualEndTime = Date.now(); // もし実際のfetch完了時間を使う場合
-
-        if (result.simulatedPacketLoss) {
-            tcpHolBlockEndTime = Math.max(tcpHolBlockEndTime, actualEndTime);
-            console.log(`HTTP/2: Packet loss detected for resource ${resourceId}, potential block until ${tcpHolBlockEndTime}`);
+         const actualEndTime = result.startTime + (result.delayApplied ?? 0); // API遅延ベース
+        if (result.type === 'success') {
+             if (result.simulatedPacketLoss) {
+                tcpHolBlockEndTime = Math.max(tcpHolBlockEndTime, actualEndTime);
+            }
+            finalResults.push({ id: result.id, status: 'completed', startTime: result.startTime, actualEndTime, effectiveEndTime: 0, resourceData: result });
+        } else { // type: 'error'
+            finalResults.push({ id: result.id, status: 'error', startTime: result.startTime, actualEndTime: actualEndTime, effectiveEndTime: actualEndTime, error: result.error?.message, resourceData: { simulatedPacketLoss: false } }); // エラーの場合も resourceData を一部設定
         }
-         finalResults.push({ id: resourceId, status: 'completed', startTime, actualEndTime, effectiveEndTime: 0, simulatedPacketLoss: result.simulatedPacketLoss });
-    } else {
-        // fulfilledだがtype:errorの場合 or rejectedの場合
-        const errorTime = Date.now(); // エラー発生時間
-        const errorMsg = settledResult.status === 'rejected' ? settledResult.reason?.message : settledResult.value?.error?.message;
-        console.error(`HTTP/2: Error for resource ${resourceId}:`, errorMsg);
-         finalResults.push({ id: resourceId, status: 'error', startTime, actualEndTime: errorTime, effectiveEndTime: errorTime, error: errorMsg });
+    } else { // rejected
+        // rejected の場合、どのリソースIDか特定が難しい場合がある。ここでは失敗としてマーク
+        // 必要なら fetchResource 側で resourceId を含めて reject する
+        const errorTime = Date.now();
+        // Assiging ID 0 or similar for rejected promises if ID isn't available easily
+        // エラー発生時のリソースIDが不明なため、特定のリソースをエラーにできない。全体エラーとして扱う方が良いか？
+        // ひとまずID 0として追加するが、これは良くない
+        finalResults.push({ id: 0, status: 'error', startTime: 0, actualEndTime: errorTime, effectiveEndTime: errorTime, error: settledResult.reason?.message });
+        console.error("HTTP/2: A promise was rejected:", settledResult.reason);
     }
   });
 
-  console.log(`HTTP/2: TCP HOL Block end time determined: ${tcpHolBlockEndTime}`);
-
   let overallLatestEndTime = 0;
 
-  // 2回目のループ: 各リソースの最終的な完了時間を決定し、dispatch する
+  // 2nd pass: determine effective end time and dispatch
   finalResults.forEach(res => {
+      if(res.id === 0) return; // Skip rejected promises with unknown ID
+
       if (res.status === 'completed') {
           res.effectiveEndTime = Math.max(res.actualEndTime, tcpHolBlockEndTime);
-          dispatch({ type: 'UPDATE_RESOURCE_STATUS', id: res.id, status: 'completed', time: res.effectiveEndTime });
-          console.log(`HTTP/2: Completed resource ${res.id} (Actual: ${res.actualEndTime}, Effective: ${res.effectiveEndTime})`);
+           // ★ dispatch に protocol 追加, resourceData 追加
+          dispatch({ type: 'UPDATE_RESOURCE_STATUS', protocol, id: res.id, status: 'completed', time: res.effectiveEndTime, resourceData: res.resourceData });
       } else if (res.status === 'error') {
-          // エラーの場合は tcpHolBlockEndTime の影響を受けない
-          dispatch({ type: 'UPDATE_RESOURCE_STATUS', id: res.id, status: 'error', time: res.effectiveEndTime, error: res.error });
+          res.effectiveEndTime = res.actualEndTime; // エラーはブロックされない
+           // ★ dispatch に protocol 追加, resourceData 追加
+          dispatch({ type: 'UPDATE_RESOURCE_STATUS', protocol, id: res.id, status: 'error', time: res.effectiveEndTime, error: res.error, resourceData: res.resourceData });
       }
       overallLatestEndTime = Math.max(overallLatestEndTime, res.effectiveEndTime);
   });
 
-
-  // シミュレーション完了を通知
-  dispatch({ type: 'SIMULATION_COMPLETE', time: overallLatestEndTime });
-  console.log(`--- HTTP/2 Simulation Complete (Overall End Time: ${overallLatestEndTime}) ---`);
-
+  // ★ dispatch に protocol 追加
+  dispatch({ type: 'SIMULATION_COMPLETE', protocol, time: overallLatestEndTime });
 };
 
 
-// HTTP/3 シミュレーション (修正: 独立したストリーム処理、HOL Blockingなし)
-const simulateHttp3 = async (dispatch: React.Dispatch<SimulationAction>, numResources: number) => {
+// HTTP/3 シミュレーション (dispatchにprotocol追加)
+const simulateHttp3 = async (dispatch: React.Dispatch<EnhancedSimulationAction>, numResources: number) => {
+  const protocol: Protocol = 'HTTP/3'; // ★ 明示
   const resourceIds = Array.from({ length: numResources }, (_, i) => i + 1);
   const promises: Promise<void>[] = [];
 
-  console.log("--- Starting HTTP/3 Simulation ---");
-
   resourceIds.forEach(resourceId => {
     const startTime = Date.now();
-    dispatch({ type: 'UPDATE_RESOURCE_STATUS', id: resourceId, status: 'requesting', time: startTime });
-    console.log(`HTTP/3: Requesting resource ${resourceId}`);
+    // ★ dispatch に protocol 追加
+    dispatch({ type: 'UPDATE_RESOURCE_STATUS', protocol, id: resourceId, status: 'requesting', time: startTime });
 
     const promise = fetchResource(resourceId)
       .then((result) => {
-         //const endTime = Date.now(); // 実際の完了時間を使う
-         const endTime = startTime + (result.delayApplied ?? 0); // APIの遅延を使う場合
-        dispatch({ type: 'UPDATE_RESOURCE_STATUS', id: resourceId, status: 'completed', time: endTime });
-        console.log(`HTTP/3: Completed resource ${resourceId} in ${endTime - startTime}ms (Loss: ${result.simulatedPacketLoss})`);
+         const endTime = startTime + result.delayApplied; // API遅延ベース
+         // ★ dispatch に protocol 追加, resourceData 追加
+         dispatch({ type: 'UPDATE_RESOURCE_STATUS', protocol, id: resourceId, status: 'completed', time: endTime, resourceData: result });
       })
       .catch(error => {
         const errorTime = Date.now();
-        dispatch({ type: 'UPDATE_RESOURCE_STATUS', id: resourceId, status: 'error', time: errorTime, error: error.message });
-        console.error(`HTTP/3: Error fetching resource ${resourceId}:`, error);
+         // ★ dispatch に protocol 追加
+        dispatch({ type: 'UPDATE_RESOURCE_STATUS', protocol, id: resourceId, status: 'error', time: errorTime, error: error.message });
       });
     promises.push(promise);
   });
 
-  // すべての処理が終わるのを待つ（完了ディスパッチは個々に行われる）
   await Promise.allSettled(promises);
-
-  // 完了を通知 (すべてのPromiseがsettledした後)
-  const completionTime = Date.now();
-  dispatch({ type: 'SIMULATION_COMPLETE', time: completionTime });
-   console.log(`--- HTTP/3 Simulation Complete (All Settled Time: ${completionTime}) ---`);
+  // ★ dispatch に protocol 追加
+  dispatch({ type: 'SIMULATION_COMPLETE', protocol, time: Date.now() });
 };
 
 
 // --- Visualization Component ---
+// state の型を SimulationState に変更
 function SimulationVisualizer({ state }: { state: SimulationState }) {
-  console.log('Rendering SimulationVisualizer with state:', state);
+  // console.log('Rendering SimulationVisualizer with state:', state);
   const { protocol, resources, isRunning, startTime, endTime, error } = state;
-  const [currentTime, setCurrentTime] = useState<number>(Date.now()); // For animation
+  const [currentTime, setCurrentTime] = useState<number>(Date.now());
 
   useEffect(() => {
     let animationFrameId: number;
@@ -315,7 +312,6 @@ function SimulationVisualizer({ state }: { state: SimulationState }) {
       };
       animationFrameId = requestAnimationFrame(update);
     } else if (startTime && !endTime) {
-       // If stopped due to error, ensure current time reflects end
        setCurrentTime(Date.now());
     }
     return () => cancelAnimationFrame(animationFrameId);
@@ -323,85 +319,74 @@ function SimulationVisualizer({ state }: { state: SimulationState }) {
 
 
   if (!startTime) {
-    return <div className="p-4 text-center text-gray-500 italic h-full flex items-center justify-center">Click Start Simulation</div>;
+      // ★ 初期表示を少し変更
+    return <div className="p-4 text-center text-gray-500 italic h-full flex items-center justify-center">{protocol} Ready</div>;
   }
 
   const totalDuration = endTime ? endTime - startTime : currentTime - startTime;
   const safeTotalDuration = Math.max(1, totalDuration);
 
-
-  const getStatusColor = (status: ResourceStatus) => {
-    switch (status) {
-      case 'idle': return 'bg-gray-600';
-      case 'requesting': return 'bg-yellow-500'; // Adjusted color slightly
-      // case 'downloading': return 'bg-blue-600'; // Not used yet
-      case 'completed': return 'bg-green-500'; // Adjusted color slightly
-      case 'error': return 'bg-red-500'; // Adjusted color slightly
-      default: return 'bg-gray-700';
-    }
+  const getStatusColor = (status: ResourceStatus, simulatedPacketLoss?: boolean) => { // ★ simulatedPacketLoss 引数追加
+    if (status === 'error') return 'bg-red-500';
+    if (status === 'completed') return simulatedPacketLoss ? 'bg-orange-500' : 'bg-green-500'; // ★ 損失時はオレンジ
+    if (status === 'requesting') return 'bg-yellow-500';
+    return 'bg-gray-600'; // idle or other
   };
 
-  // Max duration to scale the timeline width
-  // ★ 固定値に変更 (例: 10秒 = 10000ms)
-  const timelineScaleMax = 10000; // Fixed scale in milliseconds
-
+  const timelineScaleMax = 10000; // Fixed scale
 
   return (
-    <div className="p-4 h-full flex flex-col">
-      <h3 className="text-lg font-semibold mb-2 flex-shrink-0">{protocol} Simulation Status</h3>
+    // ★ 全体の高さを調整 (h-fullを削除し、min-h を指定)
+    <div className="p-4 flex flex-col bg-gray-800 rounded-lg border border-gray-700 min-h-[300px]">
+      {/* ★ タイトルを太字に */}
+      <h3 className="text-lg font-bold mb-2 flex-shrink-0">{protocol}</h3>
       <div className="mb-4 text-sm flex-shrink-0">
         Status: {isRunning ? 'Running...' : error ? 'Error!' : 'Completed'} (Total Time: {(safeTotalDuration / 1000).toFixed(2)}s)
       </div>
       {error && <div className="text-red-400 mb-2 flex-shrink-0">Error: {error}</div>}
 
       {/* Timeline Visualization Area */}
+      {/* ★ flex-grow と overflow-y-auto を設定 */}
       <div className="flex-grow overflow-y-auto pr-2 space-y-2">
         {resources.map(resource => {
           const resourceStartTime = resource.startTime ? resource.startTime - startTime : 0;
-          // If running, end time is now; if completed/error, use resource.endTime; otherwise 0
           const resourceEndTime = resource.endTime
              ? resource.endTime - startTime
              : resource.startTime && isRunning
                ? currentTime - startTime
-               : resourceStartTime; // If not started or not running, end is same as start (0 length)
+               : resourceStartTime;
 
           const duration = Math.max(0, resourceEndTime - resourceStartTime);
-          // Calculate position and width as percentage of the timeline scale
           const leftPercent = (resourceStartTime / timelineScaleMax) * 100;
           const widthPercent = (duration / timelineScaleMax) * 100;
-
-           // Ensure minimum width for visibility if duration is very small but non-zero
-           const minWidthPx = 2;
-           const displayWidthPercent = duration > 0 && widthPercent * (document.getElementById(`timeline-${resource.id}`)?.clientWidth ?? 1000) / 100 < minWidthPx
-             ? (minWidthPx / (document.getElementById(`timeline-${resource.id}`)?.clientWidth ?? 1000)) * 100
+          const minWidthPx = 2;
+          // ★ getElementById を使わないように修正 (useRef推奨だが簡易的に定数で回避)
+          const containerWidthEstimate = 500; // 仮の幅推定値
+          const displayWidthPercent = duration > 0 && widthPercent * containerWidthEstimate / 100 < minWidthPx
+             ? (minWidthPx / containerWidthEstimate) * 100
              : widthPercent;
 
 
           return (
-            <div key={resource.id} id={`timeline-${resource.id}`} className="flex items-center text-xs group">
+            <div key={resource.id} className="flex items-center text-xs group">
               <span className="w-20 shrink-0 pr-2 text-right font-mono">Resource {resource.id}:</span>
-              {/* Timeline Track */}
               <div className="flex-grow h-5 bg-gray-700 rounded relative overflow-hidden">
-                {resource.startTime && ( // Only render bar if started
+                {resource.startTime && (
                   <div
-                    className={`absolute top-0 h-full rounded transition-colors duration-150 ${getStatusColor(resource.status)} ${resource.status === 'requesting' ? 'animate-pulse' : ''}`}
+                    className={`absolute top-0 h-full rounded transition-colors duration-150 ${getStatusColor(resource.status, resource.simulatedPacketLoss)} ${resource.status === 'requesting' ? 'animate-pulse' : ''}`} // ★ getStatusColorに損失フラグ渡す
                     style={{
                       left: `${Math.max(0, leftPercent)}%`,
-                      width: `${Math.min(100 - Math.max(0, leftPercent), displayWidthPercent)}%`, // Ensure bar doesn't exceed 100%
-                      minWidth: duration > 0 ? `${minWidthPx}px` : '0px' // Apply min width directly if needed
+                      width: `${Math.min(100 - Math.max(0, leftPercent), displayWidthPercent)}%`,
+                      minWidth: duration > 0 ? `${minWidthPx}px` : '0px'
                     }}
-                    title={`Status: ${resource.status}, Start: ${(resourceStartTime / 1000).toFixed(2)}s, Duration: ${(duration / 1000).toFixed(2)}s`}
+                    // ★ title を修正
+                    title={`ID: ${resource.id}, Status: ${resource.status}${resource.simulatedPacketLoss ? ' (Loss Simulated)' : ''}, Start: ${(resourceStartTime / 1000).toFixed(2)}s, End: ${(resourceEndTime / 1000).toFixed(2)}s, Duration: ${(duration / 1000).toFixed(2)}s`}
                   >
-                    {/* Optional: Text inside bar */}
-                    {/* <span className="absolute left-1 top-0 text-white text-opacity-80 text-[10px] whitespace-nowrap">
-                      {resource.status} ({(duration / 1000).toFixed(1)}s)
-                    </span> */}
                   </div>
                 )}
-                 {/* Display time only when completed or error */}
                  {resource.endTime && (resource.status === 'completed' || resource.status === 'error') && (
                    <span className="absolute right-1 top-0 text-gray-300 text-[10px] opacity-0 group-hover:opacity-100 transition-opacity">
-                     ({(duration / 1000).toFixed(2)}s)
+                     ({(duration / 1000).toFixed(2)}s){resource.simulatedPacketLoss ? ' L' : ''} {/* ★ 損失時に 'L' を表示 */}
                    </span>
                  )}
               </div>
@@ -409,7 +394,6 @@ function SimulationVisualizer({ state }: { state: SimulationState }) {
           );
         })}
       </div>
-      {/* Optional: Add a time scale legend */}
       <div className="flex-shrink-0 pt-2 mt-2 border-t border-gray-700 text-xs text-gray-400">
         Timeline Scale: 0s to {(timelineScaleMax / 1000).toFixed(1)}s
       </div>
@@ -420,59 +404,49 @@ function SimulationVisualizer({ state }: { state: SimulationState }) {
 
 // --- Main Page Component ---
 export default function Home() {
-  const [selectedProtocol, setSelectedProtocol] = useState<Protocol>('HTTP/1.1');
-  const [maxConnections, setMaxConnections] = useState<number>(6); // ★ 追加: HTTP/1.1 の最大接続数
-  const numResources = 10; // Example: Number of resources to fetch
+  // ★ selectedProtocol 削除
+  const [maxConnections, setMaxConnections] = useState<number>(6);
+  const numResources = 10;
 
-  const initialState: SimulationState = {
-    protocol: selectedProtocol,
-    resources: [],
-    connections: [],
-    requests: [],
-    isRunning: false,
-    startTime: null,
-    endTime: null,
+   // ★ Initial state for all protocols
+  const initialAllState: AllSimulationStates = {
+      'HTTP/1.1': createInitialState('HTTP/1.1', maxConnections),
+      'HTTP/2': createInitialState('HTTP/2'),
+      'HTTP/3': createInitialState('HTTP/3'),
   };
+  // ★ Reducer を新しいものに変更
+  const [state, dispatch] = useReducer(simulationReducer, initialAllState);
 
-  const [state, dispatch] = useReducer(simulationReducer, initialState);
-
-  // useCallback を使って不要な再生成を防ぐ
-  const runSimulation = useCallback(async (protocol: Protocol) => {
-    // START_SIMULATION を dispatch して状態を初期化
-    dispatch({ type: 'START_SIMULATION', protocol, numResources });
-     console.log(`Running simulation for ${protocol}...`);
+  // ★ useCallback の依存配列変更、関数名変更、処理内容変更
+  const runAllSimulations = useCallback(async () => {
+     console.log(`Starting all simulations... (HTTP/1.1 Max Conn: ${maxConnections})`);
+     // Start all simulations
+     protocols.forEach(p => {
+         dispatch({ type: 'START_SIMULATION', protocol: p, numResources, maxConnections: p === 'HTTP/1.1' ? maxConnections : undefined });
+     });
 
     try {
-      switch (protocol) {
-        case 'HTTP/1.1':
-          // ★ maxConnections を引数として渡す
-          await simulateHttp1_1(dispatch, numResources, maxConnections);
-          break;
-        case 'HTTP/2':
-          await simulateHttp2(dispatch, numResources);
-          break;
-        case 'HTTP/3':
-          await simulateHttp3(dispatch, numResources);
-          break;
-        default:
-          console.warn(`Simulation logic for ${protocol} not implemented.`);
-          dispatch({ type: 'SIMULATION_ERROR', error: `Simulation for ${protocol} not implemented.` });
-      }
-       // 完了ディスパッチは各シミュレーション関数内で行う
-      // dispatch({ type: 'SIMULATION_COMPLETE', time: Date.now() });
+        await Promise.allSettled([
+            simulateHttp1_1(dispatch, numResources, maxConnections),
+            simulateHttp2(dispatch, numResources),
+            simulateHttp3(dispatch, numResources),
+        ]);
+        console.log("All simulation functions have settled.");
+         // Individual COMPLETE/ERROR actions are dispatched within each simulate function
     } catch (error: any) {
-      console.error(`Simulation failed for ${protocol}:`, error);
-      dispatch({ type: 'SIMULATION_ERROR', error: error.message || 'Unknown simulation error' });
+      console.error(`Critical error running simulations:`, error);
+      // Optionally dispatch a general error to all states? Or handle globally.
+       protocols.forEach(p => {
+            dispatch({ type: 'SIMULATION_ERROR', protocol: p, error: 'Main simulation runner failed' });
+       });
     }
-    // ★ useCallback の依存配列に maxConnections を追加
-  }, [dispatch, numResources, maxConnections]);
+  }, [dispatch, numResources, maxConnections]); // ★ 依存配列更新
 
-  const startSimulation = () => {
-    if (state.isRunning) return; // Reducer の state を使用
-    // setIsSimulating(true); // 不要
-    // setSimulationData(null); // 不要
-    console.log(`Button Clicked: Starting simulation for ${selectedProtocol}...`);
-    runSimulation(selectedProtocol); // runSimulation を呼び出す
+  // ★ startSimulation -> startAllSimulations に変更
+  const startAllSimulations = () => {
+      // ★ 実行中判定を変更
+    if (Object.values(state).some(s => s.isRunning)) return;
+    runAllSimulations();
   };
 
 
@@ -481,7 +455,7 @@ export default function Home() {
       case 'HTTP/1.1':
         return "複数のTCP接続を使い、各接続内でリクエストを順番に処理します。接続数には上限があり、前のリクエストが完了しないと次のリクエストがブロックされる (Head-of-line Blocking) ことがあります。";
       case 'HTTP/2':
-        return "単一のTCP接続上で複数のリクエスト/レスポンスを並行処理 (多重化) します。これによりHTTPレベルのHOLブロッキングは解消されますが、TCPレベルのHOLブロッキングの影響は受けます。";
+        return "単一のTCP接続上で複数のリクエスト/レスポンスを並行処理 (多重化) します。これによりHTTPレベルのHOLブロッキングは解消されますが、TCPレベルのHOLブロッキングの影響は受けます (パケットロス時に他のストリームも停止)。"; // ★ 説明更新
       case 'HTTP/3':
         return "QUIC (UDPベース) を使用し、接続確立が高速で、ストリーム間のHOLブロッキングが解消されます。パケットロスが発生しても影響はそのストリームに限定されます。";
       default:
@@ -496,92 +470,80 @@ export default function Home() {
   };
 
    const protocolTextColors: Record<Protocol, string> = {
-    'HTTP/1.1': 'text-blue-300',
-    'HTTP/2': 'text-green-300',
-    'HTTP/3': 'text-purple-300',
-  };
+     'HTTP/1.1': 'text-blue-300',
+     'HTTP/2': 'text-green-300',
+     'HTTP/3': 'text-purple-300',
+   };
+
+    // ★ 実行中かどうかを判定するヘルパー
+   const isAnyRunning = Object.values(state).some(s => s.isRunning);
 
   return (
     <div className="min-h-screen bg-gray-900 text-gray-100 flex flex-col items-center p-4 md:p-8">
       <h1 className="text-4xl font-bold mb-6">Day27 - HTTP Protocol Simulator</h1>
 
-      {/* Protocol Selection & Config */}
-      <div className="mb-8 flex flex-col items-center space-y-4 md:flex-row md:space-y-0 md:space-x-4">
-        <div className="flex space-x-4">
-          {( ['HTTP/1.1', 'HTTP/2', 'HTTP/3'] as Protocol[]).map((protocol) => (
-                <button
-              key={protocol}
-              onClick={() => {
-                  if (!state.isRunning) setSelectedProtocol(protocol) // 実行中でなければ変更可能
-              }}
-              disabled={state.isRunning} // 実行中は変更不可
-              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 disabled:opacity-50 ${
-                selectedProtocol === protocol
-                  ? `${protocolColors[protocol]} text-white shadow-md`
-                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-              } ${state.isRunning ? 'cursor-not-allowed' : ''}`}
-            >
-              {protocol}
-            </button>
+      {/* ★ Controls Area (Start Button & Config) */}
+      <div className="mb-8 flex flex-col md:flex-row items-center justify-center space-y-4 md:space-y-0 md:space-x-6">
+          {/* Start Button */}
+         <button
+           onClick={startAllSimulations} // ★ 関数名変更
+           disabled={isAnyRunning} // ★ 判定変更
+           className={`px-6 py-3 rounded-md font-semibold text-white transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 disabled:opacity-50 disabled:cursor-not-allowed ${isAnyRunning ? 'bg-gray-600' : 'bg-indigo-600 hover:bg-indigo-700 focus:ring-indigo-500'}`} // ★ ボタン色変更
+         >
+           {isAnyRunning ? (
+              <span className="flex items-center">
+                 <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                 </svg>
+                 Simulating...
+               </span>
+           ) : `Start All Simulations`} {/* ★ テキスト変更 */}
+         </button>
+
+         {/* HTTP/1.1 Config */}
+         <div className="flex items-center space-x-2">
+             <label htmlFor="maxConnections" className="text-sm font-medium text-gray-300">
+               Max Connections (HTTP/1.1):
+             </label>
+             <input
+               type="number"
+               id="maxConnections"
+               name="maxConnections"
+               min="1"
+               max="20"
+               value={maxConnections}
+               onChange={(e) => {
+                   const val = parseInt(e.target.value, 10) || 1;
+                   setMaxConnections(val);
+                   // ★ state も直接更新 (START時に反映される) - 必要なら専用Actionを作る
+                   // dispatch({ type: 'UPDATE_HTTP1_CONFIG', protocol: 'HTTP/1.1', maxConnections: val });
+               }}
+               disabled={isAnyRunning} // ★ 判定変更
+               className="w-16 px-2 py-1 bg-gray-700 border border-gray-600 rounded-md text-sm text-center focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+             />
+         </div>
+      </div>
+
+
+      {/* ★ Simulation Area (3 Columns) */}
+      {/* ★ max-width 変更 */}
+      <div className="w-full max-w-7xl grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+          {protocols.map(protocol => (
+              // ★ state[protocol] を渡す
+              <SimulationVisualizer key={protocol} state={state[protocol]} />
           ))}
-        </div>
-
-        {/* ★ HTTP/1.1 Config: Max Connections Input */}
-        {selectedProtocol === 'HTTP/1.1' && (
-          <div className="flex items-center space-x-2">
-            <label htmlFor="maxConnections" className="text-sm font-medium text-gray-300">
-              Max Connections (HTTP/1.1):
-            </label>
-            <input
-              type="number"
-              id="maxConnections"
-              name="maxConnections"
-              min="1"
-              max="20" // Sensible upper limit for demo
-              value={maxConnections}
-              onChange={(e) => setMaxConnections(parseInt(e.target.value, 10) || 1)} // Ensure positive integer
-              disabled={state.isRunning}
-              className="w-16 px-2 py-1 bg-gray-700 border border-gray-600 rounded-md text-sm text-center focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-            />
-          </div>
-        )}
       </div>
 
-      {/* Simulation Area */}
-      <div className="w-full max-w-6xl h-[40rem] bg-gray-800 rounded-lg border border-gray-700 mb-8 shadow-inner overflow-hidden">
-         {/* SimulationVisualizer を state.startTime がある場合に表示 */}
-         {state.startTime ? (
-            <SimulationVisualizer state={state} />
-         ) : (
-           <div className="p-4 text-center text-gray-500 italic h-full flex items-center justify-center">
-             Click Start Simulation
-           </div>
-         )}
-      </div>
-
-      {/* Controls and Description */}
-      <div className="w-full max-w-4xl flex flex-col md:flex-row items-center justify-between">
-        <button
-          onClick={startSimulation}
-          disabled={state.isRunning} // Reducer の state を使用
-          className={`px-6 py-3 rounded-md font-semibold text-white transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 disabled:opacity-50 disabled:cursor-not-allowed ${protocolColors[selectedProtocol]}`}
-        >
-          {state.isRunning ? ( // Reducer の state を使用
-             <span className="flex items-center">
-                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                Simulating...
-              </span>
-          ) : `Start ${selectedProtocol} Simulation`}
-        </button>
-
-        <div className={`mt-4 md:mt-0 md:ml-6 p-4 border-l-4 ${protocolTextColors[selectedProtocol].replace('text-', 'border-').replace('-300', '-500')} bg-gray-800 rounded-r-lg max-w-md`}>
-          <p className="text-sm text-gray-300">
-            <strong className={`${protocolTextColors[selectedProtocol]}`}>{selectedProtocol}:</strong> {getProtocolDescription(selectedProtocol)}
-          </p>
-        </div>
+      {/* ★ Descriptions Area (3 Columns) */}
+      <div className="w-full max-w-7xl grid grid-cols-1 md:grid-cols-3 gap-4">
+         {protocols.map(protocol => (
+             <div key={protocol} className={`p-4 border-l-4 ${protocolTextColors[protocol].replace('text-', 'border-').replace('-300', '-500')} bg-gray-800 rounded-r-lg`}>
+                <p className="text-sm text-gray-300">
+                  <strong className={`${protocolTextColors[protocol]}`}>{protocol}:</strong> {getProtocolDescription(protocol)}
+                </p>
+             </div>
+         ))}
       </div>
     </div>
   );
