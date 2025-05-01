@@ -89,11 +89,86 @@ export default function Home() {
     }
   };
 
-  // データ取得処理
+  // Chart.js オプション (ダークモード対応)
+  const options = {
+    responsive: true,
+    plugins: {
+      legend: {
+        position: 'top' as const,
+        labels: {
+          color: '#e5e7eb', // gray-200
+        }
+      },
+      title: {
+        display: true,
+        text: 'Time Series Data',
+        color: '#f9fafb', // gray-100
+      },
+      tooltip: {
+          backgroundColor: 'rgba(31, 41, 55, 0.9)', // gray-800 半透明
+          titleColor: '#f9fafb', // gray-100
+          bodyColor: '#e5e7eb', // gray-200
+          borderColor: '#4b5563', // gray-600
+          borderWidth: 1,
+          callbacks: {
+              label: function(context: any) {
+                  let label = context.dataset.label || '';
+                  if (label) { label += ': '; }
+                  if (context.parsed.y !== null) { label += context.parsed.y.toFixed(2); }
+                  const timestamp = context.parsed.x;
+                  if (timestamp !== null) { label += ` (${format(new Date(timestamp), 'yyyy-MM-dd HH:mm:ss')})`; }
+                  return label;
+              }
+          }
+      }
+    },
+    scales: {
+      x: {
+        type: 'time' as const,
+        time: {
+          unit: 'minute' as const,
+          tooltipFormat: 'yyyy-MM-dd HH:mm:ss',
+          displayFormats: { minute: 'HH:mm', hour: 'MM/dd HH:mm', day: 'yyyy/MM/dd' }
+        },
+        title: { display: true, text: 'Time', color: '#d1d5db' }, // gray-300
+        ticks: { color: '#9ca3af' }, // gray-400
+        grid: { color: '#4b5563' } // gray-600
+      },
+      y: {
+        title: { display: true, text: 'Value', color: '#d1d5db' }, // gray-300
+        ticks: { color: '#9ca3af' }, // gray-400
+        grid: { color: '#4b5563' } // gray-600
+      },
+    },
+  };
+
+  // Chart.js データ (ダークモード対応)
+   const updateChartData = (data: TimeSeriesPoint[]) => {
+     const formattedData = {
+        datasets: [
+          {
+            label: `${fetchKey} (${fetchMethod})`,
+            data: data.map(point => ({ x: point.timestamp * 1000, y: point.value })),
+            borderColor: '#10b981', // emerald-500
+            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+            tension: 0.1,
+            pointBackgroundColor: '#10b981',
+            pointBorderColor: '#374151', // gray-700 or a contrasting dark color
+            pointHoverBackgroundColor: '#f9fafb', // gray-100
+            pointHoverBorderColor: '#10b981',
+            pointRadius: 3, // ポイントサイズ調整
+            pointHoverRadius: 5,
+          },
+        ],
+      };
+      setChartData(formattedData);
+  }
+
+  // データ取得処理を修正して updateChartData を呼ぶ
   const handleFetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
-    setChartData({ datasets: [] }); // グラフをクリア
+    setChartData({ datasets: [] });
 
     let url = '';
     const params = new URLSearchParams();
@@ -120,7 +195,6 @@ export default function Home() {
         url = `/api/data/downsampled?${params.toString()}`;
         break;
       case 'latest':
-        // latest では start/end は無視される想定だが、念の為削除
         params.delete('start');
         params.delete('end');
         params.append('limit', latestLimit);
@@ -135,19 +209,7 @@ export default function Home() {
         throw new Error(`Failed to fetch data: ${response.statusText} - ${errorData.error || 'Unknown error'}`);
       }
       const data: TimeSeriesPoint[] = await response.json();
-
-      // Chart.js 用のデータ形式に変換
-      const formattedData = {
-        datasets: [
-          {
-            label: `${fetchKey} (${fetchMethod})`,
-            data: data.map(point => ({ x: point.timestamp * 1000, y: point.value })), // x軸はミリ秒
-            borderColor: 'rgb(75, 192, 192)',
-            tension: 0.1,
-          },
-        ],
-      };
-      setChartData(formattedData);
+      updateChartData(data); // ★ 修正: 新しい関数でチャートデータを更新
 
     } catch (err: any) {
       console.error(err);
@@ -155,7 +217,7 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
-  }, [fetchKey, fetchMethod, startTime, endTime, interval, aggregation, downsampleMethod, downsampleFactor, latestLimit]);
+  }, [fetchKey, fetchMethod, startTime, endTime, interval, aggregation, downsampleMethod, downsampleFactor, latestLimit]); // updateChartData は useCallback の外なので依存不要
 
   // 利用可能なキーを取得する関数
   const fetchAvailableKeys = useCallback(async () => {
@@ -178,127 +240,72 @@ export default function Home() {
     fetchAvailableKeys();
   }, []);
 
-  // Chart.js オプション
-  const options = {
-    responsive: true,
-    plugins: {
-      legend: {
-        position: 'top' as const,
-      },
-      title: {
-        display: true,
-        text: 'Time Series Data',
-      },
-      tooltip: {
-          callbacks: {
-              label: function(context: any) {
-                  let label = context.dataset.label || '';
-                  if (label) {
-                      label += ': ';
-                  }
-                  if (context.parsed.y !== null) {
-                      label += context.parsed.y.toFixed(2);
-                  }
-                  // タイムスタンプも表示
-                  const timestamp = context.parsed.x;
-                  if (timestamp !== null) {
-                      label += ` (${format(new Date(timestamp), 'yyyy-MM-dd HH:mm:ss')})`;
-                  }
-                  return label;
-              }
-          }
-      }
-    },
-    scales: {
-      x: {
-        type: 'time' as const, // x軸を時間スケールに設定
-        time: {
-          unit: 'minute' as const, // 表示単位（データに応じて調整）
-          tooltipFormat: 'yyyy-MM-dd HH:mm:ss', // ツールチップのフォーマット
-          displayFormats: { // 表示フォーマット
-             minute: 'HH:mm',
-             hour: 'MM/dd HH:mm',
-             day: 'yyyy/MM/dd'
-          }
-        },
-        title: {
-          display: true,
-          text: 'Time',
-        },
-      },
-      y: {
-        title: {
-          display: true,
-          text: 'Value',
-        },
-      },
-    },
-  };
-
   return (
-    <main className="container mx-auto p-4">
-      <h1 className="text-2xl font-bold mb-4">Day26 - Timeseries DB on SQLite</h1>
+    <main className="container mx-auto p-4 bg-gray-900 text-gray-100 min-h-screen">
+      <h1 className="text-3xl font-bold mb-6 text-center text-gray-100">Day26 - Timeseries DB (Dark Mode)</h1>
 
-      {/* データ登録セクション */}
-      <section className="mb-6 p-4 border rounded">
-        <h2 className="text-xl font-semibold mb-2">Register Data</h2>
+      {/* データ登録セクション (ダークモードスタイル適用) */}
+      <section className="mb-6 p-4 border border-gray-700 rounded-lg bg-gray-800 shadow-lg">
+        <h2 className="text-xl font-semibold mb-3 text-gray-200">Register Data</h2>
         <div className="flex flex-wrap gap-4 items-end">
           <div>
-            <label htmlFor="register-key" className="block text-sm font-medium text-gray-700">Key</label>
+            <label htmlFor="register-key" className="block text-sm font-medium text-gray-300 mb-1">Key</label>
             <input
               type="text"
               id="register-key"
               value={registerKey}
               onChange={(e) => setRegisterKey(e.target.value)}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+              className="block w-full rounded-md border-gray-600 bg-gray-700 text-gray-100 shadow-sm focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 sm:text-sm py-2 px-3"
             />
           </div>
           <div>
-            <label htmlFor="register-value" className="block text-sm font-medium text-gray-700">Value</label>
+            <label htmlFor="register-value" className="block text-sm font-medium text-gray-300 mb-1">Value</label>
             <input
               type="number"
               id="register-value"
               value={registerValue}
               onChange={(e) => setRegisterValue(e.target.value)}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+              className="block w-full rounded-md border-gray-600 bg-gray-700 text-gray-100 shadow-sm focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 sm:text-sm py-2 px-3"
               step="any"
             />
           </div>
           <button
             onClick={handleRegister}
-            className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-md shadow transition duration-150 ease-in-out"
           >
             Register
           </button>
         </div>
+        {/* エラー表示エリア (もしあれば) */}
+        {error && error.includes('Registration') && <p className="text-red-400 mt-3">{error}</p>}
       </section>
 
-      {/* データ表示設定セクション */}
-      <section className="mb-6 p-4 border rounded">
-        <h2 className="text-xl font-semibold mb-2">Fetch & Display Data</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+      {/* データ表示設定セクション (ダークモードスタイル適用) */}
+      <section className="mb-6 p-4 border border-gray-700 rounded-lg bg-gray-800 shadow-lg">
+        <h2 className="text-xl font-semibold mb-3 text-gray-200">Fetch & Display Data</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4 items-start"> {/* Adjust grid for better layout */}
           {/* Key選択 */}
-          <div>
-            <label htmlFor="fetch-key" className="block text-sm font-medium text-gray-700">Key</label>
+          <div className="lg:col-span-1">
+            <label htmlFor="fetch-key" className="block text-sm font-medium text-gray-300 mb-1">Key</label>
             <select
               id="fetch-key"
               value={fetchKey}
               onChange={(e) => setFetchKey(e.target.value)}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+              className="block w-full rounded-md border-gray-600 bg-gray-700 text-gray-100 shadow-sm focus:border-teal-500 focus:ring-1 focus:ring-teal-500 sm:text-sm py-2 px-3"
             >
               {availableKeys.map(k => <option key={k} value={k}>{k}</option>)}
-              {availableKeys.length === 0 && <option value="">No keys available</option>}
+              {availableKeys.length === 0 && <option value="">Loading keys...</option>}
             </select>
           </div>
 
           {/* 取得方法選択 */}
-          <div>
-            <label htmlFor="fetch-method" className="block text-sm font-medium text-gray-700">Fetch Method</label>
+          <div className="lg:col-span-1">
+            <label htmlFor="fetch-method" className="block text-sm font-medium text-gray-300 mb-1">Fetch Method</label>
             <select
               id="fetch-method"
               value={fetchMethod}
               onChange={(e) => setFetchMethod(e.target.value as any)}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+              className="block w-full rounded-md border-gray-600 bg-gray-700 text-gray-100 shadow-sm focus:border-teal-500 focus:ring-1 focus:ring-teal-500 sm:text-sm py-2 px-3"
             >
               <option value="raw">Raw Data</option>
               <option value="aggregated">Aggregated</option>
@@ -308,96 +315,116 @@ export default function Home() {
           </div>
 
           {/* 時間範囲 */}
-          <div>
-             <label className="block text-sm font-medium text-gray-700">Time Range (Optional)</label>
-            <div className="flex gap-2 mt-1">
+          <div className="lg:col-span-2"> {/* Make time range span 2 columns */}
+             <label className="block text-sm font-medium text-gray-300 mb-1">Time Range (Optional)</label>
+            <div className="flex gap-2 items-center">
               <input
                 type="datetime-local"
+                aria-label="Start time"
                 value={startTime}
                 onChange={(e) => setStartTime(e.target.value)}
-                className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                className="block w-full rounded-md border-gray-600 bg-gray-700 text-gray-100 shadow-sm focus:border-teal-500 focus:ring-1 focus:ring-teal-500 sm:text-sm py-2 px-3 disabled:opacity-50"
                 disabled={fetchMethod === 'latest'}
+                style={{ colorScheme: 'dark' }} // Ensure calendar icon is visible
               />
-              <span className="self-center">-</span>
+              <span className="text-gray-400">-</span>
                <input
                 type="datetime-local"
+                aria-label="End time"
                 value={endTime}
                 onChange={(e) => setEndTime(e.target.value)}
-                className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                className="block w-full rounded-md border-gray-600 bg-gray-700 text-gray-100 shadow-sm focus:border-teal-500 focus:ring-1 focus:ring-teal-500 sm:text-sm py-2 px-3 disabled:opacity-50"
                 disabled={fetchMethod === 'latest'}
+                 style={{ colorScheme: 'dark' }} // Ensure calendar icon is visible
               />
             </div>
-             {/* TODO: プリセットボタン (1h, 6h, 24h, 7d) */}
+             {/* TODO: Add preset time range buttons (1h, 6h, 24h, 7d) here */}
           </div>
 
-          {/* Aggregated 用パラメータ */}
-          {fetchMethod === 'aggregated' && (
-            <>
-              <div>
-                <label htmlFor="interval" className="block text-sm font-medium text-gray-700">Interval</label>
-                <select id="interval" value={interval} onChange={e => setInterval(e.target.value as any)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
-                  <option value="minute">Minute</option>
-                  <option value="hour">Hour</option>
-                  <option value="day">Day</option>
-                </select>
-              </div>
-              <div>
-                <label htmlFor="aggregation" className="block text-sm font-medium text-gray-700">Aggregation</label>
-                 <select id="aggregation" value={aggregation} onChange={e => setAggregation(e.target.value as any)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
-                  <option value="avg">Average</option>
-                  <option value="max">Max</option>
-                  <option value="min">Min</option>
-                  <option value="sum">Sum</option>
-                  <option value="count">Count</option>
-                </select>
-              </div>
-            </>
-          )}
+          {/* Conditional Parameters Section */}
+          <div className="lg:col-span-4 grid grid-cols-1 md:grid-cols-2 gap-4"> {/* Span full width and nest grid */}
+            {/* Aggregated 用パラメータ */}
+            {fetchMethod === 'aggregated' && (
+              <>
+                <div>
+                  <label htmlFor="interval" className="block text-sm font-medium text-gray-300 mb-1">Interval</label>
+                  <select id="interval" value={interval} onChange={e => setInterval(e.target.value as any)} className="block w-full rounded-md border-gray-600 bg-gray-700 text-gray-100 shadow-sm focus:border-teal-500 focus:ring-1 focus:ring-teal-500 sm:text-sm py-2 px-3">
+                    <option value="minute">Minute</option>
+                    <option value="hour">Hour</option>
+                    <option value="day">Day</option>
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="aggregation" className="block text-sm font-medium text-gray-300 mb-1">Aggregation</label>
+                  <select id="aggregation" value={aggregation} onChange={e => setAggregation(e.target.value as any)} className="block w-full rounded-md border-gray-600 bg-gray-700 text-gray-100 shadow-sm focus:border-teal-500 focus:ring-1 focus:ring-teal-500 sm:text-sm py-2 px-3">
+                    <option value="avg">Average</option>
+                    <option value="max">Max</option>
+                    <option value="min">Min</option>
+                    <option value="sum">Sum</option>
+                    <option value="count">Count</option>
+                  </select>
+                </div>
+              </>
+            )}
 
-           {/* Downsampled 用パラメータ */}
-          {fetchMethod === 'downsampled' && (
-            <>
-              <div>
-                <label htmlFor="downsample-method" className="block text-sm font-medium text-gray-700">Downsample Method</label>
-                <select id="downsample-method" value={downsampleMethod} onChange={e => setDownsampleMethod(e.target.value as any)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
-                  <option value="aggregate">Aggregate (Avg)</option>
-                  <option value="every_nth">Every Nth Point</option>
-                </select>
-              </div>
-              <div>
-                 <label htmlFor="downsample-factor" className="block text-sm font-medium text-gray-700">Factor (Seconds or N)</label>
-                 <input type="number" id="downsample-factor" value={downsampleFactor} onChange={e => setDownsampleFactor(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" min="1" />
-              </div>
-            </>
-          )}
+            {/* Downsampled 用パラメータ */}
+            {fetchMethod === 'downsampled' && (
+              <>
+                <div>
+                  <label htmlFor="downsample-method" className="block text-sm font-medium text-gray-300 mb-1">Downsample Method</label>
+                  <select id="downsample-method" value={downsampleMethod} onChange={e => setDownsampleMethod(e.target.value as any)} className="block w-full rounded-md border-gray-600 bg-gray-700 text-gray-100 shadow-sm focus:border-teal-500 focus:ring-1 focus:ring-teal-500 sm:text-sm py-2 px-3">
+                    <option value="aggregate">Aggregate (Avg)</option>
+                    <option value="every_nth">Every Nth Point</option>
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="downsample-factor" className="block text-sm font-medium text-gray-300 mb-1">Factor (Seconds or N)</label>
+                  <input type="number" id="downsample-factor" value={downsampleFactor} onChange={e => setDownsampleFactor(e.target.value)} className="block w-full rounded-md border-gray-600 bg-gray-700 text-gray-100 shadow-sm focus:border-teal-500 focus:ring-1 focus:ring-teal-500 sm:text-sm py-2 px-3" min="1" />
+                </div>
+              </>
+            )}
 
-          {/* Latest 用パラメータ */}
-          {fetchMethod === 'latest' && (
-             <div>
-               <label htmlFor="latest-limit" className="block text-sm font-medium text-gray-700">Limit (N)</label>
-               <input type="number" id="latest-limit" value={latestLimit} onChange={e => setLatestLimit(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" min="1" />
-            </div>
-          )}
+            {/* Latest 用パラメータ */}
+            {fetchMethod === 'latest' && (
+              <div>
+                <label htmlFor="latest-limit" className="block text-sm font-medium text-gray-300 mb-1">Limit (N)</label>
+                <input type="number" id="latest-limit" value={latestLimit} onChange={e => setLatestLimit(e.target.value)} className="block w-full rounded-md border-gray-600 bg-gray-700 text-gray-100 shadow-sm focus:border-teal-500 focus:ring-1 focus:ring-teal-500 sm:text-sm py-2 px-3" min="1" />
+              </div>
+            )}
+          </div>
         </div>
 
-        <button
-          onClick={handleFetchData}
-          disabled={loading || !fetchKey}
-          className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded disabled:opacity-50"
-        >
-          {loading ? 'Loading...' : 'Fetch & Display Data'}
-        </button>
-         {error && <p className="text-red-500 mt-2">Error: {error}</p>}
+        <div className="mt-4"> {/* Button and error message area */}
+          <button
+            onClick={handleFetchData}
+            disabled={loading || !fetchKey}
+            className="bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 px-4 rounded-md shadow disabled:opacity-50 disabled:cursor-not-allowed transition duration-150 ease-in-out"
+          >
+            {loading ? (
+              <span className="flex items-center">
+                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Loading...
+              </span>
+            ) : 'Fetch & Display Data'}
+          </button>
+          {/* データ取得エラー表示 */}
+          {error && !error.includes('Registration') && <p className="text-red-400 mt-3">Error: {error}</p>}
+        </div>
       </section>
 
-      {/* グラフ表示セクション */}
-      <section>
-        <h2 className="text-xl font-semibold mb-2">Chart</h2>
-        <div className="h-96"> {/* 高さを指定しないと表示されない場合がある */}
-          {chartData.datasets.length > 0 ? (
-             <Line options={options} data={chartData} />
+      {/* グラフ表示セクション (ダークモードスタイル適用) */}
+      <section className="p-4 border border-gray-700 rounded-lg bg-gray-800 shadow-lg">
+        <h2 className="text-xl font-semibold mb-2 text-gray-200">Chart</h2>
+        <div className="h-96 w-full bg-gray-800 rounded">
+          {chartData.datasets && chartData.datasets.length > 0 && chartData.datasets[0].data.length > 0 ? (
+             <Line options={options} data={chartData} updateMode="resize" /> // updateMode追加
           ) : (
-            <p className="text-gray-500">No data to display. Fetch data first.</p>
+            <div className="flex items-center justify-center h-full">
+              <p className="text-gray-500 italic">{loading ? 'Loading chart data...' : 'No data to display. Fetch data first.'}</p>
+             </div>
           )}
         </div>
       </section>
