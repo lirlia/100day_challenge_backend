@@ -38,3 +38,4 @@ LLMで生成したコードを置いています。
 | Day22 | Distributed Cache                | <video src="https://github.com/user-attachments/assets/48828a01-2b67-42ca-b961-df16551d5d01" > |
 | Day23 | Image Resizer API                 | <video src="https://github.com/user-attachments/assets/1ae0d748-ad32-4f64-ac13-d3dffe13d385" > |
 | Day24 | Simple RAG (Retrieval-Augmented Generation) System (Vector Search Version) | <video src="https://github.com/user-attachments/assets/6a5ebcf5-f39e-4a47-a239-6d2bccafe3d1" > |
+| Day25 | GeoHash による近傍探索 | <video src="https://github.com/user-attachments/assets/36ddc3fa-1b67-4234-91b5-027d19f43479" > |
