@@ -73,8 +73,10 @@ export async function GET(req: NextRequest) {
 
     // 結果のタイムスタンプ文字列を Unix タイムスタンプ (秒) に変換
     const formattedResult = result.map(row => ({
-      timestamp: Math.floor(new Date(row.interval_start + 'Z').getTime() / 1000), // UTCとして解釈し秒単位に
-      value: row.aggregated_value,
+      timestamp: Math.floor(new Date(row.interval_start + 'Z').getTime() / 1000),
+      value: typeof row.aggregated_value === 'bigint'
+              ? Number(row.aggregated_value)
+              : row.aggregated_value,
     }));
 
     return NextResponse.json(formattedResult);
