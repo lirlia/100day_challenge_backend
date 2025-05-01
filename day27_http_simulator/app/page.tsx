@@ -299,69 +299,35 @@ const simulateHttp3 = async (dispatch: React.Dispatch<EnhancedSimulationAction>,
 // --- Visualization Component ---
 // state の型を SimulationState に変更
 function SimulationVisualizer({ state }: { state: SimulationState }) {
-  // console.log('Rendering SimulationVisualizer with state:', state);
   const { protocol, resources, isRunning, startTime, endTime, error } = state;
   const [currentTime, setCurrentTime] = useState<number>(Date.now());
 
-  // リソースごとに表示上の最大終了時間を保持するためのref
-  const maxVisibleEndTimeRef = useRef<Record<number, number>>({});
+  // リソースIDごとに「これまでに表示された最大幅」を保持するref
+  const maxWidthRef = useRef<{ [id: number]: number }>({});
 
-  // アニメーションの最後のフレーム時間を保持
-  const lastFrameTimeRef = useRef<number>(Date.now());
+  // 前のリソース状態を保持するためのref
+  const prevResourcesRef = useRef<ResourceType[]>([]);
 
-  // シミュレーションが完了したかどうかを検出するためのref
-  const prevIsRunningRef = useRef<boolean>(false);
+  // 前回のisRunning状態を保持するref
+  const wasRunningRef = useRef<boolean>(false);
 
   useEffect(() => {
-    // シミュレーション開始時にrefをリセット
-    if (startTime && isRunning) {
-      maxVisibleEndTimeRef.current = {};
-      lastFrameTimeRef.current = Date.now();
-      prevIsRunningRef.current = true;
+    // シミュレーション開始時にリセット（isRunning が false→true に変わったとき）
+    if (isRunning && !wasRunningRef.current) {
+      maxWidthRef.current = {};
+      console.log(`${protocol}: リセットしました`);
     }
+    wasRunningRef.current = isRunning;
 
-    // シミュレーション停止を検出
-    if (prevIsRunningRef.current && !isRunning) {
-      // この時点でのリソースごとの表示状態を保存する
-      const now = Date.now();
-      lastFrameTimeRef.current = now;
+    // 現在のリソース状態を保存
+    prevResourcesRef.current = [...resources];
 
-      // この時点で表示されていたすべてのリソースの表示長を保存
-      if (startTime) {
-        resources.forEach(resource => {
-          if (resource.startTime) {
-            const currentEndTime = resource.endTime || now;
-            // 最大表示長さを更新（より長いものがあれば）
-            if (!maxVisibleEndTimeRef.current[resource.id] ||
-                currentEndTime > maxVisibleEndTimeRef.current[resource.id]) {
-              maxVisibleEndTimeRef.current[resource.id] = currentEndTime;
-            }
-          }
-        });
-      }
-      prevIsRunningRef.current = false;
-    }
-
+    // アニメーションフレーム処理
     let animationFrameId: number;
 
     if (isRunning && startTime) {
       const update = () => {
-        const now = Date.now();
-        lastFrameTimeRef.current = now;
-        setCurrentTime(now);
-
-        // 実行中は各リソースの現在の表示長を記録
-        resources.forEach(resource => {
-          if (resource.startTime) {
-            const currentEndTime = resource.endTime || now;
-            // 最大表示長さを更新（より長いものがあれば）
-            if (!maxVisibleEndTimeRef.current[resource.id] ||
-                currentEndTime > maxVisibleEndTimeRef.current[resource.id]) {
-              maxVisibleEndTimeRef.current[resource.id] = currentEndTime;
-            }
-          }
-        });
-
+        setCurrentTime(Date.now());
         animationFrameId = requestAnimationFrame(update);
       };
       animationFrameId = requestAnimationFrame(update);
@@ -372,7 +338,7 @@ function SimulationVisualizer({ state }: { state: SimulationState }) {
         cancelAnimationFrame(animationFrameId);
       }
     };
-  }, [isRunning, startTime, resources]);
+  }, [isRunning, startTime, resources, protocol]);
 
   if (!startTime) {
     return <div className="p-4 text-center text-gray-500 italic h-full flex items-center justify-center">{protocol} Ready</div>;
@@ -402,35 +368,35 @@ function SimulationVisualizer({ state }: { state: SimulationState }) {
         {resources.map(resource => {
           const resourceStartTime = resource.startTime ? resource.startTime - startTime : 0;
 
-          // リソースの終了時間の計算を改善
-          let resourceEndTime: number;
+          // 現在のリソース表示幅を計算
+          let currentWidth = 0;
+          let currentEndTime = resourceStartTime;
 
-          if (!isRunning && maxVisibleEndTimeRef.current[resource.id]) {
-            // シミュレーション停止後は、表示上の最大長さを保持
-            resourceEndTime = maxVisibleEndTimeRef.current[resource.id] - startTime;
-          } else if (resource.endTime) {
-            // 確定した終了時間があれば使用
-            resourceEndTime = resource.endTime - startTime;
+          if (resource.startTime) {
+            // このリソースの実際の終了時間または現在時刻
+            const endTimeValue = resource.endTime || currentTime;
+            // 表示幅 = 終了時間 - 開始時間
+            currentWidth = endTimeValue - resource.startTime;
+            currentEndTime = endTimeValue - startTime;
 
-            // 確定した終了時間でも、表示されていた最大長さより短くならないようにする
-            if (maxVisibleEndTimeRef.current[resource.id]) {
-              resourceEndTime = Math.max(resourceEndTime, maxVisibleEndTimeRef.current[resource.id] - startTime);
+            // 現在の幅と保存された最大幅を比較し、大きい方を記録
+            if (!maxWidthRef.current[resource.id] || currentWidth > maxWidthRef.current[resource.id]) {
+              maxWidthRef.current[resource.id] = currentWidth;
             }
-          } else if (resource.startTime && isRunning) {
-            // 実行中で終了時間がない場合は現在時刻を使用
-            resourceEndTime = currentTime - startTime;
-          } else {
-            // それ以外はstartTimeと同じにする（幅0）
-            resourceEndTime = resourceStartTime;
           }
 
-          const duration = Math.max(0, resourceEndTime - resourceStartTime);
+          // 表示用の幅（ピクセル単位ではなくミリ秒単位）
+          const displayWidth = resource.startTime ? maxWidthRef.current[resource.id] || currentWidth : 0;
+          // 表示用の終了時間
+          const displayEndTime = resource.startTime ? resourceStartTime + displayWidth : resourceStartTime;
+
+          // パーセンテージと表示幅の計算
           const leftPercent = (resourceStartTime / timelineScaleMax) * 100;
-          const widthPercent = (duration / timelineScaleMax) * 100;
+          const widthPercent = (displayWidth / timelineScaleMax) * 100;
           const minWidthPx = 2;
 
           const containerWidthEstimate = 500; // 仮の幅推定値
-          const displayWidthPercent = duration > 0 && widthPercent * containerWidthEstimate / 100 < minWidthPx
+          const displayWidthPercent = displayWidth > 0 && widthPercent * containerWidthEstimate / 100 < minWidthPx
              ? (minWidthPx / containerWidthEstimate) * 100
              : widthPercent;
 
@@ -444,15 +410,15 @@ function SimulationVisualizer({ state }: { state: SimulationState }) {
                     style={{
                       left: `${Math.max(0, leftPercent)}%`,
                       width: `${Math.min(100 - Math.max(0, leftPercent), displayWidthPercent)}%`,
-                      minWidth: duration > 0 ? `${minWidthPx}px` : '0px'
+                      minWidth: displayWidth > 0 ? `${minWidthPx}px` : '0px'
                     }}
-                    title={`ID: ${resource.id}, Status: ${resource.status}${resource.simulatedPacketLoss ? ' (Loss Simulated)' : ''}, Start: ${(resourceStartTime / 1000).toFixed(2)}s, End: ${(resourceEndTime / 1000).toFixed(2)}s, Duration: ${(duration / 1000).toFixed(2)}s`}
+                    title={`ID: ${resource.id}, Status: ${resource.status}${resource.simulatedPacketLoss ? ' (Loss Simulated)' : ''}, Start: ${(resourceStartTime / 1000).toFixed(2)}s, End: ${(displayEndTime / 1000).toFixed(2)}s, Duration: ${(displayWidth / 1000).toFixed(2)}s`}
                   >
                   </div>
                 )}
                 {resource.endTime && (resource.status === 'completed' || resource.status === 'error') && (
                   <span className="absolute right-1 top-0 text-gray-300 text-[10px] opacity-0 group-hover:opacity-100 transition-opacity">
-                    ({(duration / 1000).toFixed(2)}s){resource.simulatedPacketLoss ? ' L' : ''}
+                    ({(displayWidth / 1000).toFixed(2)}s){resource.simulatedPacketLoss ? ' L' : ''}
                   </span>
                 )}
               </div>
