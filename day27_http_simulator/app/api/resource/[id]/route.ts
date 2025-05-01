@@ -29,18 +29,25 @@ export async function GET(
   const { id } = parseResult.data;
 
   try {
-    // 50ms から 200ms のランダムな遅延をシミュレート
-    const delay = 50 + Math.random() * 150;
-    await sleep(delay);
+    // 確率的に大きな遅延をシミュレート (例: 20% の確率)
+    const simulateLoss = Math.random() < 0.2;
+    const baseDelay = simulateLoss
+      ? Math.random() * 1000 + 1000 // 1000ms から 2000ms の大きな遅延
+      : Math.random() * 150 + 50;   // 50ms から 200ms の通常遅延
+
+    // 実際の遅延を適用
+    await new Promise(resolve => setTimeout(resolve, baseDelay));
+
+    console.log(`Resource ${id} requested, delay: ${baseDelay.toFixed(0)}ms, Simulated Loss: ${simulateLoss}`);
 
     // ダミーのレスポンスを返す
     const responseData = {
       resourceId: id,
       content: `Content for resource ${id}`,
-      delayApplied: Math.round(delay),
+      delayApplied: Math.round(baseDelay),
+      simulatedPacketLoss: simulateLoss,
     };
 
-    console.log(`Responding for resource ${id} after ${Math.round(delay)}ms delay.`);
     return NextResponse.json(responseData);
 
   } catch (error) {
