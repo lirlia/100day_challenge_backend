@@ -6,7 +6,7 @@ type Protocol = 'HTTP/1.1' | 'HTTP/2' | 'HTTP/3';
 const protocols: Protocol[] = ['HTTP/1.1', 'HTTP/2', 'HTTP/3'];
 
 // --- Types ---
-type ResourceStatus = 'idle' | 'requesting' | 'downloading' | 'completed' | 'error';
+type ResourceStatus = 'idle' | 'requesting' | 'downloading' | 'completed';
 
 interface ResourceType {
   id: number;
@@ -50,12 +50,11 @@ type AllSimulationStates = {
 
 // ★ Actionに protocol を追加
 type EnhancedSimulationAction =
-  | ({ type: 'START_SIMULATION'; numResources: number; maxConnections?: number } & { protocol: Protocol }) // maxConnections追加
+  | ({ type: 'START_SIMULATION'; numResources: number; maxConnections?: number; startTime?: number } & { protocol: Protocol }) // maxConnections追加
   | ({ type: 'SET_RUNNING'; isRunning: boolean } & { protocol: Protocol })
   | ({ type: 'INIT_RESOURCES'; resources: ResourceType[] } & { protocol: Protocol })
-  | ({ type: 'UPDATE_RESOURCE_STATUS'; id: number; status: ResourceStatus; time?: number; error?: string; resourceData?: Partial<ResourceType> } & { protocol: Protocol }) // resourceData追加
-  | ({ type: 'SIMULATION_COMPLETE'; time: number } & { protocol: Protocol })
-  | ({ type: 'SIMULATION_ERROR'; error: string } & { protocol: Protocol });
+  | ({ type: 'UPDATE_RESOURCE_STATUS'; id: number; status: Exclude<ResourceStatus, 'error'>; time?: number; resourceData?: Partial<ResourceType> } & { protocol: Protocol })
+  | ({ type: 'SIMULATION_COMPLETE'; time: number } & { protocol: Protocol });
 
 // --- Helper: Create Initial State ---
 const createInitialState = (protocol: Protocol, maxConnections?: number): SimulationState => ({
@@ -68,62 +67,53 @@ const createInitialState = (protocol: Protocol, maxConnections?: number): Simula
 });
 
 // --- Reducer Logic (Single Protocol) ---
-// 元のReducerロジックを単一プロトコル用に切り出す
+// error 状態を扱わないように修正
 const singleSimulationReducerLogic = (state: SimulationState, action: EnhancedSimulationAction): SimulationState => {
-  // 自分宛のアクションでなければ状態を変更しない
   if (action.protocol !== state.protocol) {
     return state;
   }
-  // console.log(`Reducer Logic (${state.protocol}):`, action);
 
   switch (action.type) {
     case 'START_SIMULATION':
       const initialResources = Array.from({ length: action.numResources }, (_, i) => ({
         id: i + 1,
-        status: 'idle' as ResourceStatus,
+        status: 'idle' as ResourceStatus, // error はもう発生しない
       }));
       return {
-        ...state, // Keep protocol and potentially maxConnections
+        ...state,
         resources: initialResources,
         isRunning: true,
-        startTime: Date.now(),
+        startTime: action.startTime ?? Date.now(),
         endTime: null,
-        error: undefined,
-        maxConnections: action.maxConnections ?? state.maxConnections, // Update maxConnections if provided
+        maxConnections: action.maxConnections ?? state.maxConnections,
       };
-    case 'SET_RUNNING': // Note: SIMULATION_COMPLETE/ERROR should set this
+    case 'SET_RUNNING':
         return { ...state, isRunning: action.isRunning };
-    // case 'INIT_RESOURCES': // START_SIMULATION で行うので不要かも
-    //   return { ...state, resources: action.resources };
     case 'UPDATE_RESOURCE_STATUS':
       return {
         ...state,
         resources: state.resources.map(r =>
           r.id === action.id ? {
             ...r,
-            ...action.resourceData, // ★ APIからの追加情報もマージ
+            ...action.resourceData,
             status: action.status,
-            error: action.error,
-            // 開始/終了時間はアクションから提供される time を優先
             startTime: r.startTime ?? (action.status === 'requesting' ? action.time : undefined),
-            endTime: action.status === 'completed' || action.status === 'error' ? action.time : r.endTime,
+            endTime: action.status === 'completed' ? action.time : r.endTime,
           } : r
         ),
       };
     case 'SIMULATION_COMPLETE':
       return { ...state, isRunning: false, endTime: action.time };
-    case 'SIMULATION_ERROR':
-      return { ...state, isRunning: false, error: action.error, endTime: Date.now() };
     default:
-      // console.warn(`(${state.protocol}) Unhandled action type:`, action);
       return state;
   }
 }
 
 // --- Main Reducer (All Protocols) ---
-// 各プロトコルの状態を更新する新しいReducer
+// SIMULATION_ERROR を扱わないため変更不要だが、呼び出し元でエラーが起きない前提
 function simulationReducer(state: AllSimulationStates, action: EnhancedSimulationAction): AllSimulationStates {
     const targetProtocol = action.protocol;
+    // Action の型から 'error' が除外されたので、singleSimulationReducerLogic に渡ることはない
     return {
         ...state,
         [targetProtocol]: singleSimulationReducerLogic(state[targetProtocol], action)
@@ -132,166 +122,182 @@ function simulationReducer(state: AllSimulationStates, action: EnhancedSimulatio
 
 
 // --- API Call Helper ---
-// 型定義を修正 (resourceId -> id, content -> data)
-const fetchResource = async (resourceId: number): Promise<{ id: number; data: string; simulatedPacketLoss: boolean; delayApplied: number }> => {
-  const response = await fetch(`/api/resource/${resourceId}`);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch resource ${resourceId}: ${response.statusText}`);
+// エラー時もnullではなく情報を返すようにする
+const fetchResource = async (resourceId: number): Promise<{ id: number; data: string | null; simulatedPacketLoss: boolean; delayApplied: number; error?: string } | null> => {
+  try {
+    const response = await fetch(`/api/resource/${resourceId}`);
+    if (!response.ok) {
+      // エラーでもthrowせず、エラー情報を含めて返す
+      console.warn(`Failed to fetch resource ${resourceId}: ${response.statusText}`);
+      return {
+        id: resourceId,
+        data: null,
+        simulatedPacketLoss: false,
+        delayApplied: 0,
+        error: `HTTP Error: ${response.status} ${response.statusText}`
+      };
+    }
+    const data = await response.json();
+    return {
+        id: data.resourceId,
+        data: data.content,
+        simulatedPacketLoss: data.simulatedPacketLoss ?? false,
+        delayApplied: data.delayApplied ?? 0
+    };
+  } catch (error: any) {
+    // ネットワークエラーなども捕捉
+    console.error(`Network or other error fetching resource ${resourceId}:`, error);
+    return {
+      id: resourceId,
+      data: null,
+      simulatedPacketLoss: false,
+      delayApplied: 0,
+      error: error.message || 'Unknown fetch error'
+    };
   }
-  const data = await response.json();
-  // console.log(`Fetched resource ${resourceId}`, data);
-  return {
-      id: data.resourceId,
-      data: data.content,
-      simulatedPacketLoss: data.simulatedPacketLoss ?? false,
-      delayApplied: data.delayApplied ?? 0
-  };
 };
 
 
 // --- Simulation Logic ---
 
-// HTTP/1.1 シミュレーション (dispatchにprotocol追加)
+// HTTP/1.1 シミュレーション: エラーハンドリングを削除
 const simulateHttp1_1 = async (dispatch: React.Dispatch<EnhancedSimulationAction>, numResources: number, maxConnections: number = 6) => {
-  const protocol: Protocol = 'HTTP/1.1'; // ★ 明示
+  const protocol: Protocol = 'HTTP/1.1';
   const resourceIds = Array.from({ length: numResources }, (_, i) => i + 1);
   let activeConnections = 0;
   const requestQueue = [...resourceIds];
   const processing = new Set<number>();
+  const simulationStartTime = Date.now();
+  let completedCount = 0; // 完了数をカウント
 
   const processNext = async () => {
     while (activeConnections < maxConnections && requestQueue.length > 0) {
       activeConnections++;
       const resourceId = requestQueue.shift()!;
       processing.add(resourceId);
-      const startTime = Date.now();
-      // ★ dispatch に protocol 追加
+      const startDelay = activeConnections * 100;
+      const startTime = simulationStartTime + startDelay;
       dispatch({ type: 'UPDATE_RESOURCE_STATUS', protocol, id: resourceId, status: 'requesting', time: startTime });
 
-      try {
-        const result = await fetchResource(resourceId); // ★ result を受け取る
-        const endTime = startTime + result.delayApplied; // API遅延を使う
-        // ★ dispatch に protocol 追加, resourceData 追加
+      // fetchResourceはエラーでもオブジェクトを返すようになった
+      const result = await fetchResource(resourceId);
+      activeConnections--; // ここでデクリメント
+      processing.delete(resourceId);
+      completedCount++; // 完了カウントをインクリメント
+
+      if (result && !result.error) {
+        const endTime = startTime + result.delayApplied;
         dispatch({ type: 'UPDATE_RESOURCE_STATUS', protocol, id: resourceId, status: 'completed', time: endTime, resourceData: result });
-      } catch (error: any) {
-        const errorTime = Date.now();
-        // ★ dispatch に protocol 追加
-        dispatch({ type: 'UPDATE_RESOURCE_STATUS', protocol, id: resourceId, status: 'error', time: errorTime, error: error.message });
-      } finally {
-        activeConnections--;
-        processing.delete(resourceId);
-        if (requestQueue.length === 0 && processing.size === 0) {
-          // ★ dispatch に protocol 追加
-          dispatch({ type: 'SIMULATION_COMPLETE', protocol, time: Date.now() });
-        } else {
-          processNext();
-        }
+      } else {
+        // エラーの場合はログ出力のみ（statusは 'requesting' のまま or 'error' にしない）
+        console.warn(`HTTP/1.1: Resource ${resourceId} failed.`, result?.error);
+        // 必要であれば 'idle' などに戻すディスパッチを行うことも可能
+        // dispatch({ type: 'UPDATE_RESOURCE_STATUS', protocol, id: resourceId, status: 'idle', time: Date.now() });
+      }
+
+      // 完了チェック
+      if (completedCount === numResources) {
+        dispatch({ type: 'SIMULATION_COMPLETE', protocol, time: Date.now() });
+      } else if (requestQueue.length > 0) {
+        processNext(); // 次の処理へ
       }
     }
   };
-  for (let i = 0; i < maxConnections && i < resourceIds.length; i++) {
-     processNext();
+
+  // 最初の並列度分だけ開始
+  for (let i = 0; i < Math.min(maxConnections, numResources); i++) {
+    processNext();
   }
 };
 
-// HTTP/2 シミュレーション (dispatchにprotocol追加)
+// HTTP/2 シミュレーション: エラーハンドリングを簡略化
 const simulateHttp2 = async (dispatch: React.Dispatch<EnhancedSimulationAction>, numResources: number) => {
-  const protocol: Protocol = 'HTTP/2'; // ★ 明示
+  const protocol: Protocol = 'HTTP/2';
   const resourceIds = Array.from({ length: numResources }, (_, i) => i + 1);
   const promises: Promise<any>[] = [];
   const startTimes: { [key: number]: number } = {};
+  const simulationStartTime = Date.now();
 
   resourceIds.forEach(resourceId => {
-    const startTime = Date.now();
+    const startDelay = Math.random() * 50;
+    const startTime = simulationStartTime + startDelay;
     startTimes[resourceId] = startTime;
-    // ★ dispatch に protocol 追加
     dispatch({ type: 'UPDATE_RESOURCE_STATUS', protocol, id: resourceId, status: 'requesting', time: startTime });
+    // fetchResourceの呼び出し自体は残す
     promises.push(
-        fetchResource(resourceId)
-            .then(result => ({ ...result, type: 'success' as const, startTime })) // ★ startTime を含める
-            .catch(error => ({ id: resourceId, error, type: 'error' as const, startTime })) // ★ startTime を含める
+      fetchResource(resourceId)
+        .then(result => ({ ...result, type: 'success' as const, startTime }))
+        // キャッチは不要（fetchResourceがエラー情報を返すため）
     );
   });
 
+  // Promise.allSettled はすべての結果を待つ
   const results = await Promise.allSettled(promises);
   let tcpHolBlockEndTime = 0;
-  const finalResults: Array<{ id: number, status: ResourceStatus, startTime: number, actualEndTime: number, effectiveEndTime: number, error?: string, resourceData?: Partial<ResourceType> }> = []; // resourceData追加
+  const finalResults: Array<{ id: number, status: ResourceStatus, startTime: number, actualEndTime: number, effectiveEndTime: number, resourceData?: Partial<ResourceType> }> = [];
 
-  // 1st pass: find max end time for requests with packet loss
-  results.forEach((settledResult) => {
-    if (settledResult.status === 'fulfilled') {
-        const result = settledResult.value;
-         const actualEndTime = result.startTime + (result.delayApplied ?? 0); // API遅延ベース
-        if (result.type === 'success') {
-             if (result.simulatedPacketLoss) {
-                tcpHolBlockEndTime = Math.max(tcpHolBlockEndTime, actualEndTime);
-            }
-            finalResults.push({ id: result.id, status: 'completed', startTime: result.startTime, actualEndTime, effectiveEndTime: 0, resourceData: result });
-        } else { // type: 'error'
-            finalResults.push({ id: result.id, status: 'error', startTime: result.startTime, actualEndTime: actualEndTime, effectiveEndTime: actualEndTime, error: result.error?.message, resourceData: { simulatedPacketLoss: false } }); // エラーの場合も resourceData を一部設定
-        }
-    } else { // rejected
-        // rejected の場合、どのリソースIDか特定が難しい場合がある。ここでは失敗としてマーク
-        // 必要なら fetchResource 側で resourceId を含めて reject する
-        const errorTime = Date.now();
-        // Assiging ID 0 or similar for rejected promises if ID isn't available easily
-        // エラー発生時のリソースIDが不明なため、特定のリソースをエラーにできない。全体エラーとして扱う方が良いか？
-        // ひとまずID 0として追加するが、これは良くない
-        finalResults.push({ id: 0, status: 'error', startTime: 0, actualEndTime: errorTime, effectiveEndTime: errorTime, error: settledResult.reason?.message });
-        console.error("HTTP/2: A promise was rejected:", settledResult.reason);
+  results.forEach((settledResult, index) => {
+    const resourceId = resourceIds[index]; // IDをインデックスから取得
+    const startTime = startTimes[resourceId];
+
+    if (settledResult.status === 'fulfilled' && settledResult.value && !settledResult.value.error) {
+      const result = settledResult.value;
+      const actualEndTime = startTime + (result.delayApplied ?? 0);
+      if (result.simulatedPacketLoss) {
+          tcpHolBlockEndTime = Math.max(tcpHolBlockEndTime, actualEndTime);
+      }
+      finalResults.push({ id: result.id, status: 'completed', startTime: startTime, actualEndTime, effectiveEndTime: 0, resourceData: result });
+    } else {
+      // 失敗した場合はログ表示のみ
+      const errorMsg = settledResult.status === 'rejected' ? settledResult.reason : settledResult.value?.error;
+      console.warn(`HTTP/2: Resource ${resourceId} failed.`, errorMsg);
+      // finalResults には追加しない or 'idle' 状態で追加するなど選択可能
+      // ここでは追加しないことで、完了タイムラインに表示されないようにする
     }
   });
 
   let overallLatestEndTime = 0;
 
-  // 2nd pass: determine effective end time and dispatch
   finalResults.forEach(res => {
-      if(res.id === 0) return; // Skip rejected promises with unknown ID
-
-      if (res.status === 'completed') {
-          res.effectiveEndTime = Math.max(res.actualEndTime, tcpHolBlockEndTime);
-           // ★ dispatch に protocol 追加, resourceData 追加
-          dispatch({ type: 'UPDATE_RESOURCE_STATUS', protocol, id: res.id, status: 'completed', time: res.effectiveEndTime, resourceData: res.resourceData });
-      } else if (res.status === 'error') {
-          res.effectiveEndTime = res.actualEndTime; // エラーはブロックされない
-           // ★ dispatch に protocol 追加, resourceData 追加
-          dispatch({ type: 'UPDATE_RESOURCE_STATUS', protocol, id: res.id, status: 'error', time: res.effectiveEndTime, error: res.error, resourceData: res.resourceData });
-      }
-      overallLatestEndTime = Math.max(overallLatestEndTime, res.effectiveEndTime);
+    // エラーは finalResults に含まれないので 'completed' のみ処理
+    res.effectiveEndTime = Math.max(res.actualEndTime, tcpHolBlockEndTime);
+    dispatch({ type: 'UPDATE_RESOURCE_STATUS', protocol, id: res.id, status: 'completed', time: res.effectiveEndTime, resourceData: res.resourceData });
+    overallLatestEndTime = Math.max(overallLatestEndTime, res.effectiveEndTime);
   });
 
-  // ★ dispatch に protocol 追加
-  dispatch({ type: 'SIMULATION_COMPLETE', protocol, time: overallLatestEndTime });
+  // すべてのリソース（成功/失敗問わず）が処理された時点で完了
+  dispatch({ type: 'SIMULATION_COMPLETE', protocol, time: Date.now() });
 };
 
 
-// HTTP/3 シミュレーション (dispatchにprotocol追加)
+// HTTP/3 シミュレーション: エラーハンドリングを削除
 const simulateHttp3 = async (dispatch: React.Dispatch<EnhancedSimulationAction>, numResources: number) => {
-  const protocol: Protocol = 'HTTP/3'; // ★ 明示
+  const protocol: Protocol = 'HTTP/3';
   const resourceIds = Array.from({ length: numResources }, (_, i) => i + 1);
-  const promises: Promise<void>[] = [];
+  const promises: Promise<any>[] = [];
+  const simulationStartTime = Date.now();
 
   resourceIds.forEach(resourceId => {
-    const startTime = Date.now();
-    // ★ dispatch に protocol 追加
+    const startDelay = Math.random() * 50;
+    const startTime = simulationStartTime + startDelay;
     dispatch({ type: 'UPDATE_RESOURCE_STATUS', protocol, id: resourceId, status: 'requesting', time: startTime });
 
     const promise = fetchResource(resourceId)
       .then((result) => {
-         const endTime = startTime + result.delayApplied; // API遅延ベース
-         // ★ dispatch に protocol 追加, resourceData 追加
-         dispatch({ type: 'UPDATE_RESOURCE_STATUS', protocol, id: resourceId, status: 'completed', time: endTime, resourceData: result });
+        if (result && !result.error) {
+          const endTime = startTime + result.delayApplied;
+          dispatch({ type: 'UPDATE_RESOURCE_STATUS', protocol, id: resourceId, status: 'completed', time: endTime, resourceData: result });
+        } else {
+          console.warn(`HTTP/3: Resource ${resourceId} failed.`, result?.error);
+        }
       })
-      .catch(error => {
-        const errorTime = Date.now();
-         // ★ dispatch に protocol 追加
-        dispatch({ type: 'UPDATE_RESOURCE_STATUS', protocol, id: resourceId, status: 'error', time: errorTime, error: error.message });
-      });
+      // catch は不要
+      ;
     promises.push(promise);
   });
 
   await Promise.allSettled(promises);
-  // ★ dispatch に protocol 追加
+  // 完了ディスパッチ（エラーがあっても完了とする）
   dispatch({ type: 'SIMULATION_COMPLETE', protocol, time: Date.now() });
 };
 
@@ -348,7 +354,6 @@ function SimulationVisualizer({ state }: { state: SimulationState }) {
   const safeTotalDuration = Math.max(1, totalDuration);
 
   const getStatusColor = (status: ResourceStatus, simulatedPacketLoss?: boolean) => {
-    if (status === 'error') return 'bg-red-500';
     if (status === 'completed') return simulatedPacketLoss ? 'bg-orange-500' : 'bg-green-500';
     if (status === 'requesting') return 'bg-yellow-500';
     return 'bg-gray-600'; // idle or other
@@ -360,9 +365,8 @@ function SimulationVisualizer({ state }: { state: SimulationState }) {
     <div className="p-4 flex flex-col bg-gray-800 rounded-lg border border-gray-700 min-h-[300px]">
       <h3 className="text-lg font-bold mb-2 flex-shrink-0">{protocol}</h3>
       <div className="mb-4 text-sm flex-shrink-0">
-        Status: {isRunning ? 'Running...' : error ? 'Error!' : 'Completed'} (Total Time: {(safeTotalDuration / 1000).toFixed(2)}s)
+        Status: {isRunning ? 'Running...' : 'Completed'} (Total Time: {(safeTotalDuration / 1000).toFixed(2)}s)
       </div>
-      {error && <div className="text-red-400 mb-2 flex-shrink-0">Error: {error}</div>}
 
       <div className="flex-grow overflow-y-auto pr-2 space-y-2">
         {resources.map(resource => {
@@ -416,7 +420,7 @@ function SimulationVisualizer({ state }: { state: SimulationState }) {
                   >
                   </div>
                 )}
-                {resource.endTime && (resource.status === 'completed' || resource.status === 'error') && (
+                {resource.endTime && resource.status === 'completed' && (
                   <span className="absolute right-1 top-0 text-gray-300 text-[10px] opacity-0 group-hover:opacity-100 transition-opacity">
                     ({(displayWidth / 1000).toFixed(2)}s){resource.simulatedPacketLoss ? ' L' : ''}
                   </span>
@@ -452,9 +456,19 @@ export default function Home() {
   // ★ useCallback の依存配列変更、関数名変更、処理内容変更
   const runAllSimulations = useCallback(async () => {
      console.log(`Starting all simulations... (HTTP/1.1 Max Conn: ${maxConnections})`);
-     // Start all simulations
+
+     // 共通の開始時間を設定（すべてのプロトコルで同じ値を使用）
+     const commonStartTime = Date.now();
+
+     // Start all simulations with the same startTime
      protocols.forEach(p => {
-         dispatch({ type: 'START_SIMULATION', protocol: p, numResources, maxConnections: p === 'HTTP/1.1' ? maxConnections : undefined });
+         dispatch({
+           type: 'START_SIMULATION',
+           protocol: p,
+           numResources,
+           maxConnections: p === 'HTTP/1.1' ? maxConnections : undefined,
+           startTime: commonStartTime // 共通の開始時間を使用
+         });
      });
 
     try {
@@ -469,7 +483,7 @@ export default function Home() {
       console.error(`Critical error running simulations:`, error);
       // Optionally dispatch a general error to all states? Or handle globally.
        protocols.forEach(p => {
-            dispatch({ type: 'SIMULATION_ERROR', protocol: p, error: 'Main simulation runner failed' });
+            dispatch({ type: 'SIMULATION_COMPLETE', protocol: p, time: Date.now() });
        });
     }
   }, [dispatch, numResources, maxConnections]); // ★ 依存配列更新
