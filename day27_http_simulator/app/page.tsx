@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useReducer, useCallback, useEffect } from 'react';
+import { useState, useReducer, useCallback, useEffect, useRef } from 'react';
 
 type Protocol = 'HTTP/1.1' | 'HTTP/2' | 'HTTP/3';
 const protocols: Protocol[] = ['HTTP/1.1', 'HTTP/2', 'HTTP/3'];
@@ -303,32 +303,87 @@ function SimulationVisualizer({ state }: { state: SimulationState }) {
   const { protocol, resources, isRunning, startTime, endTime, error } = state;
   const [currentTime, setCurrentTime] = useState<number>(Date.now());
 
+  // リソースごとに表示上の最大終了時間を保持するためのref
+  const maxVisibleEndTimeRef = useRef<Record<number, number>>({});
+
+  // アニメーションの最後のフレーム時間を保持
+  const lastFrameTimeRef = useRef<number>(Date.now());
+
+  // シミュレーションが完了したかどうかを検出するためのref
+  const prevIsRunningRef = useRef<boolean>(false);
+
   useEffect(() => {
+    // シミュレーション開始時にrefをリセット
+    if (startTime && isRunning) {
+      maxVisibleEndTimeRef.current = {};
+      lastFrameTimeRef.current = Date.now();
+      prevIsRunningRef.current = true;
+    }
+
+    // シミュレーション停止を検出
+    if (prevIsRunningRef.current && !isRunning) {
+      // この時点でのリソースごとの表示状態を保存する
+      const now = Date.now();
+      lastFrameTimeRef.current = now;
+
+      // この時点で表示されていたすべてのリソースの表示長を保存
+      if (startTime) {
+        resources.forEach(resource => {
+          if (resource.startTime) {
+            const currentEndTime = resource.endTime || now;
+            // 最大表示長さを更新（より長いものがあれば）
+            if (!maxVisibleEndTimeRef.current[resource.id] ||
+                currentEndTime > maxVisibleEndTimeRef.current[resource.id]) {
+              maxVisibleEndTimeRef.current[resource.id] = currentEndTime;
+            }
+          }
+        });
+      }
+      prevIsRunningRef.current = false;
+    }
+
     let animationFrameId: number;
-    if (isRunning) {
+
+    if (isRunning && startTime) {
       const update = () => {
-        setCurrentTime(Date.now());
+        const now = Date.now();
+        lastFrameTimeRef.current = now;
+        setCurrentTime(now);
+
+        // 実行中は各リソースの現在の表示長を記録
+        resources.forEach(resource => {
+          if (resource.startTime) {
+            const currentEndTime = resource.endTime || now;
+            // 最大表示長さを更新（より長いものがあれば）
+            if (!maxVisibleEndTimeRef.current[resource.id] ||
+                currentEndTime > maxVisibleEndTimeRef.current[resource.id]) {
+              maxVisibleEndTimeRef.current[resource.id] = currentEndTime;
+            }
+          }
+        });
+
         animationFrameId = requestAnimationFrame(update);
       };
       animationFrameId = requestAnimationFrame(update);
-    } else if (startTime && !endTime) {
-       setCurrentTime(Date.now());
     }
-    return () => cancelAnimationFrame(animationFrameId);
-  }, [isRunning, startTime, endTime]);
 
+    return () => {
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
+    };
+  }, [isRunning, startTime, resources]);
 
   if (!startTime) {
-      // ★ 初期表示を少し変更
     return <div className="p-4 text-center text-gray-500 italic h-full flex items-center justify-center">{protocol} Ready</div>;
   }
 
   const totalDuration = endTime ? endTime - startTime : currentTime - startTime;
   const safeTotalDuration = Math.max(1, totalDuration);
 
-  const getStatusColor = (status: ResourceStatus, simulatedPacketLoss?: boolean) => { // ★ simulatedPacketLoss 引数追加
+  const getStatusColor = (status: ResourceStatus, simulatedPacketLoss?: boolean) => {
     if (status === 'error') return 'bg-red-500';
-    if (status === 'completed') return simulatedPacketLoss ? 'bg-orange-500' : 'bg-green-500'; // ★ 損失時はオレンジ
+    if (status === 'completed') return simulatedPacketLoss ? 'bg-orange-500' : 'bg-green-500';
     if (status === 'requesting') return 'bg-yellow-500';
     return 'bg-gray-600'; // idle or other
   };
@@ -336,36 +391,48 @@ function SimulationVisualizer({ state }: { state: SimulationState }) {
   const timelineScaleMax = 10000; // Fixed scale
 
   return (
-    // ★ 全体の高さを調整 (h-fullを削除し、min-h を指定)
     <div className="p-4 flex flex-col bg-gray-800 rounded-lg border border-gray-700 min-h-[300px]">
-      {/* ★ タイトルを太字に */}
       <h3 className="text-lg font-bold mb-2 flex-shrink-0">{protocol}</h3>
       <div className="mb-4 text-sm flex-shrink-0">
         Status: {isRunning ? 'Running...' : error ? 'Error!' : 'Completed'} (Total Time: {(safeTotalDuration / 1000).toFixed(2)}s)
       </div>
       {error && <div className="text-red-400 mb-2 flex-shrink-0">Error: {error}</div>}
 
-      {/* Timeline Visualization Area */}
-      {/* ★ flex-grow と overflow-y-auto を設定 */}
       <div className="flex-grow overflow-y-auto pr-2 space-y-2">
         {resources.map(resource => {
           const resourceStartTime = resource.startTime ? resource.startTime - startTime : 0;
-          const resourceEndTime = resource.endTime
-             ? resource.endTime - startTime
-             : resource.startTime && isRunning
-               ? currentTime - startTime
-               : resourceStartTime;
+
+          // リソースの終了時間の計算を改善
+          let resourceEndTime: number;
+
+          if (!isRunning && maxVisibleEndTimeRef.current[resource.id]) {
+            // シミュレーション停止後は、表示上の最大長さを保持
+            resourceEndTime = maxVisibleEndTimeRef.current[resource.id] - startTime;
+          } else if (resource.endTime) {
+            // 確定した終了時間があれば使用
+            resourceEndTime = resource.endTime - startTime;
+
+            // 確定した終了時間でも、表示されていた最大長さより短くならないようにする
+            if (maxVisibleEndTimeRef.current[resource.id]) {
+              resourceEndTime = Math.max(resourceEndTime, maxVisibleEndTimeRef.current[resource.id] - startTime);
+            }
+          } else if (resource.startTime && isRunning) {
+            // 実行中で終了時間がない場合は現在時刻を使用
+            resourceEndTime = currentTime - startTime;
+          } else {
+            // それ以外はstartTimeと同じにする（幅0）
+            resourceEndTime = resourceStartTime;
+          }
 
           const duration = Math.max(0, resourceEndTime - resourceStartTime);
           const leftPercent = (resourceStartTime / timelineScaleMax) * 100;
           const widthPercent = (duration / timelineScaleMax) * 100;
           const minWidthPx = 2;
-          // ★ getElementById を使わないように修正 (useRef推奨だが簡易的に定数で回避)
+
           const containerWidthEstimate = 500; // 仮の幅推定値
           const displayWidthPercent = duration > 0 && widthPercent * containerWidthEstimate / 100 < minWidthPx
              ? (minWidthPx / containerWidthEstimate) * 100
              : widthPercent;
-
 
           return (
             <div key={resource.id} className="flex items-center text-xs group">
@@ -373,22 +440,21 @@ function SimulationVisualizer({ state }: { state: SimulationState }) {
               <div className="flex-grow h-5 bg-gray-700 rounded relative overflow-hidden">
                 {resource.startTime && (
                   <div
-                    className={`absolute top-0 h-full rounded transition-colors duration-150 ${getStatusColor(resource.status, resource.simulatedPacketLoss)} ${resource.status === 'requesting' ? 'animate-pulse' : ''}`} // ★ getStatusColorに損失フラグ渡す
+                    className={`absolute top-0 h-full rounded transition-colors duration-150 ${getStatusColor(resource.status, resource.simulatedPacketLoss)} ${resource.status === 'requesting' ? 'animate-pulse' : ''}`}
                     style={{
                       left: `${Math.max(0, leftPercent)}%`,
                       width: `${Math.min(100 - Math.max(0, leftPercent), displayWidthPercent)}%`,
                       minWidth: duration > 0 ? `${minWidthPx}px` : '0px'
                     }}
-                    // ★ title を修正
                     title={`ID: ${resource.id}, Status: ${resource.status}${resource.simulatedPacketLoss ? ' (Loss Simulated)' : ''}, Start: ${(resourceStartTime / 1000).toFixed(2)}s, End: ${(resourceEndTime / 1000).toFixed(2)}s, Duration: ${(duration / 1000).toFixed(2)}s`}
                   >
                   </div>
                 )}
-                 {resource.endTime && (resource.status === 'completed' || resource.status === 'error') && (
-                   <span className="absolute right-1 top-0 text-gray-300 text-[10px] opacity-0 group-hover:opacity-100 transition-opacity">
-                     ({(duration / 1000).toFixed(2)}s){resource.simulatedPacketLoss ? ' L' : ''} {/* ★ 損失時に 'L' を表示 */}
-                   </span>
-                 )}
+                {resource.endTime && (resource.status === 'completed' || resource.status === 'error') && (
+                  <span className="absolute right-1 top-0 text-gray-300 text-[10px] opacity-0 group-hover:opacity-100 transition-opacity">
+                    ({(duration / 1000).toFixed(2)}s){resource.simulatedPacketLoss ? ' L' : ''}
+                  </span>
+                )}
               </div>
             </div>
           );
