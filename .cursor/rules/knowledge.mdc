@@ -33,3 +33,4 @@ alwaysApply: true
 | 24  | 簡易RAGシステム (ベクトル検索) | Next.js, Prisma, SQLite, TailwindCSS, @xenova/transformers, インメモリベクトル検索       |
 | 25  | 地理空間インデックス (Geohash) を利用した近傍検索API | Next.js, Prisma, SQLite, TailwindCSS, Geohash (ngeohash)                              |
 | 26  | 簡易 時系列データベース on SQLite | Next.js, Prisma, SQLite, TailwindCSS, Chart.js, SQL (strftime, ウィンドウ関数) |
+| 27  | HTTP プロトコル挙動シミュレーター | Next.js, TypeScript, Tailwind CSS, React (useReducer), プロトコルシミュレーション (HTTP/1.1 HOL, HTTP/2 多重化) |
