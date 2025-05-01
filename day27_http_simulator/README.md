@@ -4,6 +4,10 @@
 
 HTTP/1.1, HTTP/2, HTTP/3 の主要な違い、特にリクエストの多重化と Head-of-line Blocking (HOL Blocking) の影響を、インタラクティブなシミュレーションとアニメーションによって可視化するWebアプリケーションです。ユーザーはプロトコルを選択し、多数のリソース（画像など）を読み込むシナリオを開始することで、各プロトコルの挙動の違いを視覚的に体験できます。
 
+https://github.com/user-attachments/assets/66bab0d0-d6ae-4a90-bffe-b6d53fbd6183
+
+[100日チャレンジ day27 (HTTP プロトコル挙動シミュレーター)](https://zenn.dev/gin_nazo/scraps/a2ad37de80c6c5)
+
 ## 2. 目的・学習ポイント
 
 - HTTP/1.1, HTTP/2, HTTP/3 の基本的な仕組みとパフォーマンス特性の違い（特に多重化、HOL Blocking）を理解する。

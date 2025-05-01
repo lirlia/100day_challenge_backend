@@ -40,3 +40,4 @@ LLMで生成したコードを置いています。
 | Day24 | Simple RAG (Retrieval-Augmented Generation) System (Vector Search Version) | <video src="https://github.com/user-attachments/assets/6a5ebcf5-f39e-4a47-a239-6d2bccafe3d1" > |
 | Day25 | GeoHash による近傍探索 | <video src="https://github.com/user-attachments/assets/e01d0f10-b518-4076-84fe-8b20e63fee6a" > |
 | Day26 | 時系列データベース | <video src="https://github.com/user-attachments/assets/44dae080-08b2-40e6-827f-5992a10d2449" > |
+| Day27 | HTTP プロトコル挙動シミュレーター | <video src="https://github.com/user-attachments/assets/66bab0d0-d6ae-4a90-bffe-b6d53fbd6183" > |
