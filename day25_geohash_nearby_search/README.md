@@ -2,7 +2,7 @@
 
 緯度経度で指定された地点情報を登録・管理し、Geohash を利用して特定の地点の近くにある他の地点を効率的に検索する API および Web UI を提供します。
 
-https://github.com/user-attachments/assets/36ddc3fa-1b67-4234-91b5-027d19f43479
+https://github.com/user-attachments/assets/e01d0f10-b518-4076-84fe-8b20e63fee6a
 
 [100日チャレンジ day25](https://zenn.dev/gin_nazo/scraps/d25e09ee96e17d)
 
