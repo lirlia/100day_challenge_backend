@@ -228,3 +228,28 @@ mv $(1) $(1)-$(3) ;\
 } ;\
 ln -sf $(1)-$(3) $(1)
 endef
+
+#==============================================================================
+# Sample Targets - Manage Samples Manually or via Controller Configuration
+#==============================================================================
+
+# Apply the sample manifests to the cluster.
+.PHONY: apply-samples
+apply-samples: kustomize ## Apply the sample manifests to the cluster
+	$(KUSTOMIZE) build config/samples | kubectl apply -f -
+
+# Delete the sample manifests from the cluster.
+.PHONY: delete-samples
+delete-samples: kustomize ## Delete the sample manifests from the cluster
+	$(KUSTOMIZE) build config/samples | kubectl delete -f -
+
+# Restart the specific sample fireworksshow-sample in default namespace
+.PHONY: restart-sample
+restart-sample: ## Deletes and reapplies the main sample FireworksShow
+	kubectl delete fireworksshow fireworksshow-sample -n default --ignore-not-found=true && \
+	kubectl apply -f config/samples/fireworks_v1alpha1_fireworksshow.yaml -n default
+
+
+#==============================================================================
+# Deployment
+#==============================================================================
