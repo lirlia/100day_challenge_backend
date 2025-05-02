@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 
-const GAME_DURATION_SECONDS = 60;
+const GAME_DURATION_SECONDS = 10;
 
 export default function HomePage() {
   const [gameState, setGameState] = useState<'idle' | 'playing' | 'finished'>('idle');

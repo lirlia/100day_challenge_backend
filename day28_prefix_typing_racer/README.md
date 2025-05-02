@@ -6,6 +6,10 @@
 
 画面に表示される接頭辞 (例: "pre", "str") に対し、その接頭辞で始まる実在する英単語 (例: "prefix", "string") を制限時間内に入力します。正解するとスコアが加算され、次の接頭辞が表示されます。
 
+https://github.com/user-attachments/assets/d36457d4-a9bd-46f4-8cb5-8ddd7e1bb7a2
+
+[100日チャレンジ day28](https://zenn.dev/gin_nazo/scraps/f67318b424fc46)
+
 ## 主な機能
 
 - ランダムな接頭辞の表示
