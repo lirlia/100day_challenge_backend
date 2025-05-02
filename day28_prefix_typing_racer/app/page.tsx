@@ -45,7 +45,6 @@ export default function HomePage() {
       setTimeLeft(GAME_DURATION_SECONDS);
       setInputValue('');
       setGameState('playing');
-      inputRef.current?.focus(); // 開始時にinputにフォーカス
     } catch (error) {
       console.error('Error starting game:', error);
       setFeedback('ゲームの開始に失敗しました。');
@@ -74,7 +73,7 @@ export default function HomePage() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({})); // エラーボディ取得試行
+        const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error || 'Failed to submit word');
       }
 
@@ -84,13 +83,12 @@ export default function HomePage() {
         setScore((prevScore) => prevScore + result.scoreIncrement);
         setFeedback('正解！ 🎉');
       } else {
-        // 不正解の理由に応じてフィードバック
         if (result.reason === 'wrong_prefix') {
-            setFeedback(`'${prefix}' で始まっていません... 😥`);
+          setFeedback(`'${prefix}' で始まっていません... 😥`);
         } else if (result.reason === 'not_a_word') {
-            setFeedback('辞書にない単語です... 🤔');
+          setFeedback('辞書にない単語です... 🤔');
         } else {
-            setFeedback('不正解... 😭');
+          setFeedback('不正解... 😭');
         }
       }
       setPrefix(result.nextPrefix); // 次の接頭辞を設定
@@ -101,13 +99,20 @@ export default function HomePage() {
     } catch (error) {
       console.error('Error submitting word:', error);
       setFeedback('エラーが発生しました。');
-       // エラーが起きても次の問題に進む（APIが nextPrefix を返せなかった場合を除く）
-       // 必要ならここでゲームを停止するなどの処理を追加
     } finally {
       setIsLoading(false);
-      inputRef.current?.focus(); // 次の問題のためにフォーカス
     }
   }, [inputValue, prefix, isLoading, gameState]);
+
+  // フォーカス管理用の Effect
+  useEffect(() => {
+    if (gameState === 'playing') {
+      const focusTimeout = setTimeout(() => {
+        inputRef.current?.focus();
+      }, 0);
+      return () => clearTimeout(focusTimeout);
+    }
+  }, [gameState, prefix]); // gameState または prefix が変わるたびに実行
 
   // リセット処理
   const resetGame = () => {
@@ -151,7 +156,7 @@ export default function HomePage() {
                 ref={inputRef}
                 type="text"
                 value={inputValue}
-                onChange={(e) => setInputValue(e.target.value.toLowerCase())} // 小文字に統一
+                onChange={(e) => setInputValue(e.target.value.toLowerCase())}
                 disabled={isLoading}
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg text-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent mb-4 font-mono lowercase"
                 autoCapitalize="none"
@@ -159,19 +164,14 @@ export default function HomePage() {
                 spellCheck="false"
                 autoFocus
               />
-              <button
-                type="submit"
-                disabled={isLoading || !inputValue}
-                className="w-full px-6 py-3 bg-green-500 text-white rounded-lg font-semibold hover:bg-green-600 transition duration-200 disabled:opacity-50"
-              >
-                {isLoading ? '判定中...' : '提出'}
-              </button>
             </form>
-            {feedback && (
-              <p className={`mt-4 text-lg ${feedback.includes('正解') ? 'text-green-600' : 'text-red-600'}`}>
-                {feedback}
-              </p>
-            )}
+            <div className="h-8 mt-4">
+              {feedback && (
+                <p className={`text-lg ${feedback.includes('正解') ? 'text-green-600' : 'text-red-600'}`}>
+                  {feedback}
+                </p>
+              )}
+            </div>
           </>
         )}
 
