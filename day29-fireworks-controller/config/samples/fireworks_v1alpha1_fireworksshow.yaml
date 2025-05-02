@@ -1,0 +1,22 @@
+apiVersion: fireworks.example.com/v1alpha1
+kind: FireworksShow
+metadata:
+  labels:
+    app.kubernetes.io/name: day29-fireworks-controller
+    app.kubernetes.io/managed-by: kustomize
+  name: fireworksshow-sample
+spec:
+  durationSeconds: 30 # Run for 30 seconds
+  intensity: 5 # Launch up to 5 pods per second
+  podSpecTemplate:
+    spec:
+      containers:
+        - name: firework
+          image: busybox
+          command:
+            [
+              "sh",
+              "-c",
+              "echo '🎆 Launching...'; sleep 1; echo '✨ Boom!'; exit 0",
+            ]
+      restartPolicy: Never

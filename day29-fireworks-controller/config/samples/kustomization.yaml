@@ -1,0 +1,4 @@
+## Append samples of your project ##
+resources:
+- fireworks_v1alpha1_fireworksshow.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples
