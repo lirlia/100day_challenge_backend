@@ -1,0 +1,43 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client" // Use recommended output path
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// --- Added for Day 29 ---
+
+// ETLパイプラインによって処理されたデータを格納するモデル
+model ProcessedData {
+  id            Int      @id @default(autoincrement())
+  pipelineRunId String   // どのパイプライン実行によるものか
+  originalFilename String // 元のファイル名
+  processedAt   DateTime @default(now())
+  data          Json     // 処理後のデータ (1行分)
+  pipelineRun   PipelineRun @relation(fields: [pipelineRunId], references: [id])
+}
+
+// ETLパイプラインの実行履歴と状態を管理するモデル
+model PipelineRun {
+  id        String   @id @default(cuid()) // 一意な実行ID
+  filename  String   // 入力ファイル名 (サンプル実行時は固定値)
+  status    String   // 'pending', 'extracting', 'transforming', 'loading', 'completed', 'failed'
+  config    Json     // 実行時の変換設定
+  previewData Json?    // 各ステップのプレビューデータ (JSON配列など)
+  errorMessage String?  // エラー発生時のメッセージ
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  processedData ProcessedData[] // この実行でロードされたデータ
+}
+
+// --- End of Added for Day 29 ---

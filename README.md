@@ -42,3 +42,4 @@ LLMで生成したコードを置いています。
 | Day26 | 時系列データベース | <video src="https://github.com/user-attachments/assets/44dae080-08b2-40e6-827f-5992a10d2449" > |
 | Day27 | HTTP プロトコル挙動シミュレーター | <video src="https://github.com/user-attachments/assets/66bab0d0-d6ae-4a90-bffe-b6d53fbd6183" > |
 | Day28 | Prefix Typing Racer | <video src="https://github.com/user-attachments/assets/d36457d4-a9bd-46f4-8cb5-8ddd7e1bb7a2" > |
+| Day29 | ETL Pipeline | <video src="https://github.com/user-attachments/assets/b486bf96-0039-4c61-b6f5-c5e040815ef2" > |
