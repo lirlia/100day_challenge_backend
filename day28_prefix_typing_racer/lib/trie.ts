@@ -11,6 +11,8 @@ class TrieNode {
   }
 }
 
+const MIN_WORDS_FOR_PREFIX = 30; // 接頭辞として採用するための最低単語数
+
 /**
  * Trie (Prefix Tree) データ構造を管理するクラス
  */
@@ -116,6 +118,36 @@ export class Trie {
   }
 
   /**
+   * 指定された接頭辞で始まる単語の数をカウントする
+   * @param prefix 接頭辞
+   * @returns 接頭辞で始まる単語の数
+   */
+  private countWordsWithPrefix(prefix: string): number {
+    const startNode = this.findNode(prefix);
+    if (!startNode) {
+      return 0;
+    }
+
+    let count = 0;
+    const queue: TrieNode[] = [startNode];
+
+    while (queue.length > 0) {
+      const node = queue.shift()!;
+      if (node.isEndOfWord) {
+        count++;
+      }
+      for (const childNode of node.children.values()) {
+        queue.push(childNode);
+      }
+    }
+    // 注意: この実装だと prefix 自身が単語の場合もカウントしてしまう。
+    // もし prefix 自身を除きたい場合は、開始ノードが isEndOfWord かどうかを最初にチェックし、
+    // ループ内で queue に追加する際に prefix + char が単語かどうかを見る必要がある。
+    // 今回は prefix 自身も有効な単語として扱うため、このままとする。
+    return count;
+  }
+
+  /**
    * Trie に格納されている単語から、指定された長さ範囲のランダムな「有効な」接頭辞を取得する
    * (効率改善版: Trieを直接辿る)
    * @param minLength 接頭辞の最小長
@@ -130,6 +162,7 @@ export class Trie {
       let currentNode = this.root;
       let currentPrefix = "";
       let depth = 0;
+      let candidatePrefix = ""; // 有効な候補を保持する変数
 
       // Trie をランダムに辿る (最大 maxLength まで)
       while (currentNode.children.size > 0 && depth < maxLength) {
@@ -139,19 +172,37 @@ export class Trie {
         currentNode = currentNode.children.get(randomChar)!;
         depth++;
 
-        // minLength <= depth <= maxLength の範囲で、かつ子ノードが存在する or 単語の終端なら候補とする
-        if (depth >= minLength && (currentNode.children.size > 0 || currentNode.isEndOfWord)) {
-           // 一定確率でこの深さの接頭辞を採用する（深い方を優先させたい場合など調整可能）
-           // ここでは単純に条件を満たしたら採用
-           return currentPrefix;
+        // minLength <= depth <= maxLength の範囲の接頭辞を候補とする
+        if (depth >= minLength) {
+            // この接頭辞で始まる単語数をチェック
+            const wordCount = this.countWordsWithPrefix(currentPrefix);
+            // console.log(`Checking prefix: ${currentPrefix}, count: ${wordCount}`); // デバッグ用
+            if (wordCount >= MIN_WORDS_FOR_PREFIX) {
+                candidatePrefix = currentPrefix; // 条件を満たす候補が見つかった
+                // さらに深く探索するか、ここで確定するかは確率などで決められる
+                // ここでは、条件を満たした最初のものを採用するシンプルな実装
+                // return candidatePrefix;
+                // ↑ すぐに return せず、もう少し深く探索させてみる
+            } else {
+                 // 単語数が少なすぎる場合は、このパスはあまり良くないかもしれない
+                 // (ただし、深い階層で単語が増える可能性もある)
+            }
         }
       }
-      // ループが maxLength に達するか、子がないノードに行き着いた場合
-      // もし currentPrefix が minLength を満たしていればそれを使う
+
+      // ループ終了後、有効な候補が見つかっていればそれを返す
+      if (candidatePrefix) {
+          return candidatePrefix;
+      }
+
+      // ループが maxLength に達するか、子がないノードに行き着き、
+      // かつ candidatePrefix が見つからなかった場合。
+      // 最後の currentPrefix が条件を満たすか一応チェック
       if (currentPrefix.length >= minLength && currentPrefix.length <= maxLength) {
-          // ただし、この接頭辞で終わる単語が存在するかを確認した方がより「有効」
-          // (今回は簡易的に長さだけでチェック)
-          return currentPrefix;
+          const wordCount = this.countWordsWithPrefix(currentPrefix);
+          if (wordCount >= MIN_WORDS_FOR_PREFIX) {
+              return currentPrefix;
+          }
       }
 
       // 適切な接頭辞が見つからなければリトライ
