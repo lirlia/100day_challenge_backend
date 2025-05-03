@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"crypto"     // crypto needed for PrivateKey type in global var
 	"crypto/tls" // Added for loading key/cert
 )
 
@@ -15,6 +16,11 @@ import (
 var (
 	serverCert    tls.Certificate
 	serverCertDER [][]byte // Store DER encoded certificates
+	// Global variable to hold the loaded private key
+	serverPrivateKeyGlobal crypto.PrivateKey // Use crypto.PrivateKey type
+
+	// Global flag for debug logging
+	isDebug bool
 )
 
 // Command-line flags
@@ -26,10 +32,12 @@ var (
 	mtu        = flag.Int("mtu", 1500, "MTU for the TUN device")
 	mode       = flag.String("mode", "tun", "Operating mode: 'tun' or 'tcp'")
 	listenPort = flag.Int("port", 443, "Port to listen on in tcp mode")
+	debug      = flag.Bool("debug", false, "Enable detailed debug logging")
 )
 
 func main() {
 	flag.Parse()
+	isDebug = *debug // Set global debug flag
 
 	// --- Load Certificate and Key ---
 	var err error
