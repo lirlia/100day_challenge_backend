@@ -135,3 +135,44 @@ func processPackets(ifce *water.Interface) {
 		}
 	}
 }
+
+// printHeaderInfo prints formatted IP header information.
+func printHeaderInfo(ipHeader *IPv4Header, packetLen int) {
+	// Build flags string inline
+	var flagsStr string
+	if ipHeader.Flags&0x04 != 0 {
+		flagsStr += "R"
+	} // Reserved bit
+	if ipHeader.Flags&0x02 != 0 {
+		flagsStr += "DF"
+	} // Don't Fragment
+	if ipHeader.Flags&0x01 != 0 {
+		flagsStr += "MF"
+	} // More Fragments
+	if flagsStr == "" {
+		flagsStr = "-"
+	}
+
+	protoStr := ipProtocolToString(ipHeader.Protocol) // Defined in ip.go
+	hdrLen := int(ipHeader.IHL) * 4
+	log.Printf("IP RCV: %s -> %s Proto: %d(%s) TTL: %d Len: %d/%d ID: %x Flags: [%s] HdrLen: %d",
+		ipHeader.SrcIP,
+		ipHeader.DstIP,
+		ipHeader.Protocol,
+		protoStr,
+		ipHeader.TTL,
+		ipHeader.TotalLength, // IP Total Length
+		packetLen,            // Received packet length (including header)
+		ipHeader.ID,
+		flagsStr,
+		hdrLen)
+}
+
+// calculateChecksum is defined in ip.go
+
+// maskSize calculates the prefix size from an IPv4 mask.
+// This helper function can remain in tun.go as it's specific to setupTUN
+func maskSize(mask net.IPMask) int {
+	ones, _ := mask.Size()
+	return ones
+}

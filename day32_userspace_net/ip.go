@@ -185,37 +185,6 @@ func parseIPv4Header(packet []byte) (*IPv4Header, []byte, error) {
 	return header, payload, nil
 }
 
-// printHeaderInfo prints the parsed IPv4 header information.
-func printHeaderInfo(header *IPv4Header, packetLen int) {
-	flagsStr := ""
-	if header.Flags&0x04 != 0 { // Reserved bit (should be 0)
-		flagsStr += "[Reserved!]"
-	}
-	if header.Flags&0x02 != 0 {
-		flagsStr += "[DF]" // Don't Fragment
-	}
-	if header.Flags&0x01 != 0 {
-		flagsStr += "[MF]" // More Fragments
-	}
-	if flagsStr == "" {
-		flagsStr = "None"
-	}
-
-	fmt.Printf("--- Packet Received (%d bytes) ---\n", packetLen)
-	fmt.Printf("  IPv4 Header (%d bytes):\n", int(header.IHL)*4)
-	fmt.Printf("    Version: %d, IHL: %d (%d bytes), TOS: 0x%02x\n", header.Version, header.IHL, int(header.IHL)*4, header.TOS)
-	fmt.Printf("    Total Length: %d, ID: 0x%04x\n", header.TotalLength, header.ID)
-	fmt.Printf("    Flags: %s, Fragment Offset: %d\n", flagsStr, header.FragmentOffset)
-	fmt.Printf("    TTL: %d, Protocol: %d (%s)\n", header.TTL, header.Protocol, ipProtocolToString(header.Protocol))
-	fmt.Printf("    Checksum: 0x%04x\n", header.Checksum)
-	fmt.Printf("    Source IP: %s\n", header.SrcIP)
-	fmt.Printf("    Destination IP: %s\n", header.DstIP)
-	if len(header.Options) > 0 {
-		fmt.Printf("    Options: %d bytes\n", len(header.Options)) // Simple indication for now
-	}
-	fmt.Println("----------------------------------")
-}
-
 // ipProtocolToString converts common IP protocol numbers to strings.
 func ipProtocolToString(protocol uint8) string {
 	switch protocol {
@@ -228,10 +197,4 @@ func ipProtocolToString(protocol uint8) string {
 	default:
 		return fmt.Sprintf("Unknown (%d)", protocol)
 	}
-}
-
-// maskSize calculates the prefix length from a net.IPMask.
-func maskSize(mask net.IPMask) int {
-	ones, _ := mask.Size()
-	return ones
 }
