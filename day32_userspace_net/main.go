@@ -1136,10 +1136,10 @@ func handleTLSHandshakeRecord(ifce *water.Interface, conn *TCPConnection, payloa
 		log.Printf("[TLS Info - %s] Received Finished Message (Length: %d, Content/Verification Ignored)", connKey, len(message))
 		if conn.TLSState == TLSStateExpectingFinished {
 			// Here, we would normally verify the Finished message
-			log.Printf("[TLS Info - %s] Processing Finished. TLS Handshake Potentially Complete (Verification Skipped). Triggering Server Finished.", connKey)
-			// conn.TLSState = TLSStateHandshakeComplete // State transition moved to sendServerCCSAndFinished
-			// TODO: Trigger sending server ChangeCipherSpec and Finished (Step 3) -> Now called from handleClientHello
-			// sendServerCCSAndFinished(ifce, conn) // Call moved
+			log.Printf("[TLS Info - %s] Processing Finished. TLS Handshake Potentially Complete (Verification Skipped). Triggering Server Finished soon.", connKey)
+			// conn.TLSState = TLSStateHandshakeComplete // Mark handshake as complete for now -> Moved to sendServerCCSAndFinished
+			// Trigger sending server ChangeCipherSpec and Finished
+			sendServerCCSAndFinished(ifce, conn)
 		} else {
 			log.Printf("[TLS Warn - %s] Unexpected Finished received in state %v", connKey, conn.TLSState)
 			// Consider sending an alert?
@@ -1896,6 +1896,75 @@ func buildServerKeyExchange(dataToSign []byte, skeParamsBytes []byte, privateKey
 	message[2] = byte(messageBodyLen >> 8)
 	message[3] = byte(messageBodyLen)
 	copy(message[4:], messageBody)
+
+	return message, nil
+}
+
+// --- Step 3: Send Server ChangeCipherSpec and Finished --- Function Implementation ---
+func sendServerCCSAndFinished(ifce *water.Interface, conn *TCPConnection) {
+	connKey := conn.ConnectionKey()
+	log.Printf("[TLS Info - %s] Sending Server ChangeCipherSpec and Finished.", connKey)
+
+	// 1. Send ChangeCipherSpec Record
+	// Manually construct the record: Type(1) + Version(2) + Length(2) + Payload(1)
+	ccsPayload := []byte{0x01}
+	ccsRecord, err := buildTLSRecord(TLSRecordTypeChangeCipherSpec, 0x0303, ccsPayload)
+	if err != nil {
+		log.Printf("[TLS Error - %s] Failed to build ChangeCipherSpec record: %v", connKey, err)
+		return
+	}
+	log.Printf("[TLS Debug - %s] Sending ChangeCipherSpec record (%d bytes).", connKey, len(ccsRecord))
+	err = sendRawTLSRecord(ifce, conn, ccsRecord)
+	if err != nil {
+		log.Printf("[TLS Error - %s] Failed to send ChangeCipherSpec record: %v", connKey, err)
+		// Decide how to handle this error (e.g., close connection)
+		return
+	}
+	// Note: We don't actually change cipher state in this dummy implementation
+	log.Printf("[TLS Info - %s] ChangeCipherSpec sent.", connKey)
+
+	// 2. Build and Send Finished Message (Dummy)
+	finishedMsg, err := buildDummyFinishedMessage()
+	if err != nil {
+		log.Printf("[TLS Error - %s] Failed to build dummy Finished message: %v", connKey, err)
+		return
+	}
+
+	finishedRecord, err := buildTLSRecord(TLSRecordTypeHandshake, 0x0303, finishedMsg) // Type=22
+	if err != nil {
+		log.Printf("[TLS Error - %s] Failed to build Finished record: %v", connKey, err)
+		return
+	}
+
+	log.Printf("[TLS Debug - %s] Sending Finished record (%d bytes).", connKey, len(finishedRecord))
+	err = sendRawTLSRecord(ifce, conn, finishedRecord)
+	if err != nil {
+		log.Printf("[TLS Error - %s] Failed to send Finished record: %v", connKey, err)
+		return
+	}
+
+	// 3. Update State to Handshake Complete
+	conn.TLSState = TLSStateHandshakeComplete
+	log.Printf("[TLS Info - %s] Server Finished sent. TLS Handshake considered complete (dummy). TLS State -> %v", connKey, conn.TLSState)
+}
+
+// buildDummyFinishedMessage constructs a plausible but fake Finished message.
+// Real Finished message content depends on handshake hash and master secret.
+// MODIFIED: Send 0-length VerifyData to test client reaction.
+func buildDummyFinishedMessage() ([]byte, error) {
+	// Sending empty VerifyData (incorrect by spec, but for testing)
+	dummyVerifyData := []byte{}
+	messageBodyLen := uint32(len(dummyVerifyData))
+
+	// Handshake header: Type (1) + Length (3)
+	message := make([]byte, 4+messageBodyLen)
+	message[0] = TLSHandshakeTypeFinished
+	message[1] = byte(messageBodyLen >> 16)
+	message[2] = byte(messageBodyLen >> 8)
+	message[3] = byte(messageBodyLen)
+	if messageBodyLen > 0 { // Only copy if length > 0
+		copy(message[4:], dummyVerifyData)
+	}
 
 	return message, nil
 }
