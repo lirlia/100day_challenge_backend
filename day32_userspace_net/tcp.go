@@ -42,6 +42,10 @@ type TCPConnection struct {
 	ServerNextSeq uint32 // Next sequence number to send from server
 	// Add more fields as needed (e.g., window sizes, timers)
 
+	// Mode-specific connection info
+	TunIFCE *water.Interface // Interface for TUN mode
+	TCPConn net.Conn         // Underlying connection for TCP mode
+
 	// TLS specific state (References TLSState which will be in tls.go)
 	TLSState      TLSHandshakeState // <<< Defined in tls.go later
 	ReceiveBuffer bytes.Buffer      // Buffer for incoming TLS data
@@ -61,6 +65,12 @@ type TCPConnection struct {
 	EncryptionEnabled        bool   // Flag to enable record encryption/decryption after CCS
 	ClientSequenceNum        uint64 // Sequence number for receiving records (for AEAD)
 	ServerSequenceNum        uint64 // Sequence number for sending records (for AEAD)
+
+	// Handshake message buffering
+	HandshakeMessages bytes.Buffer // Buffer to store handshake messages for Finished hash
+
+	// State protection
+	Mutex sync.Mutex // Mutex to protect access to connection state
 }
 
 // TCPState represents the state of a TCP connection
@@ -94,23 +104,111 @@ const (
 	TCPFlagCWR = 1 << 7
 	// TCPFlagNS = 1 << 8 // (Not easily accessible in standard 8-bit flag field)
 
-	ListenPort = 80 // Hardcoded listening port for this example
+	// ListenPort is now defined via flag in main.go
+	// ListenPort = 443
 )
 
 // Global map to store active TCP connections
 // Key format: "clientIP:clientPort-serverIP:serverPort"
 var (
 	tcpConnections = make(map[string]*TCPConnection)
-	connMutex      sync.Mutex
+	connMutex      sync.Mutex // Mutex for the global connection map
 )
 
 // ConnectionKey generates a standard key for the connection map.
-// Added as a helper method for TCPConnection.
 func (c *TCPConnection) ConnectionKey() string {
-	if c == nil {
+	c.Mutex.Lock()
+	defer c.Mutex.Unlock()
+
+	if c.TCPConn != nil { // TCP Mode
+		localAddr := c.TCPConn.LocalAddr().String()        // e.g., "127.0.0.1:443"
+		remoteAddr := c.TCPConn.RemoteAddr().String()      // e.g., "192.168.1.100:54321"
+		return fmt.Sprintf("%s-%s", remoteAddr, localAddr) // Use remote-local for consistency?
+	} else if c.ClientIP != nil { // TUN Mode
+		return fmt.Sprintf("%s:%d-%s:%d", c.ClientIP, c.ClientPort, c.ServerIP, c.ServerPort)
+	} else {
+		log.Println("Warning: ConnectionKey called on connection with no valid identifiers")
 		return ""
 	}
-	return fmt.Sprintf("%s:%d-%s:%d", c.ClientIP, c.ClientPort, c.ServerIP, c.ServerPort)
+}
+
+// runTCPMode starts listening on the specified port for TCP connections.
+func runTCPMode(port int) {
+	listenAddr := fmt.Sprintf(":%d", port)
+	listener, err := net.Listen("tcp", listenAddr)
+	if err != nil {
+		log.Fatalf("Failed to listen on port %d: %v", port, err)
+	}
+	defer listener.Close()
+	log.Printf("TCP server listening on %s", listenAddr)
+
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			log.Printf("Error accepting connection: %v", err)
+			continue
+		}
+		log.Printf("Accepted TCP connection from %s", conn.RemoteAddr())
+		go handleTCPConnection(conn)
+	}
+}
+
+// handleTCPConnection handles a single accepted TCP connection.
+func handleTCPConnection(netConn net.Conn) {
+	defer netConn.Close()
+
+	// Create a TCPConnection state object for this connection
+	// Note: IPs/Ports are derived from net.Conn
+	remoteAddr, ok := netConn.RemoteAddr().(*net.TCPAddr)
+	if !ok {
+		log.Printf("Could not get remote TCP address from %s", netConn.RemoteAddr())
+		return
+	}
+	localAddr, ok := netConn.LocalAddr().(*net.TCPAddr)
+	if !ok {
+		log.Printf("Could not get local TCP address from %s", netConn.LocalAddr())
+		return
+	}
+
+	conn := &TCPConnection{
+		State:      TCPStateEstablished, // Assume established for TCP mode start
+		ClientIP:   remoteAddr.IP,
+		ClientPort: uint16(remoteAddr.Port),
+		ServerIP:   localAddr.IP,
+		ServerPort: uint16(localAddr.Port),
+		TCPConn:    netConn,
+		TLSState:   TLSStateExpectingClientHello, // Start TLS handshake
+		// Other fields (ISN, SeqNums) are less relevant in standard TCP mode
+		// but initialize buffer
+		ReceiveBuffer: *bytes.NewBuffer([]byte{}),
+	}
+
+	connKey := conn.ConnectionKey() // Use the method to get the key
+	connMutex.Lock()
+	tcpConnections[connKey] = conn
+	connMutex.Unlock()
+
+	log.Printf("Handling TCP connection: %s", connKey)
+
+	// Start the TLS handshake process for this connection
+	// This function will read from conn.TCPConn and process TLS records
+	// Note: startTLSHandshake function needs to be implemented, likely in tls.go
+	err := startTLSHandshake(conn)
+	if err != nil {
+		log.Printf("TLS handshake error for %s: %v", connKey, err)
+	} else {
+		log.Printf("TLS handshake successful for %s. Ready for application data.", connKey)
+		// TODO: Transition to application data handling phase for TCP mode
+		// This might involve reading TLS application data records and passing
+		// the decrypted payload to handleHTTPData or similar.
+		// For now, we just log success.
+	}
+
+	// Cleanup connection from map when done
+	connMutex.Lock()
+	delete(tcpConnections, connKey)
+	connMutex.Unlock()
+	log.Printf("Finished handling TCP connection: %s", connKey)
 }
 
 // handleTCPPacket parses TCP header and manages TCP state transitions based on port.
@@ -144,7 +242,6 @@ func handleTCPPacket(ifce *water.Interface, ipHeader *IPv4Header, tcpSegment []b
 		// Check if it's for a port we listen on (80 for HTTP, 443 for TLS)
 		if tcpHeader.DstPort == 80 || tcpHeader.DstPort == 443 {
 			log.Printf("Handling SYN for new connection %s on port %d", connKey, tcpHeader.DstPort)
-			// ... (Basic SYN flood protection) ...
 
 			serverISN := mrand.Uint32() // Use mrand
 			newConn := &TCPConnection{
@@ -152,20 +249,22 @@ func handleTCPPacket(ifce *water.Interface, ipHeader *IPv4Header, tcpSegment []b
 				ClientIP:      ipHeader.SrcIP,
 				ClientPort:    tcpHeader.SrcPort,
 				ServerIP:      ipHeader.DstIP,
-				ServerPort:    tcpHeader.DstPort, // Store the actual destination port
+				ServerPort:    tcpHeader.DstPort,
 				ClientISN:     tcpHeader.SeqNum,
 				ServerISN:     serverISN,
 				ClientNextSeq: tcpHeader.SeqNum + 1,
 				ServerNextSeq: serverISN + 1,
-				TLSState:      TLSStateNone, // Default to None <<< Defined in tls.go later
+				TunIFCE:       ifce, // Store interface for TUN mode replies
+				TLSState:      TLSStateNone,
+				ReceiveBuffer: *bytes.NewBuffer([]byte{}),
 			}
 			if tcpHeader.DstPort == 443 {
-				newConn.TLSState = TLSStateExpectingClientHello // Set initial TLS state for port 443 <<< Defined in tls.go later
+				newConn.TLSState = TLSStateExpectingClientHello
 			}
 			tcpConnections[connKey] = newConn
 
 			// Send SYN-ACK
-			err = sendTCPPacket(ifce, newConn.ServerIP, newConn.ClientIP, newConn.ServerPort, newConn.ClientPort,
+			err = sendTCPPacket(newConn.TunIFCE, newConn.ServerIP, newConn.ClientIP, newConn.ServerPort, newConn.ClientPort,
 				newConn.ServerISN, newConn.ClientNextSeq, TCPFlagSYN|TCPFlagACK, nil)
 			if err != nil {
 				log.Printf("Error sending SYN-ACK for %s: %v", connKey, err)
@@ -173,31 +272,30 @@ func handleTCPPacket(ifce *water.Interface, ipHeader *IPv4Header, tcpSegment []b
 			}
 		} else {
 			log.Printf("Ignoring SYN for unhandled port %d from %s:%d", tcpHeader.DstPort, ipHeader.SrcIP, tcpHeader.SrcPort)
-			// Optionally send RST
 		}
 
 	// Case 2: ACK for SYN-ACK
 	case exists && conn.State == TCPStateSynReceived && tcpHeader.Flags&TCPFlagACK != 0:
-		// ... (Existing ACK handling for handshake completion) ...
 		if tcpHeader.AckNum == conn.ServerNextSeq {
 			log.Printf("Connection %s ESTABLISHED. Port: %d, TLS State: %v", connKey, conn.ServerPort, conn.TLSState)
 			conn.State = TCPStateEstablished
 			conn.ClientNextSeq = tcpHeader.SeqNum
 		} else {
-			// ... (Handle invalid ACK) ...
+			log.Printf("Invalid ACK for SYN-ACK on %s. AckNum: %d, Expected: %d", connKey, tcpHeader.AckNum, conn.ServerNextSeq)
 		}
 
 	// Case 3: Packets on established connection
 	case exists && conn.State == TCPStateEstablished:
 		// Basic sequence number check (common for both HTTP and TLS data)
 		if !(len(tcpPayload) == 0 && tcpHeader.Flags&TCPFlagACK != 0) && tcpHeader.SeqNum != conn.ClientNextSeq {
-			log.Printf("Unexpected sequence number for ESTABLISHED %s. Expected %d, got %d. Ignoring.", connKey, conn.ClientNextSeq, tcpHeader.SeqNum)
+			log.Printf("Unexpected sequence number for ESTABLISHED %s. Expected %d, got %d. Flags [%s]. Ignoring.", connKey, conn.ClientNextSeq, tcpHeader.SeqNum, tcpFlagsToString(tcpHeader.Flags))
+			// Optionally send ACK with expected SeqNum? For now, ignore.
 			return
 		}
 
 		// Handle FIN first (common for both)
 		if tcpHeader.Flags&TCPFlagFIN != 0 {
-			handleFIN(ifce, conn, tcpHeader)
+			handleFIN(conn, tcpHeader)
 			return
 		}
 
@@ -209,23 +307,22 @@ func handleTCPPacket(ifce *water.Interface, ipHeader *IPv4Header, tcpSegment []b
 
 		// Handle data payload based on port
 		if len(tcpPayload) > 0 {
-			// Send ACK for received data (common for both)
 			expectedClientNextSeq := conn.ClientNextSeq + uint32(len(tcpPayload))
 			ackFlags := uint8(TCPFlagACK)
-			err = sendTCPPacket(ifce, conn.ServerIP, conn.ClientIP, conn.ServerPort, conn.ClientPort,
+			// Send ACK for received data (common for both)
+			err = sendTCPPacket(conn.TunIFCE, conn.ServerIP, conn.ClientIP, conn.ServerPort, conn.ClientPort,
 				conn.ServerNextSeq, expectedClientNextSeq, ackFlags, nil)
 			if err != nil {
 				log.Printf("Error sending ACK for received data on %s (Port %d): %v", connKey, conn.ServerPort, err)
-				// Still update sequence number to avoid re-processing?
-				conn.ClientNextSeq = expectedClientNextSeq
+				// Don't update ClientNextSeq if ACK fails?
 				return
 			}
 
 			// Dispatch data handling based on port
 			if conn.ServerPort == 80 {
-				handleHTTPData(ifce, conn, tcpPayload) // <<< Defined in main.go for now
+				handleHTTPData(conn.TunIFCE, conn, tcpPayload) // Pass TUN interface
 			} else if conn.ServerPort == 443 {
-				handleTLSData(ifce, conn, tcpPayload) // <<< Defined in main.go for now
+				handleTLSData(conn.TunIFCE, conn, tcpPayload) // Pass TUN interface
 			} else {
 				log.Printf("Received data on unexpected established port %d for %s", conn.ServerPort, connKey)
 			}
@@ -239,56 +336,62 @@ func handleTCPPacket(ifce *water.Interface, ipHeader *IPv4Header, tcpSegment []b
 		handleFINACK(conn, tcpHeader)
 
 	default:
-		// ... (Existing default case for RST) ...
+		log.Printf("Unhandled TCP packet for %s. State: %v, Flags: [%s]", connKey, conn.State, tcpFlagsToString(tcpHeader.Flags))
+		// Optionally send RST
 	}
 }
 
-// --- Helper functions for specific TCP packet handling ---
+// --- Helper functions for specific TCP packet handling (Modified to use conn.TunIFCE) ---
 
-func handleFIN(ifce *water.Interface, conn *TCPConnection, tcpHeader *TCPHeader) {
-	log.Printf("Received FIN for connection %s. Entering CLOSE_WAIT.", conn.ConnectionKey())
+func handleFIN(conn *TCPConnection, tcpHeader *TCPHeader) {
+	connKey := conn.ConnectionKey()
+	log.Printf("Received FIN for connection %s. Entering CLOSE_WAIT.", connKey)
 	conn.State = TCPStateCloseWait
 	conn.ClientNextSeq = tcpHeader.SeqNum + 1
 
 	// Send ACK for the FIN
 	ackFlags := uint8(TCPFlagACK)
-	err := sendTCPPacket(ifce, conn.ServerIP, conn.ClientIP, conn.ServerPort, conn.ClientPort,
+	err := sendTCPPacket(conn.TunIFCE, conn.ServerIP, conn.ClientIP, conn.ServerPort, conn.ClientPort,
 		conn.ServerNextSeq, conn.ClientNextSeq, ackFlags, nil)
 	if err != nil {
-		log.Printf("Error sending ACK for FIN on %s: %v", conn.ConnectionKey(), err)
+		log.Printf("Error sending ACK for FIN on %s: %v", connKey, err)
 	}
 
 	// Immediately send our FIN (since we are a simple server)
-	log.Printf("Sending FIN for connection %s. Entering LAST_ACK.", conn.ConnectionKey())
+	log.Printf("Sending FIN for connection %s. Entering LAST_ACK.", connKey)
 	finAckFlags := uint8(TCPFlagFIN | TCPFlagACK)
-	err = sendTCPPacket(ifce, conn.ServerIP, conn.ClientIP, conn.ServerPort, conn.ClientPort,
+	err = sendTCPPacket(conn.TunIFCE, conn.ServerIP, conn.ClientIP, conn.ServerPort, conn.ClientPort,
 		conn.ServerNextSeq, conn.ClientNextSeq, finAckFlags, nil)
 	if err != nil {
-		log.Printf("Error sending FIN+ACK on %s: %v", conn.ConnectionKey(), err)
+		log.Printf("Error sending FIN+ACK on %s: %v", connKey, err)
 	}
-	conn.ServerNextSeq++
+	conn.ServerNextSeq++ // Increment seq for FIN
 	conn.State = TCPStateLastAck
 }
 
 func handlePureACK(conn *TCPConnection, tcpHeader *TCPHeader) {
+	connKey := conn.ConnectionKey()
+	// Acknowledge received data if ACK number advances
 	if tcpHeader.AckNum > conn.ServerNextSeq {
-		log.Printf("Received ACK for future data for %s. AckNum: %d, ServerNextSeq: %d", conn.ConnectionKey(), tcpHeader.AckNum, conn.ServerNextSeq)
-		conn.ServerNextSeq = tcpHeader.AckNum
+		log.Printf("Received ACK for %d bytes of data for %s. AckNum: %d -> %d", tcpHeader.AckNum-conn.ServerNextSeq, connKey, conn.ServerNextSeq, tcpHeader.AckNum)
+		conn.ServerNextSeq = tcpHeader.AckNum // Update server sequence number based on client's ACK
 	} else if tcpHeader.AckNum < conn.ServerNextSeq {
-		log.Printf("Received duplicate ACK for %s. AckNum: %d, ServerNextSeq: %d", conn.ConnectionKey(), tcpHeader.AckNum, conn.ServerNextSeq)
+		log.Printf("Received duplicate/old ACK for %s. AckNum: %d, ServerNextSeq: %d", connKey, tcpHeader.AckNum, conn.ServerNextSeq)
 	} else {
-		log.Printf("Received valid ACK for %s. AckNum: %d", conn.ConnectionKey(), tcpHeader.AckNum)
+		log.Printf("Received ACK for %s (no new data acked). AckNum: %d", connKey, tcpHeader.AckNum)
 	}
+	// TODO: Handle window updates, retransmissions based on ACKs
 }
 
 func handleFINACK(conn *TCPConnection, tcpHeader *TCPHeader) {
-	log.Printf("Handling ACK for FIN for connection %s", conn.ConnectionKey())
+	connKey := conn.ConnectionKey()
+	log.Printf("Handling ACK for FIN for connection %s", connKey)
 	if tcpHeader.Flags&TCPFlagACK != 0 && tcpHeader.AckNum == conn.ServerNextSeq {
-		log.Printf("Connection %s CLOSED normally.", conn.ConnectionKey())
-		delete(tcpConnections, conn.ConnectionKey())
+		log.Printf("Connection %s CLOSED normally.", connKey)
+		delete(tcpConnections, connKey) // Remove from map
 	} else {
 		log.Printf("Unexpected packet in LAST_ACK state for %s. Flags: [%s], AckNum: %d (expected %d)",
-			conn.ConnectionKey(), tcpFlagsToString(tcpHeader.Flags), tcpHeader.AckNum, conn.ServerNextSeq)
+			connKey, tcpFlagsToString(tcpHeader.Flags), tcpHeader.AckNum, conn.ServerNextSeq)
 	}
 }
 
@@ -350,24 +453,27 @@ func tcpFlagsToString(flags uint8) string {
 	if len(parts) == 0 {
 		return "-"
 	}
-	// Note: Need to import "strings" for this to work
-	// return strings.Join(parts, ",") // <<< Temporarily commented out until imports are fixed
-	return fmt.Sprintf("%v", parts) // Use fmt for now
+	// NOTE: Need import "strings"
+	return fmt.Sprintf("%v", parts) // Use fmt for now, requires import "strings" later
 }
 
-// sendTCPPacket constructs and sends a TCP packet.
+// sendTCPPacket constructs and sends a TCP packet via the TUN interface.
 func sendTCPPacket(ifce *water.Interface, srcIP, dstIP net.IP, srcPort, dstPort uint16, seqNum, ackNum uint32, flags uint8, payload []byte) error {
-	log.Printf("TCP SEND: %s:%d -> %s:%d Seq: %d Ack: %d Flags: [%s] Len: %d",
+	if ifce == nil {
+		return fmt.Errorf("cannot send TCP packet: TUN interface is nil")
+	}
+	log.Printf("TCP SEND (TUN): %s:%d -> %s:%d Seq: %d Ack: %d Flags: [%s] Len: %d",
 		srcIP, srcPort, dstIP, dstPort, seqNum, ackNum, tcpFlagsToString(flags), len(payload))
 	tcpHeaderBytes, err := buildTCPHeader(srcIP, dstIP, srcPort, dstPort, seqNum, ackNum, flags, payload)
 	if err != nil {
 		return fmt.Errorf("failed to build TCP header: %w", err)
 	}
-	// buildIPv4Header is in ip.go
+
 	ipHeaderBytes, err := buildIPv4Header(srcIP, dstIP, TCPProtocolNumber, len(tcpHeaderBytes)+len(payload))
 	if err != nil {
 		return fmt.Errorf("failed to build IP header: %w", err)
 	}
+
 	fullPacket := append(ipHeaderBytes, tcpHeaderBytes...)
 	fullPacket = append(fullPacket, payload...)
 	n, err := ifce.Write(fullPacket)
@@ -377,6 +483,7 @@ func sendTCPPacket(ifce *water.Interface, srcIP, dstIP net.IP, srcPort, dstPort 
 	if n != len(fullPacket) {
 		return fmt.Errorf("short write for TCP packet: wrote %d bytes, expected %d", n, len(fullPacket))
 	}
+
 	return nil
 }
 
@@ -387,8 +494,7 @@ func buildTCPHeader(srcIP, dstIP net.IP, srcPort, dstPort uint16, seqNum, ackNum
 		DstPort:    dstPort,
 		SeqNum:     seqNum,
 		AckNum:     ackNum,
-		DataOffset: 5, // Assuming no options
-		Reserved:   0,
+		DataOffset: 5, // No options
 		Flags:      flags,
 		WindowSize: 65535,
 		Checksum:   0, // Calculate later
@@ -403,15 +509,14 @@ func buildTCPHeader(srcIP, dstIP net.IP, srcPort, dstPort uint16, seqNum, ackNum
 	headerBytes[12] = (header.DataOffset << 4)
 	headerBytes[13] = header.Flags
 	binary.BigEndian.PutUint16(headerBytes[14:16], header.WindowSize)
-	// Checksum (16-17) is initially 0
-	binary.BigEndian.PutUint16(headerBytes[18:20], header.UrgentPtr) // Restore Urgent Pointer setting
+	// Checksum (16-18) initially 0
+	binary.BigEndian.PutUint16(headerBytes[18:20], header.UrgentPtr)
 
-	// Calculate Checksum
 	checksum, err := calculateTCPChecksum(srcIP, dstIP, headerBytes, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to calculate TCP checksum: %w", err)
 	}
-	binary.BigEndian.PutUint16(headerBytes[16:18], checksum) // Set calculated checksum
+	binary.BigEndian.PutUint16(headerBytes[16:18], checksum)
 
 	return headerBytes, nil
 }
@@ -421,8 +526,9 @@ func calculateTCPChecksum(srcIP, dstIP net.IP, tcpHeader, tcpPayload []byte) (ui
 	srcIPv4 := srcIP.To4()
 	dstIPv4 := dstIP.To4()
 	if srcIPv4 == nil || dstIPv4 == nil {
-		return 0, fmt.Errorf("source or destination IP is not IPv4 for TCP checksum")
+		return 0, fmt.Errorf("not IPv4 addresses for TCP checksum")
 	}
+
 	pseudoHeader := make([]byte, 12)
 	copy(pseudoHeader[0:4], srcIPv4)
 	copy(pseudoHeader[4:8], dstIPv4)
@@ -430,14 +536,16 @@ func calculateTCPChecksum(srcIP, dstIP net.IP, tcpHeader, tcpPayload []byte) (ui
 	pseudoHeader[9] = TCPProtocolNumber
 	tcpLength := uint16(len(tcpHeader) + len(tcpPayload))
 	binary.BigEndian.PutUint16(pseudoHeader[10:12], tcpLength)
+
 	dataForChecksum := append(pseudoHeader, tcpHeader...)
 	dataForChecksum = append(dataForChecksum, tcpPayload...)
-	// Zero out the checksum field within the data slice for calculation
-	if len(tcpHeader) >= 18 {
-		checksumOffsetInCombinedData := 12 + 16 // Offset of checksum within dataForChecksum
+
+	// Zero out checksum field within the combined data for calculation
+	if len(tcpHeader) >= 18 { // Ensure header is long enough
+		checksumOffsetInCombinedData := 12 + 16 // Pseudo header len + checksum offset in TCP header
 		binary.BigEndian.PutUint16(dataForChecksum[checksumOffsetInCombinedData:checksumOffsetInCombinedData+2], 0)
 	}
-	// calculateChecksum is in ip.go
-	checksum := calculateChecksum(dataForChecksum)
+
+	checksum := calculateChecksum(dataForChecksum) // calculateChecksum is in ip.go
 	return checksum, nil
 }

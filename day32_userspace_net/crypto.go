@@ -4,150 +4,125 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/hmac"
-	"crypto/sha256"
+	"crypto/sha256" // Needed for SHA384 if used in PRF
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"log"
 )
 
-// --- TLS 1.2 Key Derivation --- From RFC 5246 Section 5 ---
+// --- TLS 1.2 PRF (Pseudo-Random Function) --- RFC 5246 Section 5 ---
 
+// P_hash expands a secret and seed into an output string of arbitrary length.
 // P_hash(secret, seed) = HMAC_hash(secret, A(1) + seed) +
 //
 //	HMAC_hash(secret, A(2) + seed) +
 //	HMAC_hash(secret, A(3) + seed) + ...
 //
-// where A(0) = seed, A(i) = HMAC_hash(secret, A(i-1))
-func pHash(secret, seed []byte, resultLen int) []byte {
-	// Use SHA256 directly as required by TLS 1.2 PRF
-	h := hmac.New(sha256.New, secret)
+// Where A(0) = seed, A(i) = HMAC_hash(secret, A(i-1)).
+// TLS 1.2 uses SHA-256 for P_hash in its PRF.
+func pHash(secret, seed []byte, length int) []byte {
+	hmacSha256 := hmac.New(sha256.New, secret)
 
-	// Calculate A(1)
-	h.Write(seed)
-	a := h.Sum(nil)
+	var result []byte
+	// Calculate A(1) = HMAC_hash(secret, A(0)) where A(0) = seed
+	hmacSha256.Write(seed)
+	a := hmacSha256.Sum(nil)
 
-	var output []byte
-	for len(output) < resultLen {
-		h.Reset()
-		h.Write(a)
-		h.Write(seed)
-		output = append(output, h.Sum(nil)...)
+	// Iterate, calculating HMAC_hash(secret, A(i) + seed) and appending to result
+	for len(result) < length {
+		hmacSha256.Reset()
+		hmacSha256.Write(a)    // A(i)
+		hmacSha256.Write(seed) // seed
+		result = append(result, hmacSha256.Sum(nil)...)
 
-		// Calculate next A(i)
-		h.Reset()
-		h.Write(a)
-		a = h.Sum(nil)
+		// Calculate A(i+1) = HMAC_hash(secret, A(i)) for the next iteration
+		hmacSha256.Reset()
+		hmacSha256.Write(a)
+		a = hmacSha256.Sum(nil)
 	}
 
-	return output[:resultLen]
+	return result[:length]
 }
 
-// prf12 implements the TLS 1.2 PRF (Pseudo-Random Function).
+// PRF12 implements the TLS 1.2 PRF.
 // PRF(secret, label, seed) = P_SHA256(secret, label + seed)
-func prf12(secret []byte, label string, seed []byte) []byte {
+// Length is determined by the specific usage (e.g., 48 for Master Secret, 12 for Finished verify_data).
+func PRF12(secret []byte, label string, seed []byte, length int) []byte {
 	labelBytes := []byte(label)
-	fullSeed := append(labelBytes, seed...)
-	// For TLS 1.2, the PRF is always based on SHA256 (RFC 5246, Section 5)
-	// Master Secret is always 48 bytes.
-	return pHash(secret, fullSeed, 48) // For Master Secret derivation, 48 bytes is needed
+	combinedSeed := append(labelBytes, seed...)
+	return pHash(secret, combinedSeed, length)
 }
 
-// prf12ForKeyBlock is a variant of prf12 specifically for deriving the key block,
-// allowing specification of the required length.
-func prf12ForKeyBlock(secret []byte, label string, seed []byte, length int) []byte {
-	labelBytes := []byte(label)
-	fullSeed := append(labelBytes, seed...)
-	return pHash(secret, fullSeed, length)
-}
+// --- Key Derivation (TLS 1.2 using PRF) ---
 
-// computePreMasterSecret calculates the ECDHE PreMasterSecret.
-func computePreMasterSecret(conn *TCPConnection) ([]byte, error) {
-	if conn.ServerECDHPrivateKey == nil || len(conn.ClientECDHPublicKeyBytes) == 0 {
-		return nil, errors.New("missing ECDHE keys for PMS computation")
-	}
-
-	curve := conn.ServerECDHPrivateKey.Curve()
-	clientPubKey, err := curve.NewPublicKey(conn.ClientECDHPublicKeyBytes)
-	if err != nil {
-		// This is where "point is not on curve" errors might originate if client key is invalid
-		return nil, fmt.Errorf("invalid client ECDHE public key: %w", err)
-	}
-
-	pms, err := conn.ServerECDHPrivateKey.ECDH(clientPubKey)
-	if err != nil {
-		return nil, fmt.Errorf("ECDH computation failed: %w", err)
-	}
-	log.Printf("[TLS Debug - %s] Computed PreMasterSecret (%d bytes)", conn.ConnectionKey(), len(pms))
-	return pms, nil
-}
-
-// deriveKeys computes the Master Secret and then derives the write keys and IVs.
+// deriveKeys computes the master secret and then the client/server write keys and IVs using TLS 1.2 PRF.
 func deriveKeys(conn *TCPConnection) error {
 	connKey := conn.ConnectionKey()
+	log.Printf("[TLS Crypto - %s] Starting key derivation.", connKey)
 
-	// 1. Compute PreMasterSecret
-	pms, err := computePreMasterSecret(conn)
-	if err != nil {
-		return fmt.Errorf("failed to compute PMS: %w", err)
+	// 1. Compute Pre-Master Secret (ECDHE)
+	if conn.ServerECDHPrivateKey == nil || conn.ClientECDHPublicKeyBytes == nil {
+		return errors.New("missing ECDHE keys for pre-master secret derivation")
 	}
-	conn.PreMasterSecret = pms
+	clientPubKey, err := conn.ServerECDHPrivateKey.Curve().NewPublicKey(conn.ClientECDHPublicKeyBytes)
+	if err != nil {
+		return fmt.Errorf("invalid client ECDHE public key: %w", err)
+	}
+	preMasterSecret, err := conn.ServerECDHPrivateKey.ECDH(clientPubKey)
+	if err != nil {
+		return fmt.Errorf("ECDHE shared secret computation failed: %w", err)
+	}
+	conn.PreMasterSecret = preMasterSecret
+	log.Printf("[TLS Crypto - %s] Computed Pre-Master Secret (%d bytes).", connKey, len(preMasterSecret))
 
-	// 2. Compute MasterSecret from PMS
-	// MasterSecret = PRF(PreMasterSecret, "master secret", ClientHello.random + ServerHello.random)
-	seedMS := append(conn.ClientRandom, conn.ServerRandom...)
-	conn.MasterSecret = prf12(conn.PreMasterSecret, "master secret", seedMS)
-	log.Printf("[TLS Debug - %s] Computed MasterSecret (%d bytes)", connKey, len(conn.MasterSecret))
+	// 2. Compute Master Secret using PRF12
+	masterSecretLabel := "master secret"
+	seed := append(conn.ClientRandom, conn.ServerRandom...)
+	masterSecret := PRF12(conn.PreMasterSecret, masterSecretLabel, seed, 48) // 48 bytes for Master Secret
+	conn.MasterSecret = masterSecret
+	log.Printf("[TLS Crypto - %s] Derived Master Secret (%d bytes) using PRF12.", connKey, len(masterSecret))
 
-	// 3. Compute Key Block from MasterSecret
-	// key_block = PRF(MasterSecret, "key expansion", ServerHello.random + ClientHello.random)
-	seedKB := append(conn.ServerRandom, conn.ClientRandom...)
+	// 3. Compute Key Block using PRF12
+	keyExpansionLabel := "key expansion"
+	keyBlockSeed := append(conn.ServerRandom, conn.ClientRandom...)
 
-	// Determine required key block length based on cipher suite
-	// For TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256:
-	// - Client Write Key (16) + Server Write Key (16) + Client Write IV (4) + Server Write IV (4) = 40 bytes
+	// Determine required key block length based on cipher suite (AES-128-GCM)
 	keyBlockLen := 0
-	clientKeyLen := 0
-	serverKeyLen := 0
-	clientIVLen := 0
-	serverIVLen := 0
-
 	switch conn.CipherSuite {
 	case TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256:
-		clientKeyLen = 16                                                     // AES-128
-		serverKeyLen = 16                                                     // AES-128
-		clientIVLen = 4                                                       // Fixed IV part for AES-GCM
-		serverIVLen = 4                                                       // Fixed IV part for AES-GCM
-		keyBlockLen = clientKeyLen + serverKeyLen + clientIVLen + serverIVLen // 40 bytes
+		keyBlockLen = 16 + 16 + 4 + 4 // 2 keys (16) + 2 IVs (4) = 40 bytes
 	default:
 		return fmt.Errorf("unsupported cipher suite for key derivation: 0x%04x", conn.CipherSuite)
 	}
 
-	log.Printf("[TLS Debug - %s] Required Key Block Length: %d bytes", connKey, keyBlockLen)
-	keyBlock := prf12ForKeyBlock(conn.MasterSecret, "key expansion", seedKB, keyBlockLen)
-	log.Printf("[TLS Debug - %s] Computed Key Block (%d bytes)", connKey, len(keyBlock))
+	keyBlock := PRF12(conn.MasterSecret, keyExpansionLabel, keyBlockSeed, keyBlockLen)
+	log.Printf("[TLS Crypto - %s] Derived Key Block (%d bytes) using PRF12.", connKey, len(keyBlock))
 
-	// 4. Extract keys and IVs from Key Block
+	// 4. Assign Keys and IVs
+	offset := 0
+	clientKeyLen := 16
+	serverKeyLen := 16
+	clientIVLen := 4
+	serverIVLen := 4
+
 	if len(keyBlock) < keyBlockLen {
-		return fmt.Errorf("key block too short: needed %d, got %d", keyBlockLen, len(keyBlock))
+		return fmt.Errorf("derived key block is too short: need %d, got %d", keyBlockLen, len(keyBlock))
 	}
 
-	offset := 0
-	// Note: MAC keys are not explicitly extracted for AEAD ciphers like AES-GCM
 	conn.ClientWriteKey = keyBlock[offset : offset+clientKeyLen]
 	offset += clientKeyLen
 	conn.ServerWriteKey = keyBlock[offset : offset+serverKeyLen]
 	offset += serverKeyLen
-	conn.ClientWriteIV = keyBlock[offset : offset+clientIVLen]
+	conn.ClientWriteIV = keyBlock[offset : offset+clientIVLen] // Implicit part
 	offset += clientIVLen
-	conn.ServerWriteIV = keyBlock[offset : offset+serverIVLen]
-	offset += serverIVLen
+	conn.ServerWriteIV = keyBlock[offset : offset+serverIVLen] // Implicit part
 
-	log.Printf("[TLS Debug - %s] Extracted Keys:", connKey)
-	log.Printf("  ClientWriteKey (%d bytes)", len(conn.ClientWriteKey))
-	log.Printf("  ServerWriteKey (%d bytes)", len(conn.ServerWriteKey))
-	log.Printf("  ClientWriteIV  (%d bytes)", len(conn.ClientWriteIV))
-	log.Printf("  ServerWriteIV  (%d bytes)", len(conn.ServerWriteIV))
+	log.Printf("[TLS Crypto - %s] Assigned Keys and IVs.", connKey)
+	log.Printf("  ClientWriteKey (%d): %x...", len(conn.ClientWriteKey), conn.ClientWriteKey[:4])
+	log.Printf("  ServerWriteKey (%d): %x...", len(conn.ServerWriteKey), conn.ServerWriteKey[:4])
+	log.Printf("  ClientWriteIV  (%d): %x", len(conn.ClientWriteIV), conn.ClientWriteIV)
+	log.Printf("  ServerWriteIV  (%d): %x", len(conn.ServerWriteIV), conn.ServerWriteIV)
 
 	return nil
 }
@@ -210,8 +185,25 @@ func buildAdditionalData(seqNum uint64, recordType uint8, version uint16, plaint
 // It returns the GenericAEADCipher structure: explicit_nonce (8 bytes) + encrypted_data + tag (16 bytes).
 func encryptRecord(conn *TCPConnection, plaintext []byte, recordType uint8, version uint16) ([]byte, error) {
 	connKey := conn.ConnectionKey()
+
+	// --- CCS Exception: MUST be sent plaintext ---
+	if recordType == TLSRecordTypeChangeCipherSpec {
+		log.Printf("[Encrypt - %s] CCS record type, sending plaintext unconditionally.", connKey)
+		// CCS payload must be {0x01}
+		if len(plaintext) != 1 || plaintext[0] != 0x01 {
+			// This should not happen if called correctly from sendServerCCSAndFinished
+			log.Printf("[Encrypt Error - %s] Invalid plaintext for CCS: %x", connKey, plaintext)
+			return nil, fmt.Errorf("invalid plaintext for ChangeCipherSpec: %x", plaintext)
+		}
+		return plaintext, nil
+	}
+	// --- End CCS Exception ---
+
+	conn.Mutex.Lock() // Lock needed for checking EncryptionEnabled and accessing keys/seqnum
+	defer conn.Mutex.Unlock()
+
 	if !conn.EncryptionEnabled {
-		log.Printf("[Encrypt - %s] Encryption not enabled, sending plaintext.", connKey)
+		log.Printf("[Encrypt - %s] Encryption not enabled, sending plaintext for type %d.", connKey, recordType)
 		return plaintext, nil // Return plaintext if encryption is not yet enabled
 	}
 
@@ -219,6 +211,10 @@ func encryptRecord(conn *TCPConnection, plaintext []byte, recordType uint8, vers
 		connKey, recordType, len(plaintext), conn.ServerSequenceNum)
 
 	// 1. Get AEAD cipher instance for server writes
+	// Need ServerWriteKey which is protected by mutex
+	if conn.ServerWriteKey == nil {
+		return nil, fmt.Errorf("server write key is nil for encryption")
+	}
 	aead, err := buildAEAD(conn.ServerWriteKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build server AEAD for encryption: %w", err)
@@ -228,7 +224,10 @@ func encryptRecord(conn *TCPConnection, plaintext []byte, recordType uint8, vers
 	explicitNonce := make([]byte, tls12GcmExplicitNonceLength)
 	binary.BigEndian.PutUint64(explicitNonce, conn.ServerSequenceNum)
 
-	// 3. Build full nonce
+	// 3. Build full nonce (Needs ServerWriteIV)
+	if conn.ServerWriteIV == nil {
+		return nil, fmt.Errorf("server write IV is nil for encryption")
+	}
 	nonce, err := buildNonce(conn.ServerWriteIV, explicitNonce)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build nonce for encryption: %w", err)
@@ -238,9 +237,6 @@ func encryptRecord(conn *TCPConnection, plaintext []byte, recordType uint8, vers
 	aad := buildAdditionalData(conn.ServerSequenceNum, recordType, version, uint16(len(plaintext)))
 
 	// 5. Encrypt using aead.Seal
-	// Seal format: Seal(dst, nonce, plaintext, additionalData)
-	// It appends the ciphertext (including tag) to dst.
-	// We need to prepend the explicit nonce to the result according to TLS 1.2 AEAD construction.
 	ciphertextWithTag := aead.Seal(nil, nonce, plaintext, aad)
 
 	// 6. Prepend explicit nonce to form the final payload
@@ -259,8 +255,24 @@ func encryptRecord(conn *TCPConnection, plaintext []byte, recordType uint8, vers
 // Expects payload in GenericAEADCipher format: explicit_nonce (8 bytes) + encrypted_data + tag (16 bytes).
 func decryptRecord(conn *TCPConnection, encryptedPayload []byte, recordType uint8, version uint16) ([]byte, error) {
 	connKey := conn.ConnectionKey()
+
+	// --- CCS Exception: MUST be received plaintext ---
+	if recordType == TLSRecordTypeChangeCipherSpec {
+		log.Printf("[Decrypt - %s] CCS record type, processing plaintext unconditionally.", connKey)
+		// CCS payload must be {0x01}
+		if len(encryptedPayload) != 1 || encryptedPayload[0] != 0x01 {
+			log.Printf("[Decrypt Error - %s] Invalid payload for CCS: %x", connKey, encryptedPayload)
+			return nil, fmt.Errorf("invalid payload for ChangeCipherSpec: %x", encryptedPayload)
+		}
+		return encryptedPayload, nil
+	}
+	// --- End CCS Exception ---
+
+	conn.Mutex.Lock() // Lock needed for checking EncryptionEnabled and accessing keys/seqnum
+	defer conn.Mutex.Unlock()
+
 	if !conn.EncryptionEnabled {
-		log.Printf("[Decrypt - %s] Decryption not enabled, assuming plaintext.", connKey)
+		log.Printf("[Decrypt - %s] Decryption not enabled, assuming plaintext for type %d.", connKey, recordType)
 		return encryptedPayload, nil // Return as is if decryption is not yet enabled
 	}
 
@@ -278,32 +290,33 @@ func decryptRecord(conn *TCPConnection, encryptedPayload []byte, recordType uint
 	ciphertextWithTag := encryptedPayload[tls12GcmExplicitNonceLength:]
 
 	// 3. Get AEAD cipher instance for client writes
+	if conn.ClientWriteKey == nil {
+		return nil, fmt.Errorf("client write key is nil for decryption")
+	}
 	aead, err := buildAEAD(conn.ClientWriteKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build client AEAD for decryption: %w", err)
 	}
 
 	// 4. Build full nonce using the *received* explicit nonce
+	if conn.ClientWriteIV == nil {
+		return nil, fmt.Errorf("client write IV is nil for decryption")
+	}
 	nonce, err := buildNonce(conn.ClientWriteIV, explicitNonce)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build nonce for decryption: %w", err)
 	}
 
 	// 5. Build Additional Data (AAD)
-	// Plaintext length = Total Encrypted Length - Explicit Nonce Length - Tag Length
 	plaintextLength := len(encryptedPayload) - tls12GcmExplicitNonceLength - aesGcmTagLength
 	if plaintextLength < 0 {
-		// Should be caught by the minLength check above, but double-check
 		return nil, fmt.Errorf("calculated plaintext length is negative (%d)", plaintextLength)
 	}
 	aad := buildAdditionalData(conn.ClientSequenceNum, recordType, version, uint16(plaintextLength))
 
 	// 6. Decrypt using aead.Open
-	// Open format: Open(dst, nonce, ciphertextWithTag, additionalData)
-	// It appends the plaintext to dst if successful.
 	plaintext, err := aead.Open(nil, nonce, ciphertextWithTag, aad)
 	if err != nil {
-		// Decryption failed (likely authentication failure - bad tag, incorrect key, or tampered data)
 		return nil, fmt.Errorf("AEAD decryption failed: %w", err)
 	}
 
@@ -313,4 +326,16 @@ func decryptRecord(conn *TCPConnection, encryptedPayload []byte, recordType uint
 	conn.ClientSequenceNum++
 
 	return plaintext, nil
+}
+
+// --- Finished Message Calculation ---
+
+// computeFinishedHash calculates the verify_data for the Finished message using TLS 1.2 PRF.
+func computeFinishedHash(masterSecret []byte, finishedLabel string, handshakeHash []byte) ([]byte, error) {
+	// For TLS 1.2, verify_data length is 12 bytes.
+	verifyData := PRF12(masterSecret, finishedLabel, handshakeHash, 12)
+	if verifyData == nil { // PRF12 itself doesn't return error, check nil output
+		return nil, fmt.Errorf("failed to compute finished hash using PRF12 (returned nil)")
+	}
+	return verifyData, nil
 }

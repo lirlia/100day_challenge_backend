@@ -2,9 +2,10 @@ package main
 
 import (
 	"flag"
-	"log" // For generating IP ID, Renamed import
+	"log"
+	"net"
 	"os"
-	"os/signal" // For mutex
+	"os/signal"
 	"syscall"
 
 	"crypto/tls" // Added for loading key/cert
@@ -23,6 +24,8 @@ var (
 	remoteIP   = flag.String("remoteIP", "10.0.0.2", "Remote IP address (peer) for the TUN device")
 	subnetMask = flag.String("subnet", "255.255.255.0", "Subnet mask for the TUN device")
 	mtu        = flag.Int("mtu", 1500, "MTU for the TUN device")
+	mode       = flag.String("mode", "tun", "Operating mode: 'tun' or 'tcp'")
+	listenPort = flag.Int("port", 443, "Port to listen on in tcp mode")
 )
 
 func main() {
@@ -35,39 +38,51 @@ func main() {
 		log.Fatalf("Failed to load server certificate and key: %v", err)
 	}
 	log.Println("Server certificate and key loaded successfully.")
-	// Store the DER bytes for sending in the Certificate message
 	serverCertDER = serverCert.Certificate
 	// --- End Load Certificate and Key ---
 
-	if *localIP == "" || *remoteIP == "" || *subnetMask == "" {
-		log.Fatal("localIP, remoteIP, and subnet flags are required")
+	switch *mode {
+	case "tun":
+		log.Println("Starting in TUN mode...")
+		if *localIP == "" || *remoteIP == "" || *subnetMask == "" {
+			log.Fatal("localIP, remoteIP, and subnet flags are required for tun mode")
+		}
+		localIPAddr := net.ParseIP(*localIP)
+		remoteIPAddr := net.ParseIP(*remoteIP)
+		if localIPAddr == nil || remoteIPAddr == nil {
+			log.Fatal("Invalid localIP or remoteIP address format")
+		}
+
+		// Setup TUN device
+		ifce, err := setupTUN(*devName, localIPAddr.String(), remoteIPAddr.String(), *subnetMask, *mtu)
+		if err != nil {
+			log.Fatalf("Failed to setup TUN device: %v", err)
+		}
+		defer func() {
+			log.Println("Closing TUN device...")
+			ifce.Close()
+		}()
+
+		log.Printf("TUN device '%s' configured successfully.", ifce.Name())
+		log.Printf(" Interface IP: %s, Peer IP: %s, Subnet Mask: %s", localIPAddr, remoteIPAddr, *subnetMask)
+		log.Printf("Listening for packets...")
+
+		go processPackets(ifce)
+
+	case "tcp":
+		log.Printf("Starting in TCP mode, listening on port %d...", *listenPort)
+		runTCPMode(*listenPort) // Call the TCP mode function (defined in tcp.go)
+
+	default:
+		log.Fatalf("Invalid mode: %s. Choose 'tun' or 'tcp'.", *mode)
 	}
 
-	// Setup TUN device (create and configure)
-	ifce, err := setupTUN(*devName, *localIP, *remoteIP, *subnetMask, *mtu)
-	if err != nil {
-		log.Fatalf("Failed to setup TUN device: %v", err)
-	}
-	// Defer closing the interface first, then potentially cleaning up routes/addresses
-	defer func() {
-		log.Println("Closing TUN device...")
-		ifce.Close()
-		// Optional: Add cleanup for route and ifconfig if needed
-		// cleanupTUN(ifce.Name(), *localIP, *remoteIP, *subnetMask)
-	}()
-
-	log.Printf("TUN device '%s' created and configured successfully.", ifce.Name())
-	log.Printf(" Interface IP: %s, Peer IP: %s, Subnet Mask: %s", *localIP, *remoteIP, *subnetMask)
-	log.Printf("Listening for packets...")
-
-	// Setup signal handling for graceful shutdown
+	// Setup signal handling for graceful shutdown (common to both modes)
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-
-	go processPackets(ifce)
 
 	// Wait for termination signal
 	<-sigChan
 	log.Println("Shutting down signal received...")
-	// The deferred ifce.Close() will handle cleanup
+	// Cleanup (like closing TUN) is handled by defer or specific mode logic
 }
