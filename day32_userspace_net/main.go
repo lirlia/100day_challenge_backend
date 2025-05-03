@@ -25,6 +25,10 @@ import (
 	"syscall"
 	"time" // For seeding random number generator
 
+	// Added for SHA256
+	"crypto/aes"    // Added for AES-GCM
+	"crypto/cipher" // Added for cipher.AEAD
+	"crypto/hmac"   // Added for HMAC
 	"crypto/rand"   // Added for potential SKE signature later
 	"crypto/rsa"    // Added for SKE signature
 	"crypto/sha256" // Added for SKE signature
@@ -95,7 +99,22 @@ type TCPConnection struct {
 	// TLS specific state
 	TLSState      TLSHandshakeState
 	ReceiveBuffer bytes.Buffer // Buffer for incoming TLS data
-	// Add fields for crypto state later (keys, etc.)
+
+	// Key derivation and encryption state
+	ClientRandom             []byte
+	ServerRandom             []byte
+	ServerECDHPrivateKey     *ecdh.PrivateKey // Server's ephemeral ECDHE private key
+	ClientECDHPublicKeyBytes []byte           // Client's ephemeral ECDHE public key
+	PreMasterSecret          []byte
+	MasterSecret             []byte
+	ClientWriteKey           []byte // AES-GCM key
+	ServerWriteKey           []byte // AES-GCM key
+	ClientWriteIV            []byte // AES-GCM explicit IV part
+	ServerWriteIV            []byte // AES-GCM explicit IV part
+	CipherSuite              uint16 // Chosen cipher suite (e.g., TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256)
+	EncryptionEnabled        bool   // Flag to enable record encryption/decryption after CCS
+	ClientSequenceNum        uint64 // Sequence number for receiving records (for AEAD)
+	ServerSequenceNum        uint64 // Sequence number for sending records (for AEAD)
 }
 
 // TCPState represents the state of a TCP connection
@@ -1096,17 +1115,34 @@ func handleTLSBufferedData(ifce *water.Interface, conn *TCPConnection) {
 
 		// log.Printf("Processing TLS Record for %s: Type=%d, Version=0x%04x, Length=%d", connKey, recordHeader.Type, recordHeader.Version, recordHeader.Length)
 
+		// Decrypt payload if encryption is enabled
+		decryptedPayload, err := decryptRecord(conn, recordPayload, recordHeader.Type, recordHeader.Version)
+		if err != nil {
+			log.Printf("[TLS Error - %s] Failed to decrypt record: %v. Closing connection.", connKey, err)
+			// TODO: Send Alert (decode_error or decrypt_error)
+			// TODO: Close connection gracefully
+			conn.ReceiveBuffer.Reset()      // Clear buffer
+			delete(tcpConnections, connKey) // Remove connection (simplified closure)
+			return                          // Stop processing this connection
+		}
+		// Use decryptedPayload for subsequent processing
+		recordPayload = decryptedPayload // Replace original payload with decrypted one
+
 		// Handle based on record type and current TLS state
 		switch recordHeader.Type {
 		case TLSRecordTypeHandshake:
-			log.Printf("[TLS Debug - %s] Dispatching to handleTLSHandshakeRecord.", connKey)
+			log.Printf("[TLS Debug - %s] Dispatching to handleTLSHandshakeRecord with decrypted payload (%d bytes).", connKey, len(recordPayload))
 			handleTLSHandshakeRecord(ifce, conn, recordPayload)
 		case TLSRecordTypeChangeCipherSpec:
+			// CCS itself is not encrypted, but was handled before decryption call if enabled=true
+			// This case might still be hit if CCS arrives *before* encryption is enabled.
 			log.Printf("[TLS Info - %s] Received ChangeCipherSpec Record (Payload: %x)", connKey, recordPayload)
 			if conn.TLSState == TLSStateExpectingChangeCipherSpec {
 				// Here, we would normally transition the decryption state
-				log.Printf("[TLS Info - %s] Processing ChangeCipherSpec. TLS State -> TLSStateExpectingFinished", connKey)
+				log.Printf("[TLS Info - %s] Processing ChangeCipherSpec. Enabling encryption for receiving. TLS State -> TLSStateExpectingFinished", connKey)
 				conn.TLSState = TLSStateExpectingFinished
+				conn.EncryptionEnabled = true // Enable encryption for incoming records
+				conn.ClientSequenceNum = 0    // Reset sequence number for receiving
 			} else {
 				log.Printf("[TLS Warn - %s] Unexpected ChangeCipherSpec received in state %v", connKey, conn.TLSState)
 				// Consider sending an alert?
@@ -1163,10 +1199,39 @@ func handleTLSHandshakeRecord(ifce *water.Interface, conn *TCPConnection, payloa
 			log.Printf("[TLS Warn - %s] Unexpected ClientHello received in state %v", connKey, conn.TLSState)
 		}
 	case TLSHandshakeTypeClientKeyExchange:
-		log.Printf("[TLS Info - %s] Received ClientKeyExchange Message (Length: %d, Content Ignored)", connKey, len(message))
+		log.Printf("[TLS Info - %s] Received ClientKeyExchange Message (Length: %d)", connKey, len(message))
 		if conn.TLSState == TLSStateExpectingClientKeyExchange {
-			// Here, we would normally process the key exchange data
-			log.Printf("[TLS Info - %s] Processing ClientKeyExchange. TLS State -> TLSStateExpectingChangeCipherSpec", connKey)
+			// Parse the ClientKeyExchange message to get the client's public key
+			// Expected format: 1 byte length prefix, followed by the public key bytes
+			if len(message) < 1 {
+				log.Printf("[TLS Error - %s] ClientKeyExchange message too short (no length byte)", connKey)
+				// TODO: Send Alert
+				return
+			}
+			clientPubKeyLen := int(message[0])
+			if len(message) != 1+clientPubKeyLen {
+				log.Printf("[TLS Error - %s] ClientKeyExchange message length mismatch (expected 1+%d, got %d)", connKey, clientPubKeyLen, len(message))
+				// TODO: Send Alert
+				return
+			}
+			conn.ClientECDHPublicKeyBytes = make([]byte, clientPubKeyLen)
+			copy(conn.ClientECDHPublicKeyBytes, message[1:])
+			log.Printf("[TLS Debug - %s] Parsed Client ECDHE Public Key (%d bytes): %x", connKey, clientPubKeyLen, conn.ClientECDHPublicKeyBytes)
+
+			// --- Key Derivation --- Start
+			var err error // Declare err variable
+			err = deriveKeys(conn)
+			if err != nil {
+				log.Printf("[TLS Error - %s] Key derivation failed: %v", connKey, err)
+				// TODO: Send Alert (handshake_failure)
+				return
+			}
+			log.Printf("[TLS Info - %s] Key derivation successful.", connKey)
+			// --- Key Derivation --- End
+
+			log.Printf("[TLS Info - %s] ClientKeyExchange processed. TLS State -> TLSStateExpectingChangeCipherSpec", connKey)
+
+			// Original state transition:
 			conn.TLSState = TLSStateExpectingChangeCipherSpec
 		} else {
 			log.Printf("[TLS Warn - %s] Unexpected ClientKeyExchange received in state %v", connKey, conn.TLSState)
@@ -1260,20 +1325,28 @@ func handleClientHello(ifce *water.Interface, conn *TCPConnection, message []byt
 		return
 	}
 
+	// Store randoms and chosen suite in connection state
+	conn.ClientRandom = make([]byte, len(info.Random))
+	copy(conn.ClientRandom, info.Random)
+	conn.ServerRandom = serverRandom // Already allocated
+	conn.CipherSuite = chosenSuite
+
 	serverHelloMsg, err := buildServerHello(info.Version, serverRandom, nil, chosenSuite, 0, chosenALPN)
 	if err != nil {
 		log.Printf("[TLS Error - %s] Failed to build ServerHello message: %v", connKey, err)
 		return
 	}
 
-	serverHelloRecord, err := buildTLSRecord(TLSRecordTypeHandshake, info.Version, serverHelloMsg)
+	// --- Send ServerHello Record ---
+	log.Printf("[TLS Debug - %s] Sending ServerHello record (%d bytes).", connKey, len(serverHelloMsg))
+	// Use FIXED 0x0303 for the RECORD layer version, regardless of client offer
+	serverHelloRecord, err := buildTLSRecord(TLSRecordTypeHandshake, 0x0303, serverHelloMsg)
 	if err != nil {
 		log.Printf("[TLS Error - %s] Failed to build ServerHello record: %v", connKey, err)
 		return
 	}
 
-	// --- Send ServerHello Record ---
-	log.Printf("[TLS Debug - %s] Sending ServerHello record (%d bytes).", connKey, len(serverHelloRecord))
+	// Send the TLS record containing the ServerHello message
 	err = sendRawTLSRecord(ifce, conn, serverHelloRecord)
 	if err != nil {
 		log.Printf("[TLS Error - %s] Failed to send ServerHello record: %v", connKey, err)
@@ -1292,13 +1365,12 @@ func handleClientHello(ifce *water.Interface, conn *TCPConnection, message []byt
 		// Handle error appropriately, maybe close connection or send alert
 		return
 	}
-
+	// Wrap certMsg in a TLS record before sending
 	certRecord, err := buildTLSRecord(TLSRecordTypeHandshake, 0x0303, certMsg) // Use TLS 1.2 version
 	if err != nil {
 		log.Printf("[TLS Error - %s] Failed to build Certificate record: %v", connKey, err)
 		return
 	}
-
 	log.Printf("[TLS Debug - %s] Sending Certificate record (%d bytes).", connKey, len(certRecord))
 	err = sendRawTLSRecord(ifce, conn, certRecord)
 	if err != nil {
@@ -1323,6 +1395,9 @@ func handleClientHello(ifce *water.Interface, conn *TCPConnection, message []byt
 	}
 	serverECDHPublicKeyBytes := serverECDHPrivateKey.PublicKey().Bytes()
 	log.Printf("[TLS Debug - %s] Generated ECDHE Public Key (%d bytes): %x", connKey, len(serverECDHPublicKeyBytes), serverECDHPublicKeyBytes)
+
+	// Store server's private key in connection state
+	conn.ServerECDHPrivateKey = serverECDHPrivateKey
 
 	// 2. Build the SKE parameters part
 	// struct {
@@ -1363,6 +1438,7 @@ func handleClientHello(ifce *water.Interface, conn *TCPConnection, message []byt
 	log.Printf("[TLS Debug - %s] Built full SKE message (%d bytes).", connKey, len(skeMsg))
 
 	// 5. Build and Send the SKE Record
+	// Wrap skeMsg in a TLS record before sending
 	skeRecord, err := buildTLSRecord(TLSRecordTypeHandshake, 0x0303, skeMsg)
 	if err != nil {
 		log.Printf("[TLS Error - %s] Failed to build ServerKeyExchange record: %v", connKey, err)
@@ -1384,13 +1460,12 @@ func handleClientHello(ifce *water.Interface, conn *TCPConnection, message []byt
 		log.Printf("[TLS Error - %s] Failed to build ServerHelloDone message: %v", connKey, err)
 		return
 	}
-
+	// Wrap helloDoneMsg in a TLS record before sending
 	helloDoneRecord, err := buildTLSRecord(TLSRecordTypeHandshake, 0x0303, helloDoneMsg) // Use TLS 1.2 version
 	if err != nil {
 		log.Printf("[TLS Error - %s] Failed to build ServerHelloDone record: %v", connKey, err)
 		return
 	}
-
 	log.Printf("[TLS Debug - %s] Sending ServerHelloDone record (%d bytes).", connKey, len(helloDoneRecord))
 	err = sendRawTLSRecord(ifce, conn, helloDoneRecord)
 	if err != nil {
@@ -1633,28 +1708,81 @@ func buildTLSRecord(recordType uint8, version uint16, payload []byte) ([]byte, e
 }
 
 // sendRawTLSRecord sends a raw TLS record over the TCP connection.
-// Assumes the record bytes are fully formed.
+// Assumes the record bytes are fully formed *before* potential encryption.
 func sendRawTLSRecord(ifce *water.Interface, conn *TCPConnection, record []byte) error {
-	// This function is essentially sending application data from TCP's perspective.
-	// We need to wrap this in TCP segment(s) and IP packet(s).
-	// We can reuse sendTCPPacket, but need to be careful with sequence numbers.
+	// This function needs modification to handle encryption.
+	// It currently sends the record as raw TCP payload.
 
-	// We are sending data, so ACK flag should be set, AckNum should acknowledge client's next expected seq.
-	flags := uint8(TCPFlagPSH | TCPFlagACK) // PSH to indicate data push
-	payload := record
+	// 1. Parse the input record to get type, version, and plaintext payload for potential encryption
+	if len(record) < TLSRecordHeaderLength {
+		return errors.New("sendRawTLSRecord: input record too short for header")
+	}
+	// // These are from the *inner* message header (e.g., Handshake Type and its potential version)
+	// innerRecordType := record[0] // Unused
+	// innerVersion := binary.BigEndian.Uint16(record[1:3]) // Unused
+	// plaintextPayload := record[TLSRecordHeaderLength:] // Defined later
 
-	log.Printf("[TLS Debug - %s] Preparing to send TLS record (%d bytes) via sendTCPPacket.", conn.ConnectionKey(), len(payload))
+	// Determine the *outer* record layer type based on the inner type (simple mapping for now)
+	// outerRecordType := uint8(0)
+	// switch innerRecordType {
+	// case TLSHandshakeTypeClientHello, TLSHandshakeTypeServerHello,
+	// 	TLSHandshakeTypeCertificate, TLSHandshakeTypeServerKeyExchange,
+	// 	TLSHandshakeTypeServerHelloDone, TLSHandshakeTypeClientKeyExchange,
+	// 	TLSHandshakeTypeFinished:
+	// 	outerRecordType = TLSRecordTypeHandshake // 22
+	// 	// Add cases for Alert (21), ChangeCipherSpec (20), ApplicationData (23) if needed
+	// 	// For now, assume this function is only called for Handshake types from buildXXX functions
+	// 	// or ApplicationData from handleHTTPData (which will be handled later)
+	// 	// Let's refine this: The record passed in should already have the correct *outer* type.
+	// 	// buildTLSRecord should handle this.
+	// 	// Let's revert the logic slightly and rely on the passed-in record[0] for the outer type,
+	// 	// but *fix* the version and ensure buildTLSRecord sets the correct outer type.
+	// }
 
-	err := sendTCPPacket(ifce, conn.ServerIP, conn.ClientIP, conn.ServerPort, conn.ClientPort,
-		conn.ServerNextSeq, conn.ClientNextSeq, flags, payload)
+	// --- Revised Logic ---
+	// Assume the 'record' passed in has the correct OUTER record type in record[0]
+	// and the correct PLAINTEXT payload (e.g., a full Handshake message).
+	// We need to ensure the functions calling this (buildTLSRecord) do this correctly.
+
+	outerRecordType := record[0]                       // Use the type from the pre-built record header
+	recordVersion := uint16(0x0303)                    // Use TLS 1.2 for the outer record layer
+	plaintextPayload := record[TLSRecordHeaderLength:] // Payload remains the same
+
+	// 2. Encrypt the payload if needed
+	// Pass the OUTER record type and the fixed record version for AAD calculation
+	payloadToSend, err := encryptRecord(conn, plaintextPayload, outerRecordType, recordVersion)
 	if err != nil {
-		return fmt.Errorf("sendTCPPacket failed for TLS record: %w", err)
+		return fmt.Errorf("failed to encrypt record payload (Type: %d): %w", outerRecordType, err)
 	}
 
-	// If sendTCPPacket is successful, update the server sequence number
-	conn.ServerNextSeq += uint32(len(payload))
-	log.Printf("[TLS Debug - %s] Updated ServerNextSeq to %d after sending TLS record.", conn.ConnectionKey(), conn.ServerNextSeq)
+	// Log values just before building the final record header
+	log.Printf("[Send Raw Debug - %s] Building final record. OuterType: %d, OuterVersion: 0x%04x, PayloadLen: %d",
+		conn.ConnectionKey(), outerRecordType, recordVersion, len(payloadToSend))
 
+	// 3. Build the final TLS record with the (potentially encrypted) payload
+	// The length in the header must be the length of the *payloadToSend*
+	finalRecord := make([]byte, TLSRecordHeaderLength+len(payloadToSend))
+	finalRecord[0] = outerRecordType                                         // Use the correct outer type
+	binary.BigEndian.PutUint16(finalRecord[1:3], recordVersion)              // Use fixed TLS 1.2 version
+	binary.BigEndian.PutUint16(finalRecord[3:5], uint16(len(payloadToSend))) // Length of payloadToSend
+	copy(finalRecord[TLSRecordHeaderLength:], payloadToSend)
+
+	// 4. Send the final record over TCP
+	flags := uint8(TCPFlagPSH | TCPFlagACK)
+	// Use the *current* ServerNextSeq for the TCP header, as the TLS sequence number
+	// is managed internally for encryption/decryption.
+	// Note: sendTCPPacket updates conn.ServerNextSeq based on TCP payload length, which is fine.
+	err = sendTCPPacket(ifce, conn.ServerIP, conn.ClientIP, conn.ServerPort, conn.ClientPort,
+		conn.ServerNextSeq, conn.ClientNextSeq, flags, finalRecord)
+	if err != nil {
+		// Don't increment TLS sequence number if send fails
+		return fmt.Errorf("sendTCPPacket failed for TLS record (Type: %d): %w", outerRecordType, err)
+	}
+
+	// If encryption occurred, the TLS sequence number was already incremented in encryptRecord.
+	// If not, it wasn't. This seems correct.
+	log.Printf("[Send Raw OK - %s] Sent TLS record. Type: %d, Final Len: %d, Encrypted: %t",
+		conn.ConnectionKey(), outerRecordType, len(finalRecord), len(payloadToSend) != len(plaintextPayload))
 	return nil
 }
 
@@ -1963,7 +2091,12 @@ func sendServerCCSAndFinished(ifce *water.Interface, conn *TCPConnection) {
 	// Note: We don't actually change cipher state in this dummy implementation
 	log.Printf("[TLS Info - %s] ChangeCipherSpec sent.", connKey)
 
-	// 2. Build and Send Finished Message (Dummy)
+	// Enable encryption for sending *before* sending the Finished message
+	log.Printf("[TLS Info - %s] Enabling encryption for sending.", connKey)
+	conn.EncryptionEnabled = true
+	conn.ServerSequenceNum = 0 // Reset sequence number for sending
+
+	// 2. Build and Send Finished Message (Dummy - will be encrypted later)
 	finishedMsg, err := buildDummyFinishedMessage()
 	if err != nil {
 		log.Printf("[TLS Error - %s] Failed to build dummy Finished message: %v", connKey, err)
@@ -2007,4 +2140,308 @@ func buildDummyFinishedMessage() ([]byte, error) {
 	}
 
 	return message, nil
+}
+
+// --- TLS 1.2 Key Derivation --- From RFC 5246 Section 5 ---
+
+// P_hash(secret, seed) = HMAC_hash(secret, A(1) + seed) +
+//
+//	HMAC_hash(secret, A(2) + seed) +
+//	HMAC_hash(secret, A(3) + seed) + ...
+//
+// where A(0) = seed, A(i) = HMAC_hash(secret, A(i-1))
+func pHash(secret, seed []byte, resultLen int) []byte {
+	// Use SHA256 directly as required by TLS 1.2 PRF
+	h := hmac.New(sha256.New, secret)
+
+	// Calculate A(1)
+	h.Write(seed)
+	a := h.Sum(nil)
+
+	var output []byte
+	for len(output) < resultLen {
+		h.Reset()
+		h.Write(a)
+		h.Write(seed)
+		output = append(output, h.Sum(nil)...)
+
+		// Calculate next A(i)
+		h.Reset()
+		h.Write(a)
+		a = h.Sum(nil)
+	}
+
+	return output[:resultLen]
+}
+
+// prf12 implements the TLS 1.2 PRF (Pseudo-Random Function).
+// PRF(secret, label, seed) = P_SHA256(secret, label + seed)
+func prf12(secret []byte, label string, seed []byte) []byte {
+	labelBytes := []byte(label)
+	fullSeed := append(labelBytes, seed...)
+	// For TLS 1.2, the PRF is always based on SHA256 (RFC 5246, Section 5)
+	// Master Secret is always 48 bytes.
+	return pHash(secret, fullSeed, 48) // For Master Secret derivation, 48 bytes is needed
+}
+
+// prf12ForKeyBlock is a variant of prf12 specifically for deriving the key block,
+// allowing specification of the required length.
+func prf12ForKeyBlock(secret []byte, label string, seed []byte, length int) []byte {
+	labelBytes := []byte(label)
+	fullSeed := append(labelBytes, seed...)
+	return pHash(secret, fullSeed, length)
+}
+
+// computePreMasterSecret calculates the ECDHE PreMasterSecret.
+func computePreMasterSecret(conn *TCPConnection) ([]byte, error) {
+	if conn.ServerECDHPrivateKey == nil || len(conn.ClientECDHPublicKeyBytes) == 0 {
+		return nil, errors.New("missing ECDHE keys for PMS computation")
+	}
+
+	curve := conn.ServerECDHPrivateKey.Curve()
+	clientPubKey, err := curve.NewPublicKey(conn.ClientECDHPublicKeyBytes)
+	if err != nil {
+		// This is where "point is not on curve" errors might originate if client key is invalid
+		return nil, fmt.Errorf("invalid client ECDHE public key: %w", err)
+	}
+
+	pms, err := conn.ServerECDHPrivateKey.ECDH(clientPubKey)
+	if err != nil {
+		return nil, fmt.Errorf("ECDH computation failed: %w", err)
+	}
+	log.Printf("[TLS Debug - %s] Computed PreMasterSecret (%d bytes)", conn.ConnectionKey(), len(pms))
+	return pms, nil
+}
+
+// deriveKeys computes the Master Secret and then derives the write keys and IVs.
+func deriveKeys(conn *TCPConnection) error {
+	connKey := conn.ConnectionKey()
+
+	// 1. Compute PreMasterSecret
+	pms, err := computePreMasterSecret(conn)
+	if err != nil {
+		return fmt.Errorf("failed to compute PMS: %w", err)
+	}
+	conn.PreMasterSecret = pms
+
+	// 2. Compute MasterSecret from PMS
+	// MasterSecret = PRF(PreMasterSecret, "master secret", ClientHello.random + ServerHello.random)
+	seedMS := append(conn.ClientRandom, conn.ServerRandom...)
+	conn.MasterSecret = prf12(conn.PreMasterSecret, "master secret", seedMS)
+	log.Printf("[TLS Debug - %s] Computed MasterSecret (%d bytes)", connKey, len(conn.MasterSecret))
+
+	// 3. Compute Key Block from MasterSecret
+	// key_block = PRF(MasterSecret, "key expansion", ServerHello.random + ClientHello.random)
+	seedKB := append(conn.ServerRandom, conn.ClientRandom...)
+
+	// Determine required key block length based on cipher suite
+	// For TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256:
+	// - Client Write Key (16) + Server Write Key (16) + Client Write IV (4) + Server Write IV (4) = 40 bytes
+	keyBlockLen := 0
+	clientKeyLen := 0
+	serverKeyLen := 0
+	clientIVLen := 0
+	serverIVLen := 0
+
+	switch conn.CipherSuite {
+	case TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256:
+		clientKeyLen = 16                                                     // AES-128
+		serverKeyLen = 16                                                     // AES-128
+		clientIVLen = 4                                                       // Fixed IV part for AES-GCM
+		serverIVLen = 4                                                       // Fixed IV part for AES-GCM
+		keyBlockLen = clientKeyLen + serverKeyLen + clientIVLen + serverIVLen // 40 bytes
+	default:
+		return fmt.Errorf("unsupported cipher suite for key derivation: 0x%04x", conn.CipherSuite)
+	}
+
+	log.Printf("[TLS Debug - %s] Required Key Block Length: %d bytes", connKey, keyBlockLen)
+	keyBlock := prf12ForKeyBlock(conn.MasterSecret, "key expansion", seedKB, keyBlockLen)
+	log.Printf("[TLS Debug - %s] Computed Key Block (%d bytes)", connKey, len(keyBlock))
+
+	// 4. Extract keys and IVs from Key Block
+	if len(keyBlock) < keyBlockLen {
+		return fmt.Errorf("key block too short: needed %d, got %d", keyBlockLen, len(keyBlock))
+	}
+
+	offset := 0
+	// Note: MAC keys are not explicitly extracted for AEAD ciphers like AES-GCM
+	conn.ClientWriteKey = keyBlock[offset : offset+clientKeyLen]
+	offset += clientKeyLen
+	conn.ServerWriteKey = keyBlock[offset : offset+serverKeyLen]
+	offset += serverKeyLen
+	conn.ClientWriteIV = keyBlock[offset : offset+clientIVLen]
+	offset += clientIVLen
+	conn.ServerWriteIV = keyBlock[offset : offset+serverIVLen]
+	offset += serverIVLen
+
+	log.Printf("[TLS Debug - %s] Extracted Keys:", connKey)
+	log.Printf("  ClientWriteKey (%d bytes)", len(conn.ClientWriteKey))
+	log.Printf("  ServerWriteKey (%d bytes)", len(conn.ServerWriteKey))
+	log.Printf("  ClientWriteIV  (%d bytes)", len(conn.ClientWriteIV))
+	log.Printf("  ServerWriteIV  (%d bytes)", len(conn.ServerWriteIV))
+
+	return nil
+}
+
+// --- TLS 1.2 AEAD (AES-GCM) Encryption/Decryption --- RFC 5116, RFC 5246 Section 6.2.3.3 ---
+
+const (
+	aesGcmNonceLength = 12 // Standard GCM nonce size
+	aesGcmTagLength   = 16 // Standard GCM tag size (GMAC)
+	// TLS 1.2 uses an 8-byte explicit nonce prepended to the ciphertext.
+	// The full nonce is constructed as: conn.Client/ServerWriteIV (4 bytes) + explicit_nonce (8 bytes)
+	tls12GcmExplicitNonceLength = 8
+)
+
+// buildAEAD creates a new AEAD cipher instance for AES-GCM.
+func buildAEAD(key []byte) (cipher.AEAD, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create AES cipher block: %w", err)
+	}
+	aead, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create GCM AEAD: %w", err)
+	}
+	// Check nonce size compatibility (GCM default is 12 bytes)
+	if aead.NonceSize() != aesGcmNonceLength {
+		return nil, fmt.Errorf("unexpected GCM nonce size: %d", aead.NonceSize())
+	}
+	return aead, nil
+}
+
+// buildNonce constructs the 12-byte nonce for AES-GCM in TLS 1.2.
+// Nonce = implicit_iv (4 bytes) + explicit_nonce (8 bytes)
+func buildNonce(implicitIV []byte, explicitNonce []byte) ([]byte, error) {
+	if len(implicitIV) != 4 {
+		return nil, fmt.Errorf("invalid implicit IV length: %d", len(implicitIV))
+	}
+	if len(explicitNonce) != tls12GcmExplicitNonceLength {
+		return nil, fmt.Errorf("invalid explicit nonce length: %d", len(explicitNonce))
+	}
+	nonce := make([]byte, aesGcmNonceLength)
+	copy(nonce[:4], implicitIV)
+	copy(nonce[4:], explicitNonce)
+	return nonce, nil
+}
+
+// buildAdditionalData constructs the Additional Authenticated Data (AAD) for TLS 1.2 AEAD.
+// AAD = seq_num + TLSCompressed.type + TLSCompressed.version + TLSCompressed.length
+// Where length is the length of the plaintext fragment.
+func buildAdditionalData(seqNum uint64, recordType uint8, version uint16, plaintextLength uint16) []byte {
+	aad := make([]byte, 8+1+2+2)                            // Sequence Number (8) + Type (1) + Version (2) + Length (2)
+	binary.BigEndian.PutUint64(aad[0:8], seqNum)            // Sequence Number
+	aad[8] = recordType                                     // Record Type
+	binary.BigEndian.PutUint16(aad[9:11], version)          // Version (e.g., 0x0303)
+	binary.BigEndian.PutUint16(aad[11:13], plaintextLength) // Plaintext Length
+	return aad
+}
+
+// encryptRecord encrypts a TLS record payload using AES-GCM.
+// It returns the GenericAEADCipher structure: explicit_nonce (8 bytes) + encrypted_data + tag (16 bytes).
+func encryptRecord(conn *TCPConnection, plaintext []byte, recordType uint8, version uint16) ([]byte, error) {
+	connKey := conn.ConnectionKey()
+	if !conn.EncryptionEnabled {
+		log.Printf("[Encrypt - %s] Encryption not enabled, sending plaintext.", connKey)
+		return plaintext, nil // Return plaintext if encryption is not yet enabled
+	}
+
+	log.Printf("[Encrypt - %s] Encrypting record. Type: %d, Plaintext Len: %d, SeqNum: %d",
+		connKey, recordType, len(plaintext), conn.ServerSequenceNum)
+
+	// 1. Get AEAD cipher instance for server writes
+	aead, err := buildAEAD(conn.ServerWriteKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build server AEAD for encryption: %w", err)
+	}
+
+	// 2. Build explicit nonce (current sequence number)
+	explicitNonce := make([]byte, tls12GcmExplicitNonceLength)
+	binary.BigEndian.PutUint64(explicitNonce, conn.ServerSequenceNum)
+
+	// 3. Build full nonce
+	nonce, err := buildNonce(conn.ServerWriteIV, explicitNonce)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build nonce for encryption: %w", err)
+	}
+
+	// 4. Build Additional Data (AAD)
+	aad := buildAdditionalData(conn.ServerSequenceNum, recordType, version, uint16(len(plaintext)))
+
+	// 5. Encrypt using aead.Seal
+	// Seal format: Seal(dst, nonce, plaintext, additionalData)
+	// It appends the ciphertext (including tag) to dst.
+	// We need to prepend the explicit nonce to the result according to TLS 1.2 AEAD construction.
+	ciphertextWithTag := aead.Seal(nil, nonce, plaintext, aad)
+
+	// 6. Prepend explicit nonce to form the final payload
+	encryptedPayload := append(explicitNonce, ciphertextWithTag...)
+
+	log.Printf("[Encrypt - %s] Encryption successful. Encrypted Payload Len: %d (ExplicitNonce: %d, Ciphertext+Tag: %d)",
+		connKey, len(encryptedPayload), len(explicitNonce), len(ciphertextWithTag))
+
+	// 7. Increment sequence number *after* successful encryption
+	conn.ServerSequenceNum++
+
+	return encryptedPayload, nil
+}
+
+// decryptRecord decrypts a TLS record payload using AES-GCM.
+// Expects payload in GenericAEADCipher format: explicit_nonce (8 bytes) + encrypted_data + tag (16 bytes).
+func decryptRecord(conn *TCPConnection, encryptedPayload []byte, recordType uint8, version uint16) ([]byte, error) {
+	connKey := conn.ConnectionKey()
+	if !conn.EncryptionEnabled {
+		log.Printf("[Decrypt - %s] Decryption not enabled, assuming plaintext.", connKey)
+		return encryptedPayload, nil // Return as is if decryption is not yet enabled
+	}
+
+	log.Printf("[Decrypt - %s] Decrypting record. Type: %d, Encrypted Len: %d, SeqNum: %d",
+		connKey, recordType, len(encryptedPayload), conn.ClientSequenceNum)
+
+	// 1. Check minimum length (explicit nonce + tag)
+	minLength := tls12GcmExplicitNonceLength + aesGcmTagLength
+	if len(encryptedPayload) < minLength {
+		return nil, fmt.Errorf("encrypted payload too short: %d bytes (min %d)", len(encryptedPayload), minLength)
+	}
+
+	// 2. Extract explicit nonce and ciphertext+tag
+	explicitNonce := encryptedPayload[:tls12GcmExplicitNonceLength]
+	ciphertextWithTag := encryptedPayload[tls12GcmExplicitNonceLength:]
+
+	// 3. Get AEAD cipher instance for client writes
+	aead, err := buildAEAD(conn.ClientWriteKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build client AEAD for decryption: %w", err)
+	}
+
+	// 4. Build full nonce using the *received* explicit nonce
+	nonce, err := buildNonce(conn.ClientWriteIV, explicitNonce)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build nonce for decryption: %w", err)
+	}
+
+	// 5. Build Additional Data (AAD)
+	// Plaintext length = Total Encrypted Length - Explicit Nonce Length - Tag Length
+	plaintextLength := len(encryptedPayload) - tls12GcmExplicitNonceLength - aesGcmTagLength
+	if plaintextLength < 0 {
+		// Should be caught by the minLength check above, but double-check
+		return nil, fmt.Errorf("calculated plaintext length is negative (%d)", plaintextLength)
+	}
+	aad := buildAdditionalData(conn.ClientSequenceNum, recordType, version, uint16(plaintextLength))
+
+	// 6. Decrypt using aead.Open
+	// Open format: Open(dst, nonce, ciphertextWithTag, additionalData)
+	// It appends the plaintext to dst if successful.
+	plaintext, err := aead.Open(nil, nonce, ciphertextWithTag, aad)
+	if err != nil {
+		// Decryption failed (likely authentication failure - bad tag, incorrect key, or tampered data)
+		return nil, fmt.Errorf("AEAD decryption failed: %w", err)
+	}
+
+	log.Printf("[Decrypt - %s] Decryption successful. Plaintext Len: %d", connKey, len(plaintext))
+
+	// 7. Increment sequence number *after* successful decryption
+	conn.ClientSequenceNum++
+
+	return plaintext, nil
 }
