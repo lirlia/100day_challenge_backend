@@ -154,6 +154,8 @@ const (
 	TLSStateExpectingClientHello
 	TLSStateSentServerHello
 	TLSStateSentCertificate
+	TLSStateSentServerKeyExchange // Added
+	TLSStateSentServerHelloDone
 )
 
 // TLS Record Types
@@ -166,9 +168,11 @@ const (
 
 // TLS Handshake Message Types
 const (
-	TLSHandshakeTypeClientHello uint8 = 1
-	TLSHandshakeTypeServerHello uint8 = 2
-	TLSHandshakeTypeCertificate uint8 = 11 // Added
+	TLSHandshakeTypeClientHello       uint8 = 1
+	TLSHandshakeTypeServerHello       uint8 = 2
+	TLSHandshakeTypeCertificate       uint8 = 11
+	TLSHandshakeTypeServerKeyExchange uint8 = 12 // Added
+	TLSHandshakeTypeServerHelloDone   uint8 = 14
 	// ... other handshake types
 )
 
@@ -1201,9 +1205,52 @@ func handleClientHello(ifce *water.Interface, conn *TCPConnection, message []byt
 	conn.TLSState = TLSStateSentCertificate
 	log.Printf("[TLS Info - %s] Dummy Certificate sent. TLS State -> %v", connKey, conn.TLSState)
 
-	// TODO: Send ServerKeyExchange, ServerHelloDone
+	// --- Send ServerKeyExchange Message (Dummy) ---
+	log.Printf("[TLS Debug - %s] Preparing dummy ServerKeyExchange message.", connKey)
+	skeMsg, err := buildDummyServerKeyExchange()
+	if err != nil {
+		log.Printf("[TLS Error - %s] Failed to build ServerKeyExchange message: %v", connKey, err)
+		return
+	}
+	skeRecord, err := buildTLSRecord(TLSRecordTypeHandshake, 0x0303, skeMsg)
+	if err != nil {
+		log.Printf("[TLS Error - %s] Failed to build ServerKeyExchange record: %v", connKey, err)
+		return
+	}
+	log.Printf("[TLS Debug - %s] Sending ServerKeyExchange record (%d bytes).", connKey, len(skeRecord))
+	err = sendRawTLSRecord(ifce, conn, skeRecord)
+	if err != nil {
+		log.Printf("[TLS Error - %s] Failed to send ServerKeyExchange record: %v", connKey, err)
+		return
+	}
+	conn.TLSState = TLSStateSentServerKeyExchange
+	log.Printf("[TLS Info - %s] Dummy ServerKeyExchange sent. TLS State -> %v", connKey, conn.TLSState)
 
-	log.Printf("[TLS Debug - %s] Exiting handleClientHello successfully (after sending ServerHello and Certificate).", connKey)
+	// --- Send ServerHelloDone Message ---
+	log.Printf("[TLS Debug - %s] Preparing ServerHelloDone message.", connKey)
+	helloDoneMsg, err := buildServerHelloDoneMessage()
+	if err != nil {
+		log.Printf("[TLS Error - %s] Failed to build ServerHelloDone message: %v", connKey, err)
+		return
+	}
+
+	helloDoneRecord, err := buildTLSRecord(TLSRecordTypeHandshake, 0x0303, helloDoneMsg) // Use TLS 1.2 version
+	if err != nil {
+		log.Printf("[TLS Error - %s] Failed to build ServerHelloDone record: %v", connKey, err)
+		return
+	}
+
+	log.Printf("[TLS Debug - %s] Sending ServerHelloDone record (%d bytes).", connKey, len(helloDoneRecord))
+	err = sendRawTLSRecord(ifce, conn, helloDoneRecord)
+	if err != nil {
+		log.Printf("[TLS Error - %s] Failed to send ServerHelloDone record: %v", connKey, err)
+		return
+	}
+
+	conn.TLSState = TLSStateSentServerHelloDone
+	log.Printf("[TLS Info - %s] ServerHelloDone sent. TLS State -> %v", connKey, conn.TLSState)
+
+	log.Printf("[TLS Debug - %s] Exiting handleClientHello successfully (after sending ServerHello, Certificate, SKE, and ServerHelloDone).", connKey)
 }
 
 // parseClientHello parses the ClientHello handshake message body, including ALPN.
@@ -1616,17 +1663,18 @@ func calculateTCPChecksum(srcIP, dstIP net.IP, tcpHeader, tcpPayload []byte) (ui
 
 // buildCertificateMessage constructs a dummy Certificate handshake message.
 // In a real implementation, this would load and format actual certificates.
+// MODIFIED: Reverted back to sending non-empty dummy certificate content.
 func buildCertificateMessage() ([]byte, error) {
 	// Dummy certificate data (just some arbitrary bytes)
 	// Structure: TotalCertificatesLength(3 bytes) + Cert1Length(3 bytes) + Cert1Data(...) + ...
 	dummyCertData := []byte(`-----BEGIN CERTIFICATE-----
 THIS IS A DUMMY CERTIFICATE
 -----END CERTIFICATE-----`)
-	certLen := uint32(len(dummyCertData))
-	totalCertsLen := certLen
+	certLen := uint32(len(dummyCertData)) // Length of the actual certificate data
+	// totalCertsLen := certLen              // Removed unused variable
 
 	// Message body length calculation:
-	// 3 bytes for total certs length + 3 bytes for cert1 length + cert1 data length
+	// 3 bytes for total certs length field + 3 bytes for cert1 length field + cert1 data length
 	messageBodyLen := 3 + 3 + certLen
 
 	// Handshake header: Type (1) + Length (3)
@@ -1637,14 +1685,17 @@ THIS IS A DUMMY CERTIFICATE
 	message[3] = byte(messageBodyLen)
 
 	offset := 4
-	// Total certificates length (3 bytes)
-	message[offset] = byte(totalCertsLen >> 16)
-	message[offset+1] = byte(totalCertsLen >> 8)
-	message[offset+2] = byte(totalCertsLen)
+	// Total certificates length field (3 bytes) - This field should contain the length of all subsequent Cert structures
+	// Each Cert structure is CertLength(3) + CertData(variable)
+	// So, totalCertsLenField should be 3 + certLen
+	totalCertsLenField := 3 + certLen
+	message[offset] = byte(totalCertsLenField >> 16) // Corrected calculation
+	message[offset+1] = byte(totalCertsLenField >> 8)
+	message[offset+2] = byte(totalCertsLenField)
 	offset += 3
 
-	// Certificate 1 length (3 bytes)
-	message[offset] = byte(certLen >> 16)
+	// Certificate 1 length field (3 bytes) - This contains the length of the Cert1Data ONLY
+	message[offset] = byte(certLen >> 16) // This was correct
 	message[offset+1] = byte(certLen >> 8)
 	message[offset+2] = byte(certLen)
 	offset += 3
@@ -1657,6 +1708,63 @@ THIS IS A DUMMY CERTIFICATE
 	if offset != len(message) {
 		return nil, fmt.Errorf("internal error building dummy Certificate message: length mismatch (offset %d, total %d)", offset, len(message))
 	}
+
+	return message, nil
+}
+
+// buildServerHelloDoneMessage constructs the ServerHelloDone handshake message.
+func buildServerHelloDoneMessage() ([]byte, error) {
+	// Handshake header: Type (1) + Length (3) = 0
+	message := make([]byte, 4)
+	message[0] = TLSHandshakeTypeServerHelloDone
+	// Length is 0, so bytes 1-3 are 0
+	return message, nil
+}
+
+// buildDummyServerKeyExchange constructs a plausible but fake ServerKeyExchange message.
+// For ECDHE_RSA, it should contain Curve info, Public Key, and Signature.
+// We'll just put some placeholder bytes.
+func buildDummyServerKeyExchange() ([]byte, error) {
+	// Example structure (simplified):
+	// CurveType (1 byte) = 3 (Named Curve)
+	// NamedCurve (2 bytes) = 23 (secp256r1)
+	// PubKey Length (1 byte)
+	// PubKey (var bytes)
+	// Signature Algorithm (2 bytes) = 0x0401 (rsa_pkcs1_sha256)
+	// Signature Length (2 bytes)
+	// Signature (var bytes)
+
+	dummyPubKey := make([]byte, 65) // Uncompressed point size for P-256
+	dummyPubKey[0] = 0x04           // Uncompressed indicator
+	// Fill with dummy data (e.g., 0x01)
+	for i := 1; i < len(dummyPubKey); i++ {
+		dummyPubKey[i] = 0x01
+	}
+
+	dummySig := make([]byte, 256) // Typical RSA-2048 signature size
+	for i := 0; i < len(dummySig); i++ {
+		dummySig[i] = 0x02
+	}
+
+	body := new(bytes.Buffer)
+	body.WriteByte(3)                                // CurveType = Named Curve
+	binary.Write(body, binary.BigEndian, uint16(23)) // NamedCurve = secp256r1 (0x0017)
+	body.WriteByte(byte(len(dummyPubKey)))
+	body.Write(dummyPubKey)
+	binary.Write(body, binary.BigEndian, uint16(0x0401)) // Signature Algorithm = rsa_pkcs1_sha256
+	binary.Write(body, binary.BigEndian, uint16(len(dummySig)))
+	body.Write(dummySig)
+
+	messageBody := body.Bytes()
+	messageBodyLen := uint32(len(messageBody))
+
+	// Handshake header: Type (1) + Length (3)
+	message := make([]byte, 4+messageBodyLen)
+	message[0] = TLSHandshakeTypeServerKeyExchange
+	message[1] = byte(messageBodyLen >> 16)
+	message[2] = byte(messageBodyLen >> 8)
+	message[3] = byte(messageBodyLen)
+	copy(message[4:], messageBody)
 
 	return message, nil
 }
