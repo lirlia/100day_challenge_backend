@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bufio" // For HTTP parsing
+	"bytes" // For HTTP parsing
 	"encoding/binary"
 	"flag"
 	"fmt"
@@ -698,7 +700,7 @@ func handleTCPPacket(ifce *water.Interface, ipHeader *IPv4Header, tcpSegment []b
 			delete(tcpConnections, connKey)
 		}
 
-	// Case 3: Data or other packets on established connection (placeholder)
+	// Case 3: Packets on established connection
 	case exists && conn.State == TCPStateEstablished:
 		log.Printf("Received packet for established connection %s", connKey)
 
@@ -734,14 +736,13 @@ func handleTCPPacket(ifce *water.Interface, ipHeader *IPv4Header, tcpSegment []b
 		}
 		// --- End FIN Check ---
 
-		// --- Begin Data Echo Logic ---
+		// --- Begin Data Handling Logic ---
 		payloadLen := len(tcpPayload)
 		ackOnly := payloadLen == 0 && tcpHeader.Flags&TCPFlagACK != 0 && tcpHeader.Flags&TCPFlagFIN == 0 // Exclude FIN ACKs
 
 		// Basic Sequence Number Check (ignoring windowing for simplicity)
 		if !ackOnly && tcpHeader.SeqNum != conn.ClientNextSeq {
 			log.Printf("Unexpected sequence number for %s. Expected %d, got %d. Ignoring.", connKey, conn.ClientNextSeq, tcpHeader.SeqNum)
-			// In a real implementation, might send duplicate ACK or handle out-of-order
 			return
 		}
 
@@ -761,40 +762,33 @@ func handleTCPPacket(ifce *water.Interface, ipHeader *IPv4Header, tcpSegment []b
 			return
 		}
 
-		// Handle received data (Echo it back)
+		// Handle received data payload
 		if payloadLen > 0 {
-			log.Printf("Received %d bytes of data for %s. Echoing back.", payloadLen, connKey)
+			log.Printf("Received %d bytes of data for %s. Attempting HTTP parse.", payloadLen, connKey)
 
-			// 1. Update expected client sequence number
-			conn.ClientNextSeq += uint32(payloadLen)
+			// 1. Update expected client sequence number *before* processing
+			expectedClientNextSeq := conn.ClientNextSeq + uint32(payloadLen)
 
 			// 2. Send ACK for the received data immediately
 			ackFlags := uint8(TCPFlagACK)
 			err = sendTCPPacket(ifce, conn.ServerIP, conn.ClientIP, conn.ServerPort, conn.ClientPort,
-				conn.ServerNextSeq, conn.ClientNextSeq, ackFlags, nil)
+				conn.ServerNextSeq, expectedClientNextSeq, ackFlags, nil)
 			if err != nil {
 				log.Printf("Error sending ACK for received data on %s: %v", connKey, err)
-				// Consider closing connection or other error handling
+				// Update seq number even if ACK fails?
+				conn.ClientNextSeq = expectedClientNextSeq
 				return
 			}
 
-			// 3. Send the echo data
-			echoFlags := uint8(TCPFlagPSH | TCPFlagACK) // PSH to indicate data push
-			echoPayload := tcpPayload                   // Use the received payload
-			err = sendTCPPacket(ifce, conn.ServerIP, conn.ClientIP, conn.ServerPort, conn.ClientPort,
-				conn.ServerNextSeq, conn.ClientNextSeq, echoFlags, echoPayload)
-			if err != nil {
-				log.Printf("Error sending echo data on %s: %v", connKey, err)
-				// Consider closing connection or other error handling
-				return
-			}
+			// 3. Process the payload (Parse as HTTP Request)
+			handleHTTPRequest(ifce, conn, tcpPayload)
 
-			// 4. Update server sequence number
-			conn.ServerNextSeq += uint32(payloadLen)
+			// 4. Update client sequence number *after* successful processing and ACK
+			conn.ClientNextSeq = expectedClientNextSeq
+
+			// Note: ServerNextSeq is NOT updated here because we are not sending data back yet
+			// The echo logic was removed.
 		}
-
-		// TODO: Handle FIN, RST flags received on established connection
-		// --- End Data Echo Logic ---
 
 	// Case 4: ACK for our FIN (closing connection)
 	case exists && conn.State == TCPStateLastAck:
@@ -828,6 +822,97 @@ func handleTCPPacket(ifce *water.Interface, ipHeader *IPv4Header, tcpSegment []b
 				seqNum, ackNum, TCPFlagRST|TCPFlagACK, nil)
 		}
 	}
+}
+
+// handleHTTPRequest parses the TCP payload as an HTTP request and logs it.
+func handleHTTPRequest(ifce *water.Interface, conn *TCPConnection, payload []byte) {
+	method, uri, version, headers, err := parseHTTPRequest(payload)
+	if err != nil {
+		log.Printf("Failed to parse HTTP request for %s:%d -> %s:%d: %v",
+			conn.ClientIP, conn.ClientPort, conn.ServerIP, conn.ServerPort, err)
+		// Optionally send HTTP Bad Request response here
+		return
+	}
+
+	log.Printf("HTTP Request Parsed: [%s %s %s] from %s:%d", method, uri, version, conn.ClientIP, conn.ClientPort)
+	for k, v := range headers {
+		log.Printf("  Header: %s: %s", k, v)
+	}
+
+	// TODO (Phase 5+): Send HTTP response (e.g., 200 OK, 404 Not Found)
+	// For now, we just log the request.
+	// Example: Sending a basic 404 response
+	/*
+		httpResp := "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+		respFlags := uint8(TCPFlagPSH | TCPFlagACK | TCPFlagFIN) // Send FIN to close after response
+		err = sendTCPPacket(ifce, conn.ServerIP, conn.ClientIP, conn.ServerPort, conn.ClientPort,
+			conn.ServerNextSeq, conn.ClientNextSeq, respFlags, []byte(httpResp))
+		if err != nil {
+			log.Printf("Error sending HTTP 404 response: %v", err)
+		} else {
+			conn.ServerNextSeq += uint32(len(httpResp)) + 1 // +1 for FIN
+			conn.State = TCPStateFinWait1 // We sent FIN
+			log.Printf("Sent HTTP 404 Response and FIN, entering FIN_WAIT_1 for %s:%d", conn.ClientIP, conn.ClientPort)
+		}
+	*/
+
+}
+
+// parseHTTPRequest parses a simple HTTP/1.x request.
+// Does not handle request body or chunked encoding.
+func parseHTTPRequest(payload []byte) (method, uri, version string, headers map[string]string, err error) {
+	headers = make(map[string]string)
+	reader := bufio.NewReader(bytes.NewReader(payload))
+
+	// 1. Read Request Line
+	reqLine, err := reader.ReadString('\n')
+	if err != nil {
+		err = fmt.Errorf("failed to read request line: %w", err)
+		return
+	}
+	reqLine = strings.TrimSpace(reqLine)
+	parts := strings.Fields(reqLine)
+	if len(parts) != 3 {
+		err = fmt.Errorf("invalid request line format: %q", reqLine)
+		return
+	}
+	method, uri, version = parts[0], parts[1], parts[2]
+
+	if !strings.HasPrefix(version, "HTTP/1.") {
+		err = fmt.Errorf("unsupported HTTP version: %s", version)
+		return
+	}
+
+	// 2. Read Headers
+	for {
+		line, errRead := reader.ReadString('\n')
+		if errRead != nil {
+			// End of headers or error
+			if errRead.Error() == "EOF" || line == "\r\n" || line == "\n" { // Reached end of headers
+				err = nil // Ensure err is nil on successful header parsing
+				break
+			}
+			err = fmt.Errorf("failed to read header line: %w", errRead)
+			return
+		}
+
+		line = strings.TrimSpace(line)
+		if line == "" { // Empty line marks end of headers
+			break
+		}
+
+		headerParts := strings.SplitN(line, ":", 2)
+		if len(headerParts) != 2 {
+			log.Printf("Skipping malformed header line: %q", line)
+			continue
+		}
+		headerName := strings.TrimSpace(headerParts[0])
+		headerValue := strings.TrimSpace(headerParts[1])
+		headers[headerName] = headerValue
+	}
+
+	// Body is ignored in this phase
+	return
 }
 
 // sendTCPPacket constructs and sends a TCP packet.
