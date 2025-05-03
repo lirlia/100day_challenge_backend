@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"reflect" // reflect を追加
+	"sort"    // カラムソート用
 	"strings"
 	"text/tabwriter"
 
@@ -37,13 +39,31 @@ var currentDB *orm.DB // グローバル変数名を db から currentDB に変�
 // var currentTX *orm.TX // 削除: CLI ではトランザクション管理はしない
 var currentDBFile string
 
-// --- コマンド定義 ---
+// --- モデルレジストリ --- START
+// 文字列のモデル名から reflect.Type を引くためのマップ
+// アプリケーションで利用するモデルをここに追加する
+var modelRegistry = make(map[string]reflect.Type)
+
+func init() {
+	// Register models from the orm package
+	// Note: We need access to the actual types defined in the orm package.
+	// For simplicity, let's assume User and Post are defined in orm package.
+	// If they are in a different package, adjust the import and type names.
+	modelRegistry["User"] = reflect.TypeOf(orm.User{})
+	modelRegistry["Post"] = reflect.TypeOf(orm.Post{})
+}
+
+// --- モデルレジストリ --- END
+
+// --- コマンド定義 (更新) ---
 var commands = []prompt.Suggest{
 	{Text: "connect", Description: "<database_file> Connect to a SQLite database file."},
 	{Text: "disconnect", Description: "Disconnect from the current database."},
 	{Text: "tables", Description: "List tables in the current database."},
 	{Text: "schema", Description: "<table_name> Show the schema of a table."},
-	{Text: "select", Description: "* from <table> / count(*) from <table> Execute a SELECT query."},
+	{Text: "find", Description: "<model> [where <cond>] [order <col> [asc|desc]] [limit <n>] [offset <n>] Find records."},
+	{Text: "first", Description: "<model> [where <cond>] [order <col> [asc|desc]] Find first record."},
+	{Text: "count", Description: "<model> [where <cond>] Count records."},
 	{Text: "help", Description: "Show this help message."},
 	{Text: "exit", Description: "Exit the shell."},
 	{Text: "quit", Description: "Exit the shell."},
@@ -91,15 +111,16 @@ func executor(in string) {
 	processCommand(in) // 既存のコマンド処理関数を呼び出す
 }
 
-// --- completer 関数 ---
-// 補完候補を生成する
+// --- completer 関数 (更新) ---
 func completer(d prompt.Document) []prompt.Suggest {
 	wordBeforeCursor := d.GetWordBeforeCursor()
 	currentLine := d.TextBeforeCursor()
 	args := strings.Fields(currentLine)
+	suggestions := []prompt.Suggest{} // 候補を初期化
 
 	// 1. コマンド名の補完
-	if len(args) <= 1 && !strings.Contains(currentLine, " ") {
+	// 引数がない場合、または最初の引数を入力中で末尾がスペースでない場合
+	if len(args) == 0 || (len(args) == 1 && !strings.HasSuffix(currentLine, " ")) {
 		return prompt.FilterHasPrefix(commands, wordBeforeCursor, true)
 	}
 
@@ -108,85 +129,217 @@ func completer(d prompt.Document) []prompt.Suggest {
 		command := strings.ToLower(args[0])
 		switch command {
 		case "schema":
-			// "schema " の後にテーブル名を補完
-			if len(args) == 2 {
-				tableNames := getTableNames()
-				tableSuggestions := make([]prompt.Suggest, len(tableNames))
-				for i, name := range tableNames {
-					tableSuggestions[i] = prompt.Suggest{Text: name}
+			// "schema " の後にモデル名を提案
+			if len(args) == 1 && strings.HasSuffix(currentLine, " ") { // Suggest table/model name after "schema "
+				modelNames := getRegisteredModelNames()
+				for _, name := range modelNames {
+					suggestions = append(suggestions, prompt.Suggest{Text: name})
 				}
-				return prompt.FilterHasPrefix(tableSuggestions, wordBeforeCursor, true)
+				return suggestions
 			}
-		case "select":
-			// "select " の後
+			// モデル名を入力中にフィルタリング
+			if len(args) == 2 && !strings.HasSuffix(currentLine, " ") { // Filtering model name
+				modelNames := getRegisteredModelNames()
+				for _, name := range modelNames {
+					suggestions = append(suggestions, prompt.Suggest{Text: name})
+				}
+				return prompt.FilterHasPrefix(suggestions, wordBeforeCursor, true)
+			}
+
+		case "find", "first", "count":
+			// コマンド名の直後 + スペースでモデル名を提案
+			if len(args) == 1 && strings.HasSuffix(currentLine, " ") {
+				modelNames := getRegisteredModelNames()
+				for _, name := range modelNames {
+					suggestions = append(suggestions, prompt.Suggest{Text: name})
+				}
+				return suggestions
+			}
+			// モデル名を入力中にフィルタリング
+			if len(args) == 2 && !strings.HasSuffix(currentLine, " ") {
+				modelNames := getRegisteredModelNames()
+				for _, name := range modelNames {
+					suggestions = append(suggestions, prompt.Suggest{Text: name})
+				}
+				return prompt.FilterHasPrefix(suggestions, wordBeforeCursor, true)
+			}
+
+			// --- モデル名入力後のキーワード提案 ---
 			if len(args) >= 2 {
-				// "select * " の後
-				if strings.ToLower(args[1]) == "*" && len(args) >= 3 && strings.ToLower(args[2]) == "from" {
-					// "select * from " の後にテーブル名を補完
-					if len(args) == 4 {
-						tableNames := getTableNames()
-						tableSuggestions := make([]prompt.Suggest, len(tableNames))
-						for i, name := range tableNames {
-							tableSuggestions[i] = prompt.Suggest{Text: name}
+				modelName := args[1]
+				// 入力されたモデル名が有効かチェック
+				if _, isValidModel := modelRegistry[modelName]; isValidModel {
+
+					// 提案可能なキーワード
+					availableKeywords := map[string]bool{"where": true, "order": true}
+					if command == "find" {
+						availableKeywords["limit"] = true
+						availableKeywords["offset"] = true
+					}
+
+					// 既に使用されたキーワードを除外
+					usedKeywords := make(map[string]bool)
+					for i := 2; i < len(args); i++ {
+						// Check if arg[i] is a potential keyword before lowercasing
+						lowerArg := strings.ToLower(args[i])
+						if _, ok := availableKeywords[lowerArg]; ok {
+							// Crude check to see if it's likely a keyword vs part of a 'where' clause
+							// If the previous arg wasn't 'where', assume it's a keyword
+							if i > 2 && strings.ToLower(args[i-1]) != "where" {
+								usedKeywords[lowerArg] = true
+							} else if i == 2 { // First word after model name is always a keyword if it matches
+								usedKeywords[lowerArg] = true
+							}
 						}
-						return prompt.FilterHasPrefix(tableSuggestions, wordBeforeCursor, true)
 					}
-				}
-				// "select count(*) " の後
-				if strings.ToLower(args[1]) == "count(*)" && len(args) >= 3 && strings.ToLower(args[2]) == "from" {
-					// "select count(*) from " の後にテーブル名を補完
-					if len(args) == 4 {
-						tableNames := getTableNames()
-						tableSuggestions := make([]prompt.Suggest, len(tableNames))
-						for i, name := range tableNames {
-							tableSuggestions[i] = prompt.Suggest{Text: name}
+
+					// 現在のカーソル位置や直前の引数に基づいて、何を提案すべきか判断
+					contextAllowsKeywords := false
+					// 1. モデル名の直後 (`find User `)
+					if len(args) == 2 && strings.HasSuffix(currentLine, " ") {
+						contextAllowsKeywords = true
+					}
+					// 2. 前のキーワードの引数が終わった後 (より正確な判定が必要)
+					if len(args) > 2 {
+						lastArg := args[len(args)-1]
+						prevArg := args[len(args)-2]
+						// 簡単な判定: 'order col asc/desc' の後や 'limit num', 'offset num' の後
+						if strings.ToLower(prevArg) == "order" && (strings.ToLower(lastArg) == "asc" || strings.ToLower(lastArg) == "desc") && strings.HasSuffix(currentLine, " ") {
+							contextAllowsKeywords = true
+						} else if (strings.ToLower(prevArg) == "limit" || strings.ToLower(prevArg) == "offset") && isNumber(lastArg) && strings.HasSuffix(currentLine, " ") {
+							contextAllowsKeywords = true
 						}
-						return prompt.FilterHasPrefix(tableSuggestions, wordBeforeCursor, true)
+						// 'where'句の終わりを判定するのは難しいので、'where'の後には常にキーワードを許可する（簡易的）
+						// if strings.ToLower(prevArg) == "where" { contextAllowsKeywords = true }
+						// Consider suggesting keywords if the last argument doesn't seem like part of a where clause
+						// or if the last word being typed looks like a keyword start
+						if strings.HasSuffix(currentLine, " ") { // Only suggest keywords after a space
+							lastKeyword := ""
+							for i := len(args) - 1; i >= 2; i-- {
+								if _, ok := availableKeywords[strings.ToLower(args[i])]; ok {
+									lastKeyword = strings.ToLower(args[i])
+									break
+								}
+							}
+							if lastKeyword == "where" { // After where, it's hard to tell, don't suggest keywords for now
+								contextAllowsKeywords = false
+							} else {
+								contextAllowsKeywords = true // Allow keywords after other conditions potentially
+							}
+						}
+
 					}
-				}
-				// "select " の直後で '*' や 'count(*)' を補完
-				if len(args) == 2 {
-					selectArgs := []prompt.Suggest{
-						{Text: "*", Description: "Select all columns"},
-						{Text: "count(*)", Description: "Count rows"},
+
+					// キーワードを提案するコンテキストの場合
+					if contextAllowsKeywords {
+						for keyword := range availableKeywords {
+							if !usedKeywords[keyword] {
+								suggestions = append(suggestions, prompt.Suggest{Text: keyword})
+							}
+						}
+						// フィルタリングして返す (wordBeforeCursor が空ならそのまま返す)
+						if wordBeforeCursor == "" {
+							return suggestions
+						}
+						return prompt.FilterHasPrefix(suggestions, wordBeforeCursor, true)
 					}
-					return prompt.FilterHasPrefix(selectArgs, wordBeforeCursor, true)
-				}
-				// "select * " や "select count(*) " の後で 'from' を補完
-				if len(args) == 3 && (strings.ToLower(args[1]) == "*" || strings.ToLower(args[1]) == "count(*)") {
-					fromSuggestion := []prompt.Suggest{{Text: "from"}}
-					return prompt.FilterHasPrefix(fromSuggestion, wordBeforeCursor, true)
+
+					// --- 特定のキーワード引数の提案 ---
+
+					// "where" の後にカラム名を提案
+					if len(args) == 3 && strings.ToLower(args[2]) == "where" && strings.HasSuffix(currentLine, " ") {
+						modelType := modelRegistry[modelName]
+						columnSuggestions := getModelColumnSuggestions(modelType)
+						return columnSuggestions
+					}
+					// "where" の後にカラム名を入力中にフィルタリング
+					if len(args) == 4 && strings.ToLower(args[2]) == "where" && !strings.HasSuffix(currentLine, " ") {
+						modelType := modelRegistry[modelName]
+						columnSuggestions := getModelColumnSuggestions(modelType)
+						return prompt.FilterHasPrefix(columnSuggestions, wordBeforeCursor, true)
+					}
+					// TODO: "where <col> " の後に演算子 (=, !=, >, <, like など) を提案する
+					// TODO: "where <col> = " の後に値の型に応じた提案 (文字列？数値？)
+
+					// "order" の後にカラム名 or asc/desc
+					if len(args) == 3 && strings.ToLower(args[2]) == "order" && strings.HasSuffix(currentLine, " ") {
+						modelType := modelRegistry[modelName]
+						columnSuggestions := getModelColumnSuggestions(modelType)
+						orderSuggestions := append(columnSuggestions, prompt.Suggest{Text: "asc"}, prompt.Suggest{Text: "desc"}) // カラム名 + asc/desc
+						return orderSuggestions
+					}
+					if len(args) == 4 && strings.ToLower(args[2]) == "order" && !strings.HasSuffix(currentLine, " ") {
+						modelType := modelRegistry[modelName]
+						columnSuggestions := getModelColumnSuggestions(modelType)
+						orderSuggestions := append(columnSuggestions, prompt.Suggest{Text: "asc"}, prompt.Suggest{Text: "desc"})
+						return prompt.FilterHasPrefix(orderSuggestions, wordBeforeCursor, true)
+					}
+					// "order <col>" の後に asc/desc
+					if len(args) == 4 && strings.ToLower(args[2]) == "order" && strings.HasSuffix(currentLine, " ") {
+						orderSuggestions := []prompt.Suggest{{Text: "asc"}, {Text: "desc"}}
+						return orderSuggestions
+					}
+					if len(args) == 5 && strings.ToLower(args[2]) == "order" && !strings.HasSuffix(currentLine, " ") {
+						orderSuggestions := []prompt.Suggest{{Text: "asc"}, {Text: "desc"}}
+						return prompt.FilterHasPrefix(orderSuggestions, wordBeforeCursor, true) // filter asc/desc
+					}
 				}
 			}
+
 		case "connect":
-			// connect の後のファイルパス補完は実装が複雑なので省略
+			// ファイル名の補完は省略
 			return []prompt.Suggest{}
 		}
 	}
 
-	return []prompt.Suggest{} // 上記以外は補完しない
+	// 一致するものがなければ空の候補を返す
+	return suggestions
 }
 
-// --- ヘルパー関数: テーブル名取得 ---
-func getTableNames() []string {
-	if currentDB == nil {
-		return []string{}
+// --- ヘルパー関数 (カラム名取得を追加) ---
+// モデルの型情報からカラム名（フィールド名）の Suggestion リストを取得
+func getModelColumnSuggestions(modelType reflect.Type) []prompt.Suggest {
+	if modelType.Kind() == reflect.Ptr {
+		modelType = modelType.Elem()
 	}
-	rows, err := currentDB.DB.QueryContext(context.Background(), "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name;")
-	if err != nil {
-		// エラーは無視して空のスライスを返す (補完のため)
-		return []string{}
+	if modelType.Kind() != reflect.Struct {
+		return []prompt.Suggest{}
 	}
-	defer rows.Close()
 
-	var tables []string
-	for rows.Next() {
-		var tableName string
-		if err := rows.Scan(&tableName); err == nil {
-			tables = append(tables, tableName)
+	suggestions := []prompt.Suggest{}
+	// モデルのフィールドを走査
+	// TODO: orm パッケージの StructInfo を利用してリレーションを除外する方が堅牢
+	for i := 0; i < modelType.NumField(); i++ {
+		field := modelType.Field(i)
+		if field.IsExported() {
+			// 簡単なチェック: フィールドの型がスライスやポインタでない場合をカラム候補とする
+			// (より正確には orm タグを見るべき)
+			if field.Type.Kind() != reflect.Slice && field.Type.Kind() != reflect.Ptr && field.Type.Kind() != reflect.Interface {
+				suggestions = append(suggestions, prompt.Suggest{Text: field.Name})
+			}
 		}
 	}
-	return tables
+	return suggestions
+}
+
+// modelRegistry からモデル名（キー）のスライスを取得
+func getRegisteredModelNames() []string {
+	names := make([]string, 0, len(modelRegistry))
+	for k := range modelRegistry {
+		names = append(names, k)
+	}
+	sort.Strings(names) // ソートして返す
+	return names
+}
+
+// 文字列が数字かどうかを判定する簡易関数
+func isNumber(s string) bool {
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func printHelp() {
@@ -252,63 +405,122 @@ func processCommand(line string) {
 	case "disconnect":
 		disconnectDB()
 	case "tables":
-		showTables()
+		showTables() // 実装は getRegisteredModelNames を使うように変更しても良い
 	case "schema":
 		if len(parts) != 2 {
-			fmt.Println("Usage: schema <table_name>")
+			fmt.Println("Usage: schema <table_name or model_name>")
 			return
 		}
+		// テーブル名かモデル名でスキーマ表示 (テーブル名優先)
 		showSchema(parts[1])
-	case "select":
+	case "find", "first", "count":
 		if currentDB == nil {
 			fmt.Println("Not connected to a database.")
 			return
 		}
-		// select クエリのパース (簡易版)
-		// 例: "select * from users", "select count(*) from posts", "select * from users where id = 1"
-		if len(parts) < 4 || strings.ToLower(parts[2]) != "from" {
-			fmt.Println("Usage: select * from <table_name> [where ...]")
-			fmt.Println("   or: select count(*) from <table_name> [where ...]")
+		if len(parts) < 2 {
+			fmt.Printf("Usage: %s <model> [options...]\n", command)
 			return
 		}
 
-		selectTarget := strings.ToLower(parts[1])
-		tableName := parts[3]
-		whereClause := ""
-		var whereArgs []interface{}
+		// modelName := strings.ToLower(parts[1]) // ユーザー入力のモデル名をそのまま使う
+		modelName := parts[1]
+		modelType, ok := modelRegistry[modelName]
+		if !ok {
+			fmt.Printf("Unknown model: %s. Registered models: %v\n", modelName, getRegisteredModelNames())
+			return
+		}
 
-		if len(parts) > 4 {
-			if strings.ToLower(parts[4]) == "where" {
-				// 簡単のため、where 句全体を文字列として扱い、引数は ? のみサポートする簡易実装
-				// 例: "where id = ?", args: [1] (引数は文字列として解釈される)
-				if len(parts) > 5 {
-					whereParts := parts[5:]
-					// where 句を再構築 (スペースで結合)
-					whereClause = strings.Join(whereParts, " ")
-					// ? の数を数え、それに対応する引数を末尾から取得しようと試みる
-					// この実装は非常に脆弱で、実際の SQL インジェクション対策にはなりません
-					// 本来はプレースホルダとその値を安全に分離・処理する必要があります
-					// placeholderCount := strings.Count(whereClause, "?") // 未使用なので削除
-					// whereParts から引数を抽出するロジックは複雑なので一旦省略。args は空のまま。
-					fmt.Println("WARN: WHERE clause arguments are not fully supported in this simple parser.")
-					// WHERE句を args なしで設定（WHERE id = 1 のような直接指定のみ動作）
-					whereArgs = nil
+		// オプションのパース (簡易版)
+		var whereClause string
+		var orderClause string
+		var limit *int
+		var offset *int
+
+		remainingParts := parts[2:]
+		i := 0
+		for i < len(remainingParts) {
+			keyword := strings.ToLower(remainingParts[i])
+			i++
+			switch keyword {
+			case "where":
+				whereStartIndex := i
+				// "order", "limit", "offset" が来るまでを where 句とする
+				for i < len(remainingParts) && !isKeyword(remainingParts[i]) {
+					i++
+				}
+				if whereStartIndex < i {
+					whereClause = strings.Join(remainingParts[whereStartIndex:i], " ")
+					fmt.Printf("DEBUG: Parsed WHERE clause: %s\n", whereClause) // デバッグ用
 				} else {
-					fmt.Println("Usage: select ... where <condition>")
+					fmt.Println("Error: Missing condition after 'where'.")
 					return
 				}
-			} else {
-				fmt.Println("Only WHERE clause is supported after table name.")
+			case "order":
+				if i < len(remainingParts) {
+					orderColumn := remainingParts[i]
+					i++
+					orderDir := "ASC" // デフォルト
+					if i < len(remainingParts) && (strings.ToLower(remainingParts[i]) == "asc" || strings.ToLower(remainingParts[i]) == "desc") {
+						orderDir = strings.ToUpper(remainingParts[i])
+						i++
+					}
+					orderClause = fmt.Sprintf("%s %s", orderColumn, orderDir)
+					fmt.Printf("DEBUG: Parsed ORDER clause: %s\n", orderClause) // デバッグ用
+				} else {
+					fmt.Println("Error: Missing column after 'order'.")
+					return
+				}
+			case "limit":
+				if command != "find" {
+					fmt.Printf("Error: 'limit' is only supported for 'find' command.\n")
+					return
+				}
+				if i < len(remainingParts) {
+					n, err := parseInt(remainingParts[i])
+					if err != nil {
+						fmt.Printf("Error: Invalid number for 'limit': %v\n", err)
+						return
+					}
+					limit = &n
+					i++
+					fmt.Printf("DEBUG: Parsed LIMIT: %d\n", *limit) // デバッグ用
+				} else {
+					fmt.Println("Error: Missing number after 'limit'.")
+					return
+				}
+			case "offset":
+				if command != "find" {
+					fmt.Printf("Error: 'offset' is only supported for 'find' command.\n")
+					return
+				}
+				if i < len(remainingParts) {
+					n, err := parseInt(remainingParts[i])
+					if err != nil {
+						fmt.Printf("Error: Invalid number for 'offset': %v\n", err)
+						return
+					}
+					offset = &n
+					i++
+					fmt.Printf("DEBUG: Parsed OFFSET: %d\n", *offset) // デバッグ用
+				} else {
+					fmt.Println("Error: Missing number after 'offset'.")
+					return
+				}
+			default:
+				fmt.Printf("Unknown option or keyword: %s\n", remainingParts[i-1])
 				return
 			}
 		}
 
-		if selectTarget == "count(*)" {
-			executeCountQuery(context.Background(), tableName, whereClause, whereArgs)
-		} else if selectTarget == "*" {
-			executeSelectStarQuery(context.Background(), tableName, whereClause, whereArgs)
-		} else {
-			fmt.Println("Only 'select *' or 'select count(*)' is supported.")
+		// パース結果を使って実行
+		switch command {
+		case "find":
+			executeFind(context.Background(), modelType, whereClause, orderClause, limit, offset)
+		case "first":
+			executeFirst(context.Background(), modelType, whereClause, orderClause)
+		case "count":
+			executeCount(context.Background(), modelType, whereClause)
 		}
 
 	default:
@@ -317,100 +529,175 @@ func processCommand(line string) {
 	}
 }
 
-// executeSelectQuery を select * と count(*) で分割
-
-// executeSelectStarQuery は SELECT * クエリを実行し、結果を表形式で表示します。
-func executeSelectStarQuery(ctx context.Context, tableName string, whereClause string, whereArgs []interface{}) {
-	if currentDB == nil {
-		fmt.Println("Not connected.")
-		return
-	}
-
-	qb := currentDB.Table(tableName)
-	if whereClause != "" {
-		// 注意: この実装では whereArgs が常に nil なので、プレースホルダは使えません
-		qb = qb.Where(whereClause) // Where に args を渡さない
-	}
-
-	var results []map[string]interface{}
-	err := qb.ScanMaps(&results)
-	if err != nil {
-		fmt.Printf("Error executing select query: %v\n", err)
-		return
-	}
-
-	if len(results) == 0 {
-		fmt.Println("(no rows)")
-		return
-	}
-
-	// printTable が map スライスを受け取れるように修正が必要
-	printMapSliceTable(results)
+// --- ヘルパー関数 (追加) ---
+func isKeyword(s string) bool {
+	lower := strings.ToLower(s)
+	return lower == "where" || lower == "order" || lower == "limit" || lower == "offset"
 }
 
-// executeCountQuery は SELECT count(*) クエリを実行し、結果を表示します。
-func executeCountQuery(ctx context.Context, tableName string, whereClause string, whereArgs []interface{}) {
-	if currentDB == nil {
-		fmt.Println("Not connected.")
+func parseInt(s string) (int, error) {
+	var n int
+	_, err := fmt.Sscan(s, &n)
+	return n, err
+}
+
+// --- ORM 実行関数 (新規) ---
+func executeFind(ctx context.Context, modelType reflect.Type, whereClause, orderClause string, limit, offset *int) {
+	// モデルのポインタのスライスを作成 (例: *[]orm.User)
+	sliceType := reflect.SliceOf(reflect.PtrTo(modelType))
+	destSlice := reflect.New(sliceType)
+
+	// QueryBuilder を構築
+	modelPtr := reflect.New(modelType).Interface() // Model() にはポインタを渡す
+	qb := currentDB.Model(modelPtr)
+	if whereClause != "" {
+		qb = qb.Where(whereClause) // 引数なし
+	}
+	if orderClause != "" {
+		qb = qb.Order(orderClause)
+	}
+	if limit != nil {
+		qb = qb.Limit(*limit)
+	}
+	if offset != nil {
+		qb = qb.Offset(*offset)
+	}
+
+	// 実行
+	err := qb.Select(destSlice.Interface())
+	if err != nil {
+		fmt.Printf("Error executing find: %v\n", err)
 		return
 	}
 
-	qb := currentDB.Table(tableName)
+	// 結果表示
+	printStructs(destSlice.Elem())
+}
+
+func executeFirst(ctx context.Context, modelType reflect.Type, whereClause, orderClause string) {
+	dest := reflect.New(modelType).Interface() // ポインタを作成 (例: *orm.User)
+
+	qb := currentDB.Model(dest) // dest を直接 Model に渡せる
 	if whereClause != "" {
-		// 注意: この実装では whereArgs が常に nil なので、プレースホルダは使えません
-		qb = qb.Where(whereClause) // Where に args を渡さない
+		qb = qb.Where(whereClause)
+	}
+	if orderClause != "" {
+		qb = qb.Order(orderClause)
 	}
 
+	err := qb.SelectOne(dest)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			fmt.Println("(no rows)")
+		} else {
+			fmt.Printf("Error executing first: %v\n", err)
+		}
+		return
+	}
+
+	// 結果表示 (単一の構造体ポインタ)
+	printStruct(reflect.ValueOf(dest))
+}
+
+func executeCount(ctx context.Context, modelType reflect.Type, whereClause string) {
 	var count int64
+	modelPtr := reflect.New(modelType).Interface()
+	qb := currentDB.Model(modelPtr)
+	if whereClause != "" {
+		qb = qb.Where(whereClause)
+	}
+
 	err := qb.Count(&count)
 	if err != nil {
-		fmt.Printf("Error executing count query: %v\n", err)
+		fmt.Printf("Error executing count: %v\n", err)
 		return
 	}
 
 	fmt.Printf("Count: %d\n", count)
 }
 
-// printTable を printMapSliceTable に変更し、[]map[string]interface{} を受け取るように修正
-func printMapSliceTable(data []map[string]interface{}) {
-	if len(data) == 0 {
-		return // データがなければ何もしない
+// --- 結果表示関数 (新規) ---
+// 構造体のスライスを表形式で表示
+func printStructs(sliceVal reflect.Value) {
+	if sliceVal.Kind() != reflect.Slice {
+		fmt.Println("[printStructs] Error: input is not a slice")
+		return
+	}
+	if sliceVal.Len() == 0 {
+		fmt.Println("(no rows)")
+		return
 	}
 
-	// 最初の行からカラム名を取得 (順序は保証されない点に注意)
-	var columns []string
-	for k := range data[0] {
-		columns = append(columns, k)
+	// 最初の要素から型情報を取得
+	elem := sliceVal.Index(0)
+	if elem.Kind() == reflect.Ptr {
+		elem = elem.Elem()
 	}
-	// TODO: カラム順をある程度固定する (e.g., id を先頭に)
+	if elem.Kind() != reflect.Struct {
+		fmt.Println("[printStructs] Error: slice element is not a struct or pointer to struct")
+		return
+	}
+	structType := elem.Type()
+
+	// ヘッダー行 (フィールド名)
+	var headers []string
+	fieldMap := make(map[string]int) // フィールド名 -> インデックス
+	for i := 0; i < structType.NumField(); i++ {
+		field := structType.Field(i)
+		if field.IsExported() {
+			// TODO: db タグを見てカラム名にするか、リレーションを除外するか？
+			//       今回はシンプルにフィールド名をそのまま使う
+			headers = append(headers, field.Name)
+			fieldMap[field.Name] = i
+		}
+	}
+	sort.Strings(headers) // ヘッダーをソート
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', tabwriter.Debug)
 	defer w.Flush()
 
-	// ヘッダー行
-	fmt.Fprintln(w, strings.Join(columns, "\t"))
-	// 区切り線 (オプション)
-	// var separator []string
-	// for _, col := range columns {
-	// 	separator = append(separator, strings.Repeat("-", len(col)))
-	// }
-	// fmt.Fprintln(w, strings.Join(separator, "\t"))
+	fmt.Fprintln(w, strings.Join(headers, "\t"))
 
 	// データ行
-	for _, rowMap := range data {
+	for i := 0; i < sliceVal.Len(); i++ {
+		rowVal := sliceVal.Index(i)
+		if rowVal.Kind() == reflect.Ptr {
+			rowVal = rowVal.Elem()
+		}
+
 		var row []string
-		for _, colName := range columns {
-			val := rowMap[colName]
-			row = append(row, fmt.Sprintf("%v", val)) // %v で様々な型を文字列化
+		for _, header := range headers {
+			fieldIndex := fieldMap[header]
+			fieldVal := rowVal.Field(fieldIndex)
+			row = append(row, fmt.Sprintf("%v", fieldVal.Interface()))
 		}
 		fmt.Fprintln(w, strings.Join(row, "\t"))
 	}
 }
 
-// 不要になった古い printTable 関数は削除
-// func printTable(columns []string, data [][]interface{}) {
-// ...
-// }
+// 単一の構造体（ポインタ）を整形して表示
+func printStruct(structPtrVal reflect.Value) {
+	if structPtrVal.Kind() != reflect.Ptr || structPtrVal.IsNil() {
+		fmt.Println("[printStruct] Error: input is not a valid pointer")
+		return
+	}
+	structVal := structPtrVal.Elem()
+	if structVal.Kind() != reflect.Struct {
+		fmt.Println("[printStruct] Error: input does not point to a struct")
+		return
+	}
+	structType := structVal.Type()
+
+	fmt.Println("-- Result --")
+	for i := 0; i < structType.NumField(); i++ {
+		field := structType.Field(i)
+		value := structVal.Field(i)
+		if field.IsExported() {
+			fmt.Printf("  %s: %v\n", field.Name, value.Interface())
+		}
+	}
+	fmt.Println("------------")
+}
 
 // showTables, showSchema は変更なし
 
