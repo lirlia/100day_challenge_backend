@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Day31 - Go ORM WebApp</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            line-height: 1.6;
+            margin: 2em;
+            background-color: #f4f4f4;
+            color: #333;
+        }
+        .container {
+            max-width: 800px;
+            margin: auto;
+            background: #fff;
+            padding: 2em;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        h1, h2 {
+            color: #333;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 0.3em;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 1.5em;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 0.8em;
+            text-align: left;
+        }
+        th {
+            background-color: #f9f9f9;
+        }
+        form {
+            margin-bottom: 1.5em;
+            padding: 1em;
+            background: #f9f9f9;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        label {
+            display: block;
+            margin-bottom: 0.5em;
+            font-weight: bold;
+        }
+        input[type="text"], input[type="email"] {
+            width: calc(100% - 22px); /* padding+border */
+            padding: 0.5em;
+            margin-bottom: 1em;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        button {
+            padding: 0.7em 1.5em;
+            background-color: #5cb85c;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1em;
+        }
+        button:hover {
+            background-color: #4cae4c;
+        }
+        .delete-button {
+            background-color: #d9534f;
+        }
+        .delete-button:hover {
+            background-color: #c9302c;
+        }
+        .delete-form {
+            display: inline; /* ボタンを横並びにするため */
+            margin: 0;
+            padding: 0;
+            background: none;
+            border: none;
+        }
+        .user-row td {
+            vertical-align: middle;
+        }
+        .email-null {
+            color: #999;
+            font-style: italic;
+        }
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>ユーザー管理 (Day31 Go ORM WebApp)</h1>
+
+        <h2>ユーザー追加</h2>
+        <form action="/add" method="POST">
+            <div>
+                <label for="name">名前:</label>
+                <input type="text" id="name" name="name" required>
+            </div>
+            <div>
+                <label for="email">Email (任意):</label>
+                <input type="email" id="email" name="email">
+            </div>
+            <button type="submit">ユーザー追加</button>
+        </form>
+
+        <h2>ユーザー一覧</h2>
+        {{if .Users}}
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>名前</th>
+                    <th>Email</th>
+                    <th>登録日時</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{range .Users}}
+                <tr class="user-row">
+                    <td>{{.ID}}</td>
+                    <td>{{.Name}}</td>
+                    <td>
+                        {{if .Email.Valid}}
+                            {{.Email.String}}
+                        {{else}}
+                            <span class="email-null">NULL</span>
+                        {{end}}
+                    </td>
+                    <td>{{.CreatedAt.Format "2006-01-02 15:04:05"}}</td>
+                    <td>
+                        <form class="delete-form" action="/delete" method="POST">
+                            <input type="hidden" name="id" value="{{.ID}}">
+                            <button class="delete-button" type="submit">削除</button>
+                        </form>
+                    </td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+        {{else}}
+        <p>ユーザーはまだ登録されていません。</p>
+        {{end}}
+    </div>
+</body>
+</html>
