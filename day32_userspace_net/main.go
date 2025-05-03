@@ -700,9 +700,69 @@ func handleTCPPacket(ifce *water.Interface, ipHeader *IPv4Header, tcpSegment []b
 
 	// Case 3: Data or other packets on established connection (placeholder)
 	case exists && conn.State == TCPStateEstablished:
-		log.Printf("Received packet for established connection %s (Data handling not implemented)", connKey)
-		// Basic validation: check sequence number? (tcpHeader.SeqNum == conn.ClientNextSeq)
-		// Handle FIN, RST, data payload etc.
+		log.Printf("Received packet for established connection %s", connKey)
+
+		// --- Begin Data Echo Logic ---
+		payloadLen := len(tcpPayload)
+		ackOnly := payloadLen == 0 && tcpHeader.Flags&TCPFlagACK != 0
+
+		// Basic Sequence Number Check (ignoring windowing for simplicity)
+		if !ackOnly && tcpHeader.SeqNum != conn.ClientNextSeq {
+			log.Printf("Unexpected sequence number for %s. Expected %d, got %d. Ignoring.", connKey, conn.ClientNextSeq, tcpHeader.SeqNum)
+			// In a real implementation, might send duplicate ACK or handle out-of-order
+			return
+		}
+
+		// If it's just an ACK for data we sent, check the AckNum
+		if ackOnly {
+			if tcpHeader.AckNum > conn.ServerNextSeq {
+				log.Printf("Received ACK for future data for %s. AckNum: %d, ServerNextSeq: %d", connKey, tcpHeader.AckNum, conn.ServerNextSeq)
+				// Update ServerNextSeq if it's a valid cumulative ACK (simplification: just update if greater)
+				conn.ServerNextSeq = tcpHeader.AckNum
+			} else if tcpHeader.AckNum < conn.ServerNextSeq {
+				log.Printf("Received duplicate ACK for %s. AckNum: %d, ServerNextSeq: %d", connKey, tcpHeader.AckNum, conn.ServerNextSeq)
+			} else {
+				// AckNum == conn.ServerNextSeq, valid ACK
+				log.Printf("Received valid ACK for %s. AckNum: %d", connKey, tcpHeader.AckNum)
+			}
+			// No data to echo back on pure ACK
+			return
+		}
+
+		// Handle received data (Echo it back)
+		if payloadLen > 0 {
+			log.Printf("Received %d bytes of data for %s. Echoing back.", payloadLen, connKey)
+
+			// 1. Update expected client sequence number
+			conn.ClientNextSeq += uint32(payloadLen)
+
+			// 2. Send ACK for the received data immediately
+			ackFlags := uint8(TCPFlagACK)
+			err = sendTCPPacket(ifce, conn.ServerIP, conn.ClientIP, conn.ServerPort, conn.ClientPort,
+				conn.ServerNextSeq, conn.ClientNextSeq, ackFlags, nil)
+			if err != nil {
+				log.Printf("Error sending ACK for received data on %s: %v", connKey, err)
+				// Consider closing connection or other error handling
+				return
+			}
+
+			// 3. Send the echo data
+			echoFlags := uint8(TCPFlagPSH | TCPFlagACK) // PSH to indicate data push
+			echoPayload := tcpPayload                   // Use the received payload
+			err = sendTCPPacket(ifce, conn.ServerIP, conn.ClientIP, conn.ServerPort, conn.ClientPort,
+				conn.ServerNextSeq, conn.ClientNextSeq, echoFlags, echoPayload)
+			if err != nil {
+				log.Printf("Error sending echo data on %s: %v", connKey, err)
+				// Consider closing connection or other error handling
+				return
+			}
+
+			// 4. Update server sequence number
+			conn.ServerNextSeq += uint32(payloadLen)
+		}
+
+		// TODO: Handle FIN, RST flags received on established connection
+		// --- End Data Echo Logic ---
 
 	// TODO: Add handling for FIN, RST, other states
 
