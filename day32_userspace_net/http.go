@@ -192,14 +192,55 @@ func handleHTTPData(ifce *water.Interface, conn *TCPConnection, payload []byte) 
 	}
 
 	// Potentially Close Connection (e.g., HTTP/1.0 or Connection: close header)
-	// Simple logic: Assume close after sending response for non-TLS HTTP for now.
+	// Modified logic: Initiate FIN sequence for non-TLS HTTP connection closure.
 	if !isTLSEnabled {
-		log.Printf("Closing connection %s after non-TLS HTTP response.", connKey)
-		// TODO: Implement proper FIN sequence for TUN mode
-		// For now, just remove from map
-		connMutex.Lock()
-		delete(tcpConnections, connKey)
-		connMutex.Unlock()
+		log.Printf("Initiating close sequence for %s after non-TLS HTTP response.", connKey)
+
+		conn.Mutex.Lock()
+		if conn.State == TCPStateEstablished { // Only initiate close if still established
+			conn.State = TCPStateFinWait1
+			log.Printf("Connection state for %s changed to %v", connKey, conn.State)
+			// Capture necessary values before unlocking
+			serverIP := conn.ServerIP
+			clientIP := conn.ClientIP
+			serverPort := conn.ServerPort
+			clientPort := conn.ClientPort
+			serverNextSeq := conn.ServerNextSeq
+			clientNextSeq := conn.ClientNextSeq
+			tunIFCE := conn.TunIFCE // Capture TunIFCE if needed for sendTCPPacket
+			conn.Mutex.Unlock()
+
+			// Send FIN+ACK packet
+			flags := uint8(TCPFlagFIN | TCPFlagACK)
+			sentBytes, err := sendTCPPacket(tunIFCE, serverIP, clientIP, uint16(serverPort), uint16(clientPort),
+				serverNextSeq, clientNextSeq, flags, nil)
+
+			if err != nil {
+				log.Printf("[TCP Close Error - %s] Failed to send FIN+ACK packet: %v", connKey, err)
+				// If sending FIN fails, we might need to reconsider just deleting the state
+				conn.Mutex.Lock()
+				delete(tcpConnections, connKey) // Fallback to delete if send fails?
+				conn.Mutex.Unlock()
+			} else {
+				// Update sequence number for the sent FIN
+				conn.Mutex.Lock()
+				if conn.State == TCPStateFinWait1 { // Check state again before incrementing
+					conn.ServerNextSeq += uint32(sentBytes) // FIN counts as 1 seq num if no payload
+					// If sentBytes is payload length, we need +1 for FIN
+					// Let's assume sendTCPPacket returns payload length, so we add 1 for FIN
+					if sentBytes == 0 { // If no payload, FIN is 1 byte
+						conn.ServerNextSeq++
+					}
+					log.Printf("[SeqNum Update - %s] After FIN+ACK: ServerNextSeq = %d (FIN sent)", connKey, conn.ServerNextSeq)
+				}
+				conn.Mutex.Unlock()
+				// Now wait for client's ACK and potentially FIN in handleTCPPacket
+			}
+		} else {
+			// Connection wasn't established anymore, maybe already closing? Unlock.
+			log.Printf("Skipping FIN initiation for %s as state is %v", connKey, conn.State)
+			conn.Mutex.Unlock()
+		}
 	}
 }
 
