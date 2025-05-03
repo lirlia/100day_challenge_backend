@@ -96,7 +96,7 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	var users []User
-	err := db.Select(ctx, &users, "SELECT * FROM users ORDER BY id DESC")
+	err := db.Model(&User{}).WithContext(ctx).Order("id DESC").Select(&users)
 	if err != nil {
 		log.Printf("ERROR: Failed to fetch users: %v", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
