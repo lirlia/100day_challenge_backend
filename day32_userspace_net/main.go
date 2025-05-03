@@ -919,7 +919,7 @@ func handleFINACK(conn *TCPConnection, tcpHeader *TCPHeader) {
 	}
 }
 
-// --- HTTP Handling (Port 80) ---
+// --- HTTP Handling (Port 80) / Also used for HTTPS after handshake ---
 
 // parseHTTPRequest parses a simple HTTP/1.x request.
 func parseHTTPRequest(payload []byte) (method, uri, version string, headers map[string]string, err error) {
@@ -968,13 +968,13 @@ func parseHTTPRequest(payload []byte) (method, uri, version string, headers map[
 }
 
 func handleHTTPData(ifce *water.Interface, conn *TCPConnection, payload []byte) {
-	log.Printf("Handling HTTP data (%d bytes) for %s", len(payload), conn.ConnectionKey())
+	log.Printf("Handling HTTP data (%d bytes) for %s (Port: %d)", len(payload), conn.ConnectionKey(), conn.ServerPort)
 	// NOTE: This simplified version parses the first segment as a full request.
 	// Proper implementation requires buffering similar to TLS.
 	method, uri, _, headers, err := parseHTTPRequest(payload)
 	if err != nil {
 		log.Printf("Failed to parse HTTP request for %s: %v", conn.ConnectionKey(), err)
-		// TODO: Send HTTP 400 Bad Request response
+		// TODO: Send HTTP 400 Bad Request response (Needs TLS record wrapping for port 443)
 		return
 	}
 
@@ -983,12 +983,18 @@ func handleHTTPData(ifce *water.Interface, conn *TCPConnection, payload []byte) 
 		log.Printf("  HTTP Header: %s: %s", k, v)
 	}
 
-	// Send simple HTTP 200 OK response
-	body := "<html><body><h1>Hello from userspace HTTP/1.1! (Port 80)</h1></body></html>"
+	// --- Send HTTP 200 OK response ---
+	responseText := ""
+	if conn.ServerPort == 443 {
+		responseText = "<html><body><h1>Hello from userspace HTTPS/1.1! (Port 443)</h1></body></html>"
+	} else {
+		responseText = "<html><body><h1>Hello from userspace HTTP/1.1! (Port 80)</h1></body></html>"
+	}
+	body := responseText
 	responseHeaders := map[string]string{
 		"Content-Type":   "text/html; charset=utf-8",
 		"Content-Length": fmt.Sprintf("%d", len(body)),
-		"Connection":     "close", // Close connection after response for simplicity
+		// "Connection":     "close", // Let TLS handle closure or client decide
 	}
 	statusLine := "HTTP/1.1 200 OK"
 	var respBuilder strings.Builder
@@ -998,18 +1004,43 @@ func handleHTTPData(ifce *water.Interface, conn *TCPConnection, payload []byte) 
 	}
 	respBuilder.WriteString("\r\n")
 	respBuilder.WriteString(body)
-	httpResp := respBuilder.String()
+	httpRespBytes := []byte(respBuilder.String())
 
-	respFlags := uint8(TCPFlagPSH | TCPFlagACK | TCPFlagFIN) // Send FIN with response
-	err = sendTCPPacket(ifce, conn.ServerIP, conn.ClientIP, conn.ServerPort, conn.ClientPort,
-		conn.ServerNextSeq, conn.ClientNextSeq, respFlags, []byte(httpResp))
+	// Send response differently based on port
+	if conn.ServerPort == 443 {
+		// --- Send response via TLS Record ---
+		log.Printf("[TLS Info - %s] Sending HTTP response (%d bytes) as Application Data.", conn.ConnectionKey(), len(httpRespBytes))
 
-	if err != nil {
-		log.Printf("Error sending HTTP 200 response: %v", err)
+		// Wrap the HTTP response in a TLS Application Data record
+		appDataRecord, err := buildTLSRecord(TLSRecordTypeApplicationData, 0x0303, httpRespBytes) // Use TLS 1.2 version
+		if err != nil {
+			log.Printf("[TLS Error - %s] Failed to build Application Data record for HTTP response: %v", conn.ConnectionKey(), err)
+			return
+		}
+
+		// Send the TLS record containing the HTTP response
+		err = sendRawTLSRecord(ifce, conn, appDataRecord)
+		if err != nil {
+			log.Printf("[TLS Error - %s] Failed to send Application Data record for HTTP response: %v", conn.ConnectionKey(), err)
+		} else {
+			// ServerNextSeq is updated inside sendRawTLSRecord
+			log.Printf("[TLS Info - %s] Sent HTTP response via TLS record. ServerNextSeq updated to %d.", conn.ConnectionKey(), conn.ServerNextSeq)
+			// Don't send FIN here for TLS connections; rely on client FIN or TLS close_notify
+		}
 	} else {
-		conn.ServerNextSeq += uint32(len(httpResp)) + 1 // +1 for FIN
-		conn.State = TCPStateFinWait1                   // We sent FIN
-		log.Printf("Sent HTTP 200 Response and FIN, entering FIN_WAIT_1 for %s", conn.ConnectionKey())
+		// --- Send response via raw TCP (Port 80) ---
+		log.Printf("[HTTP Info - %s] Sending HTTP response (%d bytes) via raw TCP.", conn.ConnectionKey(), len(httpRespBytes))
+		respFlags := uint8(TCPFlagPSH | TCPFlagACK | TCPFlagFIN) // Send FIN with response for plain HTTP
+		err = sendTCPPacket(ifce, conn.ServerIP, conn.ClientIP, conn.ServerPort, conn.ClientPort,
+			conn.ServerNextSeq, conn.ClientNextSeq, respFlags, httpRespBytes)
+
+		if err != nil {
+			log.Printf("[HTTP Error - %s] Error sending HTTP 200 response via TCP: %v", conn.ConnectionKey(), err)
+		} else {
+			conn.ServerNextSeq += uint32(len(httpRespBytes)) + 1 // +1 for FIN
+			conn.State = TCPStateFinWait1                        // We sent FIN
+			log.Printf("[HTTP Info - %s] Sent HTTP 200 Response and FIN, entering FIN_WAIT_1.", conn.ConnectionKey())
+		}
 	}
 }
 
@@ -1084,7 +1115,16 @@ func handleTLSBufferedData(ifce *water.Interface, conn *TCPConnection) {
 			log.Printf("[TLS Info - %s] Received Alert Record (Payload: %x)", connKey, recordPayload)
 			// Handle alert, maybe close connection
 		case TLSRecordTypeApplicationData:
-			log.Printf("[TLS Info - %s] Received Application Data Record (Length: %d, Decryption TBD)", connKey, len(recordPayload))
+			log.Printf("[TLS Info - %s] Received Application Data Record (Length: %d)", connKey, len(recordPayload))
+			if conn.TLSState == TLSStateHandshakeComplete {
+				// TODO: Decrypt Application Data payload here in the future.
+				log.Printf("[TLS Info - %s] Handshake complete. Processing Application Data as HTTP (Unencrypted).", connKey)
+				// Reuse handleHTTPData for now, passing the unencrypted payload.
+				// NOTE: handleHTTPData currently sends a raw TCP response, not a TLS record.
+				handleHTTPData(ifce, conn, recordPayload)
+			} else {
+				log.Printf("[TLS Warn - %s] Received Application Data before handshake complete (State: %v). Ignoring.", connKey, conn.TLSState)
+			}
 		default:
 			log.Printf("[TLS Warn - %s] Received unknown TLS Record Type %d", recordHeader.Type, connKey)
 		}
