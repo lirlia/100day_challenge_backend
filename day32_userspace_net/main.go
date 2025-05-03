@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"strings"
+	"sync" // For mutex
 	"syscall"
 	"time" // For seeding random number generator
 
@@ -62,6 +63,36 @@ type TCPHeader struct {
 	Options    []byte // Options (if DataOffset > 5)
 }
 
+// TCPConnection represents the state of a TCP connection
+type TCPConnection struct {
+	State         TCPState
+	ClientIP      net.IP
+	ClientPort    uint16
+	ServerIP      net.IP
+	ServerPort    uint16
+	ClientISN     uint32 // Initial Sequence Number from client
+	ServerISN     uint32 // Initial Sequence Number from server
+	ClientNextSeq uint32 // Next expected sequence number from client
+	ServerNextSeq uint32 // Next sequence number to send from server
+	// Add more fields as needed (e.g., window sizes, timers)
+}
+
+// TCPState represents the state of a TCP connection
+type TCPState int
+
+const (
+	TCPStateListen TCPState = iota
+	TCPStateSynReceived
+	TCPStateEstablished
+	TCPStateFinWait1
+	TCPStateFinWait2
+	TCPStateCloseWait
+	TCPStateClosing
+	TCPStateLastAck
+	TCPStateTimeWait
+	TCPStateClosed
+)
+
 const (
 	IPv4Version              = 4
 	IPv4HeaderMinLengthBytes = 20 // Minimum header length (IHL=5)
@@ -82,6 +113,15 @@ const (
 	TCPFlagECE = 1 << 6
 	TCPFlagCWR = 1 << 7
 	// TCPFlagNS = 1 << 8 // (Not easily accessible in standard 8-bit flag field)
+
+	ListenPort = 80 // Hardcoded listening port for this example
+)
+
+// Global map to store active TCP connections
+// Key format: "clientIP:clientPort-serverIP:serverPort"
+var (
+	tcpConnections = make(map[string]*TCPConnection)
+	connMutex      sync.Mutex
 )
 
 // Command-line flags
@@ -583,7 +623,7 @@ func maskSize(mask net.IPMask) int {
 // 	}
 // }
 
-// handleTCPPacket parses TCP header and logs basic information.
+// handleTCPPacket parses TCP header and manages TCP state transitions for handshake.
 func handleTCPPacket(ifce *water.Interface, ipHeader *IPv4Header, tcpSegment []byte) {
 	tcpHeader, tcpPayload, err := parseTCPHeader(tcpSegment)
 	if err != nil {
@@ -592,7 +632,7 @@ func handleTCPPacket(ifce *water.Interface, ipHeader *IPv4Header, tcpSegment []b
 	}
 
 	flagsStr := tcpFlagsToString(tcpHeader.Flags)
-	log.Printf("TCP Packet: %s:%d -> %s:%d Seq: %d Ack: %d Flags: [%s] Win: %d Len: %d",
+	log.Printf("TCP RCV: %s:%d -> %s:%d Seq: %d Ack: %d Flags: [%s] Win: %d Len: %d",
 		ipHeader.SrcIP, tcpHeader.SrcPort,
 		ipHeader.DstIP, tcpHeader.DstPort,
 		tcpHeader.SeqNum,
@@ -602,9 +642,188 @@ func handleTCPPacket(ifce *water.Interface, ipHeader *IPv4Header, tcpSegment []b
 		len(tcpPayload),
 	)
 
-	// TODO (Phase 3+): Implement TCP state machine, connection handling, etc.
-	_ = tcpPayload // Keep payload for future use
+	connMutex.Lock()
+	defer connMutex.Unlock()
 
+	// Connection key from the client's perspective
+	connKey := fmt.Sprintf("%s:%d-%s:%d", ipHeader.SrcIP, tcpHeader.SrcPort, ipHeader.DstIP, tcpHeader.DstPort)
+	conn, exists := tcpConnections[connKey]
+
+	switch {
+	// Case 1: New connection attempt (SYN received)
+	case !exists && tcpHeader.Flags&TCPFlagSYN != 0 && tcpHeader.Flags&TCPFlagACK == 0 && tcpHeader.DstPort == ListenPort:
+		log.Printf("Handling SYN for new connection %s", connKey)
+		// Basic SYN flood protection (very rudimentary)
+		if len(tcpConnections) > 1000 {
+			log.Println("Too many connections, ignoring SYN")
+			return
+		}
+
+		serverISN := rand.Uint32() // Generate server's initial sequence number
+		newConn := &TCPConnection{
+			State:         TCPStateSynReceived,
+			ClientIP:      ipHeader.SrcIP,
+			ClientPort:    tcpHeader.SrcPort,
+			ServerIP:      ipHeader.DstIP,    // Our IP
+			ServerPort:    tcpHeader.DstPort, // Our Port (ListenPort)
+			ClientISN:     tcpHeader.SeqNum,
+			ServerISN:     serverISN,
+			ClientNextSeq: tcpHeader.SeqNum + 1, // Expect client's ISN + 1 next
+			ServerNextSeq: serverISN + 1,        // We send ISN, next will be ISN + 1
+		}
+		tcpConnections[connKey] = newConn
+
+		// Send SYN-ACK
+		err = sendTCPPacket(ifce, newConn.ServerIP, newConn.ClientIP, newConn.ServerPort, newConn.ClientPort,
+			newConn.ServerISN, newConn.ClientNextSeq, TCPFlagSYN|TCPFlagACK, nil)
+		if err != nil {
+			log.Printf("Error sending SYN-ACK for %s: %v", connKey, err)
+			delete(tcpConnections, connKey) // Clean up on error
+		}
+
+	// Case 2: ACK received for our SYN-ACK (completing handshake)
+	case exists && conn.State == TCPStateSynReceived && tcpHeader.Flags&TCPFlagACK != 0:
+		log.Printf("Handling ACK for SYN-ACK for connection %s", connKey)
+		// Validate ACK number
+		if tcpHeader.AckNum == conn.ServerNextSeq {
+			log.Printf("Connection %s ESTABLISHED", connKey)
+			conn.State = TCPStateEstablished
+			conn.ClientNextSeq = tcpHeader.SeqNum // Update expected sequence from client
+			// Now we can start receiving/sending data (not implemented)
+		} else {
+			log.Printf("Invalid ACK number for %s. Expected %d, got %d. Sending RST.", connKey, conn.ServerNextSeq, tcpHeader.AckNum)
+			// Send RST
+			sendTCPPacket(ifce, conn.ServerIP, conn.ClientIP, conn.ServerPort, conn.ClientPort,
+				tcpHeader.AckNum, 0, TCPFlagRST|TCPFlagACK, nil) // Send RST with received AckNum as SeqNum
+			delete(tcpConnections, connKey)
+		}
+
+	// Case 3: Data or other packets on established connection (placeholder)
+	case exists && conn.State == TCPStateEstablished:
+		log.Printf("Received packet for established connection %s (Data handling not implemented)", connKey)
+		// Basic validation: check sequence number? (tcpHeader.SeqNum == conn.ClientNextSeq)
+		// Handle FIN, RST, data payload etc.
+
+	// TODO: Add handling for FIN, RST, other states
+
+	default:
+		// Handle packets for unknown connections or unexpected states (e.g., send RST)
+		if tcpHeader.Flags&TCPFlagRST == 0 { // Don't send RST in response to an RST
+			log.Printf("Unexpected packet or state for %s / %s:%d -> %s:%d. Flags: [%s]. Sending RST.",
+				connKey, ipHeader.SrcIP, tcpHeader.SrcPort, ipHeader.DstIP, tcpHeader.DstPort, flagsStr)
+			seqNum := uint32(0)
+			ackNum := tcpHeader.SeqNum + uint32(len(tcpPayload)) // Basic ACK calculation
+			if tcpHeader.Flags&TCPFlagSYN != 0 {                 // SYN counts as 1 byte in seq space
+				ackNum = tcpHeader.SeqNum + 1
+			}
+			// If no ACK in incoming, Seqnum is 0. If ACK is set, use incoming AckNum as Seqnum
+			if tcpHeader.Flags&TCPFlagACK != 0 {
+				seqNum = tcpHeader.AckNum
+			}
+
+			sendTCPPacket(ifce, ipHeader.DstIP, ipHeader.SrcIP, tcpHeader.DstPort, tcpHeader.SrcPort,
+				seqNum, ackNum, TCPFlagRST|TCPFlagACK, nil)
+		}
+	}
+
+}
+
+// sendTCPPacket constructs and sends a TCP packet.
+func sendTCPPacket(ifce *water.Interface, srcIP, dstIP net.IP, srcPort, dstPort uint16, seqNum, ackNum uint32, flags uint8, payload []byte) error {
+	log.Printf("TCP SEND: %s:%d -> %s:%d Seq: %d Ack: %d Flags: [%s] Len: %d",
+		srcIP, srcPort, dstIP, dstPort, seqNum, ackNum, tcpFlagsToString(flags), len(payload))
+
+	// 1. Build TCP Header
+	tcpHeaderBytes, err := buildTCPHeader(srcIP, dstIP, srcPort, dstPort, seqNum, ackNum, flags, payload)
+	if err != nil {
+		return fmt.Errorf("failed to build TCP header: %w", err)
+	}
+
+	// 2. Build IP Header
+	ipHeaderBytes, err := buildIPv4Header(srcIP, dstIP, TCPProtocolNumber, len(tcpHeaderBytes)+len(payload))
+	if err != nil {
+		return fmt.Errorf("failed to build IP header: %w", err)
+	}
+
+	// 3. Combine IP Header and TCP Segment
+	fullPacket := append(ipHeaderBytes, tcpHeaderBytes...)
+	fullPacket = append(fullPacket, payload...)
+
+	// 4. Write to TUN device (library handles AF_INET header on macOS)
+	n, err := ifce.Write(fullPacket)
+	if err != nil {
+		return fmt.Errorf("failed to write TCP packet to TUN device: %w", err)
+	}
+	if n != len(fullPacket) {
+		return fmt.Errorf("short write for TCP packet: wrote %d bytes, expected %d", n, len(fullPacket))
+	}
+	return nil
+}
+
+// buildTCPHeader creates a TCP header byte slice including the checksum.
+func buildTCPHeader(srcIP, dstIP net.IP, srcPort, dstPort uint16, seqNum, ackNum uint32, flags uint8, payload []byte) ([]byte, error) {
+	header := TCPHeader{
+		SrcPort:    srcPort,
+		DstPort:    dstPort,
+		SeqNum:     seqNum,
+		AckNum:     ackNum,
+		DataOffset: 5, // Assuming no options, header length = 5 * 4 = 20 bytes
+		Reserved:   0,
+		Flags:      flags,
+		WindowSize: 65535, // Fixed window size for simplicity
+		Checksum:   0,     // Calculate later
+		UrgentPtr:  0,
+	}
+	headerLengthBytes := int(header.DataOffset) * 4
+	headerBytes := make([]byte, headerLengthBytes)
+
+	binary.BigEndian.PutUint16(headerBytes[0:2], header.SrcPort)
+	binary.BigEndian.PutUint16(headerBytes[2:4], header.DstPort)
+	binary.BigEndian.PutUint32(headerBytes[4:8], header.SeqNum)
+	binary.BigEndian.PutUint32(headerBytes[8:12], header.AckNum)
+	headerBytes[12] = (header.DataOffset << 4) // Reserved and NS are 0
+	headerBytes[13] = header.Flags
+	binary.BigEndian.PutUint16(headerBytes[14:16], header.WindowSize)
+	// Checksum (16-17) is initially 0
+	binary.BigEndian.PutUint16(headerBytes[18:20], header.UrgentPtr)
+
+	// Calculate Checksum
+	checksum, err := calculateTCPChecksum(srcIP, dstIP, headerBytes, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to calculate TCP checksum: %w", err)
+	}
+	binary.BigEndian.PutUint16(headerBytes[16:18], checksum)
+
+	return headerBytes, nil
+}
+
+// calculateTCPChecksum computes the TCP checksum using a pseudo-header.
+func calculateTCPChecksum(srcIP, dstIP net.IP, tcpHeader, tcpPayload []byte) (uint16, error) {
+	srcIPv4 := srcIP.To4()
+	dstIPv4 := dstIP.To4()
+	if srcIPv4 == nil || dstIPv4 == nil {
+		return 0, fmt.Errorf("source or destination IP is not IPv4 for TCP checksum")
+	}
+
+	pseudoHeader := make([]byte, 12)
+	copy(pseudoHeader[0:4], srcIPv4)
+	copy(pseudoHeader[4:8], dstIPv4)
+	pseudoHeader[8] = 0 // Reserved
+	pseudoHeader[9] = TCPProtocolNumber
+	tcpLength := uint16(len(tcpHeader) + len(tcpPayload))
+	binary.BigEndian.PutUint16(pseudoHeader[10:12], tcpLength)
+
+	// Combine pseudo-header, TCP header, and payload for checksum calculation
+	dataForChecksum := append(pseudoHeader, tcpHeader...)
+	dataForChecksum = append(dataForChecksum, tcpPayload...)
+
+	// Ensure checksum field in header is 0 for calculation
+	if len(tcpHeader) >= 18 {
+		binary.BigEndian.PutUint16(dataForChecksum[12+16:12+18], 0)
+	}
+
+	checksum := calculateChecksum(dataForChecksum) // Reuse the internet checksum func
+	return checksum, nil
 }
 
 // parseTCPHeader parses the byte slice into a TCPHeader struct.
