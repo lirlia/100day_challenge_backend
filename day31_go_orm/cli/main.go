@@ -1,175 +1,226 @@
 package main
 
 import (
-	"bufio"
-	"context"
-	"database/sql"
-	"encoding/json" // 結果表示用に JSON を使用
+	"context" // 結果表示用に JSON を使用
 	"fmt"
 	"os"
-	"reflect"
-	"strconv"
 	"strings"
-	"time"
+	"text/tabwriter"
 
+	prompt "github.com/c-bata/go-prompt"                          // bufio の代わりに go-prompt を使う
 	"github.com/lirlia/100day_challenge_backend/day31_go_orm/orm" // DB接続用に必要
+	_ "github.com/mattn/go-sqlite3"
 )
 
 // --- CLI アプリケーションで使用するモデル定義 ---
-type User struct {
-	ID        int64          `db:"id"`
-	Name      string         `db:"name"`
-	Email     sql.NullString `db:"email"`
-	CreatedAt time.Time      `db:"created_at"`
-	UpdatedAt time.Time      `db:"updated_at"`
-	Posts     []Post         `orm:"hasmany:user_id"` // Preload 用に追加
-}
+// type User struct {
+// 	ID        int64          `db:"id"`
+// 	Name      string         `db:"name"`
+// 	Email     sql.NullString `db:"email"`
+// 	CreatedAt time.Time      `db:"created_at"`
+// 	UpdatedAt time.Time      `db:"updated_at"`
+// 	Posts     []Post         `orm:"hasmany:user_id"` // Preload 用に追加
+// }
 
-type Post struct {
-	ID          int64        `db:"id"`
-	UserID      int64        `db:"user_id"`
-	Title       string       `db:"title"`
-	Body        *string      `db:"body"`
-	PublishedAt sql.NullTime `db:"published_at"`
-}
+// type Post struct {
+// 	ID          int64        `db:"id"`
+// 	UserID      int64        `db:"user_id"`
+// 	Title       string       `db:"title"`
+// 	Body        *string      `db:"body"`
+// 	PublishedAt sql.NullTime `db:"published_at"`
+// }
 
 // --- ここまでモデル定義 ---
 
-var currentDB *orm.DB // 現在接続中の DB インスタンス
-var currentTX *orm.TX // 現在アクティブなトランザクション (未実装)
+var currentDB *orm.DB // グローバル変数名を db から currentDB に変更
+// var currentTX *orm.TX // 削除: CLI ではトランザクション管理はしない
+var currentDBFile string
+
+// --- コマンド定義 ---
+var commands = []prompt.Suggest{
+	{Text: "connect", Description: "<database_file> Connect to a SQLite database file."},
+	{Text: "disconnect", Description: "Disconnect from the current database."},
+	{Text: "tables", Description: "List tables in the current database."},
+	{Text: "schema", Description: "<table_name> Show the schema of a table."},
+	{Text: "select", Description: "* from <table> / count(*) from <table> Execute a SELECT query."},
+	{Text: "help", Description: "Show this help message."},
+	{Text: "exit", Description: "Exit the shell."},
+	{Text: "quit", Description: "Exit the shell."},
+}
 
 func main() {
-	reader := bufio.NewReader(os.Stdin)
-	fmt.Println("Interactive ORM Shell (Day 31)")
-	fmt.Println("Enter 'help' for commands, 'exit' to quit.")
+	fmt.Println("Interactive ORM Shell (Day 31 with go-prompt)")
+	fmt.Println("Enter 'help' for commands, type and press TAB for completion, 'exit' to quit.")
 
-	for {
-		// プロンプト表示
-		prompt := "> "
+	// プロンプトのカスタマイズ関数
+	livePrefixFunc := func() (string, bool) {
+		prefix := "> "
 		if currentDB != nil {
-			// 接続中の DB ファイル名を表示したいが、orm.DB は元々の DSN を保持していない
-			// 簡単のため、接続状態のみ示す
-			prompt = "(connected) > "
-			if currentTX != nil {
-				prompt = "(tx) > "
-			}
+			prefix = fmt.Sprintf("(%s) > ", currentDBFile)
 		}
-		fmt.Print(prompt)
+		return prefix, true // 常にライブプレフィックスを有効にする
+	}
 
-		input, err := reader.ReadString('\n')
-		if err != nil {
-			fmt.Println("Error reading input:", err)
-			break // EOF などでループを抜ける
+	p := prompt.New(
+		executor,
+		completer,
+		prompt.OptionTitle("orm-shell"),
+		prompt.OptionPrefix("> "),               // デフォルトプレフィックス
+		prompt.OptionLivePrefix(livePrefixFunc), // 動的プレフィックス
+		prompt.OptionInputTextColor(prompt.Yellow),
+		// prompt.OptionHistory([]string{"connect orm_shell.db", "tables", "schema users"}), // 履歴の初期値 (オプション)
+	)
+	p.Run() // REPL を起動
+}
+
+// --- executor 関数 ---
+// ユーザーの入力を処理する
+func executor(in string) {
+	in = strings.TrimSpace(in)
+	if in == "" {
+		return
+	} else if in == "quit" || in == "exit" {
+		if currentDB != nil {
+			currentDB.Close()
 		}
+		fmt.Println("Exiting.")
+		os.Exit(0) // go-prompt を使う場合、os.Exit で終了する必要がある
+	}
 
-		input = strings.TrimSpace(input)
-		if input == "" {
-			continue
-		}
+	processCommand(in) // 既存のコマンド処理関数を呼び出す
+}
 
-		parts := strings.Fields(input)
-		command := strings.ToLower(parts[0])
-		args := parts[1:]
+// --- completer 関数 ---
+// 補完候補を生成する
+func completer(d prompt.Document) []prompt.Suggest {
+	wordBeforeCursor := d.GetWordBeforeCursor()
+	currentLine := d.TextBeforeCursor()
+	args := strings.Fields(currentLine)
 
+	// 1. コマンド名の補完
+	if len(args) <= 1 && !strings.Contains(currentLine, " ") {
+		return prompt.FilterHasPrefix(commands, wordBeforeCursor, true)
+	}
+
+	// 2. コマンド引数の補完
+	if len(args) >= 1 {
+		command := strings.ToLower(args[0])
 		switch command {
-		case "exit", "quit":
-			fmt.Println("Exiting.")
-			if currentTX != nil {
-				fmt.Println("Warning: Active transaction rolled back.")
-				currentTX.Rollback() // 暗黙的にロールバック
+		case "schema":
+			// "schema " の後にテーブル名を補完
+			if len(args) == 2 {
+				tableNames := getTableNames()
+				tableSuggestions := make([]prompt.Suggest, len(tableNames))
+				for i, name := range tableNames {
+					tableSuggestions[i] = prompt.Suggest{Text: name}
+				}
+				return prompt.FilterHasPrefix(tableSuggestions, wordBeforeCursor, true)
 			}
-			if currentDB != nil {
-				currentDB.Close()
+		case "select":
+			// "select " の後
+			if len(args) >= 2 {
+				// "select * " の後
+				if strings.ToLower(args[1]) == "*" && len(args) >= 3 && strings.ToLower(args[2]) == "from" {
+					// "select * from " の後にテーブル名を補完
+					if len(args) == 4 {
+						tableNames := getTableNames()
+						tableSuggestions := make([]prompt.Suggest, len(tableNames))
+						for i, name := range tableNames {
+							tableSuggestions[i] = prompt.Suggest{Text: name}
+						}
+						return prompt.FilterHasPrefix(tableSuggestions, wordBeforeCursor, true)
+					}
+				}
+				// "select count(*) " の後
+				if strings.ToLower(args[1]) == "count(*)" && len(args) >= 3 && strings.ToLower(args[2]) == "from" {
+					// "select count(*) from " の後にテーブル名を補完
+					if len(args) == 4 {
+						tableNames := getTableNames()
+						tableSuggestions := make([]prompt.Suggest, len(tableNames))
+						for i, name := range tableNames {
+							tableSuggestions[i] = prompt.Suggest{Text: name}
+						}
+						return prompt.FilterHasPrefix(tableSuggestions, wordBeforeCursor, true)
+					}
+				}
+				// "select " の直後で '*' や 'count(*)' を補完
+				if len(args) == 2 {
+					selectArgs := []prompt.Suggest{
+						{Text: "*", Description: "Select all columns"},
+						{Text: "count(*)", Description: "Count rows"},
+					}
+					return prompt.FilterHasPrefix(selectArgs, wordBeforeCursor, true)
+				}
+				// "select * " や "select count(*) " の後で 'from' を補完
+				if len(args) == 3 && (strings.ToLower(args[1]) == "*" || strings.ToLower(args[1]) == "count(*)") {
+					fromSuggestion := []prompt.Suggest{{Text: "from"}}
+					return prompt.FilterHasPrefix(fromSuggestion, wordBeforeCursor, true)
+				}
 			}
-			return // プログラム終了
-		case "help":
-			printHelp()
 		case "connect":
-			handleConnect(args)
-		case "disconnect":
-			handleDisconnect()
-		case "insert":
-			handleInsert(args)
-		case "select": // select コマンドを処理
-			handleSelect(args)
-		case "select_one", "delete", "begin", "commit", "rollback":
-			fmt.Println("Command not yet implemented:", command)
-		default:
-			fmt.Println("Unknown command:", command)
-			printHelp()
+			// connect の後のファイルパス補完は実装が複雑なので省略
+			return []prompt.Suggest{}
 		}
 	}
+
+	return []prompt.Suggest{} // 上記以外は補完しない
+}
+
+// --- ヘルパー関数: テーブル名取得 ---
+func getTableNames() []string {
+	if currentDB == nil {
+		return []string{}
+	}
+	rows, err := currentDB.DB.QueryContext(context.Background(), "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name;")
+	if err != nil {
+		// エラーは無視して空のスライスを返す (補完のため)
+		return []string{}
+	}
+	defer rows.Close()
+
+	var tables []string
+	for rows.Next() {
+		var tableName string
+		if err := rows.Scan(&tableName); err == nil {
+			tables = append(tables, tableName)
+		}
+	}
+	return tables
 }
 
 func printHelp() {
+	// help コマンドの出力も go-prompt の Suggestion に合わせる
 	fmt.Println("Available commands:")
-	fmt.Println("  connect <db_file_path>  - Connect to a SQLite database file.")
-	fmt.Println("  disconnect              - Disconnect from the current database.")
-	fmt.Println("  help                    - Show this help message.")
-	fmt.Println("  exit / quit             - Exit the shell.")
-	fmt.Println("  --- ORM Commands ---")
-	fmt.Println("  insert <Model> <f=v> ...- Insert a new record.")
-	fmt.Println("  select <Model> [...]    - Select records (use 'help select' for options).")
-	fmt.Println("  select_one <Model> <id> - Select a single record by ID.")
-	fmt.Println("  delete <Model> <id>     - Delete a record by ID.")
-	fmt.Println("  begin                   - Begin a transaction.")
-	fmt.Println("  commit                  - Commit the current transaction.")
-	fmt.Println("  rollback                - Rollback the current transaction.")
-	fmt.Println("  --- ORM Commands (Not Implemented Yet) ---")
-	fmt.Println("  insert <Model> <f=v> ...")
-	fmt.Println("  select <Model> [where \"q\" args...] [order \"c\" args...] [limit N] [offset N] [preload F]")
-	fmt.Println("  select_one <Model> <id>")
-	fmt.Println("  delete <Model> <id>")
-	fmt.Println("  begin")
-	fmt.Println("  commit")
-	fmt.Println("  rollback")
+	for _, cmd := range commands {
+		fmt.Printf("  %-10s - %s\n", cmd.Text, cmd.Description)
+	}
 }
 
-func handleConnect(args []string) {
-	if len(args) != 1 {
-		fmt.Println("Usage: connect <db_file_path>")
-		return
-	}
-	dbPath := args[0]
-
+func connectDB(filename string) {
+	var err error
 	if currentDB != nil {
-		fmt.Println("Already connected. Disconnect first.")
-		return
+		currentDB.Close()
 	}
-	if currentTX != nil {
-		fmt.Println("Error: Cannot connect while in a transaction.") // 通常発生しないはず
-		return
-	}
-
-	// ../orm を参照するため、パスは実行時のカレントディレクトリからの相対パス
-	// シェルは day31_go_orm/cli で実行される想定
-	// TODO: パス解決をより堅牢にする (絶対パスを渡せるようにするなど)
-	db, err := orm.Open(dbPath)
+	dbInstance, err := orm.Open(filename)
 	if err != nil {
-		fmt.Printf("Error connecting to database '%s': %v\n", dbPath, err)
+		fmt.Printf("Error connecting to database %s: %v\n", filename, err)
 		return
 	}
-
-	// 簡単な Ping で接続確認
-	if err := db.PingContext(context.Background()); err != nil {
-		fmt.Printf("Error pinging database '%s': %v\n", dbPath, err)
-		db.Close() // 接続失敗したら閉じる
+	err = dbInstance.PingContext(context.Background())
+	if err != nil {
+		fmt.Printf("Error pinging database %s: %v\n", filename, err)
+		dbInstance.Close()
 		return
 	}
-
-	currentDB = db
-	fmt.Printf("Connected to %s\n", dbPath)
+	currentDB = dbInstance
+	currentDBFile = filename
+	fmt.Printf("Connected to %s\n", filename)
 }
 
-func handleDisconnect() {
+func disconnectDB() {
 	if currentDB == nil {
 		fmt.Println("Not connected.")
 		return
-	}
-	if currentTX != nil {
-		fmt.Println("Warning: Active transaction rolled back during disconnect.")
-		currentTX.Rollback()
-		currentTX = nil
 	}
 	err := currentDB.Close()
 	if err != nil {
@@ -177,283 +228,187 @@ func handleDisconnect() {
 		// エラーがあっても参照はクリアする
 	}
 	currentDB = nil
+	currentDBFile = ""
 	fmt.Println("Disconnected.")
 }
 
-// handleInsert は insert コマンドを処理します。
-// Usage: insert <ModelName> <field1=value1> <field2=value2> ...
-func handleInsert(args []string) {
-	executor := getExecutor()
-	if executor == nil {
-		fmt.Println("Not connected. Use 'connect <db_file>' first.")
+func processCommand(line string) {
+	parts := strings.Fields(line)
+	if len(parts) == 0 {
 		return
 	}
-	if len(args) < 2 {
-		fmt.Println("Usage: insert <ModelName> <field1=value1> [field2=value2]...")
-		return
-	}
+	command := strings.ToLower(parts[0])
 
-	modelName := args[0]
-	fieldArgs := args[1:]
-
-	modelPtr, err := getModelInstanceFromName(modelName)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-
-	modelVal := reflect.ValueOf(modelPtr).Elem()
-
-	fmt.Printf("Preparing to insert into %s:\n", modelName)
-	for _, fieldArg := range fieldArgs {
-		parts := strings.SplitN(fieldArg, "=", 2)
+	switch command {
+	case "help":
+		printHelp()
+	case "connect":
 		if len(parts) != 2 {
-			fmt.Printf("  Invalid field format: %s (expected field=value)\n", fieldArg)
-			continue
+			fmt.Println("Usage: connect <database_file>")
+			return
 		}
-		fieldName := parts[0]
-		valueStr := parts[1]
-
-		// ID は自動採番なので設定しない
-		if strings.ToLower(fieldName) == "id" {
-			fmt.Println("  Skipping ID field (auto-increment)")
-			continue
+		connectDB(parts[1])
+	case "disconnect":
+		disconnectDB()
+	case "tables":
+		showTables()
+	case "schema":
+		if len(parts) != 2 {
+			fmt.Println("Usage: schema <table_name>")
+			return
 		}
-		// hasmany フィールドも設定しない
-		if _, ok := modelVal.Type().FieldByName(fieldName); ok {
-			fieldInfo, _ := modelVal.Type().FieldByName(fieldName)
-			ormTag := fieldInfo.Tag.Get("orm")
-			if strings.HasPrefix(ormTag, "hasmany:") {
-				fmt.Printf("  Skipping hasmany field: %s\n", fieldName)
-				continue
-			}
+		showSchema(parts[1])
+	case "select":
+		if currentDB == nil {
+			fmt.Println("Not connected to a database.")
+			return
 		}
-
-		field := modelVal.FieldByName(fieldName)
-		if !field.IsValid() || !field.CanSet() {
-			fmt.Printf("  Field not found or not settable: %s\n", fieldName)
-			continue
+		query := strings.Join(parts[1:], " ")
+		lowerQuery := strings.ToLower(query)
+		if !strings.HasPrefix(lowerQuery, "* from ") && !strings.HasPrefix(lowerQuery, "count(*) from ") {
+			fmt.Println("Currently only 'SELECT * FROM <table_name>' and 'SELECT COUNT(*) FROM <table_name>' are supported.")
+			return
 		}
-
-		fmt.Printf("  Setting %s = %s\n", fieldName, valueStr)
-		if err := setFieldValue(field, valueStr); err != nil {
-			fmt.Printf("    Error setting field %s: %v\n", fieldName, err)
-		}
-	}
-
-	ctx := context.Background()
-	result, insertErr := executor.Insert(ctx, modelPtr)
-
-	if insertErr != nil {
-		fmt.Printf("Error inserting record: %v\n", insertErr)
-		return
-	}
-
-	lastID, err := result.LastInsertId()
-	if err != nil {
-		fmt.Printf("Successfully inserted, but could not get last insert ID: %v\n", err)
-	} else {
-		fmt.Printf("Successfully inserted record with ID: %d\n", lastID)
-		// ID をモデルに反映 (もし可能なら)
-		idField := modelVal.FieldByName("ID")
-		if idField.IsValid() && idField.CanSet() && (idField.Kind() == reflect.Int || idField.Kind() == reflect.Int64) {
-			idField.SetInt(lastID)
-		}
-	}
-}
-
-// handleSelect は select コマンドを処理します。
-// 現時点では、モデルの全件取得のみをサポートします。
-// TODO: where, order, limit, offset, preload のオプションを追加
-func handleSelect(args []string) {
-	executor := getExecutor()
-	if executor == nil {
-		fmt.Println("Not connected. Use 'connect <db_file>' first.")
-		return
-	}
-	if len(args) < 1 {
-		fmt.Println("Usage: select <ModelName>")
-		return
-	}
-
-	modelName := args[0]
-	modelPtr, err := getModelInstanceFromName(modelName)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-
-	// args[1:] を解析してクエリビルダを構築 (将来の拡張)
-	// 現時点では全件取得
-	qb := executor.Model(modelPtr)
-
-	// --- ここから引数解析とクエリビルダ設定 (将来の拡張ポイント) ---
-	// 例: preload の処理 (簡易版)
-	preloadFields := []string{}
-	otherArgs := []string{} // preload 以外の引数
-	i := 1                  // args のインデックス (modelName の次から)
-	for i < len(args) {
-		keyword := strings.ToLower(args[i])
-		if keyword == "preload" && i+1 < len(args) {
-			preloadFields = append(preloadFields, args[i+1])
-			i += 2 // preload とフィールド名分進める
-		} else {
-			otherArgs = append(otherArgs, args[i])
-			i++
-		}
-	}
-	// TODO: otherArgs を使って where, order, limit, offset を処理する
-
-	for _, field := range preloadFields {
-		fmt.Printf("Applying Preload: %s\n", field)
-		qb = qb.Preload(field) // QueryBuilder を更新
-	}
-	// --- ここまで引数解析 ---
-
-	// 結果を格納するためのスライスを作成
-	sliceType := reflect.SliceOf(reflect.TypeOf(modelPtr).Elem())
-	resultsSlice := reflect.MakeSlice(sliceType, 0, 0)
-	resultsPtr := reflect.New(resultsSlice.Type())
-	resultsPtr.Elem().Set(resultsSlice)
-
-	// クエリ実行
-	ctx := context.Background()
-	err = qb.Select(ctx, resultsPtr.Interface()) // ポインタを渡す
-	if err != nil {
-		fmt.Printf("Error selecting records: %v\n", err)
-		return
-	}
-
-	// 結果を表示 (JSON 形式)
-	results := resultsPtr.Elem().Interface()
-	jsonData, err := json.MarshalIndent(results, "", "  ")
-	if err != nil {
-		fmt.Printf("Error formatting results as JSON: %v\n", err)
-		fmt.Printf("Fetched %d records.\n", resultsPtr.Elem().Len())
-		return
-	}
-
-	fmt.Printf("Found %d records:\n", resultsPtr.Elem().Len())
-	fmt.Println(string(jsonData))
-}
-
-// getModelInstanceFromName はモデル名を文字列で受け取り、
-// 対応するモデルのゼロ値のポインタを返します。
-func getModelInstanceFromName(name string) (interface{}, error) {
-	switch strings.ToLower(name) {
-	case "user":
-		return &User{}, nil
-	case "post":
-		return &Post{}, nil
+		trimmedQuery := strings.TrimSuffix(query, ";")
+		executeSelectQuery(context.Background(), trimmedQuery)
 	default:
-		return nil, fmt.Errorf("unknown model type: %s. Supported: User, Post", name)
+		fmt.Printf("Unknown command: %s. Enter 'help' for commands.\n", command)
 	}
 }
 
-// setFieldValue はリフレクションを使用してフィールドに文字列値を設定します。
-func setFieldValue(field reflect.Value, valueStr string) error {
-	if !field.CanSet() {
-		return fmt.Errorf("field cannot be set")
+func executeSelectQuery(ctx context.Context, query string) {
+	rows, err := currentDB.DB.QueryContext(ctx, "SELECT "+query)
+	if err != nil {
+		fmt.Printf("Error executing query: %v\n", err)
+		return
+	}
+	defer rows.Close()
+
+	cols, err := rows.Columns()
+	if err != nil {
+		fmt.Printf("Error getting columns: %v\n", err)
+		return
+	}
+	if len(cols) == 0 {
+		fmt.Println("(no results)")
+		return
 	}
 
-	fieldType := field.Type()
-
-	// ポインタ型の場合は、まずポインタの指す先の型を取得
-	isPtr := false
-	if fieldType.Kind() == reflect.Ptr {
-		isPtr = true
-		fieldType = fieldType.Elem() // ポインタの先の型
-		// ポインタが nil の場合は初期化する必要がある
-		if field.IsNil() {
-			field.Set(reflect.New(fieldType)) // 新しい要素へのポインタを設定
+	var results [][]interface{}
+	for rows.Next() {
+		rowValues := make([]interface{}, len(cols))
+		rowPointers := make([]interface{}, len(cols))
+		for i := range rowValues {
+			rowPointers[i] = &rowValues[i]
 		}
-		// field 変数をポインタの先の要素を指すように更新
-		field = field.Elem()
+
+		if err := rows.Scan(rowPointers...); err != nil {
+			fmt.Printf("Error scanning row: %v\n", err)
+			return
+		}
+		results = append(results, rowValues)
 	}
 
-	switch fieldType.Kind() {
-	case reflect.String:
-		field.SetString(valueStr)
-	case reflect.Int, reflect.Int64:
-		// 空文字列は 0 またはエラーとして扱うか？ここではエラーとする
-		if valueStr == "" {
-			if isPtr { // ポインタの場合は nil を設定
-				field.Addr().Set(reflect.Zero(reflect.PtrTo(fieldType))) // field は Elem() されたものなので Addr() でポインタ取得
-				return nil
-			}
-			return fmt.Errorf("empty string cannot be parsed as integer")
-		}
-		val, err := strconv.ParseInt(valueStr, 10, 64)
-		if err != nil {
-			return fmt.Errorf("invalid integer value '%s': %w", valueStr, err)
-		}
-		field.SetInt(val)
-	case reflect.Struct:
-		// sql.NullString, time.Time, sql.NullTime の処理
-		if fieldType == reflect.TypeOf(sql.NullString{}) {
-			ns := sql.NullString{String: valueStr, Valid: valueStr != ""}
-			field.Set(reflect.ValueOf(ns))
-		} else if fieldType == reflect.TypeOf(time.Time{}) {
-			if valueStr == "" {
-				if isPtr {
-					field.Addr().Set(reflect.Zero(reflect.PtrTo(fieldType)))
-					return nil
-				}
-				return fmt.Errorf("empty string cannot be parsed as time.Time")
-			}
-			t, err := parseTime(valueStr)
-			if err != nil {
-				return err
-			}
-			field.Set(reflect.ValueOf(t))
-		} else if fieldType == reflect.TypeOf(sql.NullTime{}) {
-			nt := sql.NullTime{}
-			if valueStr != "" {
-				t, err := parseTime(valueStr)
-				if err != nil {
-					return err
-				}
-				nt.Time = t
-				nt.Valid = true
-			}
-			field.Set(reflect.ValueOf(nt))
-		} else {
-			return fmt.Errorf("unsupported struct type: %s", fieldType.Name())
-		}
-	// ポインタ型は上で処理済みなので、ここでは基本型のみ
-	default:
-		return fmt.Errorf("unsupported field type: %s", fieldType.Kind())
+	if err := rows.Err(); err != nil {
+		fmt.Printf("Error during row iteration: %v\n", err)
+		return
 	}
-	return nil
+
+	if len(results) == 0 {
+		fmt.Println("(no results)")
+		return
+	}
+
+	printTable(cols, results)
 }
 
-// parseTime はいくつかの一般的なフォーマットで時刻文字列をパースします。
-func parseTime(valueStr string) (time.Time, error) {
-	formats := []string{
-		time.RFC3339Nano,
-		time.RFC3339,
-		"2006-01-02 15:04:05", // MySQL/SQLite DATETIME
-		"2006-01-02",          // DATE
+func printTable(columns []string, data [][]interface{}) {
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+
+	fmt.Fprintln(w, strings.Join(columns, "\t"))
+	headerSeparators := make([]string, len(columns))
+	for i := range columns {
+		headerSeparators[i] = strings.Repeat("-", len(columns[i]))
 	}
-	var t time.Time
-	var err error
-	for _, format := range formats {
-		t, err = time.Parse(format, valueStr)
-		if err == nil {
-			return t, nil // パース成功
+	fmt.Fprintln(w, strings.Join(headerSeparators, "\t"))
+
+	for _, row := range data {
+		rowStr := make([]string, len(row))
+		for i, val := range row {
+			if b, ok := val.([]byte); ok {
+				rowStr[i] = string(b)
+			} else if val == nil {
+				rowStr[i] = "NULL"
+			} else {
+				rowStr[i] = fmt.Sprintf("%v", val)
+			}
 		}
+		fmt.Fprintln(w, strings.Join(rowStr, "\t"))
 	}
-	// すべてのフォーマットで失敗した場合
-	return time.Time{}, fmt.Errorf("invalid time format for '%s', tried formats: %v", valueStr, formats)
+
+	w.Flush()
 }
 
-// getExecutor は現在のコンテキスト (トランザクション中か否か) に基づいて
-// 適切な orm.Executor (DB または TX) を返します。
-// 接続がない場合は nil を返します。
-func getExecutor() orm.Executor {
-	if currentTX != nil {
-		return currentTX
+func showTables() {
+	if currentDB == nil {
+		fmt.Println("Not connected to a database.")
+		return
 	}
-	// currentDB が nil でも orm.Executor インターフェースを満たす nil を返す
-	return currentDB
+	rows, err := currentDB.DB.QueryContext(context.Background(), "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;")
+	if err != nil {
+		fmt.Printf("Error fetching tables: %v\n", err)
+		return
+	}
+	defer rows.Close()
+
+	fmt.Println("Tables:")
+	for rows.Next() {
+		var tableName string
+		if err := rows.Scan(&tableName); err != nil {
+			fmt.Printf("Error scanning table name: %v\n", err)
+			continue
+		}
+		fmt.Printf("  %s\n", tableName)
+	}
+	if err := rows.Err(); err != nil {
+		fmt.Printf("Error iterating tables: %v\n", err)
+	}
+}
+
+func showSchema(tableName string) {
+	if currentDB == nil {
+		fmt.Println("Not connected to a database.")
+		return
+	}
+	rows, err := currentDB.DB.QueryContext(context.Background(), fmt.Sprintf("PRAGMA table_info(%s);", tableName))
+	if err != nil {
+		fmt.Printf("Error fetching schema for table %s: %v\n", tableName, err)
+		return
+	}
+	defer rows.Close()
+
+	fmt.Printf("Schema for table %s:\n", tableName)
+	cols, _ := rows.Columns()
+	var results [][]interface{}
+	for rows.Next() {
+		rowValues := make([]interface{}, len(cols))
+		rowPointers := make([]interface{}, len(cols))
+		for i := range rowValues {
+			rowPointers[i] = &rowValues[i]
+		}
+		if err := rows.Scan(rowPointers...); err != nil {
+			fmt.Printf("Error scanning schema row: %v\n", err)
+			return
+		}
+		results = append(results, rowValues)
+	}
+	if err := rows.Err(); err != nil {
+		fmt.Printf("Error iterating schema: %v\n", err)
+	}
+
+	if len(results) == 0 {
+		fmt.Printf("Table %s not found or has no columns.\n", tableName)
+		return
+	}
+	printTable(cols, results)
 }
