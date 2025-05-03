@@ -830,7 +830,7 @@ func handleHTTPRequest(ifce *water.Interface, conn *TCPConnection, payload []byt
 	if err != nil {
 		log.Printf("Failed to parse HTTP request for %s:%d -> %s:%d: %v",
 			conn.ClientIP, conn.ClientPort, conn.ServerIP, conn.ServerPort, err)
-		// Optionally send HTTP Bad Request response here
+		// TODO: Send HTTP 400 Bad Request response
 		return
 	}
 
@@ -839,21 +839,45 @@ func handleHTTPRequest(ifce *water.Interface, conn *TCPConnection, payload []byt
 		log.Printf("  Header: %s: %s", k, v)
 	}
 
-	// TODO (Phase 5+): Send HTTP response (e.g., 200 OK, 404 Not Found)
-	// For now, we just log the request.
-	// Example: Sending a basic 404 response
-	/*
-		httpResp := "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
-		respFlags := uint8(TCPFlagPSH | TCPFlagACK | TCPFlagFIN) // Send FIN to close after response
-		err = sendTCPPacket(ifce, conn.ServerIP, conn.ClientIP, conn.ServerPort, conn.ClientPort,
-			conn.ServerNextSeq, conn.ClientNextSeq, respFlags, []byte(httpResp))
-		if err != nil {
-			log.Printf("Error sending HTTP 404 response: %v", err)
-		} else {
-			conn.ServerNextSeq += uint32(len(httpResp)) + 1 // +1 for FIN
-			conn.State = TCPStateFinWait1 // We sent FIN
-			log.Printf("Sent HTTP 404 Response and FIN, entering FIN_WAIT_1 for %s:%d", conn.ClientIP, conn.ClientPort)
-		}
+	// --- Send HTTP Response ---
+	log.Printf("Sending HTTP 200 OK response for %s:%d", conn.ClientIP, conn.ClientPort)
+
+	// 1. Prepare the response body and headers
+	body := "<html><body><h1>Hello from userspace TCP/IP!</h1></body></html>"
+	responseHeaders := map[string]string{
+		"Content-Type":   "text/html; charset=utf-8",
+		"Content-Length": fmt.Sprintf("%d", len(body)),
+		"Connection":     "keep-alive", // Keep connection open for now
+	}
+	statusLine := "HTTP/1.1 200 OK"
+
+	// 2. Construct the full HTTP response string
+	var respBuilder strings.Builder
+	respBuilder.WriteString(statusLine + "\r\n")
+	for k, v := range responseHeaders {
+		respBuilder.WriteString(fmt.Sprintf("%s: %s\r\n", k, v))
+	}
+	respBuilder.WriteString("\r\n") // End of headers
+	respBuilder.WriteString(body)
+	httpResp := respBuilder.String()
+
+	// 3. Send the response using sendTCPPacket
+	respFlags := uint8(TCPFlagPSH | TCPFlagACK)
+	err = sendTCPPacket(ifce, conn.ServerIP, conn.ClientIP, conn.ServerPort, conn.ClientPort,
+		conn.ServerNextSeq, conn.ClientNextSeq, respFlags, []byte(httpResp))
+
+	if err != nil {
+		log.Printf("Error sending HTTP 200 response: %v", err)
+		// Consider closing connection or other error handling
+	} else {
+		// Update server sequence number after successful send
+		conn.ServerNextSeq += uint32(len(httpResp))
+		log.Printf("Successfully sent HTTP 200 response (%d bytes) for %s:%d", len(httpResp), conn.ClientIP, conn.ClientPort)
+	}
+	// --- End HTTP Response ---
+
+	/* // Previous 404 example removed
+	// ...
 	*/
 
 }
