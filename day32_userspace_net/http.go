@@ -111,8 +111,6 @@ func handleHTTPData(ifce *water.Interface, conn *TCPConnection, payload []byte) 
 	serverIP := conn.ServerIP
 	clientIP := conn.ClientIP
 	clientPort := conn.ClientPort
-	serverNextSeq := conn.ServerNextSeq
-	clientNextSeq := conn.ClientNextSeq
 	// currentTCPState := conn.State // Get current state before potential change // Removed as state change logic is moved inside TUN block
 	conn.Mutex.Unlock() // Unlock before potentially blocking send operations
 
@@ -128,7 +126,7 @@ func handleHTTPData(ifce *water.Interface, conn *TCPConnection, payload []byte) 
 				return
 			}
 			// Pass nil for ifce in TCP mode. sendRawTLSRecord handles the mode check.
-			err = sendRawTLSRecord(nil, conn, appDataRecord)
+			_, err = sendRawTLSRecord(nil, conn, appDataRecord)
 			if err != nil {
 				log.Printf("[TLS Error - %s - TCP Mode] Failed to send Application Data record: %v", connKey, err)
 			}
@@ -161,48 +159,46 @@ func handleHTTPData(ifce *water.Interface, conn *TCPConnection, payload []byte) 
 				return
 			}
 			// Pass non-nil ifce. sendRawTLSRecord handles the mode check.
-			err = sendRawTLSRecord(tunIFCE, conn, appDataRecord)
+			sentBytes, err := sendRawTLSRecord(tunIFCE, conn, appDataRecord)
 			if err != nil {
 				log.Printf("[TLS Error - %s - TUN Mode] Failed to send Application Data record: %v", connKey, err)
 			} else {
-				log.Printf("[TLS AppData Send - %s - TUN Mode] Sent HTTP response via TLS record.", connKey)
+				// Update sequence number after successful send in TUN mode
+				conn.Mutex.Lock()
+				conn.ServerNextSeq += uint32(sentBytes)
+				log.Printf("[SeqNum Update - %s] After HTTP AppData: ServerNextSeq = %d (added %d)", connKey, conn.ServerNextSeq, sentBytes)
+				conn.Mutex.Unlock()
 			}
 		} else {
 			// TUN Mode without TLS (e.g., Port 80): Send raw TCP packets
-			log.Printf("[HTTP Info - %s - TUN Mode] Sending HTTP response (%d bytes) via raw TCP.", connKey, len(httpRespBytes))
-			respFlags := uint8(TCPFlagPSH | TCPFlagACK)
-			err = sendTCPPacket(tunIFCE, serverIP, clientIP, serverPort, clientPort,
-				serverNextSeq, clientNextSeq, respFlags, httpRespBytes)
+			log.Printf("TUN Mode: Sending raw HTTP response (%d bytes) directly via TCP packet.", len(httpRespBytes))
+			// Send raw HTTP response without TLS
+			flags := uint8(TCPFlagPSH | TCPFlagACK)
+			// MODIFIED: Assign sentBytes to _ and update sequence number
+			sentBytes, err := sendTCPPacket(tunIFCE, conn.ServerIP, conn.ClientIP, conn.ServerPort, conn.ClientPort,
+				conn.ServerNextSeq, conn.ClientNextSeq, flags, httpRespBytes)
 			if err != nil {
-				log.Printf("[HTTP Error - %s - TUN Mode] Error sending HTTP 200 response data via TCP: %v", connKey, err)
-				return
-			}
-
-			// Update sequence number (needs mutex lock)
-			conn.Mutex.Lock()
-			conn.ServerNextSeq += uint32(len(httpRespBytes))
-			log.Printf("[HTTP Info - %s - TUN Mode] Sent HTTP 200 Response data. ServerNextSeq: %d", connKey, conn.ServerNextSeq)
-			serverNextSeq = conn.ServerNextSeq // Update local copy for FIN packet
-			conn.Mutex.Unlock()
-
-			// Send FIN+ACK
-			log.Printf("[HTTP Info - %s - TUN Mode] Sending FIN+ACK to close connection.", connKey)
-			finFlags := uint8(TCPFlagFIN | TCPFlagACK)
-			err = sendTCPPacket(tunIFCE, serverIP, clientIP, serverPort, clientPort,
-				serverNextSeq, clientNextSeq, finFlags, nil)
-
-			// Lock again to update state
-			conn.Mutex.Lock()
-			if err != nil {
-				log.Printf("[HTTP Error - %s - TUN Mode] Error sending FIN+ACK: %v", connKey, err)
+				log.Printf("[HTTP Error - %s - TUN Mode, No TLS] Failed to send raw HTTP response packet: %v", connKey, err)
 			} else {
-				conn.ServerNextSeq++          // Increment seq num for FIN
-				conn.State = TCPStateFinWait1 // Update TCP state
-				log.Printf("[HTTP Info - %s - TUN Mode] Sent FIN+ACK, entering FIN_WAIT_1. ServerNextSeq: %d", connKey, conn.ServerNextSeq)
+				// Update sequence number after successful send
+				conn.Mutex.Lock()
+				conn.ServerNextSeq += uint32(sentBytes)
+				log.Printf("[SeqNum Update - %s] After Raw HTTP: ServerNextSeq = %d (added %d)", connKey, conn.ServerNextSeq, sentBytes)
+				conn.Mutex.Unlock()
 			}
-			conn.Mutex.Unlock()
 		}
 	} else {
 		log.Printf("[Error - %s] handleHTTPData called with connection in invalid state (no TCPConn or TunIFCE)", connKey)
+	}
+
+	// Potentially Close Connection (e.g., HTTP/1.0 or Connection: close header)
+	// Simple logic: Assume close after sending response for non-TLS HTTP for now.
+	if !isTLSEnabled {
+		log.Printf("Closing connection %s after non-TLS HTTP response.", connKey)
+		// TODO: Implement proper FIN sequence for TUN mode
+		// For now, just remove from map
+		connMutex.Lock()
+		delete(tcpConnections, connKey)
+		connMutex.Unlock()
 	}
 }

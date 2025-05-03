@@ -426,11 +426,16 @@ func handleClientHello(ifce *water.Interface, conn *TCPConnection, message []byt
 	log.Printf("[TLS Handshake Buf - %s] Added ServerHello (%d bytes). Total len: %d", connKey, len(serverHelloMsg), conn.HandshakeMessages.Len())
 
 	// Send the TLS record containing the ServerHello message
-	err = sendRawTLSRecord(ifce, conn, serverHelloRecord)
+	sentBytes, err := sendRawTLSRecord(ifce, conn, serverHelloRecord)
 	if err != nil {
 		log.Printf("[TLS Error - %s] Failed to send ServerHello record: %v", connKey, err)
 		return
 	}
+	// Update ServerNextSeq based on sent payload bytes (TUN mode)
+	conn.Mutex.Lock()
+	conn.ServerNextSeq += uint32(sentBytes)
+	log.Printf("[SeqNum Update - %s] After ServerHello: ServerNextSeq = %d (added %d)", connKey, conn.ServerNextSeq, sentBytes)
+	conn.Mutex.Unlock()
 
 	// Update TLS State
 	conn.TLSState = TLSStateSentServerHello
@@ -458,11 +463,17 @@ func handleClientHello(ifce *water.Interface, conn *TCPConnection, message []byt
 	conn.Mutex.Unlock()
 	log.Printf("[TLS Handshake Buf - %s] Added Certificate (%d bytes). Total len: %d", connKey, len(certMsg), conn.HandshakeMessages.Len())
 
-	err = sendRawTLSRecord(ifce, conn, certRecord)
+	sentBytes, err = sendRawTLSRecord(ifce, conn, certRecord)
 	if err != nil {
 		log.Printf("[TLS Error - %s] Failed to send Certificate record: %v", connKey, err)
 		return // Certificate送信エラーならここで終了
 	}
+	// Update ServerNextSeq based on sent payload bytes (TUN mode)
+	conn.Mutex.Lock()
+	conn.ServerNextSeq += uint32(sentBytes)
+	log.Printf("[SeqNum Update - %s] After Certificate: ServerNextSeq = %d (added %d)", connKey, conn.ServerNextSeq, sentBytes)
+	conn.Mutex.Unlock()
+
 	conn.TLSState = TLSStateSentCertificate
 	log.Printf("[TLS Info - %s] Certificate sent. TLS State -> %v", connKey, conn.TLSState)
 
@@ -538,11 +549,17 @@ func handleClientHello(ifce *water.Interface, conn *TCPConnection, message []byt
 	log.Printf("[TLS Handshake Buf - %s] Added ServerKeyExchange (%d bytes). Total len: %d", connKey, len(skeMsg), conn.HandshakeMessages.Len())
 
 	log.Printf("[TLS Debug - %s] Sending REAL ServerKeyExchange record (%d bytes).", connKey, len(skeRecord))
-	err = sendRawTLSRecord(ifce, conn, skeRecord)
+	sentBytes, err = sendRawTLSRecord(ifce, conn, skeRecord)
 	if err != nil {
 		log.Printf("[TLS Error - %s] Failed to send ServerKeyExchange record: %v", connKey, err)
 		return
 	}
+	// Update ServerNextSeq based on sent payload bytes (TUN mode)
+	conn.Mutex.Lock()
+	conn.ServerNextSeq += uint32(sentBytes)
+	log.Printf("[SeqNum Update - %s] After SKE: ServerNextSeq = %d (added %d)", connKey, conn.ServerNextSeq, sentBytes)
+	conn.Mutex.Unlock()
+
 	conn.TLSState = TLSStateSentServerKeyExchange
 	log.Printf("[TLS Info - %s] REAL ServerKeyExchange sent. TLS State -> %v", connKey, conn.TLSState)
 
@@ -567,11 +584,16 @@ func handleClientHello(ifce *water.Interface, conn *TCPConnection, message []byt
 	log.Printf("[TLS Handshake Buf - %s] Added ServerHelloDone (%d bytes). Total len: %d", connKey, len(helloDoneMsg), conn.HandshakeMessages.Len())
 
 	log.Printf("[TLS Debug - %s] Sending ServerHelloDone record (%d bytes).", connKey, len(helloDoneRecord))
-	err = sendRawTLSRecord(ifce, conn, helloDoneRecord)
+	sentBytes, err = sendRawTLSRecord(ifce, conn, helloDoneRecord)
 	if err != nil {
 		log.Printf("[TLS Error - %s] Failed to send ServerHelloDone record: %v", connKey, err)
 		return
 	}
+	// Update ServerNextSeq based on sent payload bytes (TUN mode)
+	conn.Mutex.Lock()
+	conn.ServerNextSeq += uint32(sentBytes)
+	log.Printf("[SeqNum Update - %s] After ServerHelloDone: ServerNextSeq = %d (added %d)", connKey, conn.ServerNextSeq, sentBytes)
+	conn.Mutex.Unlock()
 
 	conn.TLSState = TLSStateSentServerHelloDone
 	log.Printf("[TLS Info - %s] ServerHelloDone sent. TLS State -> %v", connKey, conn.TLSState)
@@ -808,7 +830,8 @@ func buildTLSRecord(recordType uint8, version uint16, payload []byte) ([]byte, e
 }
 
 // sendRawTLSRecord sends a raw TLS record over the connection (TUN or TCP).
-func sendRawTLSRecord(ifce *water.Interface, conn *TCPConnection, record []byte) error {
+// Returns the TCP payload length sent in TUN mode, 0 in TCP mode.
+func sendRawTLSRecord(ifce *water.Interface, conn *TCPConnection, record []byte) (int, error) {
 	connKey := conn.ConnectionKey()
 
 	// --- Encryption Logic (Remains the same) ---
@@ -818,7 +841,7 @@ func sendRawTLSRecord(ifce *water.Interface, conn *TCPConnection, record []byte)
 
 	payloadToSend, err := encryptRecord(conn, plaintextPayload, outerRecordType, recordVersion)
 	if err != nil {
-		return fmt.Errorf("failed to encrypt record payload (Type: %d) for %s: %w", outerRecordType, connKey, err)
+		return 0, fmt.Errorf("failed to encrypt record payload (Type: %d) for %s: %w", outerRecordType, connKey, err)
 	}
 
 	log.Printf("[Send Raw Debug - %s] Building final record. OuterType: %d, OuterVersion: 0x%04x, PayloadLen: %d",
@@ -835,40 +858,50 @@ func sendRawTLSRecord(ifce *water.Interface, conn *TCPConnection, record []byte)
 	conn.Mutex.Lock() // Lock before accessing mode-specific fields
 	tcpConn := conn.TCPConn
 	tunIFCE := conn.TunIFCE
+	serverIP := conn.ServerIP // Read necessary fields while locked
+	clientIP := conn.ClientIP
+	serverPort := conn.ServerPort
+	clientPort := conn.ClientPort
+	serverNextSeq := conn.ServerNextSeq
+	clientNextSeq := conn.ClientNextSeq
 	conn.Mutex.Unlock() // Unlock after access
+
+	var sentPayloadBytes int // Variable to store sent payload bytes in TUN mode
 
 	if tcpConn != nil { // TCP Mode
 		log.Printf("[Send Raw TCP - %s] Sending %d bytes via net.Conn.", connKey, len(finalRecord))
 		n, err := tcpConn.Write(finalRecord)
 		if err != nil {
-			return fmt.Errorf("TCPConn Write failed for TLS record (Type: %d) for %s: %w", outerRecordType, connKey, err)
+			return 0, fmt.Errorf("TCPConn Write failed for TLS record (Type: %d) for %s: %w", outerRecordType, connKey, err)
 		}
 		if n != len(finalRecord) {
-			return fmt.Errorf("TCPConn short write for TLS record (Type: %d) for %s: wrote %d, expected %d", outerRecordType, connKey, n, len(finalRecord))
+			return 0, fmt.Errorf("TCPConn short write for TLS record (Type: %d) for %s: wrote %d, expected %d", outerRecordType, connKey, n, len(finalRecord))
 		}
 		log.Printf("[Send Raw TCP OK - %s] Sent TLS record. Type: %d, Final Len: %d", connKey, outerRecordType, len(finalRecord))
+		sentPayloadBytes = 0 // No need to track bytes for TCP mode sequence update
 
 	} else if tunIFCE != nil { // TUN Mode
 		log.Printf("[Send Raw TUN - %s] Sending %d bytes via TUN interface.", connKey, len(finalRecord))
 		flags := uint8(TCPFlagPSH | TCPFlagACK)
-		// Note: sendTCPPacket updates conn.ServerNextSeq (TCP sequence number)
-		err = sendTCPPacket(tunIFCE, conn.ServerIP, conn.ClientIP, conn.ServerPort, conn.ClientPort,
-			conn.ServerNextSeq, conn.ClientNextSeq, flags, finalRecord)
+		// Call modified sendTCPPacket which returns payload length
+		sentBytes, err := sendTCPPacket(tunIFCE, serverIP, clientIP, serverPort, clientPort,
+			serverNextSeq, clientNextSeq, flags, finalRecord)
 		if err != nil {
 			// Don't increment TLS sequence number if send fails (already handled in encryptRecord)
-			return fmt.Errorf("sendTCPPacket failed for TLS record (Type: %d) for %s: %w", outerRecordType, connKey, err)
+			return 0, fmt.Errorf("sendTCPPacket failed for TLS record (Type: %d) for %s: %w", outerRecordType, connKey, err)
 		}
+		sentPayloadBytes = sentBytes // Assign the returned payload length
 		// TLS sequence number conn.ServerSequenceNum was incremented in encryptRecord if needed.
-		log.Printf("[Send Raw TUN OK - %s] Sent TLS record. Type: %d, Final Len: %d", connKey, outerRecordType, len(finalRecord))
+		log.Printf("[Send Raw TUN OK - %s] Sent TLS record. Type: %d, Final Len: %d, PayloadBytes: %d", connKey, outerRecordType, len(finalRecord), sentPayloadBytes)
 
 	} else {
-		return fmt.Errorf("sendRawTLSRecord called with invalid connection state for %s (no TCPConn or TunIFCE)", connKey)
+		return 0, fmt.Errorf("sendRawTLSRecord called with invalid connection state for %s (no TCPConn or TunIFCE)", connKey)
 	}
 
 	// Original logging moved inside mode-specific blocks
 	// log.Printf("[Send Raw OK - %s] Sent TLS record. Type: %d, Final Len: %d, Encrypted: %t",
 	// 	connKey, outerRecordType, len(finalRecord), len(payloadToSend) != len(plaintextPayload))
-	return nil
+	return sentPayloadBytes, nil
 }
 
 func handleTLSData(ifce *water.Interface, conn *TCPConnection, payload []byte) {
@@ -1023,12 +1056,17 @@ func sendServerCCSAndFinished(ifce *water.Interface, conn *TCPConnection) {
 		return
 	}
 	log.Printf("[TLS Debug - %s] Sending ChangeCipherSpec record (%d bytes).", connKey, len(ccsRecord))
-	err = sendRawTLSRecord(ifce, conn, ccsRecord)
+	sentBytes, err := sendRawTLSRecord(ifce, conn, ccsRecord)
 	if err != nil {
 		log.Printf("[TLS Error - %s] Failed to send ChangeCipherSpec record: %v", connKey, err)
 		// Decide how to handle this error (e.g., close connection)
 		return
 	}
+	conn.Mutex.Lock()
+	conn.ServerNextSeq += uint32(sentBytes) // Update sequence number
+	log.Printf("[SeqNum Update - %s] After CCS: ServerNextSeq = %d (added %d)", connKey, conn.ServerNextSeq, sentBytes)
+	conn.Mutex.Unlock()
+
 	// Note: We don't actually change cipher state in this dummy implementation
 	log.Printf("[TLS Info - %s] ChangeCipherSpec sent.", connKey)
 
@@ -1075,11 +1113,18 @@ func sendServerCCSAndFinished(ifce *water.Interface, conn *TCPConnection) {
 	}
 
 	log.Printf("[TLS Debug - %s] Sending Finished record (%d bytes).", connKey, len(finishedRecord))
-	err = sendRawTLSRecord(ifce, conn, finishedRecord)
+	sentBytes, err = sendRawTLSRecord(ifce, conn, finishedRecord)
 	if err != nil {
 		log.Printf("[TLS Error - %s] Failed to send Finished record: %v", connKey, err)
 		return
 	}
+	conn.Mutex.Lock()                       // Lock required here
+	conn.ServerNextSeq += uint32(sentBytes) // Update sequence number
+	log.Printf("[SeqNum Update - %s] After Finished: ServerNextSeq = %d (added %d)", connKey, conn.ServerNextSeq, sentBytes)
+	// Also record the sent Finished message itself for the client's verification
+	conn.HandshakeMessages.Write(finishedMsg)
+	log.Printf("[TLS Handshake Buf - %s] Added Sent Finished Msg (%d bytes). Total len: %d", connKey, len(finishedMsg), conn.HandshakeMessages.Len())
+	conn.Mutex.Unlock()
 
 	// 3. Update State to Handshake Complete
 	conn.TLSState = TLSStateHandshakeComplete

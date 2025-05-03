@@ -264,7 +264,7 @@ func handleTCPPacket(ifce *water.Interface, ipHeader *IPv4Header, tcpSegment []b
 			tcpConnections[connKey] = newConn
 
 			// Send SYN-ACK
-			err = sendTCPPacket(newConn.TunIFCE, newConn.ServerIP, newConn.ClientIP, newConn.ServerPort, newConn.ClientPort,
+			_, err = sendTCPPacket(newConn.TunIFCE, newConn.ServerIP, newConn.ClientIP, newConn.ServerPort, newConn.ClientPort,
 				newConn.ServerISN, newConn.ClientNextSeq, TCPFlagSYN|TCPFlagACK, nil)
 			if err != nil {
 				log.Printf("Error sending SYN-ACK for %s: %v", connKey, err)
@@ -310,7 +310,7 @@ func handleTCPPacket(ifce *water.Interface, ipHeader *IPv4Header, tcpSegment []b
 			expectedClientNextSeq := conn.ClientNextSeq + uint32(len(tcpPayload))
 			ackFlags := uint8(TCPFlagACK)
 			// Send ACK for received data (common for both)
-			err = sendTCPPacket(conn.TunIFCE, conn.ServerIP, conn.ClientIP, conn.ServerPort, conn.ClientPort,
+			_, err = sendTCPPacket(conn.TunIFCE, conn.ServerIP, conn.ClientIP, conn.ServerPort, conn.ClientPort,
 				conn.ServerNextSeq, expectedClientNextSeq, ackFlags, nil)
 			if err != nil {
 				log.Printf("Error sending ACK for received data on %s (Port %d): %v", connKey, conn.ServerPort, err)
@@ -336,8 +336,13 @@ func handleTCPPacket(ifce *water.Interface, ipHeader *IPv4Header, tcpSegment []b
 		handleFINACK(conn, tcpHeader)
 
 	default:
-		log.Printf("Unhandled TCP packet for %s. State: %v, Flags: [%s]", connKey, conn.State, tcpFlagsToString(tcpHeader.Flags))
-		// Optionally send RST
+		if exists {
+			log.Printf("Unhandled TCP packet for %s. State: %v, Flags: [%s]", connKey, conn.State, tcpFlagsToString(tcpHeader.Flags))
+		} else {
+			log.Printf("Unhandled TCP packet for non-existent connection %s. Flags: [%s]", connKey, tcpFlagsToString(tcpHeader.Flags))
+		}
+		// Optionally send RST if the packet was unexpected for a non-existent connection?
+		// For now, just log.
 	}
 }
 
@@ -351,7 +356,7 @@ func handleFIN(conn *TCPConnection, tcpHeader *TCPHeader) {
 
 	// Send ACK for the FIN
 	ackFlags := uint8(TCPFlagACK)
-	err := sendTCPPacket(conn.TunIFCE, conn.ServerIP, conn.ClientIP, conn.ServerPort, conn.ClientPort,
+	_, err := sendTCPPacket(conn.TunIFCE, conn.ServerIP, conn.ClientIP, conn.ServerPort, conn.ClientPort,
 		conn.ServerNextSeq, conn.ClientNextSeq, ackFlags, nil)
 	if err != nil {
 		log.Printf("Error sending ACK for FIN on %s: %v", connKey, err)
@@ -360,7 +365,7 @@ func handleFIN(conn *TCPConnection, tcpHeader *TCPHeader) {
 	// Immediately send our FIN (since we are a simple server)
 	log.Printf("Sending FIN for connection %s. Entering LAST_ACK.", connKey)
 	finAckFlags := uint8(TCPFlagFIN | TCPFlagACK)
-	err = sendTCPPacket(conn.TunIFCE, conn.ServerIP, conn.ClientIP, conn.ServerPort, conn.ClientPort,
+	_, err = sendTCPPacket(conn.TunIFCE, conn.ServerIP, conn.ClientIP, conn.ServerPort, conn.ClientPort,
 		conn.ServerNextSeq, conn.ClientNextSeq, finAckFlags, nil)
 	if err != nil {
 		log.Printf("Error sending FIN+ACK on %s: %v", connKey, err)
@@ -458,33 +463,34 @@ func tcpFlagsToString(flags uint8) string {
 }
 
 // sendTCPPacket constructs and sends a TCP packet via the TUN interface.
-func sendTCPPacket(ifce *water.Interface, srcIP, dstIP net.IP, srcPort, dstPort uint16, seqNum, ackNum uint32, flags uint8, payload []byte) error {
+// Returns the length of the TCP payload sent on success.
+func sendTCPPacket(ifce *water.Interface, srcIP, dstIP net.IP, srcPort, dstPort uint16, seqNum, ackNum uint32, flags uint8, payload []byte) (int, error) {
 	if ifce == nil {
-		return fmt.Errorf("cannot send TCP packet: TUN interface is nil")
+		return 0, fmt.Errorf("cannot send TCP packet: TUN interface is nil")
 	}
 	log.Printf("TCP SEND (TUN): %s:%d -> %s:%d Seq: %d Ack: %d Flags: [%s] Len: %d",
 		srcIP, srcPort, dstIP, dstPort, seqNum, ackNum, tcpFlagsToString(flags), len(payload))
 	tcpHeaderBytes, err := buildTCPHeader(srcIP, dstIP, srcPort, dstPort, seqNum, ackNum, flags, payload)
 	if err != nil {
-		return fmt.Errorf("failed to build TCP header: %w", err)
+		return 0, fmt.Errorf("failed to build TCP header: %w", err)
 	}
 
 	ipHeaderBytes, err := buildIPv4Header(srcIP, dstIP, TCPProtocolNumber, len(tcpHeaderBytes)+len(payload))
 	if err != nil {
-		return fmt.Errorf("failed to build IP header: %w", err)
+		return 0, fmt.Errorf("failed to build IP header: %w", err)
 	}
 
 	fullPacket := append(ipHeaderBytes, tcpHeaderBytes...)
 	fullPacket = append(fullPacket, payload...)
 	n, err := ifce.Write(fullPacket)
 	if err != nil {
-		return fmt.Errorf("failed to write TCP packet to TUN device: %w", err)
+		return 0, fmt.Errorf("failed to write TCP packet to TUN device: %w", err)
 	}
 	if n != len(fullPacket) {
-		return fmt.Errorf("short write for TCP packet: wrote %d bytes, expected %d", n, len(fullPacket))
+		return 0, fmt.Errorf("short write for TCP packet: wrote %d bytes, expected %d", n, len(fullPacket))
 	}
 
-	return nil
+	return len(payload), nil // Return payload length on success
 }
 
 // buildTCPHeader creates a TCP header byte slice including the checksum.
