@@ -702,9 +702,41 @@ func handleTCPPacket(ifce *water.Interface, ipHeader *IPv4Header, tcpSegment []b
 	case exists && conn.State == TCPStateEstablished:
 		log.Printf("Received packet for established connection %s", connKey)
 
+		// --- Check for FIN first ---
+		if tcpHeader.Flags&TCPFlagFIN != 0 {
+			log.Printf("Received FIN for connection %s. Entering CLOSE_WAIT.", connKey)
+			conn.State = TCPStateCloseWait
+			// FIN consumes 1 sequence number
+			conn.ClientNextSeq = tcpHeader.SeqNum + 1
+
+			// Send ACK for the FIN
+			ackFlags := uint8(TCPFlagACK)
+			err = sendTCPPacket(ifce, conn.ServerIP, conn.ClientIP, conn.ServerPort, conn.ClientPort,
+				conn.ServerNextSeq, conn.ClientNextSeq, ackFlags, nil)
+			if err != nil {
+				log.Printf("Error sending ACK for FIN on %s: %v", connKey, err)
+				// Don't necessarily close here, maybe just log
+			}
+
+			// In a real server, we'd wait for the application to close.
+			// Here, we immediately send our FIN since we are just an echo server.
+			log.Printf("Sending FIN for connection %s. Entering LAST_ACK.", connKey)
+			finAckFlags := uint8(TCPFlagFIN | TCPFlagACK)
+			err = sendTCPPacket(ifce, conn.ServerIP, conn.ClientIP, conn.ServerPort, conn.ClientPort,
+				conn.ServerNextSeq, conn.ClientNextSeq, finAckFlags, nil)
+			if err != nil {
+				log.Printf("Error sending FIN+ACK on %s: %v", connKey, err)
+				// Consider closing connection or other error handling
+			}
+			conn.ServerNextSeq++ // Our FIN consumes 1 sequence number
+			conn.State = TCPStateLastAck
+			return // Don't process data if FIN was received
+		}
+		// --- End FIN Check ---
+
 		// --- Begin Data Echo Logic ---
 		payloadLen := len(tcpPayload)
-		ackOnly := payloadLen == 0 && tcpHeader.Flags&TCPFlagACK != 0
+		ackOnly := payloadLen == 0 && tcpHeader.Flags&TCPFlagACK != 0 && tcpHeader.Flags&TCPFlagFIN == 0 // Exclude FIN ACKs
 
 		// Basic Sequence Number Check (ignoring windowing for simplicity)
 		if !ackOnly && tcpHeader.SeqNum != conn.ClientNextSeq {
@@ -764,8 +796,19 @@ func handleTCPPacket(ifce *water.Interface, ipHeader *IPv4Header, tcpSegment []b
 		// TODO: Handle FIN, RST flags received on established connection
 		// --- End Data Echo Logic ---
 
-	// TODO: Add handling for FIN, RST, other states
+	// Case 4: ACK for our FIN (closing connection)
+	case exists && conn.State == TCPStateLastAck:
+		log.Printf("Handling ACK for FIN for connection %s", connKey)
+		if tcpHeader.Flags&TCPFlagACK != 0 && tcpHeader.AckNum == conn.ServerNextSeq {
+			log.Printf("Connection %s CLOSED normally.", connKey)
+			delete(tcpConnections, connKey)
+		} else {
+			log.Printf("Unexpected packet in LAST_ACK state for %s. Flags: [%s], AckNum: %d (expected %d)",
+				connKey, flagsStr, tcpHeader.AckNum, conn.ServerNextSeq)
+			// Optional: Send RST? Or just ignore.
+		}
 
+	// TODO: Add handling for FIN, RST, other states
 	default:
 		// Handle packets for unknown connections or unexpected states (e.g., send RST)
 		if tcpHeader.Flags&TCPFlagRST == 0 { // Don't send RST in response to an RST
@@ -785,7 +828,6 @@ func handleTCPPacket(ifce *water.Interface, ipHeader *IPv4Header, tcpSegment []b
 				seqNum, ackNum, TCPFlagRST|TCPFlagACK, nil)
 		}
 	}
-
 }
 
 // sendTCPPacket constructs and sends a TCP packet.
