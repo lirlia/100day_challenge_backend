@@ -154,8 +154,12 @@ const (
 	TLSStateExpectingClientHello
 	TLSStateSentServerHello
 	TLSStateSentCertificate
-	TLSStateSentServerKeyExchange // Added
+	TLSStateSentServerKeyExchange
 	TLSStateSentServerHelloDone
+	TLSStateExpectingClientKeyExchange // Added
+	TLSStateExpectingChangeCipherSpec  // Added
+	TLSStateExpectingFinished          // Added
+	TLSStateHandshakeComplete          // Added
 )
 
 // TLS Record Types
@@ -173,6 +177,8 @@ const (
 	TLSHandshakeTypeCertificate       uint8 = 11
 	TLSHandshakeTypeServerKeyExchange uint8 = 12 // Added
 	TLSHandshakeTypeServerHelloDone   uint8 = 14
+	TLSHandshakeTypeClientKeyExchange uint8 = 16 // Added
+	TLSHandshakeTypeFinished          uint8 = 20 // Added
 	// ... other handshake types
 )
 
@@ -1038,9 +1044,18 @@ func handleTLSBufferedData(ifce *water.Interface, conn *TCPConnection) {
 			log.Printf("[TLS Debug - %s] Dispatching to handleTLSHandshakeRecord.", connKey)
 			handleTLSHandshakeRecord(ifce, conn, recordPayload)
 		case TLSRecordTypeChangeCipherSpec:
-			log.Printf("[TLS Info - %s] Received ChangeCipherSpec (Handling TBD)", connKey)
+			log.Printf("[TLS Info - %s] Received ChangeCipherSpec Record (Payload: %x)", connKey, recordPayload)
+			if conn.TLSState == TLSStateExpectingChangeCipherSpec {
+				// Here, we would normally transition the decryption state
+				log.Printf("[TLS Info - %s] Processing ChangeCipherSpec. TLS State -> TLSStateExpectingFinished", connKey)
+				conn.TLSState = TLSStateExpectingFinished
+			} else {
+				log.Printf("[TLS Warn - %s] Unexpected ChangeCipherSpec received in state %v", connKey, conn.TLSState)
+				// Consider sending an alert?
+			}
 		case TLSRecordTypeAlert:
 			log.Printf("[TLS Info - %s] Received Alert Record (Payload: %x)", connKey, recordPayload)
+			// Handle alert, maybe close connection
 		case TLSRecordTypeApplicationData:
 			log.Printf("[TLS Info - %s] Received Application Data Record (Length: %d, Decryption TBD)", connKey, len(recordPayload))
 		default:
@@ -1078,10 +1093,32 @@ func handleTLSHandshakeRecord(ifce *water.Interface, conn *TCPConnection, payloa
 		if conn.TLSState == TLSStateExpectingClientHello {
 			handleClientHello(ifce, conn, message)
 		} else {
-			log.Printf("[TLS Warn - %s] Unexpected ClientHello received in state %v", conn.TLSState, connKey)
+			log.Printf("[TLS Warn - %s] Unexpected ClientHello received in state %v", connKey, conn.TLSState)
+		}
+	case TLSHandshakeTypeClientKeyExchange:
+		log.Printf("[TLS Info - %s] Received ClientKeyExchange Message (Length: %d, Content Ignored)", connKey, len(message))
+		if conn.TLSState == TLSStateExpectingClientKeyExchange {
+			// Here, we would normally process the key exchange data
+			log.Printf("[TLS Info - %s] Processing ClientKeyExchange. TLS State -> TLSStateExpectingChangeCipherSpec", connKey)
+			conn.TLSState = TLSStateExpectingChangeCipherSpec
+		} else {
+			log.Printf("[TLS Warn - %s] Unexpected ClientKeyExchange received in state %v", connKey, conn.TLSState)
+			// Consider sending an alert?
+		}
+	case TLSHandshakeTypeFinished:
+		log.Printf("[TLS Info - %s] Received Finished Message (Length: %d, Content/Verification Ignored)", connKey, len(message))
+		if conn.TLSState == TLSStateExpectingFinished {
+			// Here, we would normally verify the Finished message
+			log.Printf("[TLS Info - %s] Processing Finished. TLS Handshake Potentially Complete (Verification Skipped). Triggering Server Finished.", connKey)
+			conn.TLSState = TLSStateHandshakeComplete // Mark handshake as complete for now
+			// TODO: Trigger sending server ChangeCipherSpec and Finished (Step 3)
+			sendServerCCSAndFinished(ifce, conn) // Call the function for Step 3
+		} else {
+			log.Printf("[TLS Warn - %s] Unexpected Finished received in state %v", connKey, conn.TLSState)
+			// Consider sending an alert?
 		}
 	default:
-		log.Printf("[TLS Info - %s] Unhandled Handshake Message Type %d", handshakeType, connKey)
+		log.Printf("[TLS Info - %s] Unhandled Handshake Message Type %d", connKey, handshakeType)
 	}
 	log.Printf("[TLS Debug - %s] Exiting handleTLSHandshakeRecord.", connKey)
 }
@@ -1250,7 +1287,11 @@ func handleClientHello(ifce *water.Interface, conn *TCPConnection, message []byt
 	conn.TLSState = TLSStateSentServerHelloDone
 	log.Printf("[TLS Info - %s] ServerHelloDone sent. TLS State -> %v", connKey, conn.TLSState)
 
-	log.Printf("[TLS Debug - %s] Exiting handleClientHello successfully (after sending ServerHello, Certificate, SKE, and ServerHelloDone).", connKey)
+	// Update final state after server messages are sent
+	conn.TLSState = TLSStateExpectingClientKeyExchange
+	log.Printf("[TLS Info - %s] Server finished sending handshake messages. Waiting for ClientKeyExchange. TLS State -> %v", connKey, conn.TLSState)
+
+	log.Printf("[TLS Debug - %s] Exiting handleClientHello successfully.", connKey)
 }
 
 // parseClientHello parses the ClientHello handshake message body, including ALPN.
@@ -1767,4 +1808,13 @@ func buildDummyServerKeyExchange() ([]byte, error) {
 	copy(message[4:], messageBody)
 
 	return message, nil
+}
+
+// --- Step 3: Send Server ChangeCipherSpec and Finished --- Function Placeholder ---
+func sendServerCCSAndFinished(ifce *water.Interface, conn *TCPConnection) {
+	connKey := conn.ConnectionKey()
+	log.Printf("[TLS Info - %s] Placeholder: Triggered sending Server ChangeCipherSpec and Finished.", connKey)
+	// TODO: Implement sending CCS record
+	// TODO: Implement building and sending dummy Finished record
+	//       Update conn.TLSState appropriately after sending
 }
