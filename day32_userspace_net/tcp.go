@@ -362,6 +362,91 @@ func handleTCPPacket(ifce *water.Interface, ipHeader *IPv4Header, tcpSegment []b
 	case exists && conn.State == TCPStateLastAck:
 		handleFINACK(conn, tcpHeader)
 
+	// === NEW CASE: Handle packets when we are waiting for client's ACK/FIN ===
+	case exists && conn.State == TCPStateFinWait1:
+		log.Printf("[TCP State - %s] Received packet in FIN_WAIT_1. Flags: [%s], Seq: %d, Ack: %d", connKey, tcpFlagsToString(tcpHeader.Flags), tcpHeader.SeqNum, tcpHeader.AckNum)
+
+		// Update client's next expected sequence number based on this packet
+		// (Important even if it's just an ACK)
+		// FIN counts as 1 sequence number if present
+		payloadLen := uint32(len(tcpPayload))
+		finIncrement := uint32(0)
+		if tcpHeader.Flags&TCPFlagFIN != 0 {
+			finIncrement = 1
+		}
+		expectedClientNextSeqAfterThis := tcpHeader.SeqNum + payloadLen + finIncrement
+		if tcpHeader.AckNum != conn.ServerNextSeq {
+			log.Printf("[Warning - %s] ACK number mismatch in FIN_WAIT_1. Expected %d, got %d. Continuing...", connKey, conn.ServerNextSeq, tcpHeader.AckNum)
+		}
+
+		// Scenario A: Client sends only ACK for our FIN
+		if tcpHeader.Flags == TCPFlagACK {
+			log.Printf("[TCP State - %s] Received ACK for our FIN. Transitioning to FIN_WAIT_2.", connKey)
+			conn.State = TCPStateFinWait2
+			// Update sequence numbers based on ACK received
+			conn.ClientNextSeq = expectedClientNextSeqAfterThis // Only update if ACK is valid? For now, assume valid.
+
+			// Scenario B: Client sends FIN (+ACK) while we are in FIN_WAIT_1 (Simultaneous Close or FIN after ACK)
+		} else if tcpHeader.Flags&(TCPFlagFIN|TCPFlagACK) != 0 {
+			log.Printf("[TCP State - %s] Received FIN+ACK (or just FIN) in FIN_WAIT_1. Sending ACK. Transitioning to CLOSING/TIME_WAIT.", connKey)
+
+			// Update sequence numbers based on received FIN
+			conn.ClientNextSeq = expectedClientNextSeqAfterThis
+
+			// Send ACK for their FIN
+			ackFlags := uint8(TCPFlagACK)
+			_, err = sendTCPPacket(conn.TunIFCE, conn.ServerIP, conn.ClientIP, uint16(conn.ServerPort), uint16(conn.ClientPort),
+				conn.ServerNextSeq, conn.ClientNextSeq, ackFlags, nil)
+			if err != nil {
+				log.Printf("[TCP Close Error - %s] Failed to send ACK for client's FIN in FIN_WAIT_1: %v", connKey, err)
+				// Problematic state, maybe just delete?
+				delete(tcpConnections, connKey)
+			} else {
+				// Transition to TIME_WAIT (simplified, directly closing after ACK)
+				// A proper TIME_WAIT state would involve a timer.
+				log.Printf("[TCP State - %s] Sent ACK for client's FIN. Transitioning to TIME_WAIT (and deleting connection).", connKey)
+				conn.State = TCPStateTimeWait // Mark as TimeWait just before delete for clarity
+				delete(tcpConnections, connKey)
+			}
+
+		} else {
+			log.Printf("[Warning - %s] Unexpected flags [%s] received in FIN_WAIT_1. Ignoring.", connKey, tcpFlagsToString(tcpHeader.Flags))
+		}
+
+	// === NEW CASE: Handle packets when we are waiting for client's FIN ===
+	case exists && conn.State == TCPStateFinWait2:
+		log.Printf("[TCP State - %s] Received packet in FIN_WAIT_2. Flags: [%s], Seq: %d, Ack: %d", connKey, tcpFlagsToString(tcpHeader.Flags), tcpHeader.SeqNum, tcpHeader.AckNum)
+
+		// Update client's next expected sequence number based on this packet
+		payloadLen := uint32(len(tcpPayload))
+		finIncrement := uint32(0)
+		if tcpHeader.Flags&TCPFlagFIN != 0 {
+			finIncrement = 1
+		}
+		expectedClientNextSeqAfterThis := tcpHeader.SeqNum + payloadLen + finIncrement
+
+		if tcpHeader.Flags&TCPFlagFIN != 0 {
+			log.Printf("[TCP State - %s] Received FIN from client in FIN_WAIT_2. Sending ACK and closing.", connKey)
+			conn.ClientNextSeq = expectedClientNextSeqAfterThis
+
+			// Send ACK for their FIN
+			ackFlags := uint8(TCPFlagACK)
+			_, err = sendTCPPacket(conn.TunIFCE, conn.ServerIP, conn.ClientIP, uint16(conn.ServerPort), uint16(conn.ClientPort),
+				conn.ServerNextSeq, conn.ClientNextSeq, ackFlags, nil)
+			if err != nil {
+				log.Printf("[TCP Close Error - %s] Failed to send ACK for client's FIN in FIN_WAIT_2: %v", connKey, err)
+			} else {
+				log.Printf("[TCP State - %s] Sent ACK for client's FIN. Connection CLOSED.", connKey)
+			}
+			// Transition to TIME_WAIT (simplified, directly closing after ACK)
+			conn.State = TCPStateTimeWait // Mark as TimeWait just before delete
+			delete(tcpConnections, connKey)
+
+		} else {
+			// Might receive other data or just ACKs, usually ignore in FIN_WAIT_2 for simplicity here
+			log.Printf("[Warning - %s] Received non-FIN packet [%s] in FIN_WAIT_2. Ignoring.", connKey, tcpFlagsToString(tcpHeader.Flags))
+		}
+
 	default:
 		if exists {
 			log.Printf("Unhandled TCP packet for %s. State: %v, Flags: [%s]", connKey, conn.State, tcpFlagsToString(tcpHeader.Flags))
