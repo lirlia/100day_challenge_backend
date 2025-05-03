@@ -2,6 +2,7 @@ package main
 
 import (
 	"context" // 結果表示用に JSON を使用
+	"database/sql"
 	"fmt"
 	"os"
 	"strings"
@@ -263,91 +264,155 @@ func processCommand(line string) {
 			fmt.Println("Not connected to a database.")
 			return
 		}
-		query := strings.Join(parts[1:], " ")
-		lowerQuery := strings.ToLower(query)
-		if !strings.HasPrefix(lowerQuery, "* from ") && !strings.HasPrefix(lowerQuery, "count(*) from ") {
-			fmt.Println("Currently only 'SELECT * FROM <table_name>' and 'SELECT COUNT(*) FROM <table_name>' are supported.")
+		// select クエリのパース (簡易版)
+		// 例: "select * from users", "select count(*) from posts", "select * from users where id = 1"
+		if len(parts) < 4 || strings.ToLower(parts[2]) != "from" {
+			fmt.Println("Usage: select * from <table_name> [where ...]")
+			fmt.Println("   or: select count(*) from <table_name> [where ...]")
 			return
 		}
-		trimmedQuery := strings.TrimSuffix(query, ";")
-		executeSelectQuery(context.Background(), trimmedQuery)
+
+		selectTarget := strings.ToLower(parts[1])
+		tableName := parts[3]
+		whereClause := ""
+		var whereArgs []interface{}
+
+		if len(parts) > 4 {
+			if strings.ToLower(parts[4]) == "where" {
+				// 簡単のため、where 句全体を文字列として扱い、引数は ? のみサポートする簡易実装
+				// 例: "where id = ?", args: [1] (引数は文字列として解釈される)
+				if len(parts) > 5 {
+					whereParts := parts[5:]
+					// where 句を再構築 (スペースで結合)
+					whereClause = strings.Join(whereParts, " ")
+					// ? の数を数え、それに対応する引数を末尾から取得しようと試みる
+					// この実装は非常に脆弱で、実際の SQL インジェクション対策にはなりません
+					// 本来はプレースホルダとその値を安全に分離・処理する必要があります
+					// placeholderCount := strings.Count(whereClause, "?") // 未使用なので削除
+					// whereParts から引数を抽出するロジックは複雑なので一旦省略。args は空のまま。
+					fmt.Println("WARN: WHERE clause arguments are not fully supported in this simple parser.")
+					// WHERE句を args なしで設定（WHERE id = 1 のような直接指定のみ動作）
+					whereArgs = nil
+				} else {
+					fmt.Println("Usage: select ... where <condition>")
+					return
+				}
+			} else {
+				fmt.Println("Only WHERE clause is supported after table name.")
+				return
+			}
+		}
+
+		if selectTarget == "count(*)" {
+			executeCountQuery(context.Background(), tableName, whereClause, whereArgs)
+		} else if selectTarget == "*" {
+			executeSelectStarQuery(context.Background(), tableName, whereClause, whereArgs)
+		} else {
+			fmt.Println("Only 'select *' or 'select count(*)' is supported.")
+		}
+
 	default:
-		fmt.Printf("Unknown command: %s. Enter 'help' for commands.\n", command)
+		fmt.Println("Unknown command:", command)
+		printHelp()
 	}
 }
 
-func executeSelectQuery(ctx context.Context, query string) {
-	rows, err := currentDB.DB.QueryContext(ctx, "SELECT "+query)
+// executeSelectQuery を select * と count(*) で分割
+
+// executeSelectStarQuery は SELECT * クエリを実行し、結果を表形式で表示します。
+func executeSelectStarQuery(ctx context.Context, tableName string, whereClause string, whereArgs []interface{}) {
+	if currentDB == nil {
+		fmt.Println("Not connected.")
+		return
+	}
+
+	qb := currentDB.Table(tableName)
+	if whereClause != "" {
+		// 注意: この実装では whereArgs が常に nil なので、プレースホルダは使えません
+		qb = qb.Where(whereClause) // Where に args を渡さない
+	}
+
+	var results []map[string]interface{}
+	err := qb.ScanMaps(&results)
 	if err != nil {
-		fmt.Printf("Error executing query: %v\n", err)
-		return
-	}
-	defer rows.Close()
-
-	cols, err := rows.Columns()
-	if err != nil {
-		fmt.Printf("Error getting columns: %v\n", err)
-		return
-	}
-	if len(cols) == 0 {
-		fmt.Println("(no results)")
-		return
-	}
-
-	var results [][]interface{}
-	for rows.Next() {
-		rowValues := make([]interface{}, len(cols))
-		rowPointers := make([]interface{}, len(cols))
-		for i := range rowValues {
-			rowPointers[i] = &rowValues[i]
-		}
-
-		if err := rows.Scan(rowPointers...); err != nil {
-			fmt.Printf("Error scanning row: %v\n", err)
-			return
-		}
-		results = append(results, rowValues)
-	}
-
-	if err := rows.Err(); err != nil {
-		fmt.Printf("Error during row iteration: %v\n", err)
+		fmt.Printf("Error executing select query: %v\n", err)
 		return
 	}
 
 	if len(results) == 0 {
-		fmt.Println("(no results)")
+		fmt.Println("(no rows)")
 		return
 	}
 
-	printTable(cols, results)
+	// printTable が map スライスを受け取れるように修正が必要
+	printMapSliceTable(results)
 }
 
-func printTable(columns []string, data [][]interface{}) {
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+// executeCountQuery は SELECT count(*) クエリを実行し、結果を表示します。
+func executeCountQuery(ctx context.Context, tableName string, whereClause string, whereArgs []interface{}) {
+	if currentDB == nil {
+		fmt.Println("Not connected.")
+		return
+	}
 
+	qb := currentDB.Table(tableName)
+	if whereClause != "" {
+		// 注意: この実装では whereArgs が常に nil なので、プレースホルダは使えません
+		qb = qb.Where(whereClause) // Where に args を渡さない
+	}
+
+	var count int64
+	err := qb.Count(&count)
+	if err != nil {
+		fmt.Printf("Error executing count query: %v\n", err)
+		return
+	}
+
+	fmt.Printf("Count: %d\n", count)
+}
+
+// printTable を printMapSliceTable に変更し、[]map[string]interface{} を受け取るように修正
+func printMapSliceTable(data []map[string]interface{}) {
+	if len(data) == 0 {
+		return // データがなければ何もしない
+	}
+
+	// 最初の行からカラム名を取得 (順序は保証されない点に注意)
+	var columns []string
+	for k := range data[0] {
+		columns = append(columns, k)
+	}
+	// TODO: カラム順をある程度固定する (e.g., id を先頭に)
+
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', tabwriter.Debug)
+	defer w.Flush()
+
+	// ヘッダー行
 	fmt.Fprintln(w, strings.Join(columns, "\t"))
-	headerSeparators := make([]string, len(columns))
-	for i := range columns {
-		headerSeparators[i] = strings.Repeat("-", len(columns[i]))
-	}
-	fmt.Fprintln(w, strings.Join(headerSeparators, "\t"))
+	// 区切り線 (オプション)
+	// var separator []string
+	// for _, col := range columns {
+	// 	separator = append(separator, strings.Repeat("-", len(col)))
+	// }
+	// fmt.Fprintln(w, strings.Join(separator, "\t"))
 
-	for _, row := range data {
-		rowStr := make([]string, len(row))
-		for i, val := range row {
-			if b, ok := val.([]byte); ok {
-				rowStr[i] = string(b)
-			} else if val == nil {
-				rowStr[i] = "NULL"
-			} else {
-				rowStr[i] = fmt.Sprintf("%v", val)
-			}
+	// データ行
+	for _, rowMap := range data {
+		var row []string
+		for _, colName := range columns {
+			val := rowMap[colName]
+			row = append(row, fmt.Sprintf("%v", val)) // %v で様々な型を文字列化
 		}
-		fmt.Fprintln(w, strings.Join(rowStr, "\t"))
+		fmt.Fprintln(w, strings.Join(row, "\t"))
 	}
-
-	w.Flush()
 }
+
+// 不要になった古い printTable 関数は削除
+// func printTable(columns []string, data [][]interface{}) {
+// ...
+// }
+
+// showTables, showSchema は変更なし
 
 func showTables() {
 	if currentDB == nil {
@@ -377,38 +442,52 @@ func showTables() {
 
 func showSchema(tableName string) {
 	if currentDB == nil {
-		fmt.Println("Not connected to a database.")
+		fmt.Println("Not connected.")
 		return
 	}
-	rows, err := currentDB.DB.QueryContext(context.Background(), fmt.Sprintf("PRAGMA table_info(%s);", tableName))
+	query := fmt.Sprintf("PRAGMA table_info(%s);", tableName) // テーブル名を埋め込むが、本来は検証が必要
+	rows, err := currentDB.DB.QueryContext(context.Background(), query)
 	if err != nil {
-		fmt.Printf("Error fetching schema for table %s: %v\n", tableName, err)
+		fmt.Printf("Error getting schema for table %s: %v\n", tableName, err)
 		return
 	}
 	defer rows.Close()
 
-	fmt.Printf("Schema for table %s:\n", tableName)
-	cols, _ := rows.Columns()
-	var results [][]interface{}
+	cols, _ := rows.Columns() // schema のカラム名は固定されているはず
+	fmt.Printf("Schema for table '%s':\n", tableName)
+
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0) // tabwriter をここで使う
+	defer w.Flush()
+
+	// ヘッダー
+	fmt.Fprintln(w, strings.Join(cols, "\t"))
+
+	// データ
 	for rows.Next() {
-		rowValues := make([]interface{}, len(cols))
-		rowPointers := make([]interface{}, len(cols))
-		for i := range rowValues {
-			rowPointers[i] = &rowValues[i]
-		}
-		if err := rows.Scan(rowPointers...); err != nil {
+		// cid, name, type, notnull, dflt_value, pk
+		var cid int
+		var name, colType string
+		var notnull int
+		var dfltValue sql.NullString // NULL 許容
+		var pk int
+
+		if err := rows.Scan(&cid, &name, &colType, &notnull, &dfltValue, &pk); err != nil {
 			fmt.Printf("Error scanning schema row: %v\n", err)
-			return
+			continue
 		}
-		results = append(results, rowValues)
-	}
-	if err := rows.Err(); err != nil {
-		fmt.Printf("Error iterating schema: %v\n", err)
+
+		row := []string{
+			fmt.Sprintf("%d", cid),
+			name,
+			colType,
+			fmt.Sprintf("%d", notnull),
+			fmt.Sprintf("%v", dfltValue.String), // NULL は空文字列になる
+			fmt.Sprintf("%d", pk),
+		}
+		fmt.Fprintln(w, strings.Join(row, "\t"))
 	}
 
-	if len(results) == 0 {
-		fmt.Printf("Table %s not found or has no columns.\n", tableName)
-		return
+	if err = rows.Err(); err != nil {
+		fmt.Printf("Error iterating schema rows: %v\n", err)
 	}
-	printTable(cols, results)
 }
