@@ -9,7 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"math/rand" // For generating IP ID
+	mrand "math/rand" // For generating IP ID, Renamed import
 	"net"
 	"os"
 	"os/exec"
@@ -18,6 +18,8 @@ import (
 	"sync" // For mutex
 	"syscall"
 	"time" // For seeding random number generator
+
+	"crypto/rand"
 
 	"github.com/songgao/water"
 )
@@ -150,7 +152,8 @@ type TLSHandshakeState int
 const (
 	TLSStateNone TLSHandshakeState = iota
 	TLSStateExpectingClientHello
-	TLSStateSentServerHello // etc.
+	TLSStateSentServerHello
+	TLSStateSentCertificate
 )
 
 // TLS Record Types
@@ -165,7 +168,20 @@ const (
 const (
 	TLSHandshakeTypeClientHello uint8 = 1
 	TLSHandshakeTypeServerHello uint8 = 2
+	TLSHandshakeTypeCertificate uint8 = 11 // Added
 	// ... other handshake types
+)
+
+// TLS Cipher Suites (Example, add more as needed)
+const (
+	TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 uint16 = 0xc02f
+	// Add other suites your server might hypothetically support
+)
+
+// TLS Extension Types
+const (
+	TLSExtensionTypeALPN uint16 = 16
+	// ... other extension types
 )
 
 // TLSRecordHeader represents the TLS record layer header.
@@ -179,12 +195,13 @@ const TLSRecordHeaderLength = 5
 
 // ClientHelloInfo holds basic parsed info from ClientHello.
 type ClientHelloInfo struct {
-	Version      uint16
-	Random       []byte
-	SessionID    []byte
-	CipherSuites []uint16
-	// CompressionMethods []uint8 // Usually null
-	// Extensions // Parse later if needed (ALPN is here)
+	Version            uint16
+	Random             []byte
+	SessionID          []byte
+	CipherSuites       []uint16
+	CompressionMethods []uint8  // Parsed but usually ignored
+	ALPNProtocols      []string // Parsed from ALPN extension
+	// rawExtensions    []byte // Store raw extensions for later use if needed
 }
 
 // ConnectionKey generates a standard key for the connection map.
@@ -198,7 +215,7 @@ func (c *TCPConnection) ConnectionKey() string {
 
 func main() {
 	flag.Parse()
-	rand.Seed(time.Now().UnixNano()) // Seed random number generator for IP IDs
+	mrand.Seed(time.Now().UnixNano()) // Seed random number generator for IP IDs, Use mrand
 
 	if *localIP == "" || *remoteIP == "" || *subnetMask == "" {
 		log.Fatal("localIP, remoteIP, and subnet flags are required")
@@ -469,8 +486,8 @@ func buildIPv4Header(srcIP, dstIP net.IP, protocol uint8, payloadLength int) ([]
 		IHL:            5, // Assuming no options
 		TOS:            0,
 		TotalLength:    uint16(IPv4HeaderMinLengthBytes + payloadLength),
-		ID:             uint16(rand.Intn(65536)), // Random ID
-		Flags:          0,                        // Assuming no fragmentation needed (DF=0, MF=0)
+		ID:             uint16(mrand.Intn(65536)), // Random ID, Use mrand
+		Flags:          0,                         // Assuming no fragmentation needed (DF=0, MF=0)
 		FragmentOffset: 0,
 		TTL:            64, // Common default TTL
 		Protocol:       protocol,
@@ -719,7 +736,7 @@ func handleTCPPacket(ifce *water.Interface, ipHeader *IPv4Header, tcpSegment []b
 			log.Printf("Handling SYN for new connection %s on port %d", connKey, tcpHeader.DstPort)
 			// ... (Basic SYN flood protection) ...
 
-			serverISN := rand.Uint32()
+			serverISN := mrand.Uint32() // Use mrand
 			newConn := &TCPConnection{
 				State:         TCPStateSynReceived,
 				ClientIP:      ipHeader.SrcIP,
@@ -1065,13 +1082,14 @@ func handleTLSHandshakeRecord(ifce *water.Interface, conn *TCPConnection, payloa
 	log.Printf("[TLS Debug - %s] Exiting handleTLSHandshakeRecord.", connKey)
 }
 
-// handleClientHello parses a ClientHello message and logs basic info.
+// handleClientHello parses ClientHello and sends ServerHello.
 func handleClientHello(ifce *water.Interface, conn *TCPConnection, message []byte) {
 	connKey := conn.ConnectionKey()
 	log.Printf("[TLS Debug - %s] Entering handleClientHello. Message len: %d", connKey, len(message))
 	info, err := parseClientHello(message)
 	if err != nil {
 		log.Printf("[TLS Error - %s] Error parsing ClientHello: %v", connKey, err)
+		// TODO: Send Alert Handshake Failure?
 		return
 	}
 
@@ -1086,11 +1104,109 @@ func handleClientHello(ifce *water.Interface, conn *TCPConnection, message []byt
 		numSuitesToShow = len(info.CipherSuites)
 	}
 	log.Printf("  [TLS Info - %s]   Cipher Suites (first %d): %v", connKey, numSuitesToShow, info.CipherSuites[:numSuitesToShow])
+	log.Printf("  [TLS Info - %s]   ALPN Protocols Offered: %v", connKey, info.ALPNProtocols)
 
-	log.Printf("[TLS Debug - %s] Exiting handleClientHello.", connKey)
+	// --- Server Parameter Selection ---
+	// Choose Cipher Suite (Simple example: prefer ECDHE_RSA_AES_128_GCM_SHA256 if offered)
+	chosenSuite := uint16(0)
+	serverSupportedSuites := []uint16{TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256} // Example
+	for _, serverSuite := range serverSupportedSuites {
+		for _, clientSuite := range info.CipherSuites {
+			if serverSuite == clientSuite {
+				chosenSuite = serverSuite
+				break
+			}
+		}
+		if chosenSuite != 0 {
+			break
+		}
+	}
+	if chosenSuite == 0 {
+		log.Printf("[TLS Error - %s] No supported cipher suite found.", connKey)
+		// TODO: Send Alert Handshake Failure (illegal_parameter or handshake_failure)
+		return
+	}
+	log.Printf("[TLS Info - %s] Chosen Cipher Suite: 0x%04x", connKey, chosenSuite)
+
+	// Choose ALPN Protocol (Prefer "h2" if offered)
+	chosenALPN := "" // Default to no ALPN
+	clientOfferedH2 := false
+	for _, proto := range info.ALPNProtocols {
+		if proto == "h2" {
+			clientOfferedH2 = true
+			break
+		}
+	}
+	if clientOfferedH2 {
+		chosenALPN = "h2"
+		log.Printf("[TLS Info - %s] ALPN: Client offered h2, selecting h2.", connKey)
+	} else {
+		log.Printf("[TLS Info - %s] ALPN: Client did not offer h2, or no ALPN extension found.", connKey)
+	}
+
+	// --- Generate ServerHello ---
+	serverRandom := make([]byte, 32)
+	_, err = rand.Read(serverRandom) // Use crypto/rand directly
+	if err != nil {
+		log.Printf("[TLS Error - %s] Failed to generate server random: %v", connKey, err)
+		return
+	}
+
+	serverHelloMsg, err := buildServerHello(info.Version, serverRandom, nil, chosenSuite, 0, chosenALPN)
+	if err != nil {
+		log.Printf("[TLS Error - %s] Failed to build ServerHello message: %v", connKey, err)
+		return
+	}
+
+	serverHelloRecord, err := buildTLSRecord(TLSRecordTypeHandshake, info.Version, serverHelloMsg)
+	if err != nil {
+		log.Printf("[TLS Error - %s] Failed to build ServerHello record: %v", connKey, err)
+		return
+	}
+
+	// --- Send ServerHello Record ---
+	log.Printf("[TLS Debug - %s] Sending ServerHello record (%d bytes).", connKey, len(serverHelloRecord))
+	err = sendRawTLSRecord(ifce, conn, serverHelloRecord)
+	if err != nil {
+		log.Printf("[TLS Error - %s] Failed to send ServerHello record: %v", connKey, err)
+		return
+	}
+
+	// Update TLS State
+	conn.TLSState = TLSStateSentServerHello
+	log.Printf("[TLS Info - %s] ServerHello sent. TLS State -> %v", connKey, conn.TLSState)
+
+	// --- Send Certificate Message (Dummy) ---
+	log.Printf("[TLS Debug - %s] Preparing dummy Certificate message.", connKey)
+	certMsg, err := buildCertificateMessage()
+	if err != nil {
+		log.Printf("[TLS Error - %s] Failed to build Certificate message: %v", connKey, err)
+		// Handle error appropriately, maybe close connection or send alert
+		return
+	}
+
+	certRecord, err := buildTLSRecord(TLSRecordTypeHandshake, 0x0303, certMsg) // Use TLS 1.2 version
+	if err != nil {
+		log.Printf("[TLS Error - %s] Failed to build Certificate record: %v", connKey, err)
+		return
+	}
+
+	log.Printf("[TLS Debug - %s] Sending Certificate record (%d bytes).", connKey, len(certRecord))
+	err = sendRawTLSRecord(ifce, conn, certRecord)
+	if err != nil {
+		log.Printf("[TLS Error - %s] Failed to send Certificate record: %v", connKey, err)
+		return
+	}
+
+	conn.TLSState = TLSStateSentCertificate
+	log.Printf("[TLS Info - %s] Dummy Certificate sent. TLS State -> %v", connKey, conn.TLSState)
+
+	// TODO: Send ServerKeyExchange, ServerHelloDone
+
+	log.Printf("[TLS Debug - %s] Exiting handleClientHello successfully (after sending ServerHello and Certificate).", connKey)
 }
 
-// parseClientHello parses the ClientHello handshake message body.
+// parseClientHello parses the ClientHello handshake message body, including ALPN.
 func parseClientHello(message []byte) (*ClientHelloInfo, error) {
 	log.Printf("[TLS Debug] Entering parseClientHello. Message len: %d", len(message))
 	if len(message) < 38 {
@@ -1142,22 +1258,199 @@ func parseClientHello(message []byte) (*ClientHelloInfo, error) {
 	if offset+compressionMethodsLen > len(message) {
 		return nil, fmt.Errorf("message too short for Compression Methods (need %d, have %d)", offset+compressionMethodsLen, len(message))
 	}
+	info.CompressionMethods = message[offset : offset+compressionMethodsLen] // Store it even if ignored
 	offset += compressionMethodsLen
-	log.Printf("[TLS Debug] Skipped Compression Methods (%d bytes), Offset: %d", compressionMethodsLen, offset)
+
+	// Extensions Parsing
 	if offset+2 <= len(message) {
-		extensionsLen := int(binary.BigEndian.Uint16(message[offset : offset+2]))
+		extensionsTotalLen := int(binary.BigEndian.Uint16(message[offset : offset+2]))
 		offset += 2
-		log.Printf("[TLS Debug] Parsed ExtensionsLen: %d, Offset: %d", extensionsLen, offset)
-		if offset+extensionsLen > len(message) {
-			return nil, fmt.Errorf("message too short for Extensions (need %d, have %d)", offset+extensionsLen, len(message))
+		log.Printf("[TLS Debug] Extensions total length: %d. Current offset: %d, Message Length: %d", extensionsTotalLen, offset, len(message))
+		if offset+extensionsTotalLen > len(message) {
+			return nil, fmt.Errorf("message too short for declared Extensions length (need %d, have %d)", offset+extensionsTotalLen, len(message))
 		}
-		log.Printf("[TLS Debug] Extensions data present (%d bytes), parsing TBD. Final Offset: %d", extensionsLen, offset+extensionsLen)
-		// Extensions parsing TBD
+
+		extensionsEnd := offset + extensionsTotalLen
+		for offset < extensionsEnd {
+			if offset+4 > extensionsEnd { // Need 2 bytes for type, 2 bytes for length
+				return nil, fmt.Errorf("malformed extensions block: not enough data for next extension header (offset %d, end %d)", offset, extensionsEnd)
+			}
+			extType := binary.BigEndian.Uint16(message[offset : offset+2])
+			offset += 2
+			extLen := int(binary.BigEndian.Uint16(message[offset : offset+2]))
+			offset += 2
+			log.Printf("[TLS Debug]   Parsing Extension Type: %d, Length: %d. Current offset: %d", extType, extLen, offset)
+
+			if offset+extLen > extensionsEnd {
+				return nil, fmt.Errorf("malformed extension (Type %d): declared length %d exceeds remaining data (%d)", extType, extLen, extensionsEnd-offset)
+			}
+			extData := message[offset : offset+extLen]
+			offset += extLen
+
+			// Parse specific extensions (ALPN)
+			if extType == TLSExtensionTypeALPN {
+				log.Printf("[TLS Debug]   Found ALPN Extension (Data: %x)", extData)
+				parsedALPN, err := parseALPNExtension(extData)
+				if err != nil {
+					log.Printf("[TLS Warn] Failed to parse ALPN extension data: %v", err)
+					// Continue parsing other extensions even if ALPN is malformed?
+				} else {
+					info.ALPNProtocols = parsedALPN
+					log.Printf("[TLS Debug]   Parsed ALPN Protocols: %v", info.ALPNProtocols)
+				}
+			}
+			// Add parsing for other extensions if needed (SNI, etc.)
+		}
+		if offset != extensionsEnd {
+			log.Printf("[TLS Warn] Extensions parsing finished at offset %d, but expected end was %d", offset, extensionsEnd)
+			// This might indicate a malformed extensions block
+		}
 	} else {
-		log.Printf("[TLS Debug] No Extensions present. Final Offset: %d", offset)
+		log.Printf("[TLS Debug] No Extensions present.")
 	}
+
 	log.Printf("[TLS Debug] Exiting parseClientHello successfully.")
 	return info, nil
+}
+
+// parseALPNExtension parses the Application-Layer Protocol Negotiation extension data.
+func parseALPNExtension(data []byte) ([]string, error) {
+	if len(data) < 2 {
+		return nil, errors.New("ALPN data too short for list length")
+	}
+	listLen := int(binary.BigEndian.Uint16(data[0:2]))
+	if listLen != len(data)-2 {
+		return nil, fmt.Errorf("ALPN list length mismatch: header says %d, actual data is %d bytes", listLen, len(data)-2)
+	}
+
+	var protocols []string
+	offset := 2
+	for offset < len(data) {
+		if offset+1 > len(data) {
+			return nil, errors.New("ALPN data truncated before protocol length byte")
+		}
+		protoLen := int(data[offset])
+		offset += 1
+		if offset+protoLen > len(data) {
+			return nil, fmt.Errorf("ALPN data truncated: need %d bytes for protocol, only %d remain", protoLen, len(data)-offset)
+		}
+		protocols = append(protocols, string(data[offset:offset+protoLen]))
+		offset += protoLen
+	}
+	return protocols, nil
+}
+
+// buildServerHello constructs the ServerHello message body.
+func buildServerHello(clientVersion uint16, serverRandom []byte, sessionID []byte, cipherSuite uint16, compressionMethod uint8, alpnProtocol string) ([]byte, error) {
+	if len(serverRandom) != 32 {
+		return nil, errors.New("server random must be 32 bytes")
+	}
+
+	// Basic structure: Version(2) + Random(32) + SessionIDLen(1) + SessionID(var) + CipherSuite(2) + CompressionMethod(1)
+	baseLength := 2 + 32 + 1 + len(sessionID) + 2 + 1
+	var extensionsBytes []byte
+
+	// Build ALPN extension if needed
+	if alpnProtocol != "" {
+		// ALPN Extension structure: Type(2) + Length(2) + ListLength(2) + ProtocolLen(1) + Protocol(var)
+		protoLen := len(alpnProtocol)
+		listLen := 1 + protoLen    // 1 byte for length + protocol bytes
+		extLen := 2 + 1 + protoLen // 2 bytes for list length + 1 for proto len + proto bytes
+
+		alpnExt := make([]byte, 4+extLen) // 4 bytes for Type + Length
+		binary.BigEndian.PutUint16(alpnExt[0:2], TLSExtensionTypeALPN)
+		binary.BigEndian.PutUint16(alpnExt[2:4], uint16(extLen))
+		binary.BigEndian.PutUint16(alpnExt[4:6], uint16(listLen))
+		alpnExt[6] = byte(protoLen)
+		copy(alpnExt[7:], []byte(alpnProtocol))
+		extensionsBytes = alpnExt
+	}
+
+	extensionsTotalLength := len(extensionsBytes)
+	messageLength := baseLength
+	if extensionsTotalLength > 0 {
+		messageLength += 2 + extensionsTotalLength // 2 bytes for total extensions length field
+	}
+
+	// Handshake header: Type (1) + Length (3)
+	handshakeMsg := make([]byte, 4+messageLength)
+	handshakeMsg[0] = TLSHandshakeTypeServerHello
+	handshakeMsg[1] = byte(messageLength >> 16)
+	handshakeMsg[2] = byte(messageLength >> 8)
+	handshakeMsg[3] = byte(messageLength)
+
+	// ServerHello body
+	offset := 4
+	// Use client version or fixed server version (e.g., TLS 1.2 = 0x0303)
+	binary.BigEndian.PutUint16(handshakeMsg[offset:offset+2], 0x0303) // Fix to TLS 1.2 for now
+	offset += 2
+	copy(handshakeMsg[offset:offset+32], serverRandom)
+	offset += 32
+	handshakeMsg[offset] = byte(len(sessionID))
+	offset += 1
+	if len(sessionID) > 0 {
+		copy(handshakeMsg[offset:offset+len(sessionID)], sessionID)
+		offset += len(sessionID)
+	}
+	binary.BigEndian.PutUint16(handshakeMsg[offset:offset+2], cipherSuite)
+	offset += 2
+	handshakeMsg[offset] = compressionMethod
+	offset += 1
+
+	// Add Extensions block if needed
+	if extensionsTotalLength > 0 {
+		binary.BigEndian.PutUint16(handshakeMsg[offset:offset+2], uint16(extensionsTotalLength))
+		offset += 2
+		copy(handshakeMsg[offset:offset+extensionsTotalLength], extensionsBytes)
+		offset += extensionsTotalLength
+	}
+
+	// Final check of constructed length vs calculated offset
+	if offset != len(handshakeMsg) {
+		return nil, fmt.Errorf("internal error building ServerHello: length mismatch (offset %d, total %d)", offset, len(handshakeMsg))
+	}
+
+	return handshakeMsg, nil
+}
+
+// buildTLSRecord creates a TLS record byte slice.
+func buildTLSRecord(recordType uint8, version uint16, payload []byte) ([]byte, error) {
+	recordLen := len(payload)
+	if recordLen > 1<<14 { // Max payload size for TLS records (approx)
+		return nil, fmt.Errorf("TLS payload too large: %d bytes", recordLen)
+	}
+	record := make([]byte, TLSRecordHeaderLength+recordLen)
+	record[0] = recordType
+	binary.BigEndian.PutUint16(record[1:3], version) // Use provided version (e.g., from ClientHello or fixed)
+	binary.BigEndian.PutUint16(record[3:5], uint16(recordLen))
+	copy(record[TLSRecordHeaderLength:], payload)
+	return record, nil
+}
+
+// sendRawTLSRecord sends a raw TLS record over the TCP connection.
+// Assumes the record bytes are fully formed.
+func sendRawTLSRecord(ifce *water.Interface, conn *TCPConnection, record []byte) error {
+	// This function is essentially sending application data from TCP's perspective.
+	// We need to wrap this in TCP segment(s) and IP packet(s).
+	// We can reuse sendTCPPacket, but need to be careful with sequence numbers.
+
+	// We are sending data, so ACK flag should be set, AckNum should acknowledge client's next expected seq.
+	flags := uint8(TCPFlagPSH | TCPFlagACK) // PSH to indicate data push
+	payload := record
+
+	log.Printf("[TLS Debug - %s] Preparing to send TLS record (%d bytes) via sendTCPPacket.", conn.ConnectionKey(), len(payload))
+
+	err := sendTCPPacket(ifce, conn.ServerIP, conn.ClientIP, conn.ServerPort, conn.ClientPort,
+		conn.ServerNextSeq, conn.ClientNextSeq, flags, payload)
+	if err != nil {
+		return fmt.Errorf("sendTCPPacket failed for TLS record: %w", err)
+	}
+
+	// If sendTCPPacket is successful, update the server sequence number
+	conn.ServerNextSeq += uint32(len(payload))
+	log.Printf("[TLS Debug - %s] Updated ServerNextSeq to %d after sending TLS record.", conn.ConnectionKey(), conn.ServerNextSeq)
+
+	return nil
 }
 
 func handleTLSData(ifce *water.Interface, conn *TCPConnection, payload []byte) {
@@ -1319,4 +1612,51 @@ func calculateTCPChecksum(srcIP, dstIP net.IP, tcpHeader, tcpPayload []byte) (ui
 	}
 	checksum := calculateChecksum(dataForChecksum)
 	return checksum, nil
+}
+
+// buildCertificateMessage constructs a dummy Certificate handshake message.
+// In a real implementation, this would load and format actual certificates.
+func buildCertificateMessage() ([]byte, error) {
+	// Dummy certificate data (just some arbitrary bytes)
+	// Structure: TotalCertificatesLength(3 bytes) + Cert1Length(3 bytes) + Cert1Data(...) + ...
+	dummyCertData := []byte(`-----BEGIN CERTIFICATE-----
+THIS IS A DUMMY CERTIFICATE
+-----END CERTIFICATE-----`)
+	certLen := uint32(len(dummyCertData))
+	totalCertsLen := certLen
+
+	// Message body length calculation:
+	// 3 bytes for total certs length + 3 bytes for cert1 length + cert1 data length
+	messageBodyLen := 3 + 3 + certLen
+
+	// Handshake header: Type (1) + Length (3)
+	message := make([]byte, 4+messageBodyLen)
+	message[0] = TLSHandshakeTypeCertificate
+	message[1] = byte(messageBodyLen >> 16)
+	message[2] = byte(messageBodyLen >> 8)
+	message[3] = byte(messageBodyLen)
+
+	offset := 4
+	// Total certificates length (3 bytes)
+	message[offset] = byte(totalCertsLen >> 16)
+	message[offset+1] = byte(totalCertsLen >> 8)
+	message[offset+2] = byte(totalCertsLen)
+	offset += 3
+
+	// Certificate 1 length (3 bytes)
+	message[offset] = byte(certLen >> 16)
+	message[offset+1] = byte(certLen >> 8)
+	message[offset+2] = byte(certLen)
+	offset += 3
+
+	// Certificate 1 data
+	copy(message[offset:], dummyCertData)
+	offset += int(certLen)
+
+	// Sanity check
+	if offset != len(message) {
+		return nil, fmt.Errorf("internal error building dummy Certificate message: length mismatch (offset %d, total %d)", offset, len(message))
+	}
+
+	return message, nil
 }
