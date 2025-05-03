@@ -560,4 +560,31 @@ func TestQueryBuilder(t *testing.T) {
 		t.Errorf("QB SelectOne after TX commit mismatch: got %+v, want name %s", updatedUser3, newName)
 	}
 	fmt.Println("QB Transaction test successful.")
+
+	// 6. 不正な Order 文字列のテスト
+	var usersInvalidOrder []User
+	t.Log("Testing invalid ORDER BY clause...")
+	err = db.Model(&User{}).Order("id; DROP TABLE users;").Select(&usersInvalidOrder)
+	if err != nil {
+		// Order が無視されるので、エラーにはならないはず
+		t.Errorf("Expected no error when Order is ignored, got: %v", err)
+	}
+	// 結果が返ってくることを確認 (順序は不定)
+	if len(usersInvalidOrder) != len(usersToInsert) {
+		// ログにWARNが出るはず
+		t.Errorf("Expected all users when invalid Order is ignored, got %d, want %d", len(usersInvalidOrder), len(usersToInsert))
+	}
+	t.Log("Invalid ORDER BY clause was correctly ignored (check logs for WARN message).")
+
+	// 7. 正常だが少し複雑な Order 文字列
+	var usersComplexOrder []User
+	err = db.Model(&User{}).Order(" name   ASC ,  id   DESC ").Limit(1).Select(&usersComplexOrder)
+	if err != nil {
+		t.Fatalf("QB Select with complex valid order failed: %v", err)
+	}
+	// name ASC, id DESC なので、"Another User 3" が最初に来るはず
+	if len(usersComplexOrder) != 1 || usersComplexOrder[0].Name != "Another User 3 Updated" {
+		t.Errorf("QB Select with complex valid order result mismatch: got %+v", usersComplexOrder)
+	}
+	fmt.Printf("QB Select (complex valid order): %+v\n", usersComplexOrder)
 }

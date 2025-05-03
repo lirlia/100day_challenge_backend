@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"reflect"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -157,9 +158,20 @@ func (qb *QueryBuilder) Where(query string, args ...interface{}) *QueryBuilder {
 	return qb
 }
 
+// 正規表現: ORDER BY句として安全な文字のみを許可
+// 英数字、アンダースコア、ピリオド（テーブル名.カラム名用）、空白、カンマ、ASC、DESC (大文字小文字区別なし)
+var safeOrderByPattern = regexp.MustCompile(`^[a-zA-Z0-9_.,\s]*(?i:(asc|desc))?$`) // 簡易版: 基本文字と末尾のasc/desc
+// 修正: 各要素の間に許容する空白を追加 (\s*)
+var stricterSafeOrderByPattern = regexp.MustCompile(`^\s*[a-zA-Z0-9_.]+(\s+(?i:asc|desc))?(\s*,\s*[a-zA-Z0-9_.]+(\s+(?i:asc|desc))?)*\s*$`) // 修正: 空白許容
+
 // Order は ORDER BY 条件を追加します。
+// 安全でない可能性のある文字列は無視され、警告がログに出力されます。
 // 例: "id DESC", "name ASC, created_at DESC"
 func (qb *QueryBuilder) Order(value string) *QueryBuilder {
+	if !isValidOrderByClause(value) {
+		log.Printf("WARN: Ignoring potentially unsafe ORDER BY clause: %q", value)
+		return qb
+	}
 	qb.orders = append(qb.orders, value)
 	return qb
 }
@@ -218,6 +230,7 @@ func (qb *QueryBuilder) buildSelectQuery() (string, []interface{}) {
 
 	if len(qb.orders) > 0 {
 		query.WriteString(" ORDER BY ")
+		// Order メソッドで検証済みの文字列のみがここに来る
 		query.WriteString(strings.Join(qb.orders, ", "))
 	}
 
@@ -602,4 +615,11 @@ func getTableName(structType reflect.Type) string {
 	} else {
 		return snakeName + "s"
 	}
+}
+
+// isValidOrderByClause は ORDER BY 句として安全な文字列か検証します。
+func isValidOrderByClause(clause string) bool {
+	// より厳格なパターンを使用
+	// TrimSpace は不要になった（正規表現が前後の空白も許容するため）が、念のため残しても良い
+	return stricterSafeOrderByPattern.MatchString(clause)
 }
