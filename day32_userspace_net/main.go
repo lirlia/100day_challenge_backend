@@ -3,7 +3,13 @@ package main
 import (
 	// For HTTP parsing
 	"bufio"
-	"bytes"           // For HTTP parsing
+	"bytes"  // For HTTP parsing
+	"crypto" // Added for crypto.SHA256
+
+	// Renamed import
+	// Added for ECDHE key generation
+	"crypto/ecdh" // Added for ECDHE key generation
+	// Added for potential SKE signature later
 	"encoding/binary" // For custom errors
 	"errors"
 	"flag"
@@ -19,9 +25,13 @@ import (
 	"syscall"
 	"time" // For seeding random number generator
 
-	"crypto/rand"
+	"crypto/rand"   // Added for potential SKE signature later
+	"crypto/rsa"    // Added for SKE signature
+	"crypto/sha256" // Added for SKE signature
+	"crypto/tls"    // Added for loading key/cert
 
 	"github.com/songgao/water"
+	// Added for ECDHE key generation
 )
 
 // IPv4Header represents the IPv4 header structure.
@@ -135,6 +145,12 @@ var (
 	connMutex      sync.Mutex
 )
 
+// Global variables for loaded certificate and key
+var (
+	serverCert    tls.Certificate
+	serverCertDER [][]byte // Store DER encoded certificates
+)
+
 // Command-line flags
 var (
 	devName    = flag.String("dev", "", "TUN device name (e.g., utun4)")
@@ -226,6 +242,17 @@ func (c *TCPConnection) ConnectionKey() string {
 func main() {
 	flag.Parse()
 	mrand.Seed(time.Now().UnixNano()) // Seed random number generator for IP IDs, Use mrand
+
+	// --- Load Certificate and Key ---
+	var err error
+	serverCert, err = tls.LoadX509KeyPair("cert.pem", "key.pem")
+	if err != nil {
+		log.Fatalf("Failed to load server certificate and key: %v", err)
+	}
+	log.Println("Server certificate and key loaded successfully.")
+	// Store the DER bytes for sending in the Certificate message
+	serverCertDER = serverCert.Certificate
+	// --- End Load Certificate and Key ---
 
 	if *localIP == "" || *remoteIP == "" || *subnetMask == "" {
 		log.Fatal("localIP, remoteIP, and subnet flags are required")
@@ -1110,9 +1137,9 @@ func handleTLSHandshakeRecord(ifce *water.Interface, conn *TCPConnection, payloa
 		if conn.TLSState == TLSStateExpectingFinished {
 			// Here, we would normally verify the Finished message
 			log.Printf("[TLS Info - %s] Processing Finished. TLS Handshake Potentially Complete (Verification Skipped). Triggering Server Finished.", connKey)
-			conn.TLSState = TLSStateHandshakeComplete // Mark handshake as complete for now
-			// TODO: Trigger sending server ChangeCipherSpec and Finished (Step 3)
-			sendServerCCSAndFinished(ifce, conn) // Call the function for Step 3
+			// conn.TLSState = TLSStateHandshakeComplete // State transition moved to sendServerCCSAndFinished
+			// TODO: Trigger sending server ChangeCipherSpec and Finished (Step 3) -> Now called from handleClientHello
+			// sendServerCCSAndFinished(ifce, conn) // Call moved
 		} else {
 			log.Printf("[TLS Warn - %s] Unexpected Finished received in state %v", connKey, conn.TLSState)
 			// Consider sending an alert?
@@ -1123,7 +1150,7 @@ func handleTLSHandshakeRecord(ifce *water.Interface, conn *TCPConnection, payloa
 	log.Printf("[TLS Debug - %s] Exiting handleTLSHandshakeRecord.", connKey)
 }
 
-// handleClientHello parses ClientHello and sends ServerHello.
+// handleClientHello parses ClientHello and sends ServerHello, Certificate, SKE, ServerHelloDone, **and then immediately CCS and Finished**.
 func handleClientHello(ifce *water.Interface, conn *TCPConnection, message []byte) {
 	connKey := conn.ConnectionKey()
 	log.Printf("[TLS Debug - %s] Entering handleClientHello. Message len: %d", connKey, len(message))
@@ -1236,32 +1263,79 @@ func handleClientHello(ifce *water.Interface, conn *TCPConnection, message []byt
 	err = sendRawTLSRecord(ifce, conn, certRecord)
 	if err != nil {
 		log.Printf("[TLS Error - %s] Failed to send Certificate record: %v", connKey, err)
-		return
+		return // Certificate送信エラーならここで終了
 	}
-
 	conn.TLSState = TLSStateSentCertificate
-	log.Printf("[TLS Info - %s] Dummy Certificate sent. TLS State -> %v", connKey, conn.TLSState)
+	log.Printf("[TLS Info - %s] Certificate sent. TLS State -> %v", connKey, conn.TLSState)
 
-	// --- Send ServerKeyExchange Message (Dummy) ---
-	log.Printf("[TLS Debug - %s] Preparing dummy ServerKeyExchange message.", connKey)
-	skeMsg, err := buildDummyServerKeyExchange()
+	// ★★★ このログを追加 ★★★
+	log.Printf("[TLS Debug - %s] Reached point before SKE generation.", connKey)
+
+	// --- Build and Send ServerKeyExchange (ECDHE + Signature) ---
+	log.Printf("[TLS Debug - %s] Preparing REAL ServerKeyExchange message.", connKey)
+
+	// 1. Generate ECDHE keys using P-256
+	curve := ecdh.P256()
+	serverECDHPrivateKey, err := curve.GenerateKey(rand.Reader)
 	if err != nil {
-		log.Printf("[TLS Error - %s] Failed to build ServerKeyExchange message: %v", connKey, err)
+		log.Printf("[TLS Error - %s] Failed to generate ECDHE private key: %v", connKey, err)
 		return
 	}
+	serverECDHPublicKeyBytes := serverECDHPrivateKey.PublicKey().Bytes()
+	log.Printf("[TLS Debug - %s] Generated ECDHE Public Key (%d bytes): %x", connKey, len(serverECDHPublicKeyBytes), serverECDHPublicKeyBytes)
+
+	// 2. Build the SKE parameters part
+	// struct {
+	//    ECParameters curve_params;
+	//    ECPoint      public;
+	// } ServerECDHParams;
+	// struct {
+	//    ECCurveType curve_type;          // 1 byte (named_curve = 3)
+	//    NamedCurve  namedcurve;        // 2 bytes (secp256r1 = 23)
+	// } ECParameters;
+	// struct {
+	//    opaque point <1..2^8-1>; // length (1 byte) + point data
+	// } ECPoint;
+	skeParams := new(bytes.Buffer)
+	skeParams.WriteByte(3)                                   // curve_type = named_curve
+	binary.Write(skeParams, binary.BigEndian, uint16(23))    // namedcurve = secp256r1 (0x0017)
+	skeParams.WriteByte(byte(len(serverECDHPublicKeyBytes))) // public key length
+	skeParams.Write(serverECDHPublicKeyBytes)                // public key
+	skeParamsBytes := skeParams.Bytes()
+	log.Printf("[TLS Debug - %s] Constructed SKE Params (%d bytes): %x", connKey, len(skeParamsBytes), skeParamsBytes)
+
+	// 3. Prepare data for signature (Client Random + Server Random + SKE Params)
+	dataToSign := append(info.Random, serverRandom...)
+	dataToSign = append(dataToSign, skeParamsBytes...)
+	log.Printf("[TLS Debug - %s] Data to Sign (%d bytes) constructed.", connKey, len(dataToSign))
+
+	// 4. Build the full SKE message (including signature)
+	// Ensure serverCert.PrivateKey is available and is the correct type for buildServerKeyExchange
+	if serverCert.PrivateKey == nil {
+		log.Printf("[TLS Error - %s] Server private key is nil, cannot sign SKE.", connKey)
+		return
+	}
+	skeMsg, err := buildServerKeyExchange(dataToSign, skeParamsBytes, serverCert.PrivateKey)
+	if err != nil {
+		log.Printf("[TLS Error - %s] Failed to build ServerKeyExchange message with signature: %v", connKey, err)
+		return
+	}
+	log.Printf("[TLS Debug - %s] Built full SKE message (%d bytes).", connKey, len(skeMsg))
+
+	// 5. Build and Send the SKE Record
 	skeRecord, err := buildTLSRecord(TLSRecordTypeHandshake, 0x0303, skeMsg)
 	if err != nil {
 		log.Printf("[TLS Error - %s] Failed to build ServerKeyExchange record: %v", connKey, err)
 		return
 	}
-	log.Printf("[TLS Debug - %s] Sending ServerKeyExchange record (%d bytes).", connKey, len(skeRecord))
+	log.Printf("[TLS Debug - %s] Sending REAL ServerKeyExchange record (%d bytes).", connKey, len(skeRecord))
 	err = sendRawTLSRecord(ifce, conn, skeRecord)
 	if err != nil {
 		log.Printf("[TLS Error - %s] Failed to send ServerKeyExchange record: %v", connKey, err)
 		return
 	}
 	conn.TLSState = TLSStateSentServerKeyExchange
-	log.Printf("[TLS Info - %s] Dummy ServerKeyExchange sent. TLS State -> %v", connKey, conn.TLSState)
+	log.Printf("[TLS Info - %s] REAL ServerKeyExchange sent. TLS State -> %v", connKey, conn.TLSState)
 
 	// --- Send ServerHelloDone Message ---
 	log.Printf("[TLS Debug - %s] Preparing ServerHelloDone message.", connKey)
@@ -1290,6 +1364,9 @@ func handleClientHello(ifce *water.Interface, conn *TCPConnection, message []byt
 	// Update final state after server messages are sent
 	conn.TLSState = TLSStateExpectingClientKeyExchange
 	log.Printf("[TLS Info - %s] Server finished sending handshake messages. Waiting for ClientKeyExchange. TLS State -> %v", connKey, conn.TLSState)
+
+	// --- REMOVED: Immediately send Server CCS and Finished (Step 3) ---
+	// sendServerCCSAndFinished(ifce, conn)
 
 	log.Printf("[TLS Debug - %s] Exiting handleClientHello successfully.", connKey)
 }
@@ -1702,21 +1779,43 @@ func calculateTCPChecksum(srcIP, dstIP net.IP, tcpHeader, tcpPayload []byte) (ui
 	return checksum, nil
 }
 
-// buildCertificateMessage constructs a dummy Certificate handshake message.
-// In a real implementation, this would load and format actual certificates.
-// MODIFIED: Reverted back to sending non-empty dummy certificate content.
+// buildCertificateMessage constructs the Certificate handshake message using the loaded certificate.
 func buildCertificateMessage() ([]byte, error) {
-	// Dummy certificate data (just some arbitrary bytes)
-	// Structure: TotalCertificatesLength(3 bytes) + Cert1Length(3 bytes) + Cert1Data(...) + ...
-	dummyCertData := []byte(`-----BEGIN CERTIFICATE-----
-THIS IS A DUMMY CERTIFICATE
------END CERTIFICATE-----`)
-	certLen := uint32(len(dummyCertData)) // Length of the actual certificate data
-	// totalCertsLen := certLen              // Removed unused variable
+	if len(serverCertDER) == 0 {
+		return nil, errors.New("server certificate not loaded")
+	}
+
+	// Calculate lengths for the TLS Certificate message structure
+	// struct {
+	//    ASN.1Cert certificate_list<0..2^24-1>;
+	// } Certificate;
+	// where certificate_list is a sequence of:
+	// struct {
+	//    opaque ASN.1Cert<1..2^24-1>; // length (3 bytes) + cert data
+	// }
+
+	var certListBytes bytes.Buffer
+	for _, certDER := range serverCertDER {
+		certLen := uint32(len(certDER))
+		if certLen == 0 || certLen >= 1<<24 {
+			return nil, fmt.Errorf("invalid certificate DER length: %d", certLen)
+		}
+		// Write length (3 bytes)
+		lenBytes := make([]byte, 3)
+		lenBytes[0] = byte(certLen >> 16)
+		lenBytes[1] = byte(certLen >> 8)
+		lenBytes[2] = byte(certLen)
+		certListBytes.Write(lenBytes)
+		// Write certificate data
+		certListBytes.Write(certDER)
+	}
+
+	certificateListPayload := certListBytes.Bytes()
+	certificateListLength := uint32(len(certificateListPayload))
 
 	// Message body length calculation:
-	// 3 bytes for total certs length field + 3 bytes for cert1 length field + cert1 data length
-	messageBodyLen := 3 + 3 + certLen
+	// 3 bytes for certificate_list length field + length of the list itself
+	messageBodyLen := 3 + certificateListLength
 
 	// Handshake header: Type (1) + Length (3)
 	message := make([]byte, 4+messageBodyLen)
@@ -1726,28 +1825,19 @@ THIS IS A DUMMY CERTIFICATE
 	message[3] = byte(messageBodyLen)
 
 	offset := 4
-	// Total certificates length field (3 bytes) - This field should contain the length of all subsequent Cert structures
-	// Each Cert structure is CertLength(3) + CertData(variable)
-	// So, totalCertsLenField should be 3 + certLen
-	totalCertsLenField := 3 + certLen
-	message[offset] = byte(totalCertsLenField >> 16) // Corrected calculation
-	message[offset+1] = byte(totalCertsLenField >> 8)
-	message[offset+2] = byte(totalCertsLenField)
+	// Certificate list length field (3 bytes)
+	message[offset] = byte(certificateListLength >> 16)
+	message[offset+1] = byte(certificateListLength >> 8)
+	message[offset+2] = byte(certificateListLength)
 	offset += 3
 
-	// Certificate 1 length field (3 bytes) - This contains the length of the Cert1Data ONLY
-	message[offset] = byte(certLen >> 16) // This was correct
-	message[offset+1] = byte(certLen >> 8)
-	message[offset+2] = byte(certLen)
-	offset += 3
-
-	// Certificate 1 data
-	copy(message[offset:], dummyCertData)
-	offset += int(certLen)
+	// Certificate list data
+	copy(message[offset:], certificateListPayload)
+	offset += int(certificateListLength)
 
 	// Sanity check
 	if offset != len(message) {
-		return nil, fmt.Errorf("internal error building dummy Certificate message: length mismatch (offset %d, total %d)", offset, len(message))
+		return nil, fmt.Errorf("internal error building Certificate message: length mismatch (offset %d, total %d)", offset, len(message))
 	}
 
 	return message, nil
@@ -1762,39 +1852,39 @@ func buildServerHelloDoneMessage() ([]byte, error) {
 	return message, nil
 }
 
-// buildDummyServerKeyExchange constructs a plausible but fake ServerKeyExchange message.
-// For ECDHE_RSA, it should contain Curve info, Public Key, and Signature.
-// We'll just put some placeholder bytes.
-func buildDummyServerKeyExchange() ([]byte, error) {
-	// Example structure (simplified):
-	// CurveType (1 byte) = 3 (Named Curve)
-	// NamedCurve (2 bytes) = 23 (secp256r1)
-	// PubKey Length (1 byte)
-	// PubKey (var bytes)
-	// Signature Algorithm (2 bytes) = 0x0401 (rsa_pkcs1_sha256)
-	// Signature Length (2 bytes)
-	// Signature (var bytes)
+// buildServerKeyExchange constructs the ServerKeyExchange message.
+// It includes ECDHE parameters and a signature over those parameters (and client/server randoms).
+// MODIFIED: Re-enabled signature generation.
+func buildServerKeyExchange(dataToSign []byte, skeParamsBytes []byte, privateKey crypto.PrivateKey) ([]byte, error) {
 
-	dummyPubKey := make([]byte, 65) // Uncompressed point size for P-256
-	dummyPubKey[0] = 0x04           // Uncompressed indicator
-	// Fill with dummy data (e.g., 0x01)
-	for i := 1; i < len(dummyPubKey); i++ {
-		dummyPubKey[i] = 0x01
+	// Determine signature algorithm based on key type and potentially cipher suite (hardcoded for now)
+	// For TLS_ECDHE_RSA_*, we need an RSA signature.
+	// TODO: Select algorithm based on cipher suite/cert type more robustly
+	sigAlgo := tls.PKCS1WithSHA256 // 0x0401
+
+	// Ensure the private key is RSA for signing
+	rsaKey, ok := privateKey.(*rsa.PrivateKey)
+	if !ok {
+		// TODO: Handle other key types if supported (e.g., ECDSA)
+		return nil, errors.New("server key is not an RSA private key, cannot sign SKE")
 	}
 
-	dummySig := make([]byte, 256) // Typical RSA-2048 signature size
-	for i := 0; i < len(dummySig); i++ {
-		dummySig[i] = 0x02
+	// Hash the data to be signed (ClientHello.random + ServerHello.random + ServerKeyExchange.params)
+	// The caller (e.g., handleClientHello) must construct dataToSign correctly.
+	hash := sha256.Sum256(dataToSign)
+
+	// Sign the hash using PKCS#1 v1.5 padding
+	signature, err := rsa.SignPKCS1v15(rand.Reader, rsaKey, crypto.SHA256, hash[:]) // Use crypto/rand.Reader
+	if err != nil {
+		return nil, fmt.Errorf("failed to sign SKE data: %w", err)
 	}
 
+	// Construct the message body: params + signature info
 	body := new(bytes.Buffer)
-	body.WriteByte(3)                                // CurveType = Named Curve
-	binary.Write(body, binary.BigEndian, uint16(23)) // NamedCurve = secp256r1 (0x0017)
-	body.WriteByte(byte(len(dummyPubKey)))
-	body.Write(dummyPubKey)
-	binary.Write(body, binary.BigEndian, uint16(0x0401)) // Signature Algorithm = rsa_pkcs1_sha256
-	binary.Write(body, binary.BigEndian, uint16(len(dummySig)))
-	body.Write(dummySig)
+	body.Write(skeParamsBytes)                                   // Write the ECDHE params first
+	binary.Write(body, binary.BigEndian, uint16(sigAlgo))        // Write the SignatureAndHashAlgorithm
+	binary.Write(body, binary.BigEndian, uint16(len(signature))) // Write signature length
+	body.Write(signature)                                        // Write the signature
 
 	messageBody := body.Bytes()
 	messageBodyLen := uint32(len(messageBody))
@@ -1808,13 +1898,4 @@ func buildDummyServerKeyExchange() ([]byte, error) {
 	copy(message[4:], messageBody)
 
 	return message, nil
-}
-
-// --- Step 3: Send Server ChangeCipherSpec and Finished --- Function Placeholder ---
-func sendServerCCSAndFinished(ifce *water.Interface, conn *TCPConnection) {
-	connKey := conn.ConnectionKey()
-	log.Printf("[TLS Info - %s] Placeholder: Triggered sending Server ChangeCipherSpec and Finished.", connKey)
-	// TODO: Implement sending CCS record
-	// TODO: Implement building and sending dummy Finished record
-	//       Update conn.TLSState appropriately after sending
 }
