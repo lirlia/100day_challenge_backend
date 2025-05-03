@@ -4,10 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
 	"reflect"
 	"strings"
 	"sync"
 
+	"github.com/stoewer/go-strcase"
 	// sqlite3 driver を内部的に利用するためインポートするが、呼び出し元で再度インポートする必要はない
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -84,7 +86,153 @@ func (tx *TX) Rollback() error {
 	return nil
 }
 
-// --- CRUD 操作 ---
+// --- Query Builder ---
+
+// whereCondition は WHERE 句の条件を表します。
+type whereCondition struct {
+	query string
+	args  []interface{}
+}
+
+// QueryBuilder はクエリ構築のための中間オブジェクトです。
+type QueryBuilder struct {
+	executor  executor         // DB or TX
+	modelType reflect.Type     // 操作対象のモデルの型情報
+	tableName string           // 操作対象のテーブル名
+	fields    string           // SELECT するフィールド (デフォルトは "*")
+	wheres    []whereCondition // WHERE 条件
+	orders    []string         // ORDER BY 条件
+	limit     *int             // LIMIT 条件
+	offset    *int             // OFFSET 条件
+	ctx       context.Context  // クエリ実行時のコンテキスト
+}
+
+// Model はクエリビルドの起点となり、操作対象のモデルを指定します。
+// model は構造体のポインタである必要があります (例: &User{})。
+func (db *DB) Model(model interface{}) *QueryBuilder {
+	return newQueryBuilder(db.DB, context.Background(), model)
+}
+
+// Model はトランザクション内でクエリビルドの起点となります。
+func (tx *TX) Model(model interface{}) *QueryBuilder {
+	// トランザクションではコンテキストを引き継がない (必要なら WithContext で設定)
+	return newQueryBuilder(tx.Tx, context.Background(), model)
+}
+
+// newQueryBuilder は QueryBuilder のインスタンスを初期化します。
+func newQueryBuilder(exec executor, ctx context.Context, model interface{}) *QueryBuilder {
+	val := reflect.ValueOf(model)
+	// ポインタで渡されていることを期待
+	if val.Kind() != reflect.Ptr || val.IsNil() {
+		// エラーを返すべきだが、一旦 panic するかデフォルト値にする
+		log.Panicf("orm: Model() expects a non-nil pointer to a struct, got %T", model)
+	}
+	modelType := val.Elem().Type()
+	if modelType.Kind() != reflect.Struct {
+		log.Panicf("orm: Model() expects a pointer to a struct, got pointer to %s", modelType.Kind())
+	}
+
+	tableName := getTableName(modelType)
+
+	return &QueryBuilder{
+		executor:  exec,
+		modelType: modelType,
+		tableName: tableName,
+		fields:    "*", // デフォルトは全フィールド
+		wheres:    make([]whereCondition, 0),
+		orders:    make([]string, 0),
+		ctx:       ctx,
+	}
+}
+
+// WithContext は QueryBuilder に紐づく context を設定します。
+func (qb *QueryBuilder) WithContext(ctx context.Context) *QueryBuilder {
+	qb.ctx = ctx
+	return qb
+}
+
+// Where は WHERE 条件を追加します。
+func (qb *QueryBuilder) Where(query string, args ...interface{}) *QueryBuilder {
+	qb.wheres = append(qb.wheres, whereCondition{query: query, args: args})
+	return qb
+}
+
+// Order は ORDER BY 条件を追加します。
+// 例: "id DESC", "name ASC, created_at DESC"
+func (qb *QueryBuilder) Order(value string) *QueryBuilder {
+	qb.orders = append(qb.orders, value)
+	return qb
+}
+
+// Limit は LIMIT 条件を設定します。
+func (qb *QueryBuilder) Limit(value int) *QueryBuilder {
+	qb.limit = &value
+	return qb
+}
+
+// Offset は OFFSET 条件を設定します。
+func (qb *QueryBuilder) Offset(value int) *QueryBuilder {
+	qb.offset = &value
+	return qb
+}
+
+// Select は構築されたクエリを実行し、結果を dest (構造体のスライスへのポインタ) にスキャンします。
+func (qb *QueryBuilder) Select(dest interface{}) error {
+	query, args := qb.buildSelectQuery()
+	return selectMulti(qb.ctx, qb.executor, dest, query, args...)
+}
+
+// SelectOne は構築されたクエリを実行し、最初の結果を dest (構造体へのポインタ) にスキャンします。
+// 暗黙的に LIMIT 1 が設定されます。
+// 結果がない場合は sql.ErrNoRows を返します。
+func (qb *QueryBuilder) SelectOne(dest interface{}) error {
+	// Limit(1) を設定してクエリを構築
+	originalLimit := qb.limit
+	limitOne := 1
+	qb.limit = &limitOne
+	defer func() { qb.limit = originalLimit }() // 元のLimitに戻す
+
+	query, args := qb.buildSelectQuery()
+	return selectOne(qb.ctx, qb.executor, dest, query, args...)
+}
+
+// buildSelectQuery は QueryBuilder の状態から SELECT 文と引数を構築します。
+func (qb *QueryBuilder) buildSelectQuery() (string, []interface{}) {
+	var query strings.Builder
+	args := make([]interface{}, 0)
+
+	fmt.Fprintf(&query, "SELECT %s FROM %s", qb.fields, qb.tableName)
+
+	if len(qb.wheres) > 0 {
+		query.WriteString(" WHERE ")
+		for i, w := range qb.wheres {
+			if i > 0 {
+				query.WriteString(" AND ")
+			}
+			query.WriteString("(")
+			query.WriteString(w.query)
+			query.WriteString(")")
+			args = append(args, w.args...)
+		}
+	}
+
+	if len(qb.orders) > 0 {
+		query.WriteString(" ORDER BY ")
+		query.WriteString(strings.Join(qb.orders, ", "))
+	}
+
+	if qb.limit != nil {
+		fmt.Fprintf(&query, " LIMIT %d", *qb.limit)
+	}
+
+	if qb.offset != nil {
+		fmt.Fprintf(&query, " OFFSET %d", *qb.offset)
+	}
+
+	return query.String(), args
+}
+
+// --- 既存の CRUD 操作 (変更箇所あり) ---
 
 // executor は *sql.DB または *sql.Tx の共通インターフェースを定義します。
 // これにより、DB と TX で CRUD メソッドの実装を共通化できます。
@@ -103,11 +251,13 @@ func (db *DB) Insert(ctx context.Context, data interface{}) (sql.Result, error) 
 
 // SelectOne はクエリを実行し、結果の最初の行を dest (構造体へのポインタ) にスキャンします。
 // 行が見つからない場合は sql.ErrNoRows を返します。
+// Deprecated: Use db.Model(&YourStruct{}).Where(...).SelectOne(&dest) instead.
 func (db *DB) SelectOne(ctx context.Context, dest interface{}, query string, args ...interface{}) error {
 	return selectOne(ctx, db.DB, dest, query, args...)
 }
 
 // Select はクエリを実行し、すべての結果行を dest (構造体のスライスへのポインタ) にスキャンします。
+// Deprecated: Use db.Model(&YourStruct{}).Where(...).Select(&dest) instead.
 func (db *DB) Select(ctx context.Context, dest interface{}, query string, args ...interface{}) error {
 	return selectMulti(ctx, db.DB, dest, query, args...)
 }
@@ -136,11 +286,13 @@ func (tx *TX) Insert(ctx context.Context, data interface{}) (sql.Result, error) 
 }
 
 // SelectOne はトランザクション内でクエリを実行し、結果の最初の行をスキャンします。
+// Deprecated: Use tx.Model(&YourStruct{}).Where(...).SelectOne(&dest) instead.
 func (tx *TX) SelectOne(ctx context.Context, dest interface{}, query string, args ...interface{}) error {
 	return selectOne(ctx, tx.Tx, dest, query, args...)
 }
 
 // Select はトランザクション内でクエリを実行し、すべての結果行をスキャンします。
+// Deprecated: Use tx.Model(&YourStruct{}).Where(...).Select(&dest) instead.
 func (tx *TX) Select(ctx context.Context, dest interface{}, query string, args ...interface{}) error {
 	return selectMulti(ctx, tx.Tx, dest, query, args...)
 }
@@ -160,7 +312,7 @@ func (tx *TX) Exec(ctx context.Context, query string, args ...interface{}) (sql.
 	return exec(ctx, tx.Tx, query, args...)
 }
 
-// --- 内部 CRUD 実装 ---
+// --- 内部 CRUD 実装 (変更箇所あり) ---
 
 // insert は executor を使って INSERT 文を生成・実行します。
 func insert(ctx context.Context, exec executor, data interface{}) (sql.Result, error) {
@@ -178,8 +330,8 @@ func insert(ctx context.Context, exec executor, data interface{}) (sql.Result, e
 		return nil, fmt.Errorf("orm: failed to get struct info for insert: %w", err)
 	}
 
-	// テーブル名の決定 (デフォルトは構造体名を小文字にしたもの。将来的にはカスタマイズ可能に)
-	tableName := strings.ToLower(elem.Type().Name()) + "s" // 簡単な複数形
+	// テーブル名の決定ロジックを共通化
+	tableName := getTableName(elem.Type())
 
 	var columns []string
 	var values []interface{}
@@ -192,9 +344,8 @@ func insert(ctx context.Context, exec executor, data interface{}) (sql.Result, e
 		}
 		fieldVal := elem.Field(fieldIndex)
 
-		// dbタグで指定されたカラムのみを対象とする (主キーなどは除外したい場合があるが、今回はシンプルに全フィールド)
-		// TODO: オートインクリメント主キーなどを Insert 対象から除外するオプション
-		if dbCol == "id" { // 仮: id カラムは自動生成されると仮定してスキップ (より汎用的な方法が必要)
+		// TODO: オートインクリメント主キーなどを Insert 対象から除外するオプション (改善)
+		if dbCol == "id" { // 仮: id カラムは自動生成されると仮定してスキップ
 			continue
 		}
 
@@ -431,4 +582,24 @@ func scanRows(rows *sql.Rows, dest interface{}) error {
 	val.Elem().Set(sliceVal)
 
 	return nil
+}
+
+// getTableName は構造体の型からテーブル名を推測します。
+// デフォルトでは構造体名をスネークケースの複数形にします (例: User -> users, ProductOrder -> product_orders)。
+// TODO: TableName() string メソッドによるオーバーライドをサポートする。
+func getTableName(structType reflect.Type) string {
+	// 構造体名を取得
+	name := structType.Name()
+	// スネークケースに変換
+	snakeName := strcase.SnakeCase(name)
+	// 簡単な複数形化 (末尾が s, x, z, ch, sh で終わらない場合は s を追加)
+	if strings.HasSuffix(snakeName, "s") ||
+		strings.HasSuffix(snakeName, "x") ||
+		strings.HasSuffix(snakeName, "z") ||
+		strings.HasSuffix(snakeName, "ch") ||
+		strings.HasSuffix(snakeName, "sh") {
+		return snakeName // そのまま返すか、es をつけるかなどのルールは複雑
+	} else {
+		return snakeName + "s"
+	}
 }

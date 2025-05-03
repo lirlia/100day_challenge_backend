@@ -435,3 +435,129 @@ func TestTransaction(t *testing.T) {
 	}
 	fmt.Println("Transactional select/update successful.")
 }
+
+func TestQueryBuilder(t *testing.T) {
+	db, teardown := setupTestDB(t)
+	defer teardown()
+
+	ctx := context.Background()
+
+	// --- テストデータ準備 ---
+	usersToInsert := []User{
+		{Name: "Query User 1", Email: sql.NullString{"q1@example.com", true}},
+		{Name: "Query User 2"},
+		{Name: "Another User 3", Email: sql.NullString{"q3@example.com", true}},
+		{Name: "Query User 4", Email: sql.NullString{"q4@example.com", true}},
+	}
+	insertedIDs := make([]int64, len(usersToInsert))
+	for i, u := range usersToInsert {
+		res, err := db.Insert(ctx, &u)
+		if err != nil {
+			t.Fatalf("QB Setup: Failed to insert user %d: %v", i, err)
+		}
+		insertedIDs[i], _ = res.LastInsertId()
+	}
+
+	// --- クエリビルダのテストケース ---
+
+	// 1. 単純な SelectOne
+	var user1 User
+	err := db.Model(&User{}).Where("id = ?", insertedIDs[0]).SelectOne(&user1)
+	if err != nil {
+		t.Fatalf("QB SelectOne failed: %v", err)
+	}
+	if user1.ID != insertedIDs[0] || user1.Name != "Query User 1" {
+		t.Errorf("QB SelectOne result mismatch: got %+v", user1)
+	}
+	fmt.Printf("QB SelectOne: %+v\n", user1)
+
+	// 2. SelectOne で見つからない場合
+	var notFound User
+	err = db.Model(&User{}).Where("name = ?", "NonExistent").SelectOne(&notFound)
+	if err != sql.ErrNoRows {
+		t.Errorf("QB SelectOne expected sql.ErrNoRows, got %v", err)
+	}
+
+	// 3. 複数条件 (Where チェーン) と Order, Limit, Offset を使った Select
+	var users []User
+	err = db.Model(&User{}).
+		Where("name LIKE ?", "Query User%"). // name が 'Query User' で始まる
+		Where("email IS NOT NULL").          // email が NULL でない
+		Order("id DESC").                    // ID 降順
+		Limit(1).
+		Offset(1).
+		Select(&users)
+	if err != nil {
+		t.Fatalf("QB Select failed: %v", err)
+	}
+
+	// 期待される結果: Query User 4 (ID降順で2番目) は Skip され、Query User 1 (ID降順で3番目) が取れるはず
+	// (q1@example.com, q4@example.com が該当し、ID 降順だと 4, 1。Offset 1, Limit 1 なので 1 が取れる)
+	if len(users) != 1 {
+		t.Fatalf("QB Select expected 1 user, got %d", len(users))
+	}
+	if users[0].ID != insertedIDs[0] || users[0].Name != "Query User 1" {
+		t.Errorf("QB Select result mismatch: got %+v, expected User 1", users[0])
+	}
+	fmt.Printf("QB Select (Where, Order, Limit, Offset): %+v\n", users)
+
+	// 4. Order なし Select
+	var allQueryUsers []User
+	err = db.Model(&User{}).Where("name LIKE ?", "Query User%").Select(&allQueryUsers)
+	if err != nil {
+		t.Fatalf("QB Select (no order) failed: %v", err)
+	}
+	// Query User 1, 2, 4 が取得されるはず (順序は不定)
+	if len(allQueryUsers) != 3 {
+		t.Errorf("QB Select (no order) expected 3 users, got %d", len(allQueryUsers))
+	}
+	foundNames := make(map[string]bool)
+	for _, u := range allQueryUsers {
+		foundNames[u.Name] = true
+	}
+	if !foundNames["Query User 1"] || !foundNames["Query User 2"] || !foundNames["Query User 4"] {
+		t.Errorf("QB Select (no order) results mismatch: got %v", allQueryUsers)
+	}
+	fmt.Printf("QB Select (no order): %d users found.\n", len(allQueryUsers))
+
+	// 5. トランザクション内でクエリビルダを使用
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("QB BeginTx failed: %v", err)
+	}
+	var user3 User
+	err = tx.Model(&User{}).Where("name = ?", "Another User 3").SelectOne(&user3)
+	if err != nil {
+		tx.Rollback()
+		t.Fatalf("QB SelectOne in TX failed: %v", err)
+	}
+	if user3.Name != "Another User 3" {
+		tx.Rollback()
+		t.Errorf("QB SelectOne in TX result mismatch: got %+v", user3)
+	}
+	fmt.Printf("QB SelectOne in TX: %+v\n", user3)
+
+	// トランザクション内で Update (クエリビルダにはまだ Update/Delete はないが、TX の Exec は使える)
+	newName := "Another User 3 Updated"
+	_, err = tx.Update(ctx, "UPDATE users SET name = ? WHERE id = ?", newName, user3.ID)
+	if err != nil {
+		tx.Rollback()
+		t.Fatalf("QB Update in TX failed: %v", err)
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		t.Fatalf("QB Commit failed: %v", err)
+	}
+
+	// コミットされたか確認
+	var updatedUser3 User
+	err = db.Model(&User{}).Where("id = ?", user3.ID).SelectOne(&updatedUser3)
+	if err != nil {
+		t.Fatalf("QB SelectOne after TX commit failed: %v", err)
+	}
+	if updatedUser3.Name != newName {
+		t.Errorf("QB SelectOne after TX commit mismatch: got %+v, want name %s", updatedUser3, newName)
+	}
+	fmt.Println("QB Transaction test successful.")
+}
