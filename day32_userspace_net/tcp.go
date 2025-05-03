@@ -9,7 +9,9 @@ import (
 	mrand "math/rand"
 	"net"
 	"sync"
+	"time"
 
+	"github.com/google/gopacket/layers"
 	"github.com/songgao/water"
 )
 
@@ -29,13 +31,64 @@ type TCPHeader struct {
 	Options    []byte // Options (if DataOffset > 5)
 }
 
+// TCPState represents the state of a TCP connection
+type TCPState int
+
+const (
+	TCPStateListen TCPState = iota
+	TCPStateSynReceived
+	TCPStateEstablished
+	TCPStateFinWait1
+	TCPStateFinWait2
+	TCPStateCloseWait
+	TCPStateClosing
+	TCPStateLastAck
+	TCPStateTimeWait
+	TCPStateClosed
+)
+
+// Add HTTP2State definition
+type HTTP2State int
+
+const (
+	H2StateExpectPreface HTTP2State = iota
+	H2StateExpectSettings
+	H2StateReady
+)
+
+const (
+	TCPProtocolNumber       = 6
+	TCPHeaderMinLengthBytes = 20 // Minimum header length (DataOffset=5)
+
+	// TCP Flags (use lower 8 bits of the 9 defined flags for simplicity)
+	TCPFlagFIN = 1 << 0
+	TCPFlagSYN = 1 << 1
+	TCPFlagRST = 1 << 2
+	TCPFlagPSH = 1 << 3
+	TCPFlagACK = 1 << 4
+	TCPFlagURG = 1 << 5
+	TCPFlagECE = 1 << 6
+	TCPFlagCWR = 1 << 7
+	// TCPFlagNS = 1 << 8 // (Not easily accessible in standard 8-bit flag field)
+
+	// ListenPort is now defined via flag in main.go
+	// ListenPort = 443
+)
+
+// Global map to store active TCP connections
+// Key format: "clientIP:clientPort-serverIP:serverPort"
+var (
+	tcpConnections = make(map[string]*TCPConnection)
+	connMutex      sync.Mutex // Mutex for the global connection map
+)
+
 // TCPConnection represents the state of a TCP connection
 type TCPConnection struct {
 	State         TCPState
 	ClientIP      net.IP
-	ClientPort    uint16
+	ClientPort    layers.TCPPort
 	ServerIP      net.IP
-	ServerPort    uint16
+	ServerPort    layers.TCPPort
 	ClientISN     uint32 // Initial Sequence Number from client
 	ServerISN     uint32 // Initial Sequence Number from server
 	ClientNextSeq uint32 // Next expected sequence number from client
@@ -77,49 +130,13 @@ type TCPConnection struct {
 
 	// State protection
 	Mutex sync.Mutex // Mutex to protect access to connection state
+
+	// --- HTTP/2 Specific State ---
+	H2State            HTTP2State    // Current state of H2 processing
+	HTTP2ReceiveBuffer *bytes.Buffer // Buffer for decrypted HTTP/2 frames
+
+	LastPacketTime time.Time
 }
-
-// TCPState represents the state of a TCP connection
-type TCPState int
-
-const (
-	TCPStateListen TCPState = iota
-	TCPStateSynReceived
-	TCPStateEstablished
-	TCPStateFinWait1
-	TCPStateFinWait2
-	TCPStateCloseWait
-	TCPStateClosing
-	TCPStateLastAck
-	TCPStateTimeWait
-	TCPStateClosed
-)
-
-const (
-	TCPProtocolNumber       = 6
-	TCPHeaderMinLengthBytes = 20 // Minimum header length (DataOffset=5)
-
-	// TCP Flags (use lower 8 bits of the 9 defined flags for simplicity)
-	TCPFlagFIN = 1 << 0
-	TCPFlagSYN = 1 << 1
-	TCPFlagRST = 1 << 2
-	TCPFlagPSH = 1 << 3
-	TCPFlagACK = 1 << 4
-	TCPFlagURG = 1 << 5
-	TCPFlagECE = 1 << 6
-	TCPFlagCWR = 1 << 7
-	// TCPFlagNS = 1 << 8 // (Not easily accessible in standard 8-bit flag field)
-
-	// ListenPort is now defined via flag in main.go
-	// ListenPort = 443
-)
-
-// Global map to store active TCP connections
-// Key format: "clientIP:clientPort-serverIP:serverPort"
-var (
-	tcpConnections = make(map[string]*TCPConnection)
-	connMutex      sync.Mutex // Mutex for the global connection map
-)
 
 // ConnectionKey generates a standard key for the connection map.
 func (c *TCPConnection) ConnectionKey() string {
@@ -179,14 +196,16 @@ func handleTCPConnection(netConn net.Conn) {
 	conn := &TCPConnection{
 		State:      TCPStateEstablished, // Assume established for TCP mode start
 		ClientIP:   remoteAddr.IP,
-		ClientPort: uint16(remoteAddr.Port),
+		ClientPort: layers.TCPPort(remoteAddr.Port),
 		ServerIP:   localAddr.IP,
-		ServerPort: uint16(localAddr.Port),
+		ServerPort: layers.TCPPort(localAddr.Port),
 		TCPConn:    netConn,
 		TLSState:   TLSStateExpectingClientHello, // Start TLS handshake
 		// Other fields (ISN, SeqNums) are less relevant in standard TCP mode
 		// but initialize buffer
-		ReceiveBuffer: *bytes.NewBuffer([]byte{}),
+		ReceiveBuffer:      *bytes.NewBuffer([]byte{}),
+		H2State:            H2StateExpectPreface, // Initialize H2 state
+		HTTP2ReceiveBuffer: new(bytes.Buffer),    // Initialize H2 buffer
 	}
 
 	connKey := conn.ConnectionKey() // Use the method to get the key
@@ -251,18 +270,20 @@ func handleTCPPacket(ifce *water.Interface, ipHeader *IPv4Header, tcpSegment []b
 
 			serverISN := mrand.Uint32() // Use mrand
 			newConn := &TCPConnection{
-				State:         TCPStateSynReceived,
-				ClientIP:      ipHeader.SrcIP,
-				ClientPort:    tcpHeader.SrcPort,
-				ServerIP:      ipHeader.DstIP,
-				ServerPort:    tcpHeader.DstPort,
-				ClientISN:     tcpHeader.SeqNum,
-				ServerISN:     serverISN,
-				ClientNextSeq: tcpHeader.SeqNum + 1,
-				ServerNextSeq: serverISN + 1,
-				TunIFCE:       ifce, // Store interface for TUN mode replies
-				TLSState:      TLSStateNone,
-				ReceiveBuffer: *bytes.NewBuffer([]byte{}),
+				State:              TCPStateSynReceived,
+				ClientIP:           ipHeader.SrcIP,
+				ClientPort:         layers.TCPPort(tcpHeader.SrcPort),
+				ServerIP:           ipHeader.DstIP,
+				ServerPort:         layers.TCPPort(tcpHeader.DstPort),
+				ClientISN:          tcpHeader.SeqNum,
+				ServerISN:          serverISN,
+				ClientNextSeq:      tcpHeader.SeqNum + 1,
+				ServerNextSeq:      serverISN + 1,
+				TunIFCE:            ifce, // Store interface for TUN mode replies
+				TLSState:           TLSStateNone,
+				ReceiveBuffer:      *bytes.NewBuffer([]byte{}),
+				H2State:            H2StateExpectPreface, // Initialize H2 state
+				HTTP2ReceiveBuffer: new(bytes.Buffer),    // Initialize H2 buffer
 			}
 			if tcpHeader.DstPort == 443 {
 				newConn.TLSState = TLSStateExpectingClientHello
@@ -270,7 +291,7 @@ func handleTCPPacket(ifce *water.Interface, ipHeader *IPv4Header, tcpSegment []b
 			tcpConnections[connKey] = newConn
 
 			// Send SYN-ACK
-			_, err = sendTCPPacket(newConn.TunIFCE, newConn.ServerIP, newConn.ClientIP, newConn.ServerPort, newConn.ClientPort,
+			_, err = sendTCPPacket(newConn.TunIFCE, newConn.ServerIP, newConn.ClientIP, uint16(newConn.ServerPort), uint16(newConn.ClientPort),
 				newConn.ServerISN, newConn.ClientNextSeq, TCPFlagSYN|TCPFlagACK, nil)
 			if err != nil {
 				log.Printf("Error sending SYN-ACK for %s: %v", connKey, err)
@@ -316,7 +337,7 @@ func handleTCPPacket(ifce *water.Interface, ipHeader *IPv4Header, tcpSegment []b
 			expectedClientNextSeq := conn.ClientNextSeq + uint32(len(tcpPayload))
 			ackFlags := uint8(TCPFlagACK)
 			// Send ACK for received data (common for both)
-			_, err = sendTCPPacket(conn.TunIFCE, conn.ServerIP, conn.ClientIP, conn.ServerPort, conn.ClientPort,
+			_, err = sendTCPPacket(conn.TunIFCE, conn.ServerIP, conn.ClientIP, uint16(conn.ServerPort), uint16(conn.ClientPort),
 				conn.ServerNextSeq, expectedClientNextSeq, ackFlags, nil)
 			if err != nil {
 				log.Printf("Error sending ACK for received data on %s (Port %d): %v", connKey, conn.ServerPort, err)
@@ -362,7 +383,7 @@ func handleFIN(conn *TCPConnection, tcpHeader *TCPHeader) {
 
 	// Send ACK for the FIN
 	ackFlags := uint8(TCPFlagACK)
-	_, err := sendTCPPacket(conn.TunIFCE, conn.ServerIP, conn.ClientIP, conn.ServerPort, conn.ClientPort,
+	_, err := sendTCPPacket(conn.TunIFCE, conn.ServerIP, conn.ClientIP, uint16(conn.ServerPort), uint16(conn.ClientPort),
 		conn.ServerNextSeq, conn.ClientNextSeq, ackFlags, nil)
 	if err != nil {
 		log.Printf("Error sending ACK for FIN on %s: %v", connKey, err)
@@ -371,7 +392,7 @@ func handleFIN(conn *TCPConnection, tcpHeader *TCPHeader) {
 	// Immediately send our FIN (since we are a simple server)
 	log.Printf("Sending FIN for connection %s. Entering LAST_ACK.", connKey)
 	finAckFlags := uint8(TCPFlagFIN | TCPFlagACK)
-	_, err = sendTCPPacket(conn.TunIFCE, conn.ServerIP, conn.ClientIP, conn.ServerPort, conn.ClientPort,
+	_, err = sendTCPPacket(conn.TunIFCE, conn.ServerIP, conn.ClientIP, uint16(conn.ServerPort), uint16(conn.ClientPort),
 		conn.ServerNextSeq, conn.ClientNextSeq, finAckFlags, nil)
 	if err != nil {
 		log.Printf("Error sending FIN+ACK on %s: %v", connKey, err)

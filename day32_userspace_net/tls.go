@@ -191,7 +191,10 @@ func handleTLSBufferedData(ifce *water.Interface, conn *TCPConnection) {
 			if tlsState == TLSStateHandshakeComplete {
 				if negotiatedProto == "h2" {
 					log.Printf("[HTTP/2 - %s] Handshake complete. Dispatching %d bytes to HTTP/2 handler.", connKey, len(recordPayload))
-					handleHTTP2Data(conn, recordPayload) // New function for H2
+					// Initialize H2 buffer if it's the first AppData for H2
+					// No longer needed here as handleHTTP2Data initializes on first use
+					handleHTTP2Data(conn, recordPayload) // Pass conn and the decrypted payload
+
 				} else {
 					log.Printf("[HTTP/1.1 - %s] Handshake complete. Dispatching %d bytes to HTTP/1.1 handler.", connKey, len(recordPayload))
 					handleHTTPData(ifce, conn, recordPayload) // Existing function for HTTP/1.1
@@ -963,7 +966,7 @@ func sendRawTLSRecord(ifce *water.Interface, conn *TCPConnection, record []byte)
 			log.Printf("[Send Raw TUN - %s] Sending %d bytes via TUN interface.", connKey, len(finalRecord))
 		}
 		flags := uint8(TCPFlagPSH | TCPFlagACK)
-		sentBytes, err := sendTCPPacket(tunIFCE, serverIP, clientIP, serverPort, clientPort,
+		sentBytes, err := sendTCPPacket(tunIFCE, serverIP, clientIP, uint16(serverPort), uint16(clientPort),
 			serverNextSeq, clientNextSeq, flags, finalRecord)
 		if err != nil {
 			return 0, fmt.Errorf("sendTCPPacket failed for TLS record (Type: %d) for %s: %w", outerRecordType, connKey, err)

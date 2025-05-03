@@ -1,26 +1,27 @@
 package main
 
 import (
+	"crypto"     // crypto needed for PrivateKey type in global var
+	"crypto/tls" // Added for loading key/cert
 	"flag"
 	"log"
 	"net"
 	"os"
 	"os/signal"
 	"syscall"
-
-	"crypto"     // crypto needed for PrivateKey type in global var
-	"crypto/tls" // Added for loading key/cert
+	// For accessing packet layers
+	// For defining layers (IP, TCP)
+	// For TUN interface interaction
 )
 
 // Global variables for loaded certificate and key
 var (
-	serverCert    tls.Certificate
-	serverCertDER [][]byte // Store DER encoded certificates
-	// Global variable to hold the loaded private key
-	serverPrivateKeyGlobal crypto.PrivateKey // Use crypto.PrivateKey type
+	serverCert             tls.Certificate
+	serverCertDER          [][]byte // Store DER encoded certificates
+	serverPrivateKeyGlobal crypto.PrivateKey
+	isDebug                bool
 
-	// Global flag for debug logging
-	isDebug bool
+	// Map to store active TCP connections, keyed by a string identifier.
 )
 
 // Command-line flags
@@ -34,6 +35,10 @@ var (
 	listenPort = flag.Int("port", 443, "Port to listen on in tcp mode")
 	debug      = flag.Bool("debug", false, "Enable detailed debug logging")
 )
+
+// --- HTTP2State definitions moved to tcp.go ---
+
+// --- TCPConnection definition moved to tcp.go ---
 
 func main() {
 	flag.Parse()

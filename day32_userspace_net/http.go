@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"encoding/binary"
 	"fmt"
 	"log"
 	"strings"
@@ -176,7 +175,7 @@ func handleHTTPData(ifce *water.Interface, conn *TCPConnection, payload []byte) 
 			// Send raw HTTP response without TLS
 			flags := uint8(TCPFlagPSH | TCPFlagACK)
 			// MODIFIED: Assign sentBytes to _ and update sequence number
-			sentBytes, err := sendTCPPacket(tunIFCE, conn.ServerIP, conn.ClientIP, conn.ServerPort, conn.ClientPort,
+			sentBytes, err := sendTCPPacket(tunIFCE, conn.ServerIP, conn.ClientIP, uint16(conn.ServerPort), uint16(conn.ClientPort),
 				conn.ServerNextSeq, conn.ClientNextSeq, flags, httpRespBytes)
 			if err != nil {
 				log.Printf("[HTTP Error - %s - TUN Mode, No TLS] Failed to send raw HTTP response packet: %v", connKey, err)
@@ -217,123 +216,4 @@ func buildHttpResponse(statusCode int, statusText string, body string) []byte {
 	// Body
 	builder.WriteString(body)
 	return []byte(builder.String())
-}
-
-// handleHTTP2Data handles received data on an H2 connection (Minimal Simulation).
-func handleHTTP2Data(conn *TCPConnection, payload []byte) {
-	connKey := conn.ConnectionKey()
-	log.Printf("[HTTP/2 - %s] Received %d bytes (ALPN negotiated H2)", connKey, len(payload))
-
-	conn.Mutex.Lock()
-	settingsSent := conn.h2SettingsSent
-	conn.Mutex.Unlock()
-
-	if !settingsSent {
-		// --- Send Initial Server SETTINGS Frame ---
-		log.Printf("[HTTP/2 - %s] Sending initial empty SETTINGS frame.", connKey)
-
-		// Build an empty SETTINGS frame (Type 0x4)
-		// Length (0), Type (4), Flags (0), Stream ID (0)
-		settingsFrame := make([]byte, 9)                  // 9 bytes header, 0 bytes payload
-		settingsFrame[0] = 0                              // Length high
-		settingsFrame[1] = 0                              // Length mid
-		settingsFrame[2] = 0                              // Length low
-		settingsFrame[3] = 0x4                            // Type SETTINGS
-		settingsFrame[4] = 0                              // Flags (No ACK)
-		binary.BigEndian.PutUint32(settingsFrame[5:9], 0) // Stream ID must be 0
-
-		// Wrap in TLS record
-		appDataRecord, err := buildTLSRecord(TLSRecordTypeApplicationData, 0x0303, settingsFrame)
-		if err != nil {
-			log.Printf("[HTTP/2 Error - %s] Failed to build TLS record for SETTINGS frame: %v", connKey, err)
-			return
-		}
-
-		// Send the record
-		sentBytes, err := sendRawTLSRecord(nil, conn, appDataRecord) // Pass nil for ifce
-		if err != nil {
-			log.Printf("[HTTP/2 Error - %s] Failed to send SETTINGS frame via TLS: %v", connKey, err)
-		} else {
-			// Update sequence number and flag
-			conn.Mutex.Lock()
-			conn.ServerNextSeq += uint32(sentBytes)
-			conn.h2SettingsSent = true
-			log.Printf("[SeqNum Update - %s] After SETTINGS: ServerNextSeq = %d (added %d)", connKey, conn.ServerNextSeq, sentBytes)
-			conn.Mutex.Unlock()
-			log.Printf("[HTTP/2 - %s] Sent initial SETTINGS frame.", connKey)
-		}
-		// Do not process received payload on first call, just send SETTINGS
-		return
-	}
-
-	// --- Process Subsequent Frames (Assume HEADERS/DATA -> Respond with DATA) ---
-
-	// Very basic check for HTTP/2 Client Preface (Might still be here if sent with first data)
-	clientPreface := "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
-	if bytes.HasPrefix(payload, []byte(clientPreface)) {
-		log.Printf("[HTTP/2 - %s] Client Preface detected (in subsequent data).", connKey)
-		// Trim preface if present to potentially see following frames
-		payload = payload[len(clientPreface):]
-		if len(payload) == 0 {
-			log.Printf("[HTTP/2 - %s] Only preface received, waiting for more frames.", connKey)
-			return
-		}
-	}
-
-	log.Printf("[HTTP/2 - %s] Received subsequent frame data: %x", connKey, payload)
-	// TODO: Parse actual frames (SETTINGS ACK, HEADERS, DATA)
-	// For now, assume any subsequent data is a request requiring a response.
-
-	// --- Minimal Response Simulation ---
-	// Send a simple DATA frame with a fixed response. This is NOT spec compliant.
-	log.Printf("[HTTP/2 - %s] Simulating HTTP/2 response to received data.", connKey)
-	responseText := "<html><body><h1>Hello from userspace HTTP/2! (Simulated)</h1></body></html>"
-	httpRespBytes := []byte(responseText)
-
-	// Build a simple DATA frame (Type 0x0)
-	// Length (3 bytes), Type (1 byte), Flags (1 byte), Stream ID (4 bytes), Payload
-	framePayloadLen := len(httpRespBytes)
-	streamID := uint32(1) // Assume stream 1 for simplicity
-	flags := uint8(0x1)   // Set END_STREAM flag
-
-	// Frame Header (9 bytes)
-	frameHeader := make([]byte, 9)
-	// Length (24 bits)
-	frameHeader[0] = byte(framePayloadLen >> 16)
-	frameHeader[1] = byte(framePayloadLen >> 8)
-	frameHeader[2] = byte(framePayloadLen)
-	frameHeader[3] = 0x0 // Type DATA
-	frameHeader[4] = flags
-	// Stream ID (31 bits + reserved bit 0)
-	binary.BigEndian.PutUint32(frameHeader[5:9], streamID&0x7FFFFFFF)
-
-	// Combine header and payload
-	h2Frame := append(frameHeader, httpRespBytes...)
-
-	// Wrap the H2 frame in a TLS Application Data record
-	appDataRecord, err := buildTLSRecord(TLSRecordTypeApplicationData, 0x0303, h2Frame)
-	if err != nil {
-		log.Printf("[HTTP/2 Error - %s] Failed to build TLS record for H2 DATA frame: %v", connKey, err)
-		return
-	}
-
-	// Send the record
-	sentBytes, err := sendRawTLSRecord(nil, conn, appDataRecord) // Pass nil for ifce, depends on conn mode
-	if err != nil {
-		log.Printf("[HTTP/2 Error - %s] Failed to send H2 DATA frame via TLS: %v", connKey, err)
-	} else {
-		// Update sequence number (only relevant in TUN mode, but call anyway)
-		conn.Mutex.Lock()
-		conn.ServerNextSeq += uint32(sentBytes)
-		log.Printf("[SeqNum Update - %s] After H2 Data: ServerNextSeq = %d (added %d)", connKey, conn.ServerNextSeq, sentBytes)
-		conn.Mutex.Unlock()
-		log.Printf("[HTTP/2 - %s] Sent simulated DATA frame (%d bytes) for stream %d.", connKey, len(h2Frame), streamID)
-	}
-
-	// TODO: In a real implementation, wait for more frames or handle connection closure (GOAWAY etc.)
-	// For simulation, maybe close after sending the response frame?
-	// log.Printf("[HTTP/2 - %s] Closing connection after sending simulated response.", connKey)
-	// connMutex.Lock()
-	// delete(tcpConnections, connKey)
-	// connMutex.Unlock()
 }
