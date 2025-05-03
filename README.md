@@ -44,3 +44,4 @@ LLMで生成したコードを置いています。
 | Day28 | Prefix Typing Racer | <video src="https://github.com/user-attachments/assets/d36457d4-a9bd-46f4-8cb5-8ddd7e1bb7a2" > |
 | Day29 | ETL Pipeline | <video src="https://github.com/user-attachments/assets/b486bf96-0039-4c61-b6f5-c5e040815ef2" > |
 | Day30 | Finite State Machine Visualizer | <video src="https://github.com/user-attachments/assets/90a9a4cb-c950-4766-bcb5-fd85d80b2423" > |
+| Day31 | Go Simple ORM and CLI | <video src="https://github.com/user-attachments/assets/9c99a7f1-3e65-40b3-bfcd-9126a5d370de" > |

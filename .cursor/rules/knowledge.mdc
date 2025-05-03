@@ -37,3 +37,4 @@ alwaysApply: true
 | 28  | Prefix Typing Racer           | Next.js, TypeScript, Prisma, SQLite, TailwindCSS, Trie データ構造                |
 | 29  | 簡易 ETL パイプライン         | Next.js, TypeScript, Prisma, SQLite, TailwindCSS, papaparse, 状態ポーリング, UIでのデータフロー可視化 |
 | 30  | 有限オートマトン可視化ツール   | Next.js, TypeScript, TailwindCSS, React Flow, Zustand, Local Storage, ブルータリズムUI |
+| 31  | Go ORM と CLI シェル          | Go, SQLite, database/sql, reflect, go-prompt                                         |
