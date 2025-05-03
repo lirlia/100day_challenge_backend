@@ -174,11 +174,22 @@ func handleTLSBufferedData(ifce *water.Interface, conn *TCPConnection) {
 			// Handle alert, maybe close connection
 		case TLSRecordTypeApplicationData:
 			log.Printf("[TLS Info - %s] Received Application Data Record (Length: %d)", connKey, len(recordPayload))
-			if conn.TLSState == TLSStateHandshakeComplete {
-				log.Printf("[TLS AppData - %s] Handshake complete. Dispatching %d bytes to application data handler.", connKey, len(recordPayload))
-				handleTLSApplicationData(conn, recordPayload) // Pass the decrypted payload
+			// Check negotiated protocol AFTER handshake is complete
+			conn.Mutex.Lock()
+			negotiatedProto := conn.NegotiatedProtocol
+			tlsState := conn.TLSState
+			conn.Mutex.Unlock()
+
+			if tlsState == TLSStateHandshakeComplete {
+				if negotiatedProto == "h2" {
+					log.Printf("[HTTP/2 - %s] Handshake complete. Dispatching %d bytes to HTTP/2 handler.", connKey, len(recordPayload))
+					handleHTTP2Data(conn, recordPayload) // New function for H2
+				} else {
+					log.Printf("[HTTP/1.1 - %s] Handshake complete. Dispatching %d bytes to HTTP/1.1 handler.", connKey, len(recordPayload))
+					handleHTTPData(ifce, conn, recordPayload) // Existing function for HTTP/1.1
+				}
 			} else {
-				log.Printf("[TLS Warn - %s] Received Application Data before handshake complete (State: %v). Ignoring.", connKey, conn.TLSState)
+				log.Printf("[TLS Warn - %s] Received Application Data before handshake complete (State: %v). Ignoring.", connKey, tlsState)
 			}
 		default:
 			log.Printf("[TLS Warn - %s] Received unknown TLS Record Type %d", recordHeader.Type, connKey)
@@ -366,15 +377,8 @@ func handleClientHello(ifce *water.Interface, conn *TCPConnection, message []byt
 	}
 	log.Printf("[TLS Info - %s] Chosen Cipher Suite: 0x%04x", connKey, chosenSuite)
 
-	// Choose ALPN Protocol (Force HTTP/1.1 by not selecting anything)
-	chosenALPN := "" // Default to no ALPN, forcing HTTP/1.1
-	// Log what the client offered, but don't act on it
-	if len(info.ALPNProtocols) > 0 {
-		log.Printf("[TLS Info - %s] ALPN: Client offered %v, but server ignores ALPN for HTTP/1.1.", connKey, info.ALPNProtocols)
-	} else {
-		log.Printf("[TLS Info - %s] ALPN: No ALPN extension offered by client.", connKey)
-	}
-	/* // Original ALPN selection logic - commented out
+	// Choose ALPN Protocol
+	chosenALPN := "" // Default to HTTP/1.1 (no ALPN response)
 	clientOfferedH2 := false
 	for _, proto := range info.ALPNProtocols {
 		if proto == "h2" {
@@ -382,13 +386,19 @@ func handleClientHello(ifce *water.Interface, conn *TCPConnection, message []byt
 			break
 		}
 	}
+
 	if clientOfferedH2 {
+		// Server supports and prefers H2 when offered
 		chosenALPN = "h2"
-		log.Printf("[TLS Info - %s] ALPN: Client offered h2, selecting h2.", connKey)
+		conn.NegotiatedProtocol = "h2"
+		log.Printf("[TLS Info - %s] ALPN: Client offered 'h2', server selected 'h2'.", connKey)
+	} else if len(info.ALPNProtocols) > 0 {
+		log.Printf("[TLS Info - %s] ALPN: Client offered %v, but not 'h2'. Server selects no protocol (implies HTTP/1.1).", connKey, info.ALPNProtocols)
+		conn.NegotiatedProtocol = "" // Explicitly set to empty for non-h2 offers
 	} else {
-		log.Printf("[TLS Info - %s] ALPN: Client did not offer h2, or no ALPN extension found.", connKey)
+		log.Printf("[TLS Info - %s] ALPN: No ALPN extension offered by client.", connKey)
+		conn.NegotiatedProtocol = "" // Explicitly set to empty
 	}
-	*/
 
 	// --- Generate ServerHello ---
 	serverRandom := make([]byte, 32)
@@ -756,8 +766,8 @@ func buildServerHello(clientVersion uint16, serverRandom []byte, sessionID []byt
 	if alpnProtocol != "" {
 		// ALPN Extension structure: Type(2) + Length(2) + ListLength(2) + ProtocolLen(1) + Protocol(var)
 		protoLen := len(alpnProtocol)
-		listLen := 1 + protoLen    // 1 byte for length + protocol bytes
-		extLen := 2 + 1 + protoLen // 2 bytes for list length + 1 for proto len + proto bytes
+		listLen := 1 + protoLen // 1 byte for length + protocol bytes
+		extLen := 2 + listLen   // 2 bytes for list length field + list bytes
 
 		alpnExt := make([]byte, 4+extLen) // 4 bytes for Type + Length
 		binary.BigEndian.PutUint16(alpnExt[0:2], TLSExtensionTypeALPN)
@@ -766,6 +776,7 @@ func buildServerHello(clientVersion uint16, serverRandom []byte, sessionID []byt
 		alpnExt[6] = byte(protoLen)
 		copy(alpnExt[7:], []byte(alpnProtocol))
 		extensionsBytes = alpnExt
+		log.Printf("[TLS Build] Added ALPN extension for protocol: %s (ExtBytes: %x)", alpnProtocol, extensionsBytes)
 	}
 
 	extensionsTotalLength := len(extensionsBytes)
@@ -1148,31 +1159,6 @@ func buildFinishedMessage(verifyData []byte) ([]byte, error) {
 	copy(message[4:], verifyData)
 
 	return message, nil
-}
-
-// handleTLSApplicationData processes decrypted Application Data records.
-func handleTLSApplicationData(conn *TCPConnection, plaintext []byte) {
-	connKey := conn.ConnectionKey()
-	log.Printf("[TLS AppData Handler - %s] Received %d bytes of plaintext application data.", connKey, len(plaintext))
-
-	// Assuming the application data is HTTP for now.
-	// We need to reuse handleHTTPData, but it needs modification to send TLS records.
-	// Let's call it for now and modify handleHTTPData next.
-
-	// Determine the interface (nil for TCP mode)
-	conn.Mutex.Lock()
-	// tcpConn := conn.TCPConn // Removed unused variable
-	tunIFCE := conn.TunIFCE
-	conn.Mutex.Unlock()
-
-	var ifce *water.Interface // Can be nil
-	if tunIFCE != nil {
-		ifce = tunIFCE
-	}
-
-	// Call handleHTTPData, which is now responsible for checking TLS state and sending appropriately.
-	log.Printf("[TLS AppData Handler - %s] Passing data to handleHTTPData.", connKey)
-	handleHTTPData(ifce, conn, plaintext)
 }
 
 // startTLSHandshake initiates the TLS handshake process for a TCP connection.

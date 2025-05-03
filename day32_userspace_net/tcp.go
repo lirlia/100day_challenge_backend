@@ -69,6 +69,12 @@ type TCPConnection struct {
 	// Handshake message buffering
 	HandshakeMessages bytes.Buffer // Buffer to store handshake messages for Finished hash
 
+	// Negotiated ALPN Protocol
+	NegotiatedProtocol string // Stores the ALPN protocol negotiated ("h2", "http/1.1", or "")
+
+	// HTTP/2 State
+	h2SettingsSent bool // Flag indicating if the initial server SETTINGS frame has been sent
+
 	// State protection
 	Mutex sync.Mutex // Mutex to protect access to connection state
 }
