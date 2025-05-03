@@ -46,6 +46,22 @@ type ICMPHeader struct {
 	// Data follows
 }
 
+// TCPHeader represents the TCP header structure.
+// Reference: RFC 793
+type TCPHeader struct {
+	SrcPort    uint16 // Source Port
+	DstPort    uint16 // Destination Port
+	SeqNum     uint32 // Sequence Number
+	AckNum     uint32 // Acknowledgment Number
+	DataOffset uint8  // 4 bits: Data Offset (header length in 32-bit words)
+	Reserved   uint8  // 3 bits: Reserved
+	Flags      uint8  // 9 bits: NS, CWR, ECE, URG, ACK, PSH, RST, SYN, FIN (lower 8 used here for simplicity)
+	WindowSize uint16 // Window Size
+	Checksum   uint16 // Checksum
+	UrgentPtr  uint16 // Urgent Pointer
+	Options    []byte // Options (if DataOffset > 5)
+}
+
 const (
 	IPv4Version              = 4
 	IPv4HeaderMinLengthBytes = 20 // Minimum header length (IHL=5)
@@ -53,6 +69,19 @@ const (
 	ICMPEchoRequestType      = 8
 	ICMPEchoReplyType        = 0
 	ICMPHeaderLengthBytes    = 8
+	TCPProtocolNumber        = 6
+	TCPHeaderMinLengthBytes  = 20 // Minimum header length (DataOffset=5)
+
+	// TCP Flags (use lower 8 bits of the 9 defined flags for simplicity)
+	TCPFlagFIN = 1 << 0
+	TCPFlagSYN = 1 << 1
+	TCPFlagRST = 1 << 2
+	TCPFlagPSH = 1 << 3
+	TCPFlagACK = 1 << 4
+	TCPFlagURG = 1 << 5
+	TCPFlagECE = 1 << 6
+	TCPFlagCWR = 1 << 7
+	// TCPFlagNS = 1 << 8 // (Not easily accessible in standard 8-bit flag field)
 )
 
 // Command-line flags
@@ -216,8 +245,8 @@ func processPackets(ifce *water.Interface) {
 		switch ipHeader.Protocol {
 		case ICMPProtocolNumber:
 			handleICMPPacket(ifce, ipHeader, payload)
-		// case 6: // TCP
-		// 	log.Println("TCP Packet received (not handled)")
+		case TCPProtocolNumber:
+			handleTCPPacket(ifce, ipHeader, payload)
 		// case 17: // UDP
 		//  log.Println("UDP Packet received (not handled)")
 		default:
@@ -553,3 +582,103 @@ func maskSize(mask net.IPMask) int {
 // 		log.Printf("Ifconfig down output: %s", string(output))
 // 	}
 // }
+
+// handleTCPPacket parses TCP header and logs basic information.
+func handleTCPPacket(ifce *water.Interface, ipHeader *IPv4Header, tcpSegment []byte) {
+	tcpHeader, tcpPayload, err := parseTCPHeader(tcpSegment)
+	if err != nil {
+		log.Printf("Error parsing TCP header: %v", err)
+		return
+	}
+
+	flagsStr := tcpFlagsToString(tcpHeader.Flags)
+	log.Printf("TCP Packet: %s:%d -> %s:%d Seq: %d Ack: %d Flags: [%s] Win: %d Len: %d",
+		ipHeader.SrcIP, tcpHeader.SrcPort,
+		ipHeader.DstIP, tcpHeader.DstPort,
+		tcpHeader.SeqNum,
+		tcpHeader.AckNum,
+		flagsStr,
+		tcpHeader.WindowSize,
+		len(tcpPayload),
+	)
+
+	// TODO (Phase 3+): Implement TCP state machine, connection handling, etc.
+	_ = tcpPayload // Keep payload for future use
+
+}
+
+// parseTCPHeader parses the byte slice into a TCPHeader struct.
+func parseTCPHeader(segment []byte) (*TCPHeader, []byte, error) {
+	if len(segment) < TCPHeaderMinLengthBytes {
+		return nil, nil, fmt.Errorf("TCP segment too short for header: %d bytes", len(segment))
+	}
+
+	header := &TCPHeader{}
+
+	header.SrcPort = binary.BigEndian.Uint16(segment[0:2])
+	header.DstPort = binary.BigEndian.Uint16(segment[2:4])
+	header.SeqNum = binary.BigEndian.Uint32(segment[4:8])
+	header.AckNum = binary.BigEndian.Uint32(segment[8:12])
+
+	// Data Offset (4 bits), Reserved (3 bits), NS flag (1 bit) in byte 12
+	header.DataOffset = segment[12] >> 4
+	// header.Reserved = (segment[12] & 0x0E) >> 1 // If needed
+	// NS flag = segment[12] & 0x01 // If needed
+
+	// Flags (CWR, ECE, URG, ACK, PSH, RST, SYN, FIN) in byte 13
+	header.Flags = segment[13]
+
+	header.WindowSize = binary.BigEndian.Uint16(segment[14:16])
+	header.Checksum = binary.BigEndian.Uint16(segment[16:18])
+	header.UrgentPtr = binary.BigEndian.Uint16(segment[18:20])
+
+	headerLengthBytes := int(header.DataOffset) * 4
+	if len(segment) < headerLengthBytes {
+		return nil, nil, fmt.Errorf("TCP segment too short for declared header length (DataOffset): %d bytes required, got %d", headerLengthBytes, len(segment))
+	}
+
+	// Extract options if DataOffset > 5
+	if headerLengthBytes > TCPHeaderMinLengthBytes {
+		header.Options = segment[TCPHeaderMinLengthBytes:headerLengthBytes]
+	}
+
+	payload := segment[headerLengthBytes:]
+
+	// Note: TCP checksum calculation requires pseudo-header (parts of IP header + TCP segment)
+	// Verification is more complex than IP/ICMP and often offloaded, skipped here for simplicity.
+
+	return header, payload, nil
+}
+
+// tcpFlagsToString converts TCP flags byte to a readable string.
+func tcpFlagsToString(flags uint8) string {
+	var parts []string
+	if flags&TCPFlagFIN != 0 {
+		parts = append(parts, "FIN")
+	}
+	if flags&TCPFlagSYN != 0 {
+		parts = append(parts, "SYN")
+	}
+	if flags&TCPFlagRST != 0 {
+		parts = append(parts, "RST")
+	}
+	if flags&TCPFlagPSH != 0 {
+		parts = append(parts, "PSH")
+	}
+	if flags&TCPFlagACK != 0 {
+		parts = append(parts, "ACK")
+	}
+	if flags&TCPFlagURG != 0 {
+		parts = append(parts, "URG")
+	}
+	if flags&TCPFlagECE != 0 {
+		parts = append(parts, "ECE")
+	}
+	if flags&TCPFlagCWR != 0 {
+		parts = append(parts, "CWR")
+	}
+	if len(parts) == 0 {
+		return "-"
+	}
+	return strings.Join(parts, ",")
+}
