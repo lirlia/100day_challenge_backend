@@ -1,0 +1,39 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// model User {
+//   id        Int      @id @default(autoincrement())
+//   name      String
+//   createdAt DateTime @default(now())
+//   updatedAt DateTime @updatedAt
+// }
+
+model ProofSession {
+  id         Int      @id @default(autoincrement())
+  secretHash String
+  createdAt  DateTime @default(now())
+  logs       ProofLog[]
+}
+
+model ProofLog {
+  id         Int      @id @default(autoincrement())
+  session    ProofSession @relation(fields: [sessionId], references: [id])
+  sessionId  Int
+  challenge  String
+  response   String
+  isSuccess  Boolean
+  createdAt  DateTime @default(now())
+}
