@@ -18,28 +18,27 @@ import (
 const (
 	ColorReset   = "\033[0m"
 	ColorRed     = "\033[31m"
-	ColorGreen   = "\033[32m"
 	ColorYellow  = "\033[33m"
 	ColorBlue    = "\033[34m"
 	ColorPurple  = "\033[35m" // Purple for sending
 	ColorCyan    = "\033[36m" // Cyan for IP layer
 	ColorGray    = "\033[90m" // Gray for less important info / debug
-	ColorWhite   = "\033[97m"
+	ColorWhite   = ""
 	ColorOrange  = "\033[38;5;214m" // Orange for TLS
 	ColorMagenta = "\033[95m"       // Magenta for H2 App Data
 )
 
 // Log Prefixes
 const (
-	PrefixIP    = "[IP]    " // Keep original padding for alignment
-	PrefixTCP   = "  [TCP]   "
-	PrefixTLS   = "    [TLS]   "
-	PrefixHTTP  = "      [HTTP]  "
-	PrefixH2    = "      [H2]    "
+	PrefixIP    = "[IP] " // Keep original padding for alignment
+	PrefixTCP   = "  [TCP] "
+	PrefixTLS   = "    [TLS] "
+	PrefixHTTP  = "      [HTTP]"
+	PrefixH2    = "      [H2]  "
 	PrefixError = "[ERROR] "
 	PrefixWarn  = "[WARN]  "
 	PrefixInfo  = "[INFO]  "
-	PrefixState = "  [STATE] " // For TCP/TLS/H2 state changes
+	PrefixState = "    [STATE] " // For TCP/TLS/H2 state changes
 )
 
 // Global variables for loaded certificate and key
@@ -74,18 +73,18 @@ func main() {
 
 	// --- Load Certificate and Key ---
 	var err error
-	log.Printf("%s%sLoading server certificate and key...%s", ColorGreen, PrefixInfo, ColorReset)
+	log.Printf("%s%sLoading server certificate and key...%s", ColorWhite, PrefixInfo, ColorReset)
 	serverCert, err = tls.LoadX509KeyPair("cert.pem", "key.pem")
 	if err != nil {
 		log.Fatalf("%s%sFailed to load server certificate and key: %v%s", ColorRed, PrefixError, err, ColorReset)
 	}
-	log.Printf("%s%sServer certificate and key loaded successfully.%s", ColorGreen, PrefixInfo, ColorReset)
+	log.Printf("%s%sServer certificate and key loaded successfully.%s", ColorWhite, PrefixInfo, ColorReset)
 	serverCertDER = serverCert.Certificate
 	// --- End Load Certificate and Key ---
 
 	switch *mode {
 	case "tun":
-		log.Printf("%s%sStarting in TUN mode...%s", ColorGreen, PrefixInfo, ColorReset)
+		log.Printf("%s%sStarting in TUN mode...%s", ColorWhite, PrefixInfo, ColorReset)
 		if *localIP == "" || *remoteIP == "" || *subnetMask == "" {
 			log.Fatalf("%s%slocalIP, remoteIP, and subnet flags are required for tun mode%s", ColorRed, PrefixError, ColorReset)
 		}
@@ -96,7 +95,7 @@ func main() {
 		}
 
 		// Setup TUN device
-		log.Printf("%s%sSetting up TUN device '%s'...%s", ColorGreen, PrefixInfo, *devName, ColorReset)
+		log.Printf("%s%sSetting up TUN device '%s'...%s", ColorWhite, PrefixInfo, *devName, ColorReset)
 		ifce, err := setupTUN(*devName, localIPAddr.String(), remoteIPAddr.String(), *subnetMask, *mtu)
 		if err != nil {
 			log.Fatalf("%s%sFailed to setup TUN device: %v%s", ColorRed, PrefixError, err, ColorReset)
@@ -106,14 +105,14 @@ func main() {
 			ifce.Close()
 		}()
 
-		log.Printf("%s%sTUN device '%s' configured successfully.%s", ColorGreen, PrefixInfo, ifce.Name(), ColorReset)
-		log.Printf("%s%s Interface IP: %s, Peer IP: %s, Subnet Mask: %s%s", ColorGreen, PrefixInfo, localIPAddr, remoteIPAddr, *subnetMask, ColorReset)
-		log.Printf("%s%sListening for packets...%s", ColorGreen, PrefixInfo, ColorReset)
+		log.Printf("%s%sTUN device '%s' configured successfully.%s", ColorWhite, PrefixInfo, ifce.Name(), ColorReset)
+		log.Printf("%s%s Interface IP: %s, Peer IP: %s, Subnet Mask: %s%s", ColorWhite, PrefixInfo, localIPAddr, remoteIPAddr, *subnetMask, ColorReset)
+		log.Printf("%s%sListening for packets...%s", ColorWhite, PrefixInfo, ColorReset)
 
 		go processPackets(ifce)
 
 	case "tcp":
-		log.Printf("%s%sStarting in TCP mode, listening on port %d...%s", ColorGreen, PrefixInfo, *listenPort, ColorReset)
+		log.Printf("%s%sStarting in TCP mode, listening on port %d...%s", ColorWhite, PrefixInfo, *listenPort, ColorReset)
 		runTCPMode(*listenPort) // Call the TCP mode function (defined in tcp.go)
 
 	default:
@@ -125,7 +124,7 @@ func main() {
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	// Wait for termination signal
-	log.Printf("%s%sWaiting for shutdown signal (Ctrl+C)...%s", ColorGreen, PrefixInfo, ColorReset)
+	log.Printf("%s%sWaiting for shutdown signal (Ctrl+C)...%s", ColorWhite, PrefixInfo, ColorReset)
 	<-sigChan
 	log.Printf("\n%s%sShutting down signal received...%s", ColorYellow, PrefixInfo, ColorReset) // Add newline for clarity
 	// Cleanup (like closing TUN) is handled by defer or specific mode logic

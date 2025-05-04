@@ -58,7 +58,7 @@ func PRF12(secret []byte, label string, seed []byte, length int) []byte {
 
 // deriveKeys computes the master secret and then the client/server write keys and IVs using TLS 1.2 PRF.
 func deriveKeys(conn *TCPConnection) error {
-	log.Printf("%s%sStarting key derivation.%s", ColorYellow, PrefixTLS, ColorReset)
+	log.Printf("%s%sStarting key derivation.%s", ColorOrange, PrefixTLS, ColorReset)
 
 	// 1. Compute Pre-Master Secret (ECDHE)
 	if conn.ServerECDHPrivateKey == nil || conn.ClientECDHPublicKeyBytes == nil {
@@ -73,14 +73,14 @@ func deriveKeys(conn *TCPConnection) error {
 		return fmt.Errorf("ECDHE shared secret computation failed: %w", err)
 	}
 	conn.PreMasterSecret = preMasterSecret
-	log.Printf("%s%sComputed Pre-Master Secret (%d bytes).%s", ColorYellow, PrefixTLS, len(preMasterSecret), ColorReset)
+	log.Printf("%s%sComputed Pre-Master Secret (%d bytes).%s", ColorOrange, PrefixTLS, len(preMasterSecret), ColorReset)
 
 	// 2. Compute Master Secret using PRF12
 	masterSecretLabel := "master secret"
 	seed := append(conn.ClientRandom, conn.ServerRandom...)
 	masterSecret := PRF12(conn.PreMasterSecret, masterSecretLabel, seed, 48) // 48 bytes for Master Secret
 	conn.MasterSecret = masterSecret
-	log.Printf("%s%sDerived Master Secret (%d bytes) using PRF12.%s", ColorYellow, PrefixTLS, len(masterSecret), ColorReset)
+	log.Printf("%s%sDerived Master Secret (%d bytes) using PRF12.%s", ColorOrange, PrefixTLS, len(masterSecret), ColorReset)
 
 	// 3. Compute Key Block using PRF12
 	keyExpansionLabel := "key expansion"
@@ -96,7 +96,7 @@ func deriveKeys(conn *TCPConnection) error {
 	}
 
 	keyBlock := PRF12(conn.MasterSecret, keyExpansionLabel, keyBlockSeed, keyBlockLen)
-	log.Printf("%s%sDerived Key Block (%d bytes) using PRF12.%s", ColorYellow, PrefixTLS, len(keyBlock), ColorReset)
+	log.Printf("%s%sDerived Key Block (%d bytes) using PRF12.%s", ColorOrange, PrefixTLS, len(keyBlock), ColorReset)
 
 	// 4. Assign Keys and IVs
 	offset := 0
@@ -117,11 +117,11 @@ func deriveKeys(conn *TCPConnection) error {
 	offset += clientIVLen
 	conn.ServerWriteIV = keyBlock[offset : offset+serverIVLen] // Implicit part
 
-	log.Printf("%s%sAssigned Keys and IVs.%s", ColorYellow, PrefixTLS, ColorReset)
-	log.Printf("%s%s  ClientWriteKey (%d): %x...%s", ColorGray, PrefixTLS, len(conn.ClientWriteKey), conn.ClientWriteKey[:4], ColorReset)
-	log.Printf("%s%s  ServerWriteKey (%d): %x...%s", ColorGray, PrefixTLS, len(conn.ServerWriteKey), conn.ServerWriteKey[:4], ColorReset)
-	log.Printf("%s%s  ClientWriteIV  (%d): %x%s", ColorGray, PrefixTLS, len(conn.ClientWriteIV), conn.ClientWriteIV, ColorReset)
-	log.Printf("%s%s  ServerWriteIV  (%d): %x%s", ColorGray, PrefixTLS, len(conn.ServerWriteIV), conn.ServerWriteIV, ColorReset)
+	log.Printf("%s%sAssigned Keys and IVs.%s", ColorOrange, PrefixTLS, ColorReset)
+	log.Printf("%s%sClientWriteKey (%d): %x...%s", ColorOrange, PrefixTLS, len(conn.ClientWriteKey), conn.ClientWriteKey[:4], ColorReset)
+	log.Printf("%s%sServerWriteKey (%d): %x...%s", ColorOrange, PrefixTLS, len(conn.ServerWriteKey), conn.ServerWriteKey[:4], ColorReset)
+	log.Printf("%s%sClientWriteIV  (%d): %x%s", ColorOrange, PrefixTLS, len(conn.ClientWriteIV), conn.ClientWriteIV, ColorReset)
+	log.Printf("%s%sServerWriteIV  (%d): %x%s", ColorOrange, PrefixTLS, len(conn.ServerWriteIV), conn.ServerWriteIV, ColorReset)
 
 	return nil
 }
@@ -187,11 +187,11 @@ func encryptRecord(conn *TCPConnection, plaintext []byte, recordType uint8, vers
 
 	// --- CCS Exception: MUST be sent plaintext ---
 	if recordType == TLSRecordTypeChangeCipherSpec {
-		log.Printf("[Encrypt - %s] CCS record type, sending plaintext unconditionally.", connKey)
+		log.Printf("%s%sCCS record type, sending plaintext unconditionally.%s", ColorOrange, PrefixTLS, ColorReset)
 		// CCS payload must be {0x01}
 		if len(plaintext) != 1 || plaintext[0] != 0x01 {
 			// This should not happen if called correctly from sendServerCCSAndFinished
-			log.Printf("[Encrypt Error - %s] Invalid plaintext for CCS: %x", connKey, plaintext)
+			log.Printf("%s%sEncrypt Error - %s] Invalid plaintext for CCS: %x%s", ColorOrange, PrefixTLS, connKey, plaintext, ColorReset)
 			return nil, fmt.Errorf("invalid plaintext for ChangeCipherSpec: %x", plaintext)
 		}
 		return plaintext, nil
@@ -202,7 +202,7 @@ func encryptRecord(conn *TCPConnection, plaintext []byte, recordType uint8, vers
 	defer conn.Mutex.Unlock()
 
 	if !conn.EncryptionEnabled {
-		log.Printf("[Encrypt - %s] Encryption not enabled, sending plaintext for type %d.", connKey, recordType)
+		log.Printf("%s%sEncryption not enabled, sending plaintext for type %d.%s", ColorOrange, PrefixTLS, recordType, ColorReset)
 		return plaintext, nil // Return plaintext if encryption is not yet enabled
 	}
 	log.Printf("%s%sEncrypting record. Type: %d, Plaintext Len: %d, SeqNum: %d%s", ColorOrange, PrefixTLS, recordType, len(plaintext), conn.ServerSequenceNum, ColorReset)
@@ -254,10 +254,10 @@ func decryptRecord(conn *TCPConnection, encryptedPayload []byte, recordType uint
 
 	// --- CCS Exception: MUST be received plaintext ---
 	if recordType == TLSRecordTypeChangeCipherSpec {
-		log.Printf("[Decrypt - %s] CCS record type, processing plaintext unconditionally.", connKey)
+		log.Printf("%s%sCCS record type, processing plaintext unconditionally.%s", ColorOrange, PrefixTLS, ColorReset)
 		// CCS payload must be {0x01}
 		if len(encryptedPayload) != 1 || encryptedPayload[0] != 0x01 {
-			log.Printf("[Decrypt Error - %s] Invalid payload for CCS: %x", connKey, encryptedPayload)
+			log.Printf("%s%sDecrypt Error - %s] Invalid payload for CCS: %x%s", ColorOrange, PrefixTLS, connKey, encryptedPayload, ColorReset)
 			return nil, fmt.Errorf("invalid payload for ChangeCipherSpec: %x", encryptedPayload)
 		}
 		return encryptedPayload, nil
@@ -268,7 +268,7 @@ func decryptRecord(conn *TCPConnection, encryptedPayload []byte, recordType uint
 	defer conn.Mutex.Unlock()
 
 	if !conn.EncryptionEnabled {
-		log.Printf("[Decrypt - %s] Decryption not enabled, assuming plaintext for type %d.", connKey, recordType)
+		log.Printf("%s%sDecryption not enabled, assuming plaintext for type %d.%s", ColorOrange, PrefixTLS, recordType, ColorReset)
 		return encryptedPayload, nil // Return as is if decryption is not yet enabled
 	}
 
