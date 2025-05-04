@@ -3,6 +3,10 @@
 ## 概要
 Goで実装したユーザースペースTCP/IP/TLS/HTTP2スタックです。TUNデバイスを用いてIPパケットを受信し、IP/TCP/TLS/HTTP2の各層を自前でパース・処理します。
 
+https://github.com/user-attachments/assets/b9c37838-3951-49be-8005-3305b8044953
+
+[100日チャレンジ day32](https://zenn.dev/gin_nazo/scraps/2ab7b49d1166ea)
+
 ## 主な特徴
 - **IP/TCP/TLS/HTTP2 各層をGoで自作**
 - **各層ごとに色分け・インデント・Prefix統一のログ出力**
@@ -28,12 +32,16 @@ Goで実装したユーザースペースTCP/IP/TLS/HTTP2スタックです。TU
 3. 起動例:
    ```sh
    # 独自の IP/TCP/TLS/HTTP/HTTP2 スタック
-   sudo PAUSE_LAYER=ip,tcp,tls go run *.go -mode tun -dev utun4 -localIP 10.0.0.1 -remoteIP 10.0.0.2
+   sudo PAUSE_LAYER=ip,tcp,tls go run *.go
 
    # go標準の net/http を使ったサーバ
    sudo go run *.go -mode tcp
    ```
 4. curlやブラウザでアクセスし、各層のログや一時停止を確認
+   ```sh
+   curl --http1.1 http://10.0.0.2
+   curl --cacert cert.pem --http2 https://10.0.0.2:443/
+   ```
 
 ## 残作業・今後のTODO
 - HTTP2層の一時停止ポイント追加

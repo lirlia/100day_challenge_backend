@@ -38,3 +38,4 @@ alwaysApply: true
 | 29  | 簡易 ETL パイプライン         | Next.js, TypeScript, Prisma, SQLite, TailwindCSS, papaparse, 状態ポーリング, UIでのデータフロー可視化 |
 | 30  | 有限オートマトン可視化ツール   | Next.js, TypeScript, TailwindCSS, React Flow, Zustand, Local Storage, ブルータリズムUI |
 | 31  | Go ORM と CLI シェル          | Go, SQLite, database/sql, reflect, go-prompt                                         |
+| 32  | ユーザースペースネットワークスタック | Go, TUNデバイス, TCP/IP, TLS1.2, HTTP/2, ALPN, ログカラー/インデント統一, レイヤー一時停止 |
