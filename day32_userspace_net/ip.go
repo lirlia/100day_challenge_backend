@@ -219,7 +219,7 @@ func handleIPPacket(ifce *water.Interface, packet []byte) {
 	}
 
 	// Use cyan for received IP packets
-	log.Printf("%s%sRCV: %s -> %s Proto: %d(%s) TTL: %d Len(Payload/Total): %d/%d ID: %d HdrLen: %d%s",
+	log.Printf("%s%s %s -> %s Proto: %d(%s) TTL: %d Len(Payload/Total): %d/%d ID: %d HdrLen: %d%s",
 		ColorCyan, PrefixIP,
 		ipHeader.SrcIP, ipHeader.DstIP,
 		ipHeader.Protocol, ipProtocolToString(ipHeader.Protocol), // Corrected function name
@@ -228,6 +228,9 @@ func handleIPPacket(ifce *water.Interface, packet []byte) {
 		ipHeader.IHL*4, // Header length in bytes
 		ColorReset,
 	)
+
+	printHeaderInfo(ipHeader, len(payload))
+	pauseIfNeeded("ip")
 
 	switch ipHeader.Protocol {
 	case IPProtocolTCP:

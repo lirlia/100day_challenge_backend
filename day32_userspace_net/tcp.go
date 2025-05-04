@@ -227,6 +227,7 @@ func handleTCPConnection(netConn net.Conn) {
 		// This might involve reading TLS application data records and passing
 		// the decrypted payload to handleHTTPData or similar.
 		// For now, we just log success.
+		pauseIfNeeded("tcp")
 	}
 
 	// Cleanup connection from map when done
@@ -303,7 +304,8 @@ func handleTCPPacket(ifce *water.Interface, ipHeader *IPv4Header, tcpSegment []b
 	// Case 2: ACK for SYN-ACK
 	case exists && conn.State == TCPStateSynReceived && tcpHeader.Flags&TCPFlagACK != 0:
 		if tcpHeader.AckNum == conn.ServerNextSeq {
-			log.Printf("%s%sConnection %s ESTABLISHED. Port: %d, TLS State: %v%s", ColorYellow, PrefixState, connKey, conn.ServerPort, conn.TLSState, ColorReset)
+			log.Printf("%s%sConnection %s ESTABLISHED. Port: %d, TLS State: %v%s", ColorGreen, PrefixState, connKey, conn.ServerPort, conn.TLSState, ColorReset)
+			pauseIfNeeded("tcp")
 			conn.State = TCPStateEstablished
 			conn.ClientNextSeq = tcpHeader.SeqNum
 		} else {
@@ -314,7 +316,7 @@ func handleTCPPacket(ifce *water.Interface, ipHeader *IPv4Header, tcpSegment []b
 	case exists && conn.State == TCPStateEstablished:
 		// Basic sequence number check (common for both HTTP and TLS data)
 		if !(len(tcpPayload) == 0 && tcpHeader.Flags&TCPFlagACK != 0) && tcpHeader.SeqNum != conn.ClientNextSeq {
-			log.Printf("%s%sUnexpected sequence number for ESTABLISHED %s. Expected %d, got %d. Flags [%s]. Ignoring.%s", ColorYellow, PrefixWarn, connKey, conn.ClientNextSeq, tcpHeader.SeqNum, tcpFlagsToString(tcpHeader.Flags), ColorReset)
+			// log.Printf("%s%sUnexpected sequence number for ESTABLISHED %s. Expected %d, got %d. Flags [%s]. Ignoring.%s", ColorYellow, PrefixWarn, connKey, conn.ClientNextSeq, tcpHeader.SeqNum, tcpFlagsToString(tcpHeader.Flags), ColorReset)
 			// Optionally send ACK with expected SeqNum? For now, ignore.
 			return
 		}

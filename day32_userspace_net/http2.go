@@ -73,7 +73,7 @@ func handleHTTP2Data(conn *TCPConnection, payload []byte) {
 	conn.Mutex.Unlock()
 
 	if isDebug {
-		log.Printf("%s%sAppended %d bytes to H2 buffer. State: %v, Buffer len: %d%s", ColorGray, PrefixH2, len(payload), currentH2State, h2BufferLen, ColorReset)
+		log.Printf("%s%sAppended %d bytes to H2 buffer. State: %v, Buffer len: %d%s", ColorMagenta, PrefixH2, len(payload), currentH2State, h2BufferLen, ColorReset)
 	}
 
 	// 1. Check for Client Preface if in H2StateExpectPreface
@@ -119,7 +119,7 @@ func handleHTTP2Data(conn *TCPConnection, payload []byte) {
 			}
 		} else {
 			if isDebug {
-				log.Printf("%s%sWaiting for more data for Client Preface (need %d, have %d).%s", ColorGray, PrefixH2, len(ClientPreface), h2BufferLen, ColorReset)
+				log.Printf("%s%sWaiting for more data for Client Preface (need %d, have %d).%s", ColorMagenta, PrefixH2, len(ClientPreface), h2BufferLen, ColorReset)
 			}
 			return // Not enough data yet
 		}
@@ -129,13 +129,13 @@ func handleHTTP2Data(conn *TCPConnection, payload []byte) {
 	conn.Mutex.Lock() // Lock for reading buffer/state
 	initialBufferLen := conn.HTTP2ReceiveBuffer.Len()
 	if isDebug && initialBufferLen > 0 {
-		log.Printf("%s%sEntering frame processing loop. State: %v, Buffer len: %d%s", ColorGray, PrefixH2, conn.H2State, initialBufferLen, ColorReset)
+		log.Printf("%s%sEntering frame processing loop. State: %v, Buffer len: %d%s", ColorMagenta, PrefixH2, conn.H2State, initialBufferLen, ColorReset)
 	}
 	// Keep processing as long as there's enough data for a frame header
 	for conn.HTTP2ReceiveBuffer.Len() >= FrameHeaderLen {
 		currentBufferLen := conn.HTTP2ReceiveBuffer.Len() // For logging inside loop
 		if isDebug {
-			log.Printf("%s%sFrame loop iteration. Buffer len: %d%s", ColorGray, PrefixH2, currentBufferLen, ColorReset)
+			log.Printf("%s%sFrame loop iteration. Buffer len: %d%s", ColorMagenta, PrefixH2, currentBufferLen, ColorReset)
 		}
 
 		// Peek at header to get length
@@ -147,13 +147,13 @@ func handleHTTP2Data(conn *TCPConnection, payload []byte) {
 		streamID := binary.BigEndian.Uint32(headerBytes[5:9]) & 0x7FFFFFFF
 
 		if isDebug {
-			log.Printf("%s%sPeeked frame header: Len=%d, Type=%d, Flags=0x%x, StreamID=%d%s", ColorGray, PrefixH2, payloadLen, frameType, flags, streamID, ColorReset)
+			log.Printf("%s%sPeeked frame header: Len=%d, Type=%d, Flags=0x%x, StreamID=%d%s", ColorMagenta, PrefixH2, payloadLen, frameType, flags, streamID, ColorReset)
 		}
 
 		fullFrameLength := FrameHeaderLen + int(payloadLen)
 		if currentBufferLen < fullFrameLength {
 			if isDebug {
-				log.Printf("%s%sIncomplete frame. Need %d bytes, have %d. Waiting.%s", ColorGray, PrefixH2, fullFrameLength, currentBufferLen, ColorReset)
+				log.Printf("%s%sIncomplete frame. Need %d bytes, have %d. Waiting.%s", ColorMagenta, PrefixH2, fullFrameLength, currentBufferLen, ColorReset)
 			}
 			break // Need more data for this frame
 		}
@@ -169,7 +169,7 @@ func handleHTTP2Data(conn *TCPConnection, payload []byte) {
 		}
 		framePayload := frameBytes[FrameHeaderLen:]
 		if isDebug {
-			log.Printf("%s%sConsumed frame. Type: %d, Payload len: %d. Remaining buffer: %d%s", ColorGray, PrefixH2, frameType, len(framePayload), conn.HTTP2ReceiveBuffer.Len(), ColorReset)
+			log.Printf("%s%sConsumed frame. Type: %d, Payload len: %d. Remaining buffer: %d%s", ColorMagenta, PrefixH2, frameType, len(framePayload), conn.HTTP2ReceiveBuffer.Len(), ColorReset)
 		}
 
 		// --- Process the frame based on type and state ---
@@ -217,14 +217,14 @@ func handleHTTP2Data(conn *TCPConnection, payload []byte) {
 
 		case FrameTypeHeaders:
 			log.Printf("%s%sReceived HEADERS frame (StreamID: %d, Flags: 0x%x, PayloadLen: %d)%s", ColorMagenta, PrefixH2, streamID, flags, payloadLen, ColorReset)
-			log.Printf("%s%sHEADERS payload (raw): %x%s", ColorGray, PrefixH2, framePayload, ColorReset)
+			log.Printf("%s%sHEADERS payload (raw): %x%s", ColorMagenta, PrefixH2, framePayload, ColorReset)
 			// TODO: Implement basic header decoding (HPACK is complex, skip for now)
 			// For a simple GET, this would contain method, path, scheme, authority
 
 			// --- Simple Hardcoded Response ---
 			// Simulate processing the request and sending a response on the same stream
 			if streamID != 0 { // Ignore HEADERS on stream 0
-				log.Printf("%s%sProcessing HEADERS for Stream %d.%s", ColorGray, PrefixH2, streamID, ColorReset)
+				log.Printf("%s%sProcessing HEADERS for Stream %d.%s", ColorMagenta, PrefixH2, streamID, ColorReset)
 				log.Printf("%s%sSending hardcoded response for Stream %d%s", ColorMagenta, PrefixH2, streamID, ColorReset)
 
 				// 1. Send HEADERS frame (response status 200 OK)
@@ -323,7 +323,7 @@ func handleHTTP2Data(conn *TCPConnection, payload []byte) {
 	conn.Mutex.Unlock() // Unlock after processing loop
 
 	if isDebug && initialBufferLen > 0 {
-		log.Printf("%s%sExiting frame processing loop. Final buffer len: %d%s", ColorGray, PrefixH2, finalBufferLen, ColorReset)
+		log.Printf("%s%sExiting frame processing loop. Final buffer len: %d%s", ColorMagenta, PrefixH2, finalBufferLen, ColorReset)
 	}
 }
 

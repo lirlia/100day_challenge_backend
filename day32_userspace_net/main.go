@@ -1,13 +1,16 @@
 package main
 
 import (
+	"bufio"
 	"crypto"     // crypto needed for PrivateKey type in global var
 	"crypto/tls" // Added for loading key/cert
 	"flag"
+	"fmt"
 	"log"
 	"net"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	// For accessing packet layers
 	// For defining layers (IP, TCP)
@@ -26,6 +29,7 @@ const (
 	ColorWhite   = ""
 	ColorOrange  = "\033[38;5;214m" // Orange for TLS
 	ColorMagenta = "\033[95m"       // Magenta for H2 App Data
+	ColorGreen   = "\033[32m"       // Green for established/OK
 )
 
 // Log Prefixes
@@ -49,6 +53,7 @@ var (
 	isDebug                bool
 
 	// Map to store active TCP connections, keyed by a string identifier.
+	pauseLayers map[string]bool
 )
 
 // Command-line flags
@@ -66,6 +71,23 @@ var (
 // --- HTTP2State definitions moved to tcp.go ---
 
 // --- TCPConnection definition moved to tcp.go ---
+
+func init() {
+	pauseLayers = make(map[string]bool)
+	if v := os.Getenv("PAUSE_LAYER"); v != "" {
+		for _, layer := range strings.Split(v, ",") {
+			pauseLayers[strings.TrimSpace(strings.ToLower(layer))] = true
+		}
+	}
+}
+
+// 指定レイヤーで一時停止
+func pauseIfNeeded(layer string) {
+	if pauseLayers[strings.ToLower(layer)] {
+		fmt.Printf("\n--- [%s] Enterで進行 ---\n", strings.ToUpper(layer))
+		bufio.NewReader(os.Stdin).ReadBytes('\n')
+	}
+}
 
 func main() {
 	flag.Parse()
