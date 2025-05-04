@@ -240,19 +240,19 @@ func handleTCPConnection(netConn net.Conn) {
 func handleTCPPacket(ifce *water.Interface, ipHeader *IPv4Header, tcpSegment []byte) {
 	tcpHeader, tcpPayload, err := parseTCPHeader(tcpSegment)
 	if err != nil {
-		log.Printf("Error parsing TCP header: %v", err)
+		log.Printf("%s%sError parsing TCP header: %v%s", ColorRed, PrefixError, err, ColorReset)
 		return
 	}
 
 	flagsStr := tcpFlagsToString(tcpHeader.Flags)
-	log.Printf("TCP RCV: %s:%d -> %s:%d Seq: %d Ack: %d Flags: [%s] Win: %d Len: %d",
+	log.Printf("%s%sRCV: %s:%d -> %s:%d Seq: %d Ack: %d Flags: [%s] Win: %d Len: %d%s",
+		ColorBlue, PrefixTCP,
 		ipHeader.SrcIP, tcpHeader.SrcPort,
 		ipHeader.DstIP, tcpHeader.DstPort,
-		tcpHeader.SeqNum,
-		tcpHeader.AckNum,
+		tcpHeader.SeqNum, tcpHeader.AckNum,
 		flagsStr,
-		tcpHeader.WindowSize,
-		len(tcpPayload),
+		tcpHeader.WindowSize, len(tcpPayload),
+		ColorReset,
 	)
 
 	connMutex.Lock()
@@ -264,9 +264,8 @@ func handleTCPPacket(ifce *water.Interface, ipHeader *IPv4Header, tcpSegment []b
 	switch {
 	// Case 1: New SYN (Listen state is implicit)
 	case !exists && tcpHeader.Flags&TCPFlagSYN != 0 && tcpHeader.Flags&TCPFlagACK == 0:
-		// Check if it's for a port we listen on (80 for HTTP, 443 for TLS)
 		if tcpHeader.DstPort == 80 || tcpHeader.DstPort == 443 {
-			log.Printf("Handling SYN for new connection %s on port %d", connKey, tcpHeader.DstPort)
+			log.Printf("%s%sHandling SYN for new connection %s on port %d%s", ColorYellow, PrefixState, connKey, tcpHeader.DstPort, ColorReset)
 
 			serverISN := mrand.Uint32() // Use mrand
 			newConn := &TCPConnection{
@@ -298,24 +297,24 @@ func handleTCPPacket(ifce *water.Interface, ipHeader *IPv4Header, tcpSegment []b
 				delete(tcpConnections, connKey)
 			}
 		} else {
-			log.Printf("Ignoring SYN for unhandled port %d from %s:%d", tcpHeader.DstPort, ipHeader.SrcIP, tcpHeader.SrcPort)
+			log.Printf("%s%sIgnoring SYN for unhandled port %d from %s:%d%s", ColorGray, PrefixWarn, tcpHeader.DstPort, ipHeader.SrcIP, tcpHeader.SrcPort, ColorReset)
 		}
 
 	// Case 2: ACK for SYN-ACK
 	case exists && conn.State == TCPStateSynReceived && tcpHeader.Flags&TCPFlagACK != 0:
 		if tcpHeader.AckNum == conn.ServerNextSeq {
-			log.Printf("Connection %s ESTABLISHED. Port: %d, TLS State: %v", connKey, conn.ServerPort, conn.TLSState)
+			log.Printf("%s%sConnection %s ESTABLISHED. Port: %d, TLS State: %v%s", ColorGreen, PrefixState, connKey, conn.ServerPort, conn.TLSState, ColorReset)
 			conn.State = TCPStateEstablished
 			conn.ClientNextSeq = tcpHeader.SeqNum
 		} else {
-			log.Printf("Invalid ACK for SYN-ACK on %s. AckNum: %d, Expected: %d", connKey, tcpHeader.AckNum, conn.ServerNextSeq)
+			log.Printf("%s%sInvalid ACK for SYN-ACK on %s. AckNum: %d, Expected: %d%s", ColorYellow, PrefixWarn, connKey, tcpHeader.AckNum, conn.ServerNextSeq, ColorReset)
 		}
 
 	// Case 3: Packets on established connection
 	case exists && conn.State == TCPStateEstablished:
 		// Basic sequence number check (common for both HTTP and TLS data)
 		if !(len(tcpPayload) == 0 && tcpHeader.Flags&TCPFlagACK != 0) && tcpHeader.SeqNum != conn.ClientNextSeq {
-			log.Printf("Unexpected sequence number for ESTABLISHED %s. Expected %d, got %d. Flags [%s]. Ignoring.", connKey, conn.ClientNextSeq, tcpHeader.SeqNum, tcpFlagsToString(tcpHeader.Flags))
+			log.Printf("%s%sUnexpected sequence number for ESTABLISHED %s. Expected %d, got %d. Flags [%s]. Ignoring.%s", ColorYellow, PrefixWarn, connKey, conn.ClientNextSeq, tcpHeader.SeqNum, tcpFlagsToString(tcpHeader.Flags), ColorReset)
 			// Optionally send ACK with expected SeqNum? For now, ignore.
 			return
 		}
@@ -340,7 +339,7 @@ func handleTCPPacket(ifce *water.Interface, ipHeader *IPv4Header, tcpSegment []b
 			_, err = sendTCPPacket(conn.TunIFCE, conn.ServerIP, conn.ClientIP, uint16(conn.ServerPort), uint16(conn.ClientPort),
 				conn.ServerNextSeq, expectedClientNextSeq, ackFlags, nil)
 			if err != nil {
-				log.Printf("Error sending ACK for received data on %s (Port %d): %v", connKey, conn.ServerPort, err)
+				log.Printf("%s%sError sending ACK for received data on %s (Port %d): %v%s", ColorRed, PrefixError, connKey, conn.ServerPort, err, ColorReset)
 				// Don't update ClientNextSeq if ACK fails?
 				return
 			}
@@ -351,7 +350,7 @@ func handleTCPPacket(ifce *water.Interface, ipHeader *IPv4Header, tcpSegment []b
 			} else if conn.ServerPort == 443 {
 				handleTLSData(conn.TunIFCE, conn, tcpPayload) // Pass TUN interface
 			} else {
-				log.Printf("Received data on unexpected established port %d for %s", conn.ServerPort, connKey)
+				log.Printf("%s%sReceived data on unexpected established port %d for %s%s", ColorYellow, PrefixWarn, conn.ServerPort, connKey, ColorReset)
 			}
 
 			// Update client sequence number after successful ACK and dispatch
@@ -364,7 +363,7 @@ func handleTCPPacket(ifce *water.Interface, ipHeader *IPv4Header, tcpSegment []b
 
 	// === NEW CASE: Handle packets when we are waiting for client's ACK/FIN ===
 	case exists && conn.State == TCPStateFinWait1:
-		log.Printf("[TCP State - %s] Received packet in FIN_WAIT_1. Flags: [%s], Seq: %d, Ack: %d", connKey, tcpFlagsToString(tcpHeader.Flags), tcpHeader.SeqNum, tcpHeader.AckNum)
+		log.Printf("%s%s[TCP State - %s] Received packet in FIN_WAIT_1. Flags: [%s], Seq: %d, Ack: %d%s", ColorYellow, PrefixState, connKey, tcpFlagsToString(tcpHeader.Flags), tcpHeader.SeqNum, tcpHeader.AckNum, ColorReset)
 
 		// Update client's next expected sequence number based on this packet
 		// (Important even if it's just an ACK)
@@ -376,19 +375,19 @@ func handleTCPPacket(ifce *water.Interface, ipHeader *IPv4Header, tcpSegment []b
 		}
 		expectedClientNextSeqAfterThis := tcpHeader.SeqNum + payloadLen + finIncrement
 		if tcpHeader.AckNum != conn.ServerNextSeq {
-			log.Printf("[Warning - %s] ACK number mismatch in FIN_WAIT_1. Expected %d, got %d. Continuing...", connKey, conn.ServerNextSeq, tcpHeader.AckNum)
+			log.Printf("%s%s[Warning - %s] ACK number mismatch in FIN_WAIT_1. Expected %d, got %d. Continuing...%s", ColorYellow, PrefixWarn, connKey, conn.ServerNextSeq, tcpHeader.AckNum, ColorReset)
 		}
 
 		// Scenario A: Client sends only ACK for our FIN
 		if tcpHeader.Flags == TCPFlagACK {
-			log.Printf("[TCP State - %s] Received ACK for our FIN. Transitioning to FIN_WAIT_2.", connKey)
+			log.Printf("%s%s[TCP State - %s] Received ACK for our FIN. Transitioning to FIN_WAIT_2.%s", ColorGreen, PrefixState, connKey, ColorReset)
 			conn.State = TCPStateFinWait2
 			// Update sequence numbers based on ACK received
 			conn.ClientNextSeq = expectedClientNextSeqAfterThis // Only update if ACK is valid? For now, assume valid.
 
 			// Scenario B: Client sends FIN (+ACK) while we are in FIN_WAIT_1 (Simultaneous Close or FIN after ACK)
 		} else if tcpHeader.Flags&(TCPFlagFIN|TCPFlagACK) != 0 {
-			log.Printf("[TCP State - %s] Received FIN+ACK (or just FIN) in FIN_WAIT_1. Sending ACK. Transitioning to CLOSING/TIME_WAIT.", connKey)
+			log.Printf("%s%s[TCP State - %s] Received FIN+ACK (or just FIN) in FIN_WAIT_1. Sending ACK. Transitioning to CLOSING/TIME_WAIT.%s", ColorGreen, PrefixState, connKey, ColorReset)
 
 			// Update sequence numbers based on received FIN
 			conn.ClientNextSeq = expectedClientNextSeqAfterThis
@@ -398,24 +397,24 @@ func handleTCPPacket(ifce *water.Interface, ipHeader *IPv4Header, tcpSegment []b
 			_, err = sendTCPPacket(conn.TunIFCE, conn.ServerIP, conn.ClientIP, uint16(conn.ServerPort), uint16(conn.ClientPort),
 				conn.ServerNextSeq, conn.ClientNextSeq, ackFlags, nil)
 			if err != nil {
-				log.Printf("[TCP Close Error - %s] Failed to send ACK for client's FIN in FIN_WAIT_1: %v", connKey, err)
+				log.Printf("%s%s[TCP Close Error - %s] Failed to send ACK for client's FIN in FIN_WAIT_1: %v%s", ColorRed, PrefixError, connKey, err, ColorReset)
 				// Problematic state, maybe just delete?
 				delete(tcpConnections, connKey)
 			} else {
 				// Transition to TIME_WAIT (simplified, directly closing after ACK)
 				// A proper TIME_WAIT state would involve a timer.
-				log.Printf("[TCP State - %s] Sent ACK for client's FIN. Transitioning to TIME_WAIT (and deleting connection).", connKey)
+				log.Printf("%s%s[TCP State - %s] Sent ACK for client's FIN. Transitioning to TIME_WAIT (and deleting connection).%s", ColorGreen, PrefixState, connKey, ColorReset)
 				conn.State = TCPStateTimeWait // Mark as TimeWait just before delete for clarity
 				delete(tcpConnections, connKey)
 			}
 
 		} else {
-			log.Printf("[Warning - %s] Unexpected flags [%s] received in FIN_WAIT_1. Ignoring.", connKey, tcpFlagsToString(tcpHeader.Flags))
+			log.Printf("%s%s[Warning - %s] Unexpected flags [%s] received in FIN_WAIT_1. Ignoring.%s", ColorYellow, PrefixWarn, connKey, tcpFlagsToString(tcpHeader.Flags), ColorReset)
 		}
 
 	// === NEW CASE: Handle packets when we are waiting for client's FIN ===
 	case exists && conn.State == TCPStateFinWait2:
-		log.Printf("[TCP State - %s] Received packet in FIN_WAIT_2. Flags: [%s], Seq: %d, Ack: %d", connKey, tcpFlagsToString(tcpHeader.Flags), tcpHeader.SeqNum, tcpHeader.AckNum)
+		log.Printf("%s%s[TCP State - %s] Received packet in FIN_WAIT_2. Flags: [%s], Seq: %d, Ack: %d%s", ColorYellow, PrefixState, connKey, tcpFlagsToString(tcpHeader.Flags), tcpHeader.SeqNum, tcpHeader.AckNum, ColorReset)
 
 		// Update client's next expected sequence number based on this packet
 		payloadLen := uint32(len(tcpPayload))
@@ -426,7 +425,7 @@ func handleTCPPacket(ifce *water.Interface, ipHeader *IPv4Header, tcpSegment []b
 		expectedClientNextSeqAfterThis := tcpHeader.SeqNum + payloadLen + finIncrement
 
 		if tcpHeader.Flags&TCPFlagFIN != 0 {
-			log.Printf("[TCP State - %s] Received FIN from client in FIN_WAIT_2. Sending ACK and closing.", connKey)
+			log.Printf("%s%s[TCP State - %s] Received FIN from client in FIN_WAIT_2. Sending ACK and closing.%s", ColorGreen, PrefixState, connKey, ColorReset)
 			conn.ClientNextSeq = expectedClientNextSeqAfterThis
 
 			// Send ACK for their FIN
@@ -434,9 +433,9 @@ func handleTCPPacket(ifce *water.Interface, ipHeader *IPv4Header, tcpSegment []b
 			_, err = sendTCPPacket(conn.TunIFCE, conn.ServerIP, conn.ClientIP, uint16(conn.ServerPort), uint16(conn.ClientPort),
 				conn.ServerNextSeq, conn.ClientNextSeq, ackFlags, nil)
 			if err != nil {
-				log.Printf("[TCP Close Error - %s] Failed to send ACK for client's FIN in FIN_WAIT_2: %v", connKey, err)
+				log.Printf("%s%s[TCP Close Error - %s] Failed to send ACK for client's FIN in FIN_WAIT_2: %v%s", ColorRed, PrefixError, connKey, err, ColorReset)
 			} else {
-				log.Printf("[TCP State - %s] Sent ACK for client's FIN. Connection CLOSED.", connKey)
+				log.Printf("%s%s[TCP State - %s] Sent ACK for client's FIN. Connection CLOSED.%s", ColorGreen, PrefixState, connKey, ColorReset)
 			}
 			// Transition to TIME_WAIT (simplified, directly closing after ACK)
 			conn.State = TCPStateTimeWait // Mark as TimeWait just before delete
@@ -444,15 +443,15 @@ func handleTCPPacket(ifce *water.Interface, ipHeader *IPv4Header, tcpSegment []b
 
 		} else {
 			// Might receive other data or just ACKs, usually ignore in FIN_WAIT_2 for simplicity here
-			log.Printf("[Warning - %s] Received non-FIN packet [%s] in FIN_WAIT_2. Ignoring.", connKey, tcpFlagsToString(tcpHeader.Flags))
+			log.Printf("%s%s[Warning - %s] Received non-FIN packet [%s] in FIN_WAIT_2. Ignoring.%s", ColorYellow, PrefixWarn, connKey, tcpFlagsToString(tcpHeader.Flags), ColorReset)
 		}
 
 	default:
-		if exists {
-			log.Printf("Unhandled TCP packet for %s. State: %v, Flags: [%s]", connKey, conn.State, tcpFlagsToString(tcpHeader.Flags))
-		} else {
-			log.Printf("Unhandled TCP packet for non-existent connection %s. Flags: [%s]", connKey, tcpFlagsToString(tcpHeader.Flags))
-		}
+		// if exists {
+		// log.Printf("%s%sUnhandled TCP packet for %s. State: %v, Flags: [%s]%s", ColorYellow, PrefixWarn, connKey, conn.State, tcpFlagsToString(tcpHeader.Flags), ColorReset)
+		// } else {
+		// log.Printf("%s%sUnhandled TCP packet for non-existent connection %s. Flags: [%s]%s", ColorYellow, PrefixWarn, connKey, tcpFlagsToString(tcpHeader.Flags), ColorReset)
+		// }
 		// Optionally send RST if the packet was unexpected for a non-existent connection?
 		// For now, just log.
 	}
@@ -462,7 +461,7 @@ func handleTCPPacket(ifce *water.Interface, ipHeader *IPv4Header, tcpSegment []b
 
 func handleFIN(conn *TCPConnection, tcpHeader *TCPHeader) {
 	connKey := conn.ConnectionKey()
-	log.Printf("Received FIN for connection %s. Entering CLOSE_WAIT.", connKey)
+	log.Printf("%s%sReceived FIN for connection %s. Entering CLOSE_WAIT.%s", ColorGreen, PrefixState, connKey, ColorReset)
 	conn.State = TCPStateCloseWait
 	conn.ClientNextSeq = tcpHeader.SeqNum + 1
 
@@ -471,16 +470,16 @@ func handleFIN(conn *TCPConnection, tcpHeader *TCPHeader) {
 	_, err := sendTCPPacket(conn.TunIFCE, conn.ServerIP, conn.ClientIP, uint16(conn.ServerPort), uint16(conn.ClientPort),
 		conn.ServerNextSeq, conn.ClientNextSeq, ackFlags, nil)
 	if err != nil {
-		log.Printf("Error sending ACK for FIN on %s: %v", connKey, err)
+		log.Printf("%s%sError sending ACK for FIN on %s: %v%s", ColorRed, PrefixError, connKey, err, ColorReset)
 	}
 
 	// Immediately send our FIN (since we are a simple server)
-	log.Printf("Sending FIN for connection %s. Entering LAST_ACK.", connKey)
+	log.Printf("%s%sSending FIN for connection %s. Entering LAST_ACK.%s", ColorGreen, PrefixState, connKey, ColorReset)
 	finAckFlags := uint8(TCPFlagFIN | TCPFlagACK)
 	_, err = sendTCPPacket(conn.TunIFCE, conn.ServerIP, conn.ClientIP, uint16(conn.ServerPort), uint16(conn.ClientPort),
 		conn.ServerNextSeq, conn.ClientNextSeq, finAckFlags, nil)
 	if err != nil {
-		log.Printf("Error sending FIN+ACK on %s: %v", connKey, err)
+		log.Printf("%s%sError sending FIN+ACK on %s: %v%s", ColorRed, PrefixError, connKey, err, ColorReset)
 	}
 	conn.ServerNextSeq++ // Increment seq for FIN
 	conn.State = TCPStateLastAck
@@ -490,25 +489,24 @@ func handlePureACK(conn *TCPConnection, tcpHeader *TCPHeader) {
 	connKey := conn.ConnectionKey()
 	// Acknowledge received data if ACK number advances
 	if tcpHeader.AckNum > conn.ServerNextSeq {
-		log.Printf("Received ACK for %d bytes of data for %s. AckNum: %d -> %d", tcpHeader.AckNum-conn.ServerNextSeq, connKey, conn.ServerNextSeq, tcpHeader.AckNum)
+		log.Printf("%s%sReceived ACK for %d bytes of data for %s. AckNum: %d -> %d%s", ColorGreen, PrefixState, tcpHeader.AckNum-conn.ServerNextSeq, connKey, conn.ServerNextSeq, tcpHeader.AckNum, ColorReset)
 		conn.ServerNextSeq = tcpHeader.AckNum // Update server sequence number based on client's ACK
 	} else if tcpHeader.AckNum < conn.ServerNextSeq {
-		log.Printf("Received duplicate/old ACK for %s. AckNum: %d, ServerNextSeq: %d", connKey, tcpHeader.AckNum, conn.ServerNextSeq)
+		// log.Printf("%s%sReceived duplicate/old ACK for %s. AckNum: %d, ServerNextSeq: %d%s", ColorYellow, PrefixWarn, connKey, tcpHeader.AckNum, conn.ServerNextSeq, ColorReset)
 	} else {
-		log.Printf("Received ACK for %s (no new data acked). AckNum: %d", connKey, tcpHeader.AckNum)
+		log.Printf("%s%sReceived ACK for %s (no new data acked). AckNum: %d%s", ColorGreen, PrefixState, connKey, tcpHeader.AckNum, ColorReset)
 	}
 	// TODO: Handle window updates, retransmissions based on ACKs
 }
 
 func handleFINACK(conn *TCPConnection, tcpHeader *TCPHeader) {
 	connKey := conn.ConnectionKey()
-	log.Printf("Handling ACK for FIN for connection %s", connKey)
+	log.Printf("%s%sHandling ACK for FIN for connection %s%s", ColorGreen, PrefixState, connKey, ColorReset)
 	if tcpHeader.Flags&TCPFlagACK != 0 && tcpHeader.AckNum == conn.ServerNextSeq {
-		log.Printf("Connection %s CLOSED normally.", connKey)
+		log.Printf("%s%sConnection %s CLOSED normally.%s", ColorGreen, PrefixState, connKey, ColorReset)
 		delete(tcpConnections, connKey) // Remove from map
 	} else {
-		log.Printf("Unexpected packet in LAST_ACK state for %s. Flags: [%s], AckNum: %d (expected %d)",
-			connKey, tcpFlagsToString(tcpHeader.Flags), tcpHeader.AckNum, conn.ServerNextSeq)
+		log.Printf("%s%sUnexpected packet in LAST_ACK state for %s. Flags: [%s], AckNum: %d (expected %d)%s", ColorYellow, PrefixWarn, connKey, tcpFlagsToString(tcpHeader.Flags), tcpHeader.AckNum, conn.ServerNextSeq, ColorReset)
 	}
 }
 
@@ -580,8 +578,11 @@ func sendTCPPacket(ifce *water.Interface, srcIP, dstIP net.IP, srcPort, dstPort 
 	if ifce == nil {
 		return 0, fmt.Errorf("cannot send TCP packet: TUN interface is nil")
 	}
-	log.Printf("TCP SEND (TUN): %s:%d -> %s:%d Seq: %d Ack: %d Flags: [%s] Len: %d",
-		srcIP, srcPort, dstIP, dstPort, seqNum, ackNum, tcpFlagsToString(flags), len(payload))
+	log.Printf("%s%sTCP SEND (TUN): %s:%d -> %s:%d Seq: %d Ack: %d Flags: [%s] Len: %d%s",
+		ColorBlue, PrefixTCP,
+		srcIP, srcPort, dstIP, dstPort, seqNum, ackNum, tcpFlagsToString(flags), len(payload),
+		ColorReset,
+	)
 	tcpHeaderBytes, err := buildTCPHeader(srcIP, dstIP, srcPort, dstPort, seqNum, ackNum, flags, payload)
 	if err != nil {
 		return 0, fmt.Errorf("failed to build TCP header: %w", err)

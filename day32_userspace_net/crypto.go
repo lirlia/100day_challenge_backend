@@ -58,8 +58,7 @@ func PRF12(secret []byte, label string, seed []byte, length int) []byte {
 
 // deriveKeys computes the master secret and then the client/server write keys and IVs using TLS 1.2 PRF.
 func deriveKeys(conn *TCPConnection) error {
-	connKey := conn.ConnectionKey()
-	log.Printf("[TLS Crypto - %s] Starting key derivation.", connKey)
+	log.Printf("%s%sStarting key derivation.%s", ColorYellow, PrefixTLS, ColorReset)
 
 	// 1. Compute Pre-Master Secret (ECDHE)
 	if conn.ServerECDHPrivateKey == nil || conn.ClientECDHPublicKeyBytes == nil {
@@ -74,14 +73,14 @@ func deriveKeys(conn *TCPConnection) error {
 		return fmt.Errorf("ECDHE shared secret computation failed: %w", err)
 	}
 	conn.PreMasterSecret = preMasterSecret
-	log.Printf("[TLS Crypto - %s] Computed Pre-Master Secret (%d bytes).", connKey, len(preMasterSecret))
+	log.Printf("%s%sComputed Pre-Master Secret (%d bytes).%s", ColorYellow, PrefixTLS, len(preMasterSecret), ColorReset)
 
 	// 2. Compute Master Secret using PRF12
 	masterSecretLabel := "master secret"
 	seed := append(conn.ClientRandom, conn.ServerRandom...)
 	masterSecret := PRF12(conn.PreMasterSecret, masterSecretLabel, seed, 48) // 48 bytes for Master Secret
 	conn.MasterSecret = masterSecret
-	log.Printf("[TLS Crypto - %s] Derived Master Secret (%d bytes) using PRF12.", connKey, len(masterSecret))
+	log.Printf("%s%sDerived Master Secret (%d bytes) using PRF12.%s", ColorYellow, PrefixTLS, len(masterSecret), ColorReset)
 
 	// 3. Compute Key Block using PRF12
 	keyExpansionLabel := "key expansion"
@@ -97,7 +96,7 @@ func deriveKeys(conn *TCPConnection) error {
 	}
 
 	keyBlock := PRF12(conn.MasterSecret, keyExpansionLabel, keyBlockSeed, keyBlockLen)
-	log.Printf("[TLS Crypto - %s] Derived Key Block (%d bytes) using PRF12.", connKey, len(keyBlock))
+	log.Printf("%s%sDerived Key Block (%d bytes) using PRF12.%s", ColorYellow, PrefixTLS, len(keyBlock), ColorReset)
 
 	// 4. Assign Keys and IVs
 	offset := 0
@@ -118,11 +117,11 @@ func deriveKeys(conn *TCPConnection) error {
 	offset += clientIVLen
 	conn.ServerWriteIV = keyBlock[offset : offset+serverIVLen] // Implicit part
 
-	log.Printf("[TLS Crypto - %s] Assigned Keys and IVs.", connKey)
-	log.Printf("  ClientWriteKey (%d): %x...", len(conn.ClientWriteKey), conn.ClientWriteKey[:4])
-	log.Printf("  ServerWriteKey (%d): %x...", len(conn.ServerWriteKey), conn.ServerWriteKey[:4])
-	log.Printf("  ClientWriteIV  (%d): %x", len(conn.ClientWriteIV), conn.ClientWriteIV)
-	log.Printf("  ServerWriteIV  (%d): %x", len(conn.ServerWriteIV), conn.ServerWriteIV)
+	log.Printf("%s%sAssigned Keys and IVs.%s", ColorYellow, PrefixTLS, ColorReset)
+	log.Printf("%s%s  ClientWriteKey (%d): %x...%s", ColorGray, PrefixTLS, len(conn.ClientWriteKey), conn.ClientWriteKey[:4], ColorReset)
+	log.Printf("%s%s  ServerWriteKey (%d): %x...%s", ColorGray, PrefixTLS, len(conn.ServerWriteKey), conn.ServerWriteKey[:4], ColorReset)
+	log.Printf("%s%s  ClientWriteIV  (%d): %x%s", ColorGray, PrefixTLS, len(conn.ClientWriteIV), conn.ClientWriteIV, ColorReset)
+	log.Printf("%s%s  ServerWriteIV  (%d): %x%s", ColorGray, PrefixTLS, len(conn.ServerWriteIV), conn.ServerWriteIV, ColorReset)
 
 	return nil
 }
@@ -206,9 +205,7 @@ func encryptRecord(conn *TCPConnection, plaintext []byte, recordType uint8, vers
 		log.Printf("[Encrypt - %s] Encryption not enabled, sending plaintext for type %d.", connKey, recordType)
 		return plaintext, nil // Return plaintext if encryption is not yet enabled
 	}
-
-	log.Printf("[Encrypt - %s] Encrypting record. Type: %d, Plaintext Len: %d, SeqNum: %d",
-		connKey, recordType, len(plaintext), conn.ServerSequenceNum)
+	log.Printf("%s%sEncrypting record. Type: %d, Plaintext Len: %d, SeqNum: %d%s", ColorOrange, PrefixTLS, recordType, len(plaintext), conn.ServerSequenceNum, ColorReset)
 
 	// 1. Get AEAD cipher instance for server writes
 	// Need ServerWriteKey which is protected by mutex
@@ -242,8 +239,7 @@ func encryptRecord(conn *TCPConnection, plaintext []byte, recordType uint8, vers
 	// 6. Prepend explicit nonce to form the final payload
 	encryptedPayload := append(explicitNonce, ciphertextWithTag...)
 
-	log.Printf("[Encrypt - %s] Encryption successful. Encrypted Payload Len: %d (ExplicitNonce: %d, Ciphertext+Tag: %d)",
-		connKey, len(encryptedPayload), len(explicitNonce), len(ciphertextWithTag))
+	log.Printf("%s%sEncryption successful. Encrypted Payload Len: %d (ExplicitNonce: %d, Ciphertext+Tag: %d)%s", ColorOrange, PrefixTLS, len(encryptedPayload), len(explicitNonce), len(ciphertextWithTag), ColorReset)
 
 	// 7. Increment sequence number *after* successful encryption
 	conn.ServerSequenceNum++
@@ -276,8 +272,7 @@ func decryptRecord(conn *TCPConnection, encryptedPayload []byte, recordType uint
 		return encryptedPayload, nil // Return as is if decryption is not yet enabled
 	}
 
-	log.Printf("[Decrypt - %s] Decrypting record. Type: %d, Encrypted Len: %d, SeqNum: %d",
-		connKey, recordType, len(encryptedPayload), conn.ClientSequenceNum)
+	log.Printf("%s%sDecrypting record. Type: %d, Encrypted Len: %d, SeqNum: %d%s", ColorOrange, PrefixTLS, recordType, len(encryptedPayload), conn.ClientSequenceNum, ColorReset)
 
 	// 1. Check minimum length (explicit nonce + tag)
 	minLength := tls12GcmExplicitNonceLength + aesGcmTagLength
@@ -320,7 +315,7 @@ func decryptRecord(conn *TCPConnection, encryptedPayload []byte, recordType uint
 		return nil, fmt.Errorf("AEAD decryption failed: %w", err)
 	}
 
-	log.Printf("[Decrypt - %s] Decryption successful. Plaintext Len: %d", connKey, len(plaintext))
+	log.Printf("%s%sDecryption successful. Plaintext Len: %d%s", ColorOrange, PrefixTLS, len(plaintext), ColorReset)
 
 	// 7. Increment sequence number *after* successful decryption
 	conn.ClientSequenceNum++

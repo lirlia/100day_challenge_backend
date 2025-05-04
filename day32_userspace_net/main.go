@@ -14,6 +14,34 @@ import (
 	// For TUN interface interaction
 )
 
+// ANSI Color Codes
+const (
+	ColorReset   = "\033[0m"
+	ColorRed     = "\033[31m"
+	ColorGreen   = "\033[32m"
+	ColorYellow  = "\033[33m"
+	ColorBlue    = "\033[34m"
+	ColorPurple  = "\033[35m" // Purple for sending
+	ColorCyan    = "\033[36m" // Cyan for IP layer
+	ColorGray    = "\033[90m" // Gray for less important info / debug
+	ColorWhite   = "\033[97m"
+	ColorOrange  = "\033[38;5;214m" // Orange for TLS
+	ColorMagenta = "\033[95m"       // Magenta for H2 App Data
+)
+
+// Log Prefixes
+const (
+	PrefixIP    = "[IP]    " // Keep original padding for alignment
+	PrefixTCP   = "  [TCP]   "
+	PrefixTLS   = "    [TLS]   "
+	PrefixHTTP  = "      [HTTP]  "
+	PrefixH2    = "      [H2]    "
+	PrefixError = "[ERROR] "
+	PrefixWarn  = "[WARN]  "
+	PrefixInfo  = "[INFO]  "
+	PrefixState = "  [STATE] " // For TCP/TLS/H2 state changes
+)
+
 // Global variables for loaded certificate and key
 var (
 	serverCert             tls.Certificate
@@ -46,48 +74,50 @@ func main() {
 
 	// --- Load Certificate and Key ---
 	var err error
+	log.Printf("%s%sLoading server certificate and key...%s", ColorGreen, PrefixInfo, ColorReset)
 	serverCert, err = tls.LoadX509KeyPair("cert.pem", "key.pem")
 	if err != nil {
-		log.Fatalf("Failed to load server certificate and key: %v", err)
+		log.Fatalf("%s%sFailed to load server certificate and key: %v%s", ColorRed, PrefixError, err, ColorReset)
 	}
-	log.Println("Server certificate and key loaded successfully.")
+	log.Printf("%s%sServer certificate and key loaded successfully.%s", ColorGreen, PrefixInfo, ColorReset)
 	serverCertDER = serverCert.Certificate
 	// --- End Load Certificate and Key ---
 
 	switch *mode {
 	case "tun":
-		log.Println("Starting in TUN mode...")
+		log.Printf("%s%sStarting in TUN mode...%s", ColorGreen, PrefixInfo, ColorReset)
 		if *localIP == "" || *remoteIP == "" || *subnetMask == "" {
-			log.Fatal("localIP, remoteIP, and subnet flags are required for tun mode")
+			log.Fatalf("%s%slocalIP, remoteIP, and subnet flags are required for tun mode%s", ColorRed, PrefixError, ColorReset)
 		}
 		localIPAddr := net.ParseIP(*localIP)
 		remoteIPAddr := net.ParseIP(*remoteIP)
 		if localIPAddr == nil || remoteIPAddr == nil {
-			log.Fatal("Invalid localIP or remoteIP address format")
+			log.Fatalf("%s%sInvalid localIP or remoteIP address format%s", ColorRed, PrefixError, ColorReset)
 		}
 
 		// Setup TUN device
+		log.Printf("%s%sSetting up TUN device '%s'...%s", ColorGreen, PrefixInfo, *devName, ColorReset)
 		ifce, err := setupTUN(*devName, localIPAddr.String(), remoteIPAddr.String(), *subnetMask, *mtu)
 		if err != nil {
-			log.Fatalf("Failed to setup TUN device: %v", err)
+			log.Fatalf("%s%sFailed to setup TUN device: %v%s", ColorRed, PrefixError, err, ColorReset)
 		}
 		defer func() {
-			log.Println("Closing TUN device...")
+			log.Printf("%s%sClosing TUN device '%s'...%s", ColorYellow, PrefixInfo, ifce.Name(), ColorReset)
 			ifce.Close()
 		}()
 
-		log.Printf("TUN device '%s' configured successfully.", ifce.Name())
-		log.Printf(" Interface IP: %s, Peer IP: %s, Subnet Mask: %s", localIPAddr, remoteIPAddr, *subnetMask)
-		log.Printf("Listening for packets...")
+		log.Printf("%s%sTUN device '%s' configured successfully.%s", ColorGreen, PrefixInfo, ifce.Name(), ColorReset)
+		log.Printf("%s%s Interface IP: %s, Peer IP: %s, Subnet Mask: %s%s", ColorGreen, PrefixInfo, localIPAddr, remoteIPAddr, *subnetMask, ColorReset)
+		log.Printf("%s%sListening for packets...%s", ColorGreen, PrefixInfo, ColorReset)
 
 		go processPackets(ifce)
 
 	case "tcp":
-		log.Printf("Starting in TCP mode, listening on port %d...", *listenPort)
+		log.Printf("%s%sStarting in TCP mode, listening on port %d...%s", ColorGreen, PrefixInfo, *listenPort, ColorReset)
 		runTCPMode(*listenPort) // Call the TCP mode function (defined in tcp.go)
 
 	default:
-		log.Fatalf("Invalid mode: %s. Choose 'tun' or 'tcp'.", *mode)
+		log.Fatalf("%s%sInvalid mode: %s. Choose 'tun' or 'tcp'.%s", ColorRed, PrefixError, *mode, ColorReset)
 	}
 
 	// Setup signal handling for graceful shutdown (common to both modes)
@@ -95,7 +125,8 @@ func main() {
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	// Wait for termination signal
+	log.Printf("%s%sWaiting for shutdown signal (Ctrl+C)...%s", ColorGreen, PrefixInfo, ColorReset)
 	<-sigChan
-	log.Println("Shutting down signal received...")
+	log.Printf("\n%s%sShutting down signal received...%s", ColorYellow, PrefixInfo, ColorReset) // Add newline for clarity
 	// Cleanup (like closing TUN) is handled by defer or specific mode logic
 }

@@ -101,63 +101,62 @@ func parseTLSRecordHeader(headerBytes []byte) (*TLSRecordHeader, error) {
 
 // handleTLSBufferedData processes the data in the connection's ReceiveBuffer.
 func handleTLSBufferedData(ifce *water.Interface, conn *TCPConnection) {
-	connKey := conn.ConnectionKey()
 	if isDebug {
-		log.Printf("[TLS Debug - %s] Entering handleTLSBufferedData. Buffer len: %d", connKey, conn.ReceiveBuffer.Len())
+		log.Printf("%s%sBuffer len: %d", ColorGray, PrefixTLS, conn.ReceiveBuffer.Len())
 	}
 	for conn.ReceiveBuffer.Len() >= TLSRecordHeaderLength {
 		if isDebug {
-			log.Printf("[TLS Debug - %s] Loop start. Buffer len: %d", connKey, conn.ReceiveBuffer.Len())
+			log.Printf("%s%sLoop start. Buffer len: %d", ColorGray, PrefixTLS, conn.ReceiveBuffer.Len())
 		}
 		// Peek at the header without consuming it yet
 		headerBytes := conn.ReceiveBuffer.Bytes()[:TLSRecordHeaderLength]
 		if isDebug {
-			log.Printf("[TLS Debug - %s] Peeked header bytes: %x", connKey, headerBytes)
+			log.Printf("%s%sPeeked header bytes: %x", ColorGray, PrefixTLS, headerBytes)
 		}
 		recordHeader, err := parseTLSRecordHeader(headerBytes)
 		if err != nil {
-			log.Printf("[TLS Error - %s] Error parsing TLS record header: %v. Buffer len: %d", connKey, err, conn.ReceiveBuffer.Len())
+			log.Printf("%s%sError parsing TLS record header: %v. Buffer len: %d", ColorRed, PrefixError, err, conn.ReceiveBuffer.Len())
 			conn.ReceiveBuffer.Reset()
 			return
 		}
 		if isDebug {
-			log.Printf("[TLS Debug - %s] Parsed Record Header: Type=%d, Version=0x%04x, Length=%d", connKey, recordHeader.Type, recordHeader.Version, recordHeader.Length)
+			log.Printf("%s%sParsed Record Header: Type=%d, Version=0x%04x, Length=%d", ColorGray, PrefixTLS, recordHeader.Type, recordHeader.Version, recordHeader.Length)
 		}
 
 		// Check if the full record payload is in the buffer
 		fullRecordLength := TLSRecordHeaderLength + int(recordHeader.Length)
 		if conn.ReceiveBuffer.Len() < fullRecordLength {
 			if isDebug {
-				log.Printf("[TLS Debug - %s] Partial TLS record. Need %d bytes, have %d. Waiting.", connKey, fullRecordLength, conn.ReceiveBuffer.Len())
+				log.Printf("%s%sPartial TLS record. Need %d bytes, have %d. Waiting.", ColorGray, PrefixTLS, fullRecordLength, conn.ReceiveBuffer.Len())
 			}
 			return // Need more data
 		}
 
 		// Consume the full record from the buffer
 		if isDebug {
-			log.Printf("[TLS Debug - %s] Consuming full record (%d bytes) from buffer.", connKey, fullRecordLength)
+			log.Printf("%s%sConsuming full record (%d bytes) from buffer.", ColorGray, PrefixTLS, fullRecordLength)
 		}
 		fullRecordBytes := make([]byte, fullRecordLength)
 		n, err := conn.ReceiveBuffer.Read(fullRecordBytes)
 		if err != nil || n != fullRecordLength { // Should not happen if length check above is correct, but be safe
-			log.Printf("[TLS Error - %s] Error consuming record from buffer: read %d bytes, err %v. Expected %d", connKey, n, err, fullRecordLength)
+			log.Printf("%s%sError consuming record from buffer: read %d bytes, err %v. Expected %d", ColorRed, PrefixError, n, err, fullRecordLength)
 			conn.ReceiveBuffer.Reset()
 			return
 		}
 		recordPayload := fullRecordBytes[TLSRecordHeaderLength:]
 		if isDebug {
-			log.Printf("[TLS Debug - %s] Consumed record. Payload length: %d. Remaining buffer: %d", connKey, len(recordPayload), conn.ReceiveBuffer.Len())
+			log.Printf("%s%sConsumed record. Payload length: %d. Remaining buffer: %d", ColorGray, PrefixTLS, len(recordPayload), conn.ReceiveBuffer.Len())
 		}
 
 		// Decrypt payload if encryption is enabled
 		decryptedPayload, err := decryptRecord(conn, recordPayload, recordHeader.Type, recordHeader.Version)
 		if err != nil {
-			log.Printf("[TLS Error - %s] Failed to decrypt record: %v. Closing connection.", connKey, err)
+			log.Printf("%s%sFailed to decrypt record: %v. Closing connection.", ColorRed, PrefixError, err)
 			// TODO: Send Alert (decode_error or decrypt_error)
 			// TODO: Close connection gracefully
-			conn.ReceiveBuffer.Reset()      // Clear buffer
-			delete(tcpConnections, connKey) // Remove connection (simplified closure)
-			return                          // Stop processing this connection
+			conn.ReceiveBuffer.Reset()                   // Clear buffer
+			delete(tcpConnections, conn.ConnectionKey()) // Remove connection (simplified closure)
+			return                                       // Stop processing this connection
 		}
 		// Use decryptedPayload for subsequent processing
 		recordPayload = decryptedPayload // Replace original payload with decrypted one
@@ -166,22 +165,22 @@ func handleTLSBufferedData(ifce *water.Interface, conn *TCPConnection) {
 		switch recordHeader.Type {
 		case TLSRecordTypeHandshake:
 			if isDebug {
-				log.Printf("[TLS Debug - %s] Dispatching to handleTLSHandshakeRecord with decrypted payload (%d bytes).", connKey, len(recordPayload))
+				log.Printf("%s%sDispatching to handleTLSHandshakeRecord with decrypted payload (%d bytes).", ColorGray, PrefixTLS, len(recordPayload))
 			}
 			handleTLSHandshakeRecord(ifce, conn, recordPayload)
 		case TLSRecordTypeChangeCipherSpec:
-			log.Printf("[TLS Info - %s] Received ChangeCipherSpec Record (Payload: %x)", connKey, recordPayload)
+			log.Printf("%s%sReceived ChangeCipherSpec Record (Payload: %x)", ColorOrange, PrefixInfo, recordPayload)
 			if conn.TLSState == TLSStateExpectingChangeCipherSpec {
-				log.Printf("[TLS Info - %s] Processing ChangeCipherSpec. Enabling encryption for receiving. TLS State -> TLSStateExpectingFinished", connKey)
+				log.Printf("%s%sProcessing ChangeCipherSpec. Enabling encryption for receiving. TLS State -> TLSStateExpectingFinished", ColorOrange, PrefixInfo)
 				conn.TLSState = TLSStateExpectingFinished
 				conn.EncryptionEnabled = true // Enable encryption for incoming records
 				conn.ClientSequenceNum = 0    // Reset sequence number for receiving
 			} else {
-				log.Printf("[TLS Warn - %s] Unexpected ChangeCipherSpec received in state %v", connKey, conn.TLSState)
+				log.Printf("%s%sUnexpected ChangeCipherSpec received in state %v", ColorYellow, PrefixWarn, conn.TLSState)
 				// Consider sending an alert?
 			}
 		case TLSRecordTypeApplicationData:
-			log.Printf("[TLS Info - %s] Received Application Data Record (Length: %d)", connKey, len(recordPayload))
+			// log.Printf("%s%sReceived Application Data Record (Length: %d)", ColorOrange, PrefixInfo, len(recordPayload))
 			// Check negotiated protocol AFTER handshake is complete
 			conn.Mutex.Lock()
 			negotiatedProto := conn.NegotiatedProtocol
@@ -190,42 +189,41 @@ func handleTLSBufferedData(ifce *water.Interface, conn *TCPConnection) {
 
 			if tlsState == TLSStateHandshakeComplete {
 				if negotiatedProto == "h2" {
-					log.Printf("[HTTP/2 - %s] Handshake complete. Dispatching %d bytes to HTTP/2 handler.", connKey, len(recordPayload))
+					// log.Printf("%s%sHandshake complete. Dispatching %d bytes to HTTP/2 handler.", ColorOrange, PrefixInfo, len(recordPayload))
 					// Initialize H2 buffer if it's the first AppData for H2
 					// No longer needed here as handleHTTP2Data initializes on first use
 					handleHTTP2Data(conn, recordPayload) // Pass conn and the decrypted payload
 
 				} else {
-					log.Printf("[HTTP/1.1 - %s] Handshake complete. Dispatching %d bytes to HTTP/1.1 handler.", connKey, len(recordPayload))
+					log.Printf("%s%sHandshake complete. Dispatching %d bytes to HTTP/1.1 handler.", ColorOrange, PrefixInfo, len(recordPayload))
 					handleHTTPData(ifce, conn, recordPayload) // Existing function for HTTP/1.1
 				}
 			} else {
-				log.Printf("[TLS Warn - %s] Received Application Data before handshake complete (State: %v). Ignoring.", connKey, tlsState)
+				log.Printf("%s%sReceived Application Data before handshake complete (State: %v). Ignoring.", ColorYellow, PrefixWarn, tlsState)
 			}
 		default:
-			log.Printf("[TLS Warn - %s] Received unknown TLS Record Type %d", recordHeader.Type, connKey)
+			// log.Printf("%s%sReceived unknown TLS Record Type %d", ColorYellow, PrefixWarn, recordHeader.Type)
 		}
 	}
 	if isDebug {
-		log.Printf("[TLS Debug - %s] Exiting handleTLSBufferedData. Buffer len: %d", connKey, conn.ReceiveBuffer.Len())
+		log.Printf("%s%sExiting handleTLSBufferedData. Buffer len: %d", ColorGray, PrefixTLS, conn.ReceiveBuffer.Len())
 	}
 }
 
 // handleTLSHandshakeRecord processes a received TLS Handshake record payload.
 func handleTLSHandshakeRecord(ifce *water.Interface, conn *TCPConnection, payload []byte) {
-	connKey := conn.ConnectionKey()
 	if isDebug {
-		log.Printf("[TLS Debug - %s] Entering handleTLSHandshakeRecord. Payload len: %d", connKey, len(payload))
+		log.Printf("%s%sEntering handleTLSHandshakeRecord. Payload len: %d", ColorGray, PrefixTLS, len(payload))
 	}
 	if len(payload) < 4 { // Need at least handshake type (1) + length (3)
-		log.Printf("[TLS Error - %s] Handshake record payload too short (%d bytes)", connKey, len(payload))
+		log.Printf("%s%sHandshake record payload too short (%d bytes)", ColorRed, PrefixError, len(payload))
 		return
 	}
 
 	handshakeType := payload[0]
 	length := uint32(payload[1])<<16 | uint32(payload[2])<<8 | uint32(payload[3])
 	if isDebug {
-		log.Printf("[TLS Debug - %s] Parsed Handshake Header: Type=%d, Length=%d", connKey, handshakeType, length)
+		log.Printf("%s%sParsed Handshake Header: Type=%d, Length=%d", ColorGray, PrefixTLS, handshakeType, length)
 	}
 
 	// Record the raw handshake message (Type(1) + Length(3) + Body(length))
@@ -234,12 +232,12 @@ func handleTLSHandshakeRecord(ifce *water.Interface, conn *TCPConnection, payloa
 	conn.HandshakeMessages.Write(fullHandshakeMessage)
 	conn.Mutex.Unlock()
 	if isDebug {
-		log.Printf("[TLS Handshake Buf - %s] Added Received Handshake Msg Type %d (%d bytes). Total len: %d", connKey, handshakeType, len(fullHandshakeMessage), conn.HandshakeMessages.Len())
+		log.Printf("%s%sAdded Received Handshake Msg Type %d (%d bytes). Total len: %d", ColorGray, PrefixTLS, handshakeType, len(fullHandshakeMessage), conn.HandshakeMessages.Len())
 	}
 
 	message := payload[4:]
 	if uint32(len(message)) < length {
-		log.Printf("[TLS Error - %s] Handshake message incomplete. Declared length %d, actual data %d", connKey, length, len(message))
+		log.Printf("%s%sHandshake message incomplete. Declared length %d, actual data %d", ColorRed, PrefixError, length, len(message))
 		return
 	}
 	message = message[:length] // Ensure we only process the declared length
@@ -247,141 +245,140 @@ func handleTLSHandshakeRecord(ifce *water.Interface, conn *TCPConnection, payloa
 	switch handshakeType {
 	case TLSHandshakeTypeClientHello:
 		if isDebug {
-			log.Printf("[TLS Debug - %s] Dispatching to handleClientHello.", connKey)
+			log.Printf("%s%sDispatching to handleClientHello.", ColorGray, PrefixTLS)
 		}
 		if conn.TLSState == TLSStateExpectingClientHello {
 			handleClientHello(ifce, conn, message)
 		} else {
-			log.Printf("[TLS Warn - %s] Unexpected ClientHello received in state %v", connKey, conn.TLSState)
+			log.Printf("%s%sUnexpected ClientHello received in state %v", ColorYellow, PrefixWarn, conn.TLSState)
 		}
 	case TLSHandshakeTypeClientKeyExchange:
-		log.Printf("[TLS Info - %s] Received ClientKeyExchange Message (Length: %d)", connKey, len(message))
+		log.Printf("%s%sReceived ClientKeyExchange Message (Length: %d)", ColorOrange, PrefixInfo, len(message))
 		if conn.TLSState == TLSStateExpectingClientKeyExchange {
 			// Parse the ClientKeyExchange message to get the client's public key
 			if len(message) < 1 {
-				log.Printf("[TLS Error - %s] ClientKeyExchange message too short (no length byte)", connKey)
+				log.Printf("%s%sClientKeyExchange message too short (no length byte)", ColorRed, PrefixError)
 				// TODO: Send Alert
 				return
 			}
 			clientPubKeyLen := int(message[0])
 			if len(message) != 1+clientPubKeyLen {
-				log.Printf("[TLS Error - %s] ClientKeyExchange message length mismatch (expected 1+%d, got %d)", connKey, clientPubKeyLen, len(message))
+				log.Printf("%s%sClientKeyExchange message length mismatch (expected 1+%d, got %d)", ColorRed, PrefixError, clientPubKeyLen, len(message))
 				// TODO: Send Alert
 				return
 			}
 			conn.ClientECDHPublicKeyBytes = make([]byte, clientPubKeyLen)
 			copy(conn.ClientECDHPublicKeyBytes, message[1:])
 			if isDebug {
-				log.Printf("[TLS Debug - %s] Parsed Client ECDHE Public Key (%d bytes): %x", connKey, clientPubKeyLen, conn.ClientECDHPublicKeyBytes)
+				log.Printf("%s%sParsed Client ECDHE Public Key (%d bytes): %x", ColorGray, PrefixTLS, clientPubKeyLen, conn.ClientECDHPublicKeyBytes)
 			}
 
 			// --- Key Derivation --- Start
 			var err error // Declare err variable
 			err = deriveKeys(conn)
 			if err != nil {
-				log.Printf("[TLS Error - %s] Key derivation failed: %v", connKey, err)
+				log.Printf("%s%sKey derivation failed: %v", ColorRed, PrefixError, err)
 				// TODO: Send Alert (handshake_failure)
 				return
 			}
-			log.Printf("[TLS Info - %s] Key derivation successful.", connKey)
+			log.Printf("%s%sKey derivation successful.", ColorOrange, PrefixInfo)
 			// --- Key Derivation --- End
 
-			log.Printf("[TLS Info - %s] ClientKeyExchange processed. TLS State -> TLSStateExpectingChangeCipherSpec", connKey)
+			log.Printf("%s%sClientKeyExchange processed. TLS State -> TLSStateExpectingChangeCipherSpec", ColorOrange, PrefixInfo)
 
 			conn.TLSState = TLSStateExpectingChangeCipherSpec
 		} else {
-			log.Printf("[TLS Warn - %s] Unexpected ClientKeyExchange received in state %v", connKey, conn.TLSState)
+			log.Printf("%s%sUnexpected ClientKeyExchange received in state %v", ColorYellow, PrefixWarn, conn.TLSState)
 		}
 	case TLSHandshakeTypeFinished:
-		log.Printf("[TLS Info - %s] Received Finished Message (Length: %d)", connKey, len(message))
+		log.Printf("%s%sReceived Finished Message (Length: %d)", ColorOrange, PrefixInfo, len(message))
 		if conn.TLSState == TLSStateExpectingFinished {
 			// Verify the Finished message
 			conn.Mutex.Lock() // Lock for reading handshake messages and master secret
 			currentHandshakeBytes := conn.HandshakeMessages.Bytes()
 			if len(currentHandshakeBytes) < len(fullHandshakeMessage) { // Sanity check
 				conn.Mutex.Unlock()
-				log.Printf("[TLS Error - %s] Handshake buffer inconsistency during Finished verification.", connKey)
+				log.Printf("%s%sHandshake buffer inconsistency during Finished verification.", ColorRed, PrefixError)
 				// TODO: Send Alert
 				return
 			}
 			hshakeMessagesForClientVerify := currentHandshakeBytes[:len(currentHandshakeBytes)-len(fullHandshakeMessage)]
 			hshakeHash := sha256.Sum256(hshakeMessagesForClientVerify)
 			if isDebug {
-				log.Printf("[TLS Finished Verify - %s] Calculated Handshake Hash for Client Verify (%d bytes msgs): %x", connKey, len(hshakeMessagesForClientVerify), hshakeHash[:])
+				log.Printf("%s%sCalculated Handshake Hash for Client Verify (%d bytes msgs): %x", ColorGray, PrefixTLS, len(hshakeMessagesForClientVerify), hshakeHash[:])
 			}
 
 			// Compute expected client verify_data
 			expectedClientVerifyData, err := computeFinishedHash(conn.MasterSecret, "client finished", hshakeHash[:])
 			if err != nil {
 				conn.Mutex.Unlock()
-				log.Printf("[TLS Error - %s] Failed to compute expected client Finished verify_data: %v", connKey, err)
+				log.Printf("%s%sFailed to compute expected client Finished verify_data: %v", ColorRed, PrefixError, err)
 				// TODO: Send Alert (handshake_failure)
 				return
 			}
 			if isDebug {
-				log.Printf("[TLS Finished Verify - %s] Computed Expected Client Verify Data (%d bytes): %x", connKey, len(expectedClientVerifyData), expectedClientVerifyData)
+				log.Printf("%s%sComputed Expected Client Verify Data (%d bytes): %x", ColorGray, PrefixTLS, len(expectedClientVerifyData), expectedClientVerifyData)
 			}
 			conn.Mutex.Unlock() // Unlock after reading state
 
 			// Extract received verify_data (message = payload[4:4+length])
 			receivedVerifyData := message
 			if isDebug {
-				log.Printf("[TLS Finished Verify - %s] Received Client Verify Data (%d bytes): %x", connKey, len(receivedVerifyData), receivedVerifyData)
+				log.Printf("%s%sReceived Client Verify Data (%d bytes): %x", ColorGray, PrefixTLS, len(receivedVerifyData), receivedVerifyData)
 			}
 
 			// Compare expected and received verify_data
 			if !bytes.Equal(expectedClientVerifyData, receivedVerifyData) {
-				log.Printf("[TLS Error - %s] Client Finished verification failed! Hash mismatch.", connKey)
+				log.Printf("%s%sClient Finished verification failed! Hash mismatch.", ColorRed, PrefixError)
 				// TODO: Send Alert (decrypt_error or handshake_failure)
 				// TODO: Close connection
 				return
 			}
 
-			log.Printf("[TLS Info - %s] Client Finished verification successful.", connKey)
+			log.Printf("%s%sClient Finished verification successful.", ColorOrange, PrefixInfo)
 
 			// If verification is successful, proceed to send server CCS and Finished
 			if isDebug {
-				log.Printf("[TLS Debug - %s] Client Finished verified. Sending Server CCS & Finished.", connKey)
+				log.Printf("%s%sClient Finished verified. Sending Server CCS & Finished.", ColorGray, PrefixTLS)
 			}
 			sendServerCCSAndFinished(ifce, conn)
 		} else {
-			log.Printf("[TLS Warn - %s] Unexpected Finished received in state %v", connKey, conn.TLSState)
+			log.Printf("%s%sUnexpected Finished received in state %v", ColorYellow, PrefixWarn, conn.TLSState)
 		}
 	default:
-		log.Printf("[TLS Info - %s] Unhandled Handshake Message Type %d", connKey, handshakeType)
+		log.Printf("%s%sUnhandled Handshake Message Type %d", ColorYellow, PrefixWarn, handshakeType)
 	}
 	if isDebug {
-		log.Printf("[TLS Debug - %s] Exiting handleTLSHandshakeRecord.", connKey)
+		log.Printf("%s%sExiting handleTLSHandshakeRecord.", ColorGray, PrefixTLS)
 	}
 }
 
 // handleClientHello parses ClientHello and sends ServerHello, Certificate, SKE, ServerHelloDone.
 func handleClientHello(ifce *water.Interface, conn *TCPConnection, message []byte) {
-	connKey := conn.ConnectionKey()
 	if isDebug {
-		log.Printf("[TLS Debug - %s] Entering handleClientHello. Message len: %d", connKey, len(message))
+		log.Printf("%s%sEntering handleClientHello. Message len: %d", ColorGray, PrefixTLS, len(message))
 	}
 	info, err := parseClientHello(message)
 	if err != nil {
-		log.Printf("[TLS Error - %s] Error parsing ClientHello: %v", connKey, err)
+		log.Printf("%s%sError parsing ClientHello: %v", ColorRed, PrefixError, err)
 		// TODO: Send Alert Handshake Failure?
 		return
 	}
 
-	log.Printf("[TLS Info - %s] Parsed ClientHello:", connKey)
-	log.Printf("  [TLS Info - %s]   Version: 0x%04x", connKey, info.Version)
+	log.Printf("%s%sParsed ClientHello:", ColorOrange, PrefixInfo)
+	log.Printf("  %s%s   Version: 0x%04x", ColorOrange, PrefixInfo, info.Version)
 	if isDebug {
-		log.Printf("  [TLS Debug - %s]   Random: %x", connKey, info.Random)
+		log.Printf("  %s%s   Random: %x", ColorGray, PrefixTLS, info.Random)
 	}
-	log.Printf("  [TLS Info - %s]   SessionID Length: %d", connKey, len(info.SessionID))
-	log.Printf("  [TLS Info - %s]   Cipher Suites Count: %d", connKey, len(info.CipherSuites))
+	log.Printf("  %s%s   SessionID Length: %d", ColorOrange, PrefixInfo, len(info.SessionID))
+	log.Printf("  %s%s   Cipher Suites Count: %d", ColorOrange, PrefixInfo, len(info.CipherSuites))
 	// Only log a few cipher suites to avoid excessive logging
 	numSuitesToShow := 5
 	if len(info.CipherSuites) < numSuitesToShow {
 		numSuitesToShow = len(info.CipherSuites)
 	}
-	log.Printf("  [TLS Info - %s]   Cipher Suites (first %d): %v", connKey, numSuitesToShow, info.CipherSuites[:numSuitesToShow])
-	log.Printf("  [TLS Info - %s]   ALPN Protocols Offered: %v", connKey, info.ALPNProtocols)
+	log.Printf("  %s%s   Cipher Suites (first %d): %v", ColorOrange, PrefixInfo, numSuitesToShow, info.CipherSuites[:numSuitesToShow])
+	log.Printf("  %s%s   ALPN Protocols Offered: %v", ColorOrange, PrefixInfo, info.ALPNProtocols)
 
 	// --- Server Parameter Selection ---
 	// Choose Cipher Suite (Simple example: prefer ECDHE_RSA_AES_128_GCM_SHA256 if offered)
@@ -399,11 +396,11 @@ func handleClientHello(ifce *water.Interface, conn *TCPConnection, message []byt
 		}
 	}
 	if chosenSuite == 0 {
-		log.Printf("[TLS Error - %s] No supported cipher suite found.", connKey)
+		log.Printf("%s%sNo supported cipher suite found.", ColorRed, PrefixError)
 		// TODO: Send Alert Handshake Failure (illegal_parameter or handshake_failure)
 		return
 	}
-	log.Printf("[TLS Info - %s] Chosen Cipher Suite: 0x%04x", connKey, chosenSuite)
+	log.Printf("%s%sChosen Cipher Suite: 0x%04x", ColorOrange, PrefixInfo, chosenSuite)
 
 	// Choose ALPN Protocol
 	chosenALPN := "" // Default to HTTP/1.1 (no ALPN response)
@@ -419,12 +416,12 @@ func handleClientHello(ifce *water.Interface, conn *TCPConnection, message []byt
 		// Server supports and prefers H2 when offered
 		chosenALPN = "h2"
 		conn.NegotiatedProtocol = "h2"
-		log.Printf("[TLS Info - %s] ALPN: Client offered 'h2', server selected 'h2'.", connKey)
+		log.Printf("%s%sALPN: Client offered 'h2', server selected 'h2'.", ColorOrange, PrefixInfo)
 	} else if len(info.ALPNProtocols) > 0 {
-		log.Printf("[TLS Info - %s] ALPN: Client offered %v, but not 'h2'. Server selects no protocol (implies HTTP/1.1).", connKey, info.ALPNProtocols)
+		log.Printf("%s%sALPN: Client offered %v, but not 'h2'. Server selects no protocol (implies HTTP/1.1).", ColorOrange, PrefixInfo, info.ALPNProtocols)
 		conn.NegotiatedProtocol = "" // Explicitly set to empty for non-h2 offers
 	} else {
-		log.Printf("[TLS Info - %s] ALPN: No ALPN extension offered by client.", connKey)
+		log.Printf("%s%sALPN: No ALPN extension offered by client.", ColorOrange, PrefixInfo)
 		conn.NegotiatedProtocol = "" // Explicitly set to empty
 	}
 
@@ -432,7 +429,7 @@ func handleClientHello(ifce *water.Interface, conn *TCPConnection, message []byt
 	serverRandom := make([]byte, 32)
 	_, err = rand.Read(serverRandom) // Use crypto/rand directly
 	if err != nil {
-		log.Printf("[TLS Error - %s] Failed to generate server random: %v", connKey, err)
+		log.Printf("%s%sFailed to generate server random: %v", ColorRed, PrefixError, err)
 		return
 	}
 
@@ -444,17 +441,17 @@ func handleClientHello(ifce *water.Interface, conn *TCPConnection, message []byt
 
 	serverHelloMsg, err := buildServerHello(info.Version, serverRandom, nil, chosenSuite, 0, chosenALPN)
 	if err != nil {
-		log.Printf("[TLS Error - %s] Failed to build ServerHello message: %v", connKey, err)
+		log.Printf("%s%sFailed to build ServerHello message: %v", ColorRed, PrefixError, err)
 		return
 	}
 
 	// --- Send ServerHello Record ---
 	if isDebug {
-		log.Printf("[TLS Debug - %s] Sending ServerHello record (%d bytes).", connKey, len(serverHelloMsg))
+		log.Printf("%s%sSending ServerHello record (%d bytes).", ColorGray, PrefixTLS, len(serverHelloMsg))
 	}
 	serverHelloRecord, err := buildTLSRecord(TLSRecordTypeHandshake, 0x0303, serverHelloMsg)
 	if err != nil {
-		log.Printf("[TLS Error - %s] Failed to build ServerHello record: %v", connKey, err)
+		log.Printf("%s%sFailed to build ServerHello record: %v", ColorRed, PrefixError, err)
 		return
 	}
 
@@ -463,43 +460,43 @@ func handleClientHello(ifce *water.Interface, conn *TCPConnection, message []byt
 	conn.HandshakeMessages.Write(serverHelloMsg)
 	conn.Mutex.Unlock()
 	if isDebug {
-		log.Printf("[TLS Handshake Buf - %s] Added ServerHello (%d bytes). Total len: %d", connKey, len(serverHelloMsg), conn.HandshakeMessages.Len())
+		log.Printf("%s%sAdded ServerHello (%d bytes). Total len: %d", ColorGray, PrefixTLS, len(serverHelloMsg), conn.HandshakeMessages.Len())
 	}
 
 	// Send the TLS record containing the ServerHello message
 	sentBytes, err := sendRawTLSRecord(ifce, conn, serverHelloRecord)
 	if err != nil {
-		log.Printf("[TLS Error - %s] Failed to send ServerHello record: %v", connKey, err)
+		log.Printf("%s%sFailed to send ServerHello record: %v", ColorRed, PrefixError, err)
 		return
 	}
 	// Update ServerNextSeq based on sent payload bytes (TUN mode)
 	conn.Mutex.Lock()
 	conn.ServerNextSeq += uint32(sentBytes)
 	if isDebug {
-		log.Printf("[SeqNum Update - %s] After ServerHello: ServerNextSeq = %d (added %d)", connKey, conn.ServerNextSeq, sentBytes)
+		log.Printf("%s%sAfter ServerHello: ServerNextSeq = %d (added %d)", ColorGray, PrefixTLS, conn.ServerNextSeq, sentBytes)
 	}
 	conn.Mutex.Unlock()
 
 	// Update TLS State
 	conn.TLSState = TLSStateSentServerHello
-	log.Printf("[TLS Info - %s] ServerHello sent. TLS State -> %v", connKey, conn.TLSState)
+	log.Printf("%s%sServerHello sent. TLS State -> %v", ColorOrange, PrefixInfo, conn.TLSState)
 
 	// --- Send Certificate Message (Dummy) ---
 	if isDebug {
-		log.Printf("[TLS Debug - %s] Preparing dummy Certificate message.", connKey)
+		log.Printf("%s%sPreparing dummy Certificate message.", ColorGray, PrefixTLS)
 	}
 	certMsg, err := buildCertificateMessage()
 	if err != nil {
-		log.Printf("[TLS Error - %s] Failed to build Certificate message: %v", connKey, err)
+		log.Printf("%s%sFailed to build Certificate message: %v", ColorRed, PrefixError, err)
 		return
 	}
 	certRecord, err := buildTLSRecord(TLSRecordTypeHandshake, 0x0303, certMsg)
 	if err != nil {
-		log.Printf("[TLS Error - %s] Failed to build Certificate record: %v", connKey, err)
+		log.Printf("%s%sFailed to build Certificate record: %v", ColorRed, PrefixError, err)
 		return
 	}
 	if isDebug {
-		log.Printf("[TLS Debug - %s] Sending Certificate record (%d bytes).", connKey, len(certRecord))
+		log.Printf("%s%sSending Certificate record (%d bytes).", ColorGray, PrefixTLS, len(certRecord))
 	}
 
 	// Record the handshake message BEFORE sending
@@ -507,44 +504,44 @@ func handleClientHello(ifce *water.Interface, conn *TCPConnection, message []byt
 	conn.HandshakeMessages.Write(certMsg)
 	conn.Mutex.Unlock()
 	if isDebug {
-		log.Printf("[TLS Handshake Buf - %s] Added Certificate (%d bytes). Total len: %d", connKey, len(certMsg), conn.HandshakeMessages.Len())
+		log.Printf("%s%sAdded Certificate (%d bytes). Total len: %d", ColorGray, PrefixTLS, len(certMsg), conn.HandshakeMessages.Len())
 	}
 
 	sentBytes, err = sendRawTLSRecord(ifce, conn, certRecord)
 	if err != nil {
-		log.Printf("[TLS Error - %s] Failed to send Certificate record: %v", connKey, err)
+		log.Printf("%s%sFailed to send Certificate record: %v", ColorRed, PrefixError, err)
 		return // Certificate送信エラーならここで終了
 	}
 	// Update ServerNextSeq based on sent payload bytes (TUN mode)
 	conn.Mutex.Lock()
 	conn.ServerNextSeq += uint32(sentBytes)
 	if isDebug {
-		log.Printf("[SeqNum Update - %s] After Certificate: ServerNextSeq = %d (added %d)", connKey, conn.ServerNextSeq, sentBytes)
+		log.Printf("%s%sAfter Certificate: ServerNextSeq = %d (added %d)", ColorGray, PrefixTLS, conn.ServerNextSeq, sentBytes)
 	}
 	conn.Mutex.Unlock()
 
 	conn.TLSState = TLSStateSentCertificate
-	log.Printf("[TLS Info - %s] Certificate sent. TLS State -> %v", connKey, conn.TLSState)
+	log.Printf("%s%sCertificate sent. TLS State -> %v", ColorOrange, PrefixInfo, conn.TLSState)
 
 	if isDebug {
-		log.Printf("[TLS Debug - %s] Reached point before SKE generation.", connKey)
+		log.Printf("%s%sReached point before SKE generation.", ColorGray, PrefixTLS)
 	}
 
 	// --- Build and Send ServerKeyExchange (ECDHE + Signature) ---
 	if isDebug {
-		log.Printf("[TLS Debug - %s] Preparing REAL ServerKeyExchange message.", connKey)
+		log.Printf("%s%sPreparing REAL ServerKeyExchange message.", ColorGray, PrefixTLS)
 	}
 
 	// 1. Generate ECDHE keys using P-256
 	curve := ecdh.P256()
 	serverECDHPrivateKey, err := curve.GenerateKey(rand.Reader)
 	if err != nil {
-		log.Printf("[TLS Error - %s] Failed to generate ECDHE private key: %v", connKey, err)
+		log.Printf("%s%sFailed to generate ECDHE private key: %v", ColorRed, PrefixError, err)
 		return
 	}
 	serverECDHPublicKeyBytes := serverECDHPrivateKey.PublicKey().Bytes()
 	if isDebug {
-		log.Printf("[TLS Debug - %s] Generated ECDHE Public Key (%d bytes): %x", connKey, len(serverECDHPublicKeyBytes), serverECDHPublicKeyBytes)
+		log.Printf("%s%sGenerated ECDHE Public Key (%d bytes): %x", ColorGray, PrefixTLS, len(serverECDHPublicKeyBytes), serverECDHPublicKeyBytes)
 	}
 
 	// Store server's private key in connection state
@@ -558,34 +555,34 @@ func handleClientHello(ifce *water.Interface, conn *TCPConnection, message []byt
 	skeParams.Write(serverECDHPublicKeyBytes)
 	skeParamsBytes := skeParams.Bytes()
 	if isDebug {
-		log.Printf("[TLS Debug - %s] Constructed SKE Params (%d bytes): %x", connKey, len(skeParamsBytes), skeParamsBytes)
+		log.Printf("%s%sConstructed SKE Params (%d bytes): %x", ColorGray, PrefixTLS, len(skeParamsBytes), skeParamsBytes)
 	}
 
 	// 3. Prepare data for signature (Client Random + Server Random + SKE Params)
 	dataToSign := append(info.Random, serverRandom...)
 	dataToSign = append(dataToSign, skeParamsBytes...)
 	if isDebug {
-		log.Printf("[TLS Debug - %s] Data to Sign (%d bytes) constructed.", connKey, len(dataToSign))
+		log.Printf("%s%sData to Sign (%d bytes) constructed.", ColorGray, PrefixTLS, len(dataToSign))
 	}
 
 	// 4. Build the full SKE message (including signature)
 	if serverCert.PrivateKey == nil {
-		log.Printf("[TLS Error - %s] Server private key is nil, cannot sign SKE.", connKey)
+		log.Printf("%s%sServer private key is nil, cannot sign SKE.", ColorRed, PrefixError)
 		return
 	}
 	skeMsg, err := buildServerKeyExchange(dataToSign, skeParamsBytes, serverCert.PrivateKey)
 	if err != nil {
-		log.Printf("[TLS Error - %s] Failed to build ServerKeyExchange message with signature: %v", connKey, err)
+		log.Printf("%s%sFailed to build ServerKeyExchange message with signature: %v", ColorRed, PrefixError, err)
 		return
 	}
 	if isDebug {
-		log.Printf("[TLS Debug - %s] Built full SKE message (%d bytes).", connKey, len(skeMsg))
+		log.Printf("%s%sBuilt full SKE message (%d bytes).", ColorGray, PrefixTLS, len(skeMsg))
 	}
 
 	// 5. Build and Send the SKE Record
 	skeRecord, err := buildTLSRecord(TLSRecordTypeHandshake, 0x0303, skeMsg)
 	if err != nil {
-		log.Printf("[TLS Error - %s] Failed to build ServerKeyExchange record: %v", connKey, err)
+		log.Printf("%s%sFailed to build ServerKeyExchange record: %v", ColorRed, PrefixError, err)
 		return
 	}
 
@@ -594,40 +591,40 @@ func handleClientHello(ifce *water.Interface, conn *TCPConnection, message []byt
 	conn.HandshakeMessages.Write(skeMsg)
 	conn.Mutex.Unlock()
 	if isDebug {
-		log.Printf("[TLS Handshake Buf - %s] Added ServerKeyExchange (%d bytes). Total len: %d", connKey, len(skeMsg), conn.HandshakeMessages.Len())
+		log.Printf("%s%sAdded ServerKeyExchange (%d bytes). Total len: %d", ColorGray, PrefixTLS, len(skeMsg), conn.HandshakeMessages.Len())
 	}
 
 	if isDebug {
-		log.Printf("[TLS Debug - %s] Sending REAL ServerKeyExchange record (%d bytes).", connKey, len(skeRecord))
+		log.Printf("%s%sSending REAL ServerKeyExchange record (%d bytes).", ColorGray, PrefixTLS, len(skeRecord))
 	}
 	sentBytes, err = sendRawTLSRecord(ifce, conn, skeRecord)
 	if err != nil {
-		log.Printf("[TLS Error - %s] Failed to send ServerKeyExchange record: %v", connKey, err)
+		log.Printf("%s%sFailed to send ServerKeyExchange record: %v", ColorRed, PrefixError, err)
 		return
 	}
 	// Update ServerNextSeq based on sent payload bytes (TUN mode)
 	conn.Mutex.Lock()
 	conn.ServerNextSeq += uint32(sentBytes)
 	if isDebug {
-		log.Printf("[SeqNum Update - %s] After SKE: ServerNextSeq = %d (added %d)", connKey, conn.ServerNextSeq, sentBytes)
+		log.Printf("%s%sAfter SKE: ServerNextSeq = %d (added %d)", ColorGray, PrefixTLS, conn.ServerNextSeq, sentBytes)
 	}
 	conn.Mutex.Unlock()
 
 	conn.TLSState = TLSStateSentServerKeyExchange
-	log.Printf("[TLS Info - %s] REAL ServerKeyExchange sent. TLS State -> %v", connKey, conn.TLSState)
+	log.Printf("%s%sREAL ServerKeyExchange sent. TLS State -> %v", ColorOrange, PrefixInfo, conn.TLSState)
 
 	// --- Send ServerHelloDone Message ---
 	if isDebug {
-		log.Printf("[TLS Debug - %s] Preparing ServerHelloDone message.", connKey)
+		log.Printf("%s%sPreparing ServerHelloDone message.", ColorGray, PrefixTLS)
 	}
 	helloDoneMsg, err := buildServerHelloDoneMessage()
 	if err != nil {
-		log.Printf("[TLS Error - %s] Failed to build ServerHelloDone message: %v", connKey, err)
+		log.Printf("%s%sFailed to build ServerHelloDone message: %v", ColorRed, PrefixError, err)
 		return
 	}
 	helloDoneRecord, err := buildTLSRecord(TLSRecordTypeHandshake, 0x0303, helloDoneMsg)
 	if err != nil {
-		log.Printf("[TLS Error - %s] Failed to build ServerHelloDone record: %v", connKey, err)
+		log.Printf("%s%sFailed to build ServerHelloDone record: %v", ColorRed, PrefixError, err)
 		return
 	}
 
@@ -636,41 +633,41 @@ func handleClientHello(ifce *water.Interface, conn *TCPConnection, message []byt
 	conn.HandshakeMessages.Write(helloDoneMsg)
 	conn.Mutex.Unlock()
 	if isDebug {
-		log.Printf("[TLS Handshake Buf - %s] Added ServerHelloDone (%d bytes). Total len: %d", connKey, len(helloDoneMsg), conn.HandshakeMessages.Len())
+		log.Printf("%s%sAdded ServerHelloDone (%d bytes). Total len: %d", ColorGray, PrefixTLS, len(helloDoneMsg), conn.HandshakeMessages.Len())
 	}
 
 	if isDebug {
-		log.Printf("[TLS Debug - %s] Sending ServerHelloDone record (%d bytes).", connKey, len(helloDoneRecord))
+		log.Printf("%s%sSending ServerHelloDone record (%d bytes).", ColorGray, PrefixTLS, len(helloDoneRecord))
 	}
 	sentBytes, err = sendRawTLSRecord(ifce, conn, helloDoneRecord)
 	if err != nil {
-		log.Printf("[TLS Error - %s] Failed to send ServerHelloDone record: %v", connKey, err)
+		log.Printf("%s%sFailed to send ServerHelloDone record: %v", ColorRed, PrefixError, err)
 		return
 	}
 	// Update ServerNextSeq based on sent payload bytes (TUN mode)
 	conn.Mutex.Lock()
 	conn.ServerNextSeq += uint32(sentBytes)
 	if isDebug {
-		log.Printf("[SeqNum Update - %s] After ServerHelloDone: ServerNextSeq = %d (added %d)", connKey, conn.ServerNextSeq, sentBytes)
+		log.Printf("%s%sAfter ServerHelloDone: ServerNextSeq = %d (added %d)", ColorGray, PrefixTLS, conn.ServerNextSeq, sentBytes)
 	}
 	conn.Mutex.Unlock()
 
 	conn.TLSState = TLSStateSentServerHelloDone
-	log.Printf("[TLS Info - %s] ServerHelloDone sent. TLS State -> %v", connKey, conn.TLSState)
+	log.Printf("%s%sServerHelloDone sent. TLS State -> %v", ColorOrange, PrefixInfo, conn.TLSState)
 
 	// Update final state after server messages are sent
 	conn.TLSState = TLSStateExpectingClientKeyExchange
-	log.Printf("[TLS Info - %s] Server finished sending handshake messages. Waiting for ClientKeyExchange. TLS State -> %v", connKey, conn.TLSState)
+	log.Printf("%s%sServer finished sending handshake messages. Waiting for ClientKeyExchange. TLS State -> %v", ColorOrange, PrefixInfo, conn.TLSState)
 
 	if isDebug {
-		log.Printf("[TLS Debug - %s] Exiting handleClientHello successfully.", connKey)
+		log.Printf("%s%sExiting handleClientHello successfully.", ColorGray, PrefixTLS)
 	}
 }
 
 // parseClientHello parses the ClientHello handshake message body, including ALPN.
 func parseClientHello(message []byte) (*ClientHelloInfo, error) {
 	if isDebug {
-		log.Printf("[TLS Debug] Entering parseClientHello. Message len: %d", len(message))
+		log.Printf("%s%sEntering parseClientHello. Message len: %d", ColorGray, PrefixTLS, len(message))
 	}
 	if len(message) < 38 {
 		return nil, fmt.Errorf("message too short (got %d, expected min 38)", len(message))
@@ -680,18 +677,18 @@ func parseClientHello(message []byte) (*ClientHelloInfo, error) {
 	info.Version = binary.BigEndian.Uint16(message[offset : offset+2])
 	offset += 2
 	if isDebug {
-		log.Printf("[TLS Debug] Parsed Version: 0x%04x, Offset: %d", info.Version, offset)
+		log.Printf("%s%sParsed Version: 0x%04x, Offset: %d", ColorGray, PrefixTLS, info.Version, offset)
 	}
 	info.Random = make([]byte, 32)
 	copy(info.Random, message[offset:offset+32])
 	offset += 32
 	if isDebug {
-		log.Printf("[TLS Debug] Parsed Random (%d bytes), Offset: %d", len(info.Random), offset)
+		log.Printf("%s%sParsed Random (%d bytes), Offset: %d", ColorGray, PrefixTLS, len(info.Random), offset)
 	}
 	sessionIDLen := int(message[offset])
 	offset += 1
 	if isDebug {
-		log.Printf("[TLS Debug] Parsed SessionIDLen: %d, Offset: %d", sessionIDLen, offset)
+		log.Printf("%s%sParsed SessionIDLen: %d, Offset: %d", ColorGray, PrefixTLS, sessionIDLen, offset)
 	}
 	if offset+sessionIDLen > len(message) {
 		return nil, fmt.Errorf("message too short for Session ID (need %d, have %d)", offset+sessionIDLen, len(message))
@@ -699,7 +696,7 @@ func parseClientHello(message []byte) (*ClientHelloInfo, error) {
 	info.SessionID = message[offset : offset+sessionIDLen]
 	offset += sessionIDLen
 	if isDebug {
-		log.Printf("[TLS Debug] Parsed SessionID (%d bytes), Offset: %d", len(info.SessionID), offset)
+		log.Printf("%s%sParsed SessionID (%d bytes), Offset: %d", ColorGray, PrefixTLS, len(info.SessionID), offset)
 	}
 	if offset+2 > len(message) {
 		return nil, fmt.Errorf("message too short for Cipher Suites Length (need %d, have %d)", offset+2, len(message))
@@ -707,7 +704,7 @@ func parseClientHello(message []byte) (*ClientHelloInfo, error) {
 	cipherSuitesLen := int(binary.BigEndian.Uint16(message[offset : offset+2]))
 	offset += 2
 	if isDebug {
-		log.Printf("[TLS Debug] Parsed CipherSuitesLen: %d, Offset: %d", cipherSuitesLen, offset)
+		log.Printf("%s%sParsed CipherSuitesLen: %d, Offset: %d", ColorGray, PrefixTLS, cipherSuitesLen, offset)
 	}
 	if offset+cipherSuitesLen > len(message) {
 		return nil, fmt.Errorf("message too short for Cipher Suites (need %d, have %d)", offset+cipherSuitesLen, len(message))
@@ -722,7 +719,7 @@ func parseClientHello(message []byte) (*ClientHelloInfo, error) {
 		offset += 2
 	}
 	if isDebug {
-		log.Printf("[TLS Debug] Parsed %d Cipher Suites, Offset: %d", numCipherSuites, offset)
+		log.Printf("%s%sParsed %d Cipher Suites, Offset: %d", ColorGray, PrefixTLS, numCipherSuites, offset)
 	}
 	if offset+1 > len(message) {
 		return nil, fmt.Errorf("message too short for Compression Methods Length (need %d, have %d)", offset+1, len(message))
@@ -730,7 +727,7 @@ func parseClientHello(message []byte) (*ClientHelloInfo, error) {
 	compressionMethodsLen := int(message[offset])
 	offset += 1
 	if isDebug {
-		log.Printf("[TLS Debug] Parsed CompressionMethodsLen: %d, Offset: %d", compressionMethodsLen, offset)
+		log.Printf("%s%sParsed CompressionMethodsLen: %d, Offset: %d", ColorGray, PrefixTLS, compressionMethodsLen, offset)
 	}
 	if offset+compressionMethodsLen > len(message) {
 		return nil, fmt.Errorf("message too short for Compression Methods (need %d, have %d)", offset+compressionMethodsLen, len(message))
@@ -743,7 +740,7 @@ func parseClientHello(message []byte) (*ClientHelloInfo, error) {
 		extensionsTotalLen := int(binary.BigEndian.Uint16(message[offset : offset+2]))
 		offset += 2
 		if isDebug {
-			log.Printf("[TLS Debug] Extensions total length: %d. Current offset: %d, Message Length: %d", extensionsTotalLen, offset, len(message))
+			log.Printf("%s%sExtensions total length: %d. Current offset: %d, Message Length: %d", ColorGray, PrefixTLS, extensionsTotalLen, offset, len(message))
 		}
 		if offset+extensionsTotalLen > len(message) {
 			return nil, fmt.Errorf("message too short for declared Extensions length (need %d, have %d)", offset+extensionsTotalLen, len(message))
@@ -759,7 +756,7 @@ func parseClientHello(message []byte) (*ClientHelloInfo, error) {
 			extLen := int(binary.BigEndian.Uint16(message[offset : offset+2]))
 			offset += 2
 			if isDebug {
-				log.Printf("[TLS Debug]   Parsing Extension Type: %d, Length: %d. Current offset: %d", extType, extLen, offset)
+				log.Printf("%s%s   Parsing Extension Type: %d, Length: %d. Current offset: %d", ColorGray, PrefixTLS, extType, extLen, offset)
 			}
 
 			if offset+extLen > extensionsEnd {
@@ -771,30 +768,30 @@ func parseClientHello(message []byte) (*ClientHelloInfo, error) {
 			// Parse specific extensions (ALPN)
 			if extType == TLSExtensionTypeALPN {
 				if isDebug {
-					log.Printf("[TLS Debug]   Found ALPN Extension (Data: %x)", extData)
+					log.Printf("%s%s   Found ALPN Extension (Data: %x)", ColorGray, PrefixTLS, extData)
 				}
 				parsedALPN, err := parseALPNExtension(extData)
 				if err != nil {
-					log.Printf("[TLS Warn] Failed to parse ALPN extension data: %v", err)
+					log.Printf("%s%sFailed to parse ALPN extension data: %v", ColorYellow, PrefixWarn, err)
 				} else {
 					info.ALPNProtocols = parsedALPN
 					if isDebug {
-						log.Printf("[TLS Debug]   Parsed ALPN Protocols: %v", info.ALPNProtocols)
+						log.Printf("%s%s   Parsed ALPN Protocols: %v", ColorGray, PrefixTLS, info.ALPNProtocols)
 					}
 				}
 			}
 		}
 		if offset != extensionsEnd {
-			log.Printf("[TLS Warn] Extensions parsing finished at offset %d, but expected end was %d", offset, extensionsEnd)
+			log.Printf("%s%sExtensions parsing finished at offset %d, but expected end was %d", ColorYellow, PrefixWarn, offset, extensionsEnd)
 		}
 	} else {
 		if isDebug {
-			log.Printf("[TLS Debug] No Extensions present.")
+			log.Printf("%s%sNo Extensions present.", ColorGray, PrefixTLS)
 		}
 	}
 
 	if isDebug {
-		log.Printf("[TLS Debug] Exiting parseClientHello successfully.")
+		log.Printf("%s%sExiting parseClientHello successfully.", ColorGray, PrefixTLS)
 	}
 	return info, nil
 }
@@ -848,7 +845,7 @@ func buildServerHello(clientVersion uint16, serverRandom []byte, sessionID []byt
 		copy(alpnExt[7:], []byte(alpnProtocol))
 		extensionsBytes = alpnExt
 		if isDebug {
-			log.Printf("[TLS Build] Added ALPN extension for protocol: %s (ExtBytes: %x)", alpnProtocol, extensionsBytes)
+			log.Printf("%s%sAdded ALPN extension for protocol: %s (ExtBytes: %x)", ColorGray, PrefixTLS, alpnProtocol, extensionsBytes)
 		}
 	}
 
@@ -910,20 +907,17 @@ func buildTLSRecord(recordType uint8, version uint16, payload []byte) ([]byte, e
 
 // sendRawTLSRecord sends a raw TLS record over the connection (TUN or TCP).
 func sendRawTLSRecord(ifce *water.Interface, conn *TCPConnection, record []byte) (int, error) {
-	connKey := conn.ConnectionKey()
-
 	outerRecordType := record[0]
 	recordVersion := uint16(0x0303)
 	plaintextPayload := record[TLSRecordHeaderLength:]
 
 	payloadToSend, err := encryptRecord(conn, plaintextPayload, outerRecordType, recordVersion)
 	if err != nil {
-		return 0, fmt.Errorf("failed to encrypt record payload (Type: %d) for %s: %w", outerRecordType, connKey, err)
+		return 0, fmt.Errorf("failed to encrypt record payload (Type: %d) for %s: %w", outerRecordType, conn.ConnectionKey(), err)
 	}
 
 	if isDebug {
-		log.Printf("[Send Raw Debug - %s] Building final record. OuterType: %d, OuterVersion: 0x%04x, PayloadLen: %d",
-			connKey, outerRecordType, recordVersion, len(payloadToSend))
+		log.Printf("%s%sBuilding final record. OuterType: %d, OuterVersion: 0x%04x, PayloadLen: %d", ColorGray, PrefixTLS, outerRecordType, recordVersion, len(payloadToSend))
 	}
 
 	finalRecord := make([]byte, TLSRecordHeaderLength+len(payloadToSend))
@@ -947,61 +941,60 @@ func sendRawTLSRecord(ifce *water.Interface, conn *TCPConnection, record []byte)
 
 	if tcpConn != nil { // TCP Mode
 		if isDebug {
-			log.Printf("[Send Raw TCP - %s] Sending %d bytes via net.Conn.", connKey, len(finalRecord))
+			log.Printf("%s%sSending %d bytes via net.Conn.", ColorGray, PrefixTLS, len(finalRecord))
 		}
 		n, err := tcpConn.Write(finalRecord)
 		if err != nil {
-			return 0, fmt.Errorf("TCPConn Write failed for TLS record (Type: %d) for %s: %w", outerRecordType, connKey, err)
+			return 0, fmt.Errorf("TCPConn Write failed for TLS record (Type: %d) for %s: %w", outerRecordType, conn.ConnectionKey(), err)
 		}
 		if n != len(finalRecord) {
-			return 0, fmt.Errorf("TCPConn short write for TLS record (Type: %d) for %s: wrote %d, expected %d", outerRecordType, connKey, n, len(finalRecord))
+			return 0, fmt.Errorf("TCPConn short write for TLS record (Type: %d) for %s: wrote %d, expected %d", outerRecordType, conn.ConnectionKey(), n, len(finalRecord))
 		}
 		if isDebug {
-			log.Printf("[Send Raw TCP OK - %s] Sent TLS record. Type: %d, Final Len: %d", connKey, outerRecordType, len(finalRecord))
+			log.Printf("%s%sSent TLS record. Type: %d, Final Len: %d", ColorGray, PrefixTLS, outerRecordType, len(finalRecord))
 		}
 		sentPayloadBytes = 0
 
 	} else if tunIFCE != nil { // TUN Mode
 		if isDebug {
-			log.Printf("[Send Raw TUN - %s] Sending %d bytes via TUN interface.", connKey, len(finalRecord))
+			log.Printf("%s%sSending %d bytes via TUN interface.", ColorGray, PrefixTLS, len(finalRecord))
 		}
 		flags := uint8(TCPFlagPSH | TCPFlagACK)
 		sentBytes, err := sendTCPPacket(tunIFCE, serverIP, clientIP, uint16(serverPort), uint16(clientPort),
 			serverNextSeq, clientNextSeq, flags, finalRecord)
 		if err != nil {
-			return 0, fmt.Errorf("sendTCPPacket failed for TLS record (Type: %d) for %s: %w", outerRecordType, connKey, err)
+			return 0, fmt.Errorf("sendTCPPacket failed for TLS record (Type: %d) for %s: %w", outerRecordType, conn.ConnectionKey(), err)
 		}
 		sentPayloadBytes = sentBytes
 		if isDebug {
-			log.Printf("[Send Raw TUN OK - %s] Sent TLS record. Type: %d, Final Len: %d, PayloadBytes: %d", connKey, outerRecordType, len(finalRecord), sentPayloadBytes)
+			log.Printf("%s%sSent TLS record. Type: %d, Final Len: %d, PayloadBytes: %d", ColorGray, PrefixTLS, outerRecordType, len(finalRecord), sentPayloadBytes)
 		}
 
 	} else {
-		return 0, fmt.Errorf("sendRawTLSRecord called with invalid connection state for %s (no TCPConn or TunIFCE)", connKey)
+		return 0, fmt.Errorf("sendRawTLSRecord called with invalid connection state for %s (no TCPConn or TunIFCE)", conn.ConnectionKey())
 	}
 
 	return sentPayloadBytes, nil
 }
 
 func handleTLSData(ifce *water.Interface, conn *TCPConnection, payload []byte) {
-	connKey := conn.ConnectionKey()
 	if isDebug {
-		log.Printf("[TLS Debug - %s] Entering handleTLSData with %d bytes payload.", connKey, len(payload))
+		log.Printf("%s%sEntering handleTLSData with %d bytes payload.", ColorGray, PrefixTLS, len(payload))
 	}
 	n, err := conn.ReceiveBuffer.Write(payload)
 	if err != nil {
-		log.Printf("[TLS Error - %s] Failed to write payload to buffer: %v", connKey, err)
+		log.Printf("%s%sFailed to write payload to buffer: %v", ColorRed, PrefixError, err)
 		return
 	}
 	if n != len(payload) {
-		log.Printf("[TLS Warn - %s] Short write to buffer? Wrote %d, expected %d", connKey, n, len(payload))
+		log.Printf("%s%sShort write to buffer? Wrote %d, expected %d", ColorGray, PrefixTLS, n, len(payload))
 	}
 	if isDebug {
-		log.Printf("[TLS Debug - %s] Payload written to buffer. Buffer length now: %d. Calling handleTLSBufferedData.", connKey, conn.ReceiveBuffer.Len())
+		log.Printf("%s%sPayload written to buffer. Buffer length now: %d. Calling handleTLSBufferedData.", ColorGray, PrefixTLS, conn.ReceiveBuffer.Len())
 	}
 	handleTLSBufferedData(ifce, conn)
 	if isDebug {
-		log.Printf("[TLS Debug - %s] Exiting handleTLSData.", connKey)
+		log.Printf("%s%sExiting handleTLSData.", ColorGray, PrefixTLS)
 	}
 }
 
@@ -1098,31 +1091,30 @@ func buildServerKeyExchange(dataToSign []byte, skeParamsBytes []byte, privateKey
 
 // sendServerCCSAndFinished sends the Server ChangeCipherSpec and Finished messages.
 func sendServerCCSAndFinished(ifce *water.Interface, conn *TCPConnection) {
-	connKey := conn.ConnectionKey()
-	log.Printf("[TLS Info - %s] Sending Server ChangeCipherSpec and Finished.", connKey)
+	log.Printf("%s%sSending Server ChangeCipherSpec and Finished.", ColorOrange, PrefixInfo)
 
 	ccsPayload := []byte{0x01}
 	ccsRecord, err := buildTLSRecord(TLSRecordTypeChangeCipherSpec, 0x0303, ccsPayload)
 	if err != nil {
-		log.Printf("[TLS Error - %s] Failed to build ChangeCipherSpec record: %v", connKey, err)
+		log.Printf("%s%sFailed to build ChangeCipherSpec record: %v", ColorRed, PrefixError, err)
 		return
 	}
 	if isDebug {
-		log.Printf("[TLS Debug - %s] Sending ChangeCipherSpec record (%d bytes).", connKey, len(ccsRecord))
+		log.Printf("%s%sSending ChangeCipherSpec record (%d bytes).", ColorGray, PrefixTLS, len(ccsRecord))
 	}
 	sentBytes, err := sendRawTLSRecord(ifce, conn, ccsRecord)
 	if err != nil {
-		log.Printf("[TLS Error - %s] Failed to send ChangeCipherSpec record: %v", connKey, err)
+		log.Printf("%s%sFailed to send ChangeCipherSpec record: %v", ColorRed, PrefixError, err)
 		return
 	}
 	conn.Mutex.Lock()
 	conn.ServerNextSeq += uint32(sentBytes)
 	if isDebug {
-		log.Printf("[SeqNum Update - %s] After CCS: ServerNextSeq = %d (added %d)", connKey, conn.ServerNextSeq, sentBytes)
+		log.Printf("%s%sAfter CCS: ServerNextSeq = %d (added %d)", ColorGray, PrefixTLS, conn.ServerNextSeq, sentBytes)
 	}
 	conn.Mutex.Unlock()
 
-	log.Printf("[TLS Info - %s] ChangeCipherSpec sent.", connKey)
+	log.Printf("%s%sChangeCipherSpec sent.", ColorOrange, PrefixInfo)
 
 	conn.EncryptionEnabled = true
 	conn.ServerSequenceNum = 0
@@ -1131,23 +1123,23 @@ func sendServerCCSAndFinished(ifce *water.Interface, conn *TCPConnection) {
 	hshakeMessages := conn.HandshakeMessages.Bytes()
 	hshakeHash := sha256.Sum256(hshakeMessages)
 	if isDebug {
-		log.Printf("[TLS Finished - %s] Calculated Handshake Hash (%d bytes total msgs): %x", connKey, len(hshakeMessages), hshakeHash[:])
+		log.Printf("%s%sCalculated Handshake Hash (%d bytes total msgs): %x", ColorGray, PrefixTLS, len(hshakeMessages), hshakeHash[:])
 	}
 
 	serverVerifyData, err := computeFinishedHash(conn.MasterSecret, "server finished", hshakeHash[:])
 	if err != nil {
 		conn.Mutex.Unlock()
-		log.Printf("[TLS Error - %s] Failed to compute server Finished verify_data: %v", connKey, err)
+		log.Printf("%s%sFailed to compute server Finished verify_data: %v", ColorRed, PrefixError, err)
 		return
 	}
 	if isDebug {
-		log.Printf("[TLS Finished - %s] Computed Server Verify Data (%d bytes): %x", connKey, len(serverVerifyData), serverVerifyData)
+		log.Printf("%s%sComputed Server Verify Data (%d bytes): %x", ColorGray, PrefixTLS, len(serverVerifyData), serverVerifyData)
 	}
 	conn.Mutex.Unlock()
 
 	finishedMsg, err := buildFinishedMessage(serverVerifyData)
 	if err != nil {
-		log.Printf("[TLS Error - %s] Failed to build Finished message: %v", connKey, err)
+		log.Printf("%s%sFailed to build Finished message: %v", ColorRed, PrefixError, err)
 		return
 	}
 
@@ -1155,36 +1147,36 @@ func sendServerCCSAndFinished(ifce *water.Interface, conn *TCPConnection) {
 	conn.HandshakeMessages.Write(finishedMsg)
 	conn.Mutex.Unlock()
 	if isDebug {
-		log.Printf("[TLS Handshake Buf - %s] Added Server Finished (%d bytes). Total len: %d", connKey, len(finishedMsg), conn.HandshakeMessages.Len())
+		log.Printf("%s%sAdded Server Finished (%d bytes). Total len: %d", ColorGray, PrefixTLS, len(finishedMsg), conn.HandshakeMessages.Len())
 	}
 
 	finishedRecord, err := buildTLSRecord(TLSRecordTypeHandshake, 0x0303, finishedMsg)
 	if err != nil {
-		log.Printf("[TLS Error - %s] Failed to build Finished record: %v", connKey, err)
+		log.Printf("%s%sFailed to build Finished record: %v", ColorRed, PrefixError, err)
 		return
 	}
 
 	if isDebug {
-		log.Printf("[TLS Debug - %s] Sending Finished record (%d bytes).", connKey, len(finishedRecord))
+		log.Printf("%s%sSending Finished record (%d bytes).", ColorGray, PrefixTLS, len(finishedRecord))
 	}
 	sentBytes, err = sendRawTLSRecord(ifce, conn, finishedRecord)
 	if err != nil {
-		log.Printf("[TLS Error - %s] Failed to send Finished record: %v", connKey, err)
+		log.Printf("%s%sFailed to send Finished record: %v", ColorRed, PrefixError, err)
 		return
 	}
 	conn.Mutex.Lock()
 	conn.ServerNextSeq += uint32(sentBytes)
 	if isDebug {
-		log.Printf("[SeqNum Update - %s] After Finished: ServerNextSeq = %d (added %d)", connKey, conn.ServerNextSeq, sentBytes)
+		log.Printf("%s%sAfter Finished: ServerNextSeq = %d (added %d)", ColorGray, PrefixTLS, conn.ServerNextSeq, sentBytes)
 	}
 	conn.HandshakeMessages.Write(finishedMsg)
 	if isDebug {
-		log.Printf("[TLS Handshake Buf - %s] Added Sent Finished Msg (%d bytes). Total len: %d", connKey, len(finishedMsg), conn.HandshakeMessages.Len())
+		log.Printf("%s%sAdded Sent Finished Msg (%d bytes). Total len: %d", ColorGray, PrefixTLS, len(finishedMsg), conn.HandshakeMessages.Len())
 	}
 	conn.Mutex.Unlock()
 
 	conn.TLSState = TLSStateHandshakeComplete
-	log.Printf("[TLS Info - %s] Server Finished sent. TLS Handshake considered complete (dummy). TLS State -> %v", connKey, conn.TLSState)
+	log.Printf("%s%sServer Finished sent. TLS Handshake considered complete (dummy). TLS State -> %v", ColorOrange, PrefixInfo, conn.TLSState)
 }
 
 // buildFinishedMessage constructs the Finished handshake message with the provided verify_data.
@@ -1206,13 +1198,12 @@ func buildFinishedMessage(verifyData []byte) ([]byte, error) {
 
 // startTLSHandshake initiates the TLS handshake process for a TCP connection.
 func startTLSHandshake(conn *TCPConnection) error {
-	connKey := conn.ConnectionKey()
-	log.Printf("[TLS Start - %s] Initiating TLS handshake in TCP mode.", connKey)
+	log.Printf("%s%sInitiating TLS handshake in TCP mode.", ColorOrange, PrefixInfo)
 
 	conn.Mutex.Lock()
 	if conn.TCPConn == nil {
 		conn.Mutex.Unlock()
-		return fmt.Errorf("startTLSHandshake called with nil TCPConn for %s", connKey)
+		return fmt.Errorf("startTLSHandshake called with nil TCPConn for %s", conn.ConnectionKey())
 	}
 	conn.TLSState = TLSStateExpectingClientHello
 	conn.Mutex.Unlock()
@@ -1220,38 +1211,38 @@ func startTLSHandshake(conn *TCPConnection) error {
 	readBuf := make([]byte, 4096)
 
 	for {
-		log.Printf("[TLS Read - %s] Waiting to read data from TCP connection...", connKey)
+		log.Printf("%s%sWaiting to read data from TCP connection...", ColorGray, PrefixTLS)
 		n, err := conn.TCPConn.Read(readBuf)
 		if err != nil {
-			log.Printf("[TLS Read Error - %s] Error reading from TCP connection: %v", connKey, err)
-			return fmt.Errorf("TCP read error during handshake for %s: %w", connKey, err)
+			log.Printf("%s%sError reading from TCP connection: %v", ColorRed, PrefixError, err)
+			return fmt.Errorf("TCP read error during handshake for %s: %w", conn.ConnectionKey(), err)
 		}
 
 		if n > 0 {
-			log.Printf("[TLS Read - %s] Read %d bytes from TCP connection.", connKey, n)
+			log.Printf("%s%sRead %d bytes from TCP connection.", ColorGray, PrefixTLS, n)
 			handleTLSData(nil, conn, readBuf[:n])
 
 			conn.Mutex.Lock()
 			currentState := conn.TLSState
 			conn.Mutex.Unlock()
 			if currentState == TLSStateHandshakeComplete {
-				log.Printf("[TLS Handshake OK - %s] Handshake completed successfully in TCP mode.", connKey)
+				log.Printf("%s%sHandshake completed successfully in TCP mode.", ColorOrange, PrefixInfo)
 				break
 			}
 		}
 	}
 
-	log.Printf("[TLS AppData - %s] Handshake complete. Entering Application Data phase.", connKey)
+	log.Printf("%s%sHandshake complete. Entering Application Data phase.", ColorOrange, PrefixInfo)
 	for {
-		log.Printf("[TLS Read - %s] Waiting for Application Data...", connKey)
+		log.Printf("%s%sWaiting for Application Data...", ColorGray, PrefixTLS)
 		n, err := conn.TCPConn.Read(readBuf)
 		if err != nil {
-			log.Printf("[TLS Read Error/EOF - %s] Error reading from TCP connection in AppData phase: %v. Closing connection.", connKey, err)
+			log.Printf("%s%sError reading from TCP connection in AppData phase: %v. Closing connection.", ColorRed, PrefixError, err)
 			break
 		}
 
 		if n > 0 {
-			log.Printf("[TLS Read - %s] Read %d bytes (AppData phase).", connKey, n)
+			log.Printf("%s%sRead %d bytes (AppData phase).", ColorGray, PrefixTLS, n)
 			handleTLSData(nil, conn, readBuf[:n])
 		}
 	}

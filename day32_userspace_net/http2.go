@@ -54,17 +54,16 @@ const (
 
 // handleHTTP2Data processes decrypted Application Data as HTTP/2 frames.
 func handleHTTP2Data(conn *TCPConnection, payload []byte) {
-	connKey := conn.ConnectionKey()
 	conn.Mutex.Lock()
 	// Initialize buffer on first use
 	if conn.HTTP2ReceiveBuffer == nil {
 		conn.HTTP2ReceiveBuffer = new(bytes.Buffer)
-		log.Printf("[HTTP/2 - %s] Initialized HTTP/2 Receive Buffer.", connKey)
+		log.Printf("%s%sInitialized HTTP/2 Receive Buffer.%s", ColorMagenta, PrefixH2, ColorReset)
 	}
 	// Append new payload
 	n, err := conn.HTTP2ReceiveBuffer.Write(payload)
 	if err != nil || n != len(payload) {
-		log.Printf("[HTTP/2 Error - %s] Failed to write payload to H2 buffer: wrote %d, err %v", connKey, n, err)
+		log.Printf("%s%sFailed to write payload to H2 buffer: wrote %d, err %v%s", ColorRed, PrefixError, n, err, ColorReset)
 		conn.Mutex.Unlock()
 		// TODO: Consider GOAWAY or RST_STREAM
 		return
@@ -74,7 +73,7 @@ func handleHTTP2Data(conn *TCPConnection, payload []byte) {
 	conn.Mutex.Unlock()
 
 	if isDebug {
-		log.Printf("[HTTP/2 Debug - %s] Appended %d bytes to H2 buffer. State: %v, Buffer len: %d", connKey, len(payload), currentH2State, h2BufferLen)
+		log.Printf("%s%sAppended %d bytes to H2 buffer. State: %v, Buffer len: %d%s", ColorGray, PrefixH2, len(payload), currentH2State, h2BufferLen, ColorReset)
 	}
 
 	// 1. Check for Client Preface if in H2StateExpectPreface
@@ -84,7 +83,7 @@ func handleHTTP2Data(conn *TCPConnection, payload []byte) {
 			prefaceBytes := make([]byte, len(ClientPreface))
 			_, err := conn.HTTP2ReceiveBuffer.Read(prefaceBytes) // Consume preface
 			if err != nil {
-				log.Printf("[HTTP/2 Error - %s] Failed to read preface from buffer: %v", connKey, err)
+				log.Printf("%s%sFailed to read preface from buffer: %v%s", ColorRed, PrefixError, err, ColorReset)
 				conn.Mutex.Unlock()
 				// TODO: GOAWAY
 				return
@@ -92,21 +91,21 @@ func handleHTTP2Data(conn *TCPConnection, payload []byte) {
 			conn.Mutex.Unlock() // Unlock after buffer read
 
 			if string(prefaceBytes) == ClientPreface {
-				log.Printf("[HTTP/2 Info - %s] Client Preface received and validated.", connKey)
+				log.Printf("%s%sClient Preface received and validated.%s", ColorMagenta, PrefixH2, ColorReset)
 
 				// Send Server SETTINGS frame (empty)
 				err = sendHTTP2Frame(conn, FrameTypeSettings, 0, 0, nil)
 				if err != nil {
-					log.Printf("[HTTP/2 Error - %s] Failed to send initial server SETTINGS frame: %v", connKey, err)
+					log.Printf("%s%sFailed to send initial server SETTINGS frame: %v%s", ColorRed, PrefixError, err, ColorReset)
 					// TODO: Close connection? GOAWAY?
 					return
 				}
-				log.Printf("[HTTP/2 Info - %s] Initial empty server SETTINGS frame sent.", connKey)
+				log.Printf("%s%sInitial empty server SETTINGS frame sent.%s", ColorMagenta, PrefixH2, ColorReset)
 
 				// Transition state
 				conn.Mutex.Lock()
 				conn.H2State = H2StateExpectSettings
-				log.Printf("[HTTP/2 Info - %s] State transition: %v -> %v", connKey, H2StateExpectPreface, conn.H2State)
+				log.Printf("%s%sState transition: %v -> %v%s", ColorMagenta, PrefixH2, H2StateExpectPreface, conn.H2State, ColorReset)
 				currentH2State = conn.H2State // Update local state variable
 				conn.Mutex.Unlock()
 
@@ -114,13 +113,13 @@ func handleHTTP2Data(conn *TCPConnection, payload []byte) {
 				// Fallthrough to frame processing loop below
 
 			} else {
-				log.Printf("[HTTP/2 Error - %s] Invalid Client Preface received: %x", connKey, prefaceBytes)
+				log.Printf("%s%sInvalid Client Preface received: %x%s", ColorRed, PrefixError, prefaceBytes, ColorReset)
 				// TODO: Send GOAWAY(protocol_error) and close connection
 				return
 			}
 		} else {
 			if isDebug {
-				log.Printf("[HTTP/2 Debug - %s] Waiting for more data for Client Preface (need %d, have %d).", connKey, len(ClientPreface), h2BufferLen)
+				log.Printf("%s%sWaiting for more data for Client Preface (need %d, have %d).%s", ColorGray, PrefixH2, len(ClientPreface), h2BufferLen, ColorReset)
 			}
 			return // Not enough data yet
 		}
@@ -130,13 +129,13 @@ func handleHTTP2Data(conn *TCPConnection, payload []byte) {
 	conn.Mutex.Lock() // Lock for reading buffer/state
 	initialBufferLen := conn.HTTP2ReceiveBuffer.Len()
 	if isDebug && initialBufferLen > 0 {
-		log.Printf("[HTTP/2 Debug - %s] Entering frame processing loop. State: %v, Buffer len: %d", connKey, conn.H2State, initialBufferLen)
+		log.Printf("%s%sEntering frame processing loop. State: %v, Buffer len: %d%s", ColorGray, PrefixH2, conn.H2State, initialBufferLen, ColorReset)
 	}
 	// Keep processing as long as there's enough data for a frame header
 	for conn.HTTP2ReceiveBuffer.Len() >= FrameHeaderLen {
 		currentBufferLen := conn.HTTP2ReceiveBuffer.Len() // For logging inside loop
 		if isDebug {
-			log.Printf("[HTTP/2 Debug - %s] Frame loop iteration. Buffer len: %d", connKey, currentBufferLen)
+			log.Printf("%s%sFrame loop iteration. Buffer len: %d%s", ColorGray, PrefixH2, currentBufferLen, ColorReset)
 		}
 
 		// Peek at header to get length
@@ -148,13 +147,13 @@ func handleHTTP2Data(conn *TCPConnection, payload []byte) {
 		streamID := binary.BigEndian.Uint32(headerBytes[5:9]) & 0x7FFFFFFF
 
 		if isDebug {
-			log.Printf("[HTTP/2 Debug - %s] Peeked frame header: Len=%d, Type=%d, Flags=0x%x, StreamID=%d", connKey, payloadLen, frameType, flags, streamID)
+			log.Printf("%s%sPeeked frame header: Len=%d, Type=%d, Flags=0x%x, StreamID=%d%s", ColorGray, PrefixH2, payloadLen, frameType, flags, streamID, ColorReset)
 		}
 
 		fullFrameLength := FrameHeaderLen + int(payloadLen)
 		if currentBufferLen < fullFrameLength {
 			if isDebug {
-				log.Printf("[HTTP/2 Debug - %s] Incomplete frame. Need %d bytes, have %d. Waiting.", connKey, fullFrameLength, currentBufferLen)
+				log.Printf("%s%sIncomplete frame. Need %d bytes, have %d. Waiting.%s", ColorGray, PrefixH2, fullFrameLength, currentBufferLen, ColorReset)
 			}
 			break // Need more data for this frame
 		}
@@ -163,37 +162,37 @@ func handleHTTP2Data(conn *TCPConnection, payload []byte) {
 		frameBytes := make([]byte, fullFrameLength)
 		nRead, err := conn.HTTP2ReceiveBuffer.Read(frameBytes)
 		if err != nil || nRead != fullFrameLength {
-			log.Printf("[HTTP/2 Error - %s] Error consuming frame from buffer: read %d, err %v. Expected %d", connKey, nRead, err, fullFrameLength)
+			log.Printf("%s%sError consuming frame from buffer: read %d, err %v. Expected %d%s", ColorRed, PrefixError, nRead, err, fullFrameLength, ColorReset)
 			conn.HTTP2ReceiveBuffer.Reset() // Clear potentially corrupted buffer
 			// TODO: GOAWAY?
 			break // Stop processing
 		}
 		framePayload := frameBytes[FrameHeaderLen:]
 		if isDebug {
-			log.Printf("[HTTP/2 Debug - %s] Consumed frame. Type: %d, Payload len: %d. Remaining buffer: %d", connKey, frameType, len(framePayload), conn.HTTP2ReceiveBuffer.Len())
+			log.Printf("%s%sConsumed frame. Type: %d, Payload len: %d. Remaining buffer: %d%s", ColorGray, PrefixH2, frameType, len(framePayload), conn.HTTP2ReceiveBuffer.Len(), ColorReset)
 		}
 
 		// --- Process the frame based on type and state ---
 		switch frameType {
 		case FrameTypeSettings:
-			log.Printf("[HTTP/2 Info - %s] Received SETTINGS frame (Flags: 0x%x, StreamID: %d, PayloadLen: %d)", connKey, flags, streamID, payloadLen)
+			log.Printf("%s%sReceived SETTINGS frame (Flags: 0x%x, StreamID: %d, PayloadLen: %d)%s", ColorMagenta, PrefixH2, flags, streamID, payloadLen, ColorReset)
 			// Basic validation
 			if streamID != 0 {
-				log.Printf("[HTTP/2 Error - %s] Received SETTINGS frame with non-zero StreamID (%d).", connKey, streamID)
+				log.Printf("%s%sReceived SETTINGS frame with non-zero StreamID (%d).%s", ColorRed, PrefixError, streamID, ColorReset)
 				// TODO: Send GOAWAY(protocol_error)
 				break
 			}
 			if flags&FlagAck != 0 { // This is an ACK for our SETTINGS
 				if payloadLen != 0 {
-					log.Printf("[HTTP/2 Error - %s] Received SETTINGS ACK with non-empty payload (%d bytes).", connKey, payloadLen)
+					log.Printf("%s%sReceived SETTINGS ACK with non-empty payload (%d bytes).%s", ColorRed, PrefixError, payloadLen, ColorReset)
 					// TODO: Send GOAWAY(frame_size_error)
 					break
 				}
-				log.Printf("[HTTP/2 Info - %s] Received SETTINGS ACK.", connKey)
+				log.Printf("%s%sReceived SETTINGS ACK.%s", ColorMagenta, PrefixH2, ColorReset)
 				// No state change needed for ACK in this simple impl.
 			} else { // This is the client's initial SETTINGS frame
 				// TODO: Parse settings if needed in the future
-				log.Printf("[HTTP/2 Info - %s] Received client's initial SETTINGS frame. Sending ACK.", connKey)
+				log.Printf("%s%sReceived client's initial SETTINGS frame. Sending ACK.%s", ColorMagenta, PrefixH2, ColorReset)
 				// Release lock before potentially blocking send operation
 				conn.Mutex.Unlock()
 
@@ -204,29 +203,29 @@ func handleHTTP2Data(conn *TCPConnection, payload []byte) {
 				conn.Mutex.Lock()
 
 				if err != nil {
-					log.Printf("[HTTP/2 Error - %s] Failed to send SETTINGS ACK: %v", connKey, err)
+					log.Printf("%s%sFailed to send SETTINGS ACK: %v%s", ColorRed, PrefixError, err, ColorReset)
 					// TODO: GOAWAY?
 					break
 				}
-				log.Printf("[HTTP/2 Info - %s] SETTINGS ACK sent successfully.", connKey)
+				log.Printf("%s%sSETTINGS ACK sent successfully.%s", ColorMagenta, PrefixH2, ColorReset)
 				// If we were expecting settings, transition to ready
 				if conn.H2State == H2StateExpectSettings {
 					conn.H2State = H2StateReady
-					log.Printf("[HTTP/2 Info - %s] State transition: %v -> %v", connKey, H2StateExpectSettings, conn.H2State)
+					log.Printf("%s%sState transition: %v -> %v%s", ColorMagenta, PrefixH2, H2StateExpectSettings, conn.H2State, ColorReset)
 				}
 			}
 
 		case FrameTypeHeaders:
-			log.Printf("[HTTP/2 Info - %s] Received HEADERS frame (StreamID: %d, Flags: 0x%x, PayloadLen: %d)", connKey, streamID, flags, payloadLen)
-			log.Printf("[HTTP/2 Debug - %s] HEADERS payload (raw): %x", connKey, framePayload)
+			log.Printf("%s%sReceived HEADERS frame (StreamID: %d, Flags: 0x%x, PayloadLen: %d)%s", ColorMagenta, PrefixH2, streamID, flags, payloadLen, ColorReset)
+			log.Printf("%s%sHEADERS payload (raw): %x%s", ColorGray, PrefixH2, framePayload, ColorReset)
 			// TODO: Implement basic header decoding (HPACK is complex, skip for now)
 			// For a simple GET, this would contain method, path, scheme, authority
 
 			// --- Simple Hardcoded Response ---
 			// Simulate processing the request and sending a response on the same stream
 			if streamID != 0 { // Ignore HEADERS on stream 0
-				log.Printf("[HTTP/2 Debug - %s] Processing HEADERS for Stream %d.", connKey, streamID)
-				log.Printf("[HTTP/2 Info - %s] Sending hardcoded response for Stream %d", connKey, streamID)
+				log.Printf("%s%sProcessing HEADERS for Stream %d.%s", ColorGray, PrefixH2, streamID, ColorReset)
+				log.Printf("%s%sSending hardcoded response for Stream %d%s", ColorMagenta, PrefixH2, streamID, ColorReset)
 
 				// 1. Send HEADERS frame (response status 200 OK)
 				// Manually construct a minimal HEADERS block (pseudo-headers first)
@@ -256,10 +255,10 @@ func handleHTTP2Data(conn *TCPConnection, payload []byte) {
 				conn.Mutex.Lock()
 
 				if err != nil {
-					log.Printf("[HTTP/2 Error - %s] Failed to send HEADERS response frame: %v", connKey, err)
+					log.Printf("%s%sFailed to send HEADERS response frame: %v%s", ColorRed, PrefixError, err, ColorReset)
 					break
 				}
-				log.Printf("[HTTP/2 Info - %s] Sent HEADERS response frame for Stream %d.", connKey, streamID)
+				log.Printf("%s%sSent HEADERS response frame for Stream %d.%s", ColorMagenta, PrefixH2, streamID, ColorReset)
 
 				// 2. Send DATA frame (response body) with END_STREAM
 				responseBody := []byte("Hello from User-Space HTTP/2!")
@@ -270,17 +269,17 @@ func handleHTTP2Data(conn *TCPConnection, payload []byte) {
 				conn.Mutex.Lock()
 
 				if err != nil {
-					log.Printf("[HTTP/2 Error - %s] Failed to send DATA response frame: %v", connKey, err)
+					log.Printf("%s%sFailed to send DATA response frame: %v%s", ColorRed, PrefixError, err, ColorReset)
 					break
 				}
-				log.Printf("[HTTP/2 Info - %s] Sent DATA response frame with END_STREAM for Stream %d.", connKey, streamID)
+				log.Printf("%s%sSent DATA response frame with END_STREAM for Stream %d.%s", ColorMagenta, PrefixH2, streamID, ColorReset)
 			}
 
 		case FrameTypeWindowUpdate:
-			log.Printf("[HTTP/2 Info - %s] Received WINDOW_UPDATE frame (StreamID: %d, PayloadLen: %d)", connKey, streamID, payloadLen)
+			log.Printf("%s%sReceived WINDOW_UPDATE frame (StreamID: %d, PayloadLen: %d)%s", ColorMagenta, PrefixH2, streamID, payloadLen, ColorReset)
 			// Required for flow control, but ignore payload for now
 			if payloadLen != 4 {
-				log.Printf("[HTTP/2 Error - %s] Received WINDOW_UPDATE with invalid length %d.", connKey, payloadLen)
+				log.Printf("%s%sReceived WINDOW_UPDATE with invalid length %d.%s", ColorRed, PrefixError, payloadLen, ColorReset)
 				// TODO: Send GOAWAY(frame_size_error)
 				break
 			}
@@ -289,19 +288,19 @@ func handleHTTP2Data(conn *TCPConnection, payload []byte) {
 			// TODO: Actually handle window updates if sending large data
 
 		case FrameTypePing:
-			log.Printf("[HTTP/2 Info - %s] Received PING frame (Flags: 0x%x, PayloadLen: %d)", connKey, flags, payloadLen)
+			log.Printf("%s%sReceived PING frame (Flags: 0x%x, PayloadLen: %d)%s", ColorMagenta, PrefixH2, flags, payloadLen, ColorReset)
 			if streamID != 0 {
-				log.Printf("[HTTP/2 Error - %s] Received PING frame with non-zero StreamID (%d).", connKey, streamID)
+				log.Printf("%s%sReceived PING frame with non-zero StreamID (%d).%s", ColorRed, PrefixError, streamID, ColorReset)
 				// TODO: Send GOAWAY(protocol_error)
 				break
 			}
 			if payloadLen != 8 {
-				log.Printf("[HTTP/2 Error - %s] Received PING frame with invalid payload length %d.", connKey, payloadLen)
+				log.Printf("%s%sReceived PING frame with invalid payload length %d.%s", ColorRed, PrefixError, payloadLen, ColorReset)
 				// TODO: Send GOAWAY(frame_size_error)
 				break
 			}
 			if flags&FlagAck == 0 { // If it's not an ACK, respond with ACK
-				log.Printf("[HTTP/2 Info - %s] Received PING, sending PONG (ACK).", connKey)
+				log.Printf("%s%sReceived PING, sending PONG (ACK).%s", ColorMagenta, PrefixH2, ColorReset)
 				pingPayload := framePayload // Capture payload before unlock
 				// Release lock before sending PING ACK
 				conn.Mutex.Unlock()
@@ -309,14 +308,14 @@ func handleHTTP2Data(conn *TCPConnection, payload []byte) {
 				// Re-acquire lock after sending PING ACK
 				conn.Mutex.Lock()
 				if err != nil {
-					log.Printf("[HTTP/2 Error - %s] Failed to send PING ACK: %v", connKey, err)
+					log.Printf("%s%sFailed to send PING ACK: %v%s", ColorRed, PrefixError, err, ColorReset)
 				}
 			} else {
-				log.Printf("[HTTP/2 Info - %s] Received PING ACK (PONG).", connKey)
+				log.Printf("%s%sReceived PING ACK (PONG).%s", ColorMagenta, PrefixH2, ColorReset)
 			}
 
 		default:
-			log.Printf("[HTTP/2 Warn - %s] Received unhandled frame type %d (Flags: 0x%x, StreamID: %d, PayloadLen: %d)", connKey, frameType, flags, streamID, payloadLen)
+			log.Printf("%s%sReceived unhandled frame type %d (Flags: 0x%x, StreamID: %d, PayloadLen: %d)%s", ColorYellow, PrefixWarn, frameType, flags, streamID, payloadLen, ColorReset)
 		}
 	} // end for loop processing frames
 
@@ -324,7 +323,7 @@ func handleHTTP2Data(conn *TCPConnection, payload []byte) {
 	conn.Mutex.Unlock() // Unlock after processing loop
 
 	if isDebug && initialBufferLen > 0 {
-		log.Printf("[HTTP/2 Debug - %s] Exiting frame processing loop. Final buffer len: %d", connKey, finalBufferLen)
+		log.Printf("%s%sExiting frame processing loop. Final buffer len: %d%s", ColorGray, PrefixH2, finalBufferLen, ColorReset)
 	}
 }
 
@@ -394,21 +393,20 @@ func readHTTP2Frame(buffer *bytes.Buffer) (frameHeader []byte, payload []byte, f
 
 // sendHTTP2Frame builds an HTTP/2 frame, wraps it in a TLS record, and sends it.
 func sendHTTP2Frame(conn *TCPConnection, frameType uint8, flags uint8, streamID uint32, payload []byte) error {
-	connKey := conn.ConnectionKey()
 	// Add log before sending
-	log.Printf("[HTTP/2 Send Debug - %s] Preparing to send H2 Frame. Type: %d, StreamID: %d, PayloadLen: %d", connKey, frameType, streamID, len(payload))
+	log.Printf("%s%sPreparing to send H2 Frame. Type: %d, StreamID: %d, PayloadLen: %d%s", ColorMagenta, PrefixH2, frameType, streamID, len(payload), ColorReset)
 
 	// 1. Build the HTTP/2 frame
 	h2Frame, err := buildHTTP2Frame(frameType, flags, streamID, payload)
 	if err != nil {
-		return fmt.Errorf("failed to build HTTP/2 frame (Type: %d) for %s: %w", frameType, connKey, err)
+		return fmt.Errorf("failed to build HTTP/2 frame (Type: %d): %w", frameType, err)
 	}
 
 	// 2. Build the TLS Application Data record containing the frame
 	// We use 0x0303 for TLS 1.2 version number
 	tlsRecord, err := buildTLSRecord(TLSRecordTypeApplicationData, 0x0303, h2Frame)
 	if err != nil {
-		return fmt.Errorf("failed to build TLS record for H2 frame (Type: %d) for %s: %w", frameType, connKey, err)
+		return fmt.Errorf("failed to build TLS record for H2 frame (Type: %d): %w", frameType, err)
 	}
 
 	// 3. Send the TLS record
@@ -416,23 +414,23 @@ func sendHTTP2Frame(conn *TCPConnection, frameType uint8, flags uint8, streamID 
 	sentBytes, err := sendRawTLSRecord(conn.TunIFCE, conn, tlsRecord) // Pass TUN interface if needed
 	if err != nil {
 		// Add more detail to error log
-		log.Printf("[HTTP/2 Send Error - %s] sendRawTLSRecord failed for H2 frame (Type: %d): %v", connKey, frameType, err)
-		return fmt.Errorf("failed to send TLS record containing H2 frame (Type: %d) for %s: %w", frameType, connKey, err)
+		log.Printf("%s%ssendRawTLSRecord failed for H2 frame (Type: %d): %v%s", ColorRed, PrefixError, frameType, err, ColorReset)
+		return fmt.Errorf("failed to send TLS record containing H2 frame (Type: %d): %w", frameType, err)
 	}
 	// Add log after successful sendRawTLSRecord
-	log.Printf("[HTTP/2 Send Debug - %s] sendRawTLSRecord successful for H2 Frame. Type: %d, StreamID: %d, SentBytes (TLS): %d", connKey, frameType, streamID, sentBytes)
+	// log.Printf("[HTTP/2 Send Debug - %s] sendRawTLSRecord successful for H2 Frame. Type: %d, StreamID: %d, SentBytes (TLS): %d", PrefixH2, frameType, streamID, sentBytes)
 
 	// 4. Update sequence numbers (crucial for TUN mode)
 	if conn.TunIFCE != nil {
 		conn.Mutex.Lock()
 		conn.ServerNextSeq += uint32(sentBytes) // Increment by TUN payload bytes sent
 		if isDebug {
-			log.Printf("[SeqNum Update - %s] After H2 Frame (Type %d): ServerNextSeq = %d (added %d)", connKey, frameType, conn.ServerNextSeq, sentBytes)
+			log.Printf("[SeqNum Update - %s] After H2 Frame (Type %d): ServerNextSeq = %d (added %d)", PrefixH2, frameType, conn.ServerNextSeq, sentBytes)
 		}
 		conn.Mutex.Unlock()
 	}
 	if isDebug {
-		log.Printf("[HTTP/2 Send OK - %s] Sent H2 Frame. Type: %d, Flags: 0x%x, StreamID: %d, PayloadLen: %d, TLS Record Len: %d", connKey, frameType, flags, streamID, len(payload), len(tlsRecord))
+		log.Printf("[HTTP/2 Send OK - %s] Sent H2 Frame. Type: %d, Flags: 0x%x, StreamID: %d, PayloadLen: %d, TLS Record Len: %d", PrefixH2, frameType, flags, streamID, len(payload), len(tlsRecord))
 	}
 
 	return nil

@@ -6,6 +6,16 @@ import (
 	"log"
 	mrand "math/rand" // Renamed import for random ID
 	"net"
+	"os" // Needed for Getpid in sendIPPacket
+
+	"github.com/songgao/water"
+)
+
+// Constants for IP protocol numbers
+const (
+	IPProtocolICMP = 1
+	IPProtocolTCP  = 6
+	IPProtocolUDP  = 17
 )
 
 // IPv4Header represents the IPv4 header structure.
@@ -164,7 +174,7 @@ func parseIPv4Header(packet []byte) (*IPv4Header, []byte, error) {
 
 	// Ensure we don't slice beyond the actual received packet length
 	if payloadLen > len(payload) {
-		log.Printf("Warning: Calculated payload length (%d) is greater than available data length (%d). Truncating.", payloadLen, len(payload))
+		log.Printf("%s%sWarning: Calculated payload length (%d) is greater than available data length (%d). Truncating.%s", ColorGray, PrefixIP, payloadLen, len(payload), ColorReset)
 		payloadLen = len(payload) // Use the available data length
 	}
 
@@ -197,4 +207,98 @@ func ipProtocolToString(protocol uint8) string {
 	default:
 		return fmt.Sprintf("Unknown (%d)", protocol)
 	}
+}
+
+// handleIPPacket parses the IP header and dispatches based on protocol.
+func handleIPPacket(ifce *water.Interface, packet []byte) {
+	ipHeader, payload, err := parseIPv4Header(packet)
+	if err != nil {
+		// Use red for errors
+		log.Printf("%s%sError parsing IP header: %v%s", ColorRed, PrefixError, err, ColorReset)
+		return
+	}
+
+	// Use cyan for received IP packets
+	log.Printf("%s%sRCV: %s -> %s Proto: %d(%s) TTL: %d Len(Payload/Total): %d/%d ID: %d HdrLen: %d%s",
+		ColorCyan, PrefixIP,
+		ipHeader.SrcIP, ipHeader.DstIP,
+		ipHeader.Protocol, ipProtocolToString(ipHeader.Protocol), // Corrected function name
+		ipHeader.TTL, len(payload), ipHeader.TotalLength, // Corrected field name and show payload vs total
+		ipHeader.ID,
+		ipHeader.IHL*4, // Header length in bytes
+		ColorReset,
+	)
+
+	switch ipHeader.Protocol {
+	case IPProtocolTCP:
+		// TCP Handling (assuming handleTCPPacket is defined elsewhere)
+		handleTCPPacket(ifce, ipHeader, payload)
+	case IPProtocolICMP:
+		// ICMP Handling (optional, placeholder)
+		log.Printf("%s%sReceived ICMP packet from %s%s", ColorGray, PrefixIP, ipHeader.SrcIP, ColorReset)
+		// TODO: Implement basic ICMP handling (e.g., echo reply) if needed
+	case IPProtocolUDP:
+		// UDP Handling (optional, placeholder)
+		log.Printf("%s%sReceived UDP packet from %s%s", ColorGray, PrefixIP, ipHeader.SrcIP, ColorReset)
+	default:
+		// Use gray for unhandled protocols
+		log.Printf("%s%sReceived packet with unhandled protocol %d from %s%s", ColorGray, PrefixIP, ipHeader.Protocol, ipHeader.SrcIP, ColorReset)
+	}
+}
+
+// sendIPPacket constructs and sends an IPv4 packet over the TUN interface.
+func sendIPPacket(ifce *water.Interface, srcIP, dstIP net.IP, protocol uint8, payload []byte) error {
+	// Simplified IPv4 header construction
+	// More robust implementation would handle options, fragmentation, etc.
+	header := IPv4Header{
+		Version:     4,
+		IHL:         5, // No options
+		TOS:         0, // Use TOS field instead of DSCP/ECN
+		TotalLength: uint16(20 + len(payload)),
+		ID:          uint16(os.Getpid() % 65536), // Simple ID generation
+		Flags:       0x02,                        // Don't Fragment (DF) flag often set
+		TTL:         64,
+		Protocol:    protocol,
+		SrcIP:       srcIP,
+		DstIP:       dstIP,
+		// Checksum is calculated later
+	}
+
+	headerBytes := make([]byte, 20)
+	headerBytes[0] = (header.Version << 4) | header.IHL
+	headerBytes[1] = header.TOS // Assign TOS field directly
+	binary.BigEndian.PutUint16(headerBytes[2:4], header.TotalLength)
+	binary.BigEndian.PutUint16(headerBytes[4:6], header.ID)
+	binary.BigEndian.PutUint16(headerBytes[6:8], uint16(header.Flags<<13)|header.FragmentOffset)
+	headerBytes[8] = header.TTL
+	headerBytes[9] = header.Protocol
+	copy(headerBytes[12:16], header.SrcIP.To4())
+	copy(headerBytes[16:20], header.DstIP.To4())
+
+	// Calculate checksum and put it into the header bytes
+	checksum := calculateChecksum(headerBytes)               // Calculate with checksum field zeroed
+	binary.BigEndian.PutUint16(headerBytes[10:12], checksum) // Correctly put checksum
+	header.Checksum = checksum                               // Store calculated checksum in the struct as well for logging
+
+	// Combine header and payload
+	packet := append(headerBytes, payload...)
+
+	// Use purple for sent IP packets (less prominent than TCP/TLS/HTTP)
+	log.Printf("%s%sSND: %s -> %s Proto: %d(%s) TTL: %d Len(Payload/Total): %d/%d ID: %d HdrLen: %d Checksum: 0x%x%s",
+		ColorPurple, PrefixIP, // Use Purple, could also use Gray
+		header.SrcIP, header.DstIP,
+		header.Protocol, ipProtocolToString(header.Protocol),
+		header.TTL, len(payload), header.TotalLength,
+		header.ID,
+		header.IHL*4,    // Correctly log header length
+		header.Checksum, // Correctly log checksum from the struct
+		ColorReset,
+	)
+
+	_, err := ifce.Write(packet)
+	if err != nil {
+		log.Printf("%s%sError sending IP packet: %v%s", ColorRed, PrefixError, err, ColorReset)
+		return fmt.Errorf("failed to write packet to TUN device: %w", err)
+	}
+	return nil
 }

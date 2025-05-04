@@ -155,7 +155,8 @@ func printHeaderInfo(ipHeader *IPv4Header, packetLen int) {
 
 	protoStr := ipProtocolToString(ipHeader.Protocol) // Defined in ip.go
 	hdrLen := int(ipHeader.IHL) * 4
-	log.Printf("IP RCV: %s -> %s Proto: %d(%s) TTL: %d Len: %d/%d ID: %x Flags: [%s] HdrLen: %d",
+	log.Printf("%s%sRCV: %s -> %s Proto: %d(%s) TTL: %d Len: %d/%d ID: %x Flags: [%s] HdrLen: %d%s",
+		ColorCyan, PrefixIP,
 		ipHeader.SrcIP,
 		ipHeader.DstIP,
 		ipHeader.Protocol,
@@ -165,7 +166,8 @@ func printHeaderInfo(ipHeader *IPv4Header, packetLen int) {
 		packetLen,            // Received packet length (including header)
 		ipHeader.ID,
 		flagsStr,
-		hdrLen)
+		hdrLen,
+		ColorReset)
 }
 
 // calculateChecksum is defined in ip.go
