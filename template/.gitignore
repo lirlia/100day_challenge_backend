@@ -43,8 +43,3 @@ next-env.d.ts
 # Environment Variables
 .env*.local
 # .env
-
-# Prisma
-*.sqlite
-*.sqlite-journal
-app/generated/prisma/

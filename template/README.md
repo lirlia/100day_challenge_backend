@@ -1,6 +1,6 @@
 # 100日チャレンジ - Next.js アプリケーションテンプレート
 
-このプロジェクトは [Next.js](https://nextjs.org) (App Router)、TypeScript、Prisma、SQLite を使用した100日チャレンジ用のテンプレートです。日々の簡易アプリケーション開発のベースとして利用します。
+このプロジェクトは [Next.js](https://nextjs.org) (App Router)、TypeScript、SQLite を使用した100日チャレンジ用のテンプレートです。日々の簡易アプリケーション開発のベースとして利用します。
 
 ## アプリケーション概要
 
@@ -69,7 +69,7 @@ sequenceDiagram
 - フレームワーク: Next.js (App Router)
 - 言語: TypeScript
 - DB: SQLite
-- ORM: Prisma
+- DBアクセス: better-sqlite3（または同等のシンプルなSQLiteライブラリ）
 - API実装: Next.js Route Handlers
 - スタイリング: Tailwind CSS
 - パッケージ管理: npm
@@ -82,17 +82,16 @@ sequenceDiagram
    npm install
    ```
 
-2. **データベースの準備**
-   ```bash
-   # 初回またはスキーマ変更時
-   npm run db:seed
-   ```
-
-3. **開発サーバーを起動**
+2. **開発サーバーを起動**
    ```bash
    npm run dev
    ```
+   サーバ起動時に自動でSQLiteのテーブルが作成されます。
    ブラウザで [http://localhost:3001](http://localhost:3001) を開くと結果が表示されます。
+
+3. **DBスキーマを変更したい場合**
+   - `db/dev.db` ファイルを削除してください
+   - 次回サーバ起動時に新しいスキーマで自動生成されます。
 
 ## 注意事項
 

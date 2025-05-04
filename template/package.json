@@ -11,7 +11,7 @@
     "check": "biome check --apply ."
   },
   "dependencies": {
-    "@prisma/client": "^6.6.0",
+    "better-sqlite3": "^11.1.2",
     "next": "15.3.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
@@ -19,16 +19,13 @@
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
     "@tailwindcss/postcss": "^4",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "22.14.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "biome": "^0.2.2",
-    "prisma": "^6.6.0",
     "tailwindcss": "^4",
     "tsx": "^4.16.0",
     "typescript": "^5"
-  },
-  "prisma": {
-    "seed": "tsx prisma/seed.ts"
   }
 }

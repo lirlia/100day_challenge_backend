@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import Image from 'next/image';
 
 type User = {
   id: number;
@@ -63,9 +62,9 @@ export default function Home() {
   return (
     <div className="max-w-4xl mx-auto py-8 px-4">
       <header className="mb-8">
-        <h1 className="text-3xl font-bold mb-2">100日チャレンジ - Next.js + Prisma</h1>
+        <h1 className="text-3xl font-bold mb-2">100日チャレンジ</h1>
         <p className="text-gray-600 dark:text-gray-300">
-          このプロジェクトはNext.js、TypeScript、Prisma、SQLiteを使用した100日チャレンジのテンプレートです。
+          このプロジェクトはNext.js、TypeScript、SQLiteを使用した100日チャレンジのテンプレートです。
         </p>
       </header>
 
@@ -109,36 +108,6 @@ export default function Home() {
                 ))}
               </ul>
             )}
-          </div>
-        </div>
-
-        <div className="flex-1">
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-md">
-            <h2 className="text-xl font-semibold mb-4">テンプレートの使い方</h2>
-            <ul className="space-y-3">
-              <li>
-                <strong>データモデル:</strong> <code>prisma/schema.prisma</code> でデータモデルを定義
-              </li>
-              <li>
-                <strong>API:</strong> <code>app/api/</code> にエンドポイントを追加
-              </li>
-              <li>
-                <strong>UI開発:</strong> <code>app/</code> にページを追加、<code>components/</code> に共通コンポーネントを配置
-              </li>
-              <li>
-                <strong>DB操作:</strong> <code>lib/db.ts</code> の Prisma Client を使用
-              </li>
-            </ul>
-            <div className="mt-6">
-              <a
-                href="https://github.com/lirlia/100day_challenge_backend"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-blue-500 hover:underline"
-              >
-                → GitHubリポジトリを見る
-              </a>
-            </div>
           </div>
         </div>
       </div>
