@@ -36,7 +36,7 @@ export default function Home() {
         </button>
       </div>
       <footer className="mt-10 text-gray-400 text-sm text-center">
-        &copy; 2024 Day33 ZKP Demo / 100日チャレンジ
+        &copy; 2025 Day33 ZKP Demo / 100日チャレンジ
       </footer>
     </main>
   );

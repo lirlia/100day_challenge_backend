@@ -39,3 +39,4 @@ alwaysApply: true
 | 30  | 有限オートマトン可視化ツール   | Next.js, TypeScript, TailwindCSS, React Flow, Zustand, Local Storage, ブルータリズムUI |
 | 31  | Go ORM と CLI シェル          | Go, SQLite, database/sql, reflect, go-prompt                                         |
 | 32  | ユーザースペースネットワークスタック | Go, TUNデバイス, TCP/IP, TLS1.2, HTTP/2, ALPN, ログカラー/インデント統一, レイヤー一時停止 |
+| 33  | ゼロ知識証明"体験型"デモアプリ   | Next.js, TypeScript, TailwindCSS, Schnorr Protocol 体験（UI）、魔法体験（クイズ形式）   |

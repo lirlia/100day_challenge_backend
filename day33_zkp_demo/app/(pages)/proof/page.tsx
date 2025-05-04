@@ -218,6 +218,12 @@ export default function ProofPage() {
           <span className="inline-block mt-2">あなたの「秘密」は <span className="bg-gray-300 px-2 rounded">●●●●</span> のまま、<br />
           サーバや他の人には絶対に送信されません！</span>
         </div>
+
+        <div className="w-full mt-6 text-center">
+          <a href="/schnorr_zkp" className="text-sm text-blue-500 hover:underline dark:text-blue-300">
+            → 裏側はどうなってるの？（本格ZKP体験へ）
+          </a>
+        </div>
       </div>
     </main>
   );
