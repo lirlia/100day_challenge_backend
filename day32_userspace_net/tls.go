@@ -1173,6 +1173,7 @@ func sendServerCCSAndFinished(ifce *water.Interface, conn *TCPConnection) {
 
 	conn.TLSState = TLSStateHandshakeComplete
 	log.Printf("%s%sServer Finished sent. TLS Handshake considered complete (dummy). TLS State -> %v%s", ColorOrange, PrefixTLS, conn.TLSState, ColorReset)
+	pauseIfNeeded("tls")
 }
 
 // buildFinishedMessage constructs the Finished handshake message with the provided verify_data.
