@@ -77,8 +77,6 @@ https://github.com/user-attachments/assets/3af0b7cb-1f85-489c-a346-053a831131b4
     -   `DELETE FROM table_name WHERE id = ?` 形式のSQLをサポートします。
     -   B+Treeから指定されたキーのエントリを削除します。
 
-### 2.2 発展機能 (時間があれば実装)
-
 -   **データ検索 (全件スキャン):**
     -   `SELECT * FROM table_name` 形式のSQLをサポートします。
     -   B+Treeのリーフノードをすべて走査して全データを返します。
