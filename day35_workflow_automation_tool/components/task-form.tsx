@@ -77,7 +77,7 @@ export default function TaskForm({
         const key = name as keyof TaskFormData;
         const newValue = key === 'assigned_user_id' ? (value ? parseInt(value, 10) : null) : value;
 
-        setFormData((prev) => ({
+        setFormData((prev: TaskFormData) => ({
             ...prev,
             [key]: newValue
         }));
@@ -96,7 +96,13 @@ export default function TaskForm({
             return;
         }
         if (isSubmitting) return;
-        await onSubmit(formData);
+        // Ensure empty date/description is sent as null if API expects it
+        const dataToSend = {
+            ...formData,
+            description: formData.description || null, // Ensure empty string becomes null
+            due_date: formData.due_date || null, // Ensure empty string becomes null
+        };
+        await onSubmit(dataToSend);
     };
 
     return (

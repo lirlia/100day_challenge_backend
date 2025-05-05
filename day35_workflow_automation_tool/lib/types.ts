@@ -54,7 +54,7 @@ export interface Workflow {
 
 export interface TaskFormData {
     name: string;
-    description: string;
+    description: string | null;
     assigned_user_id: number | null;
-    due_date: string; // Expect YYYY-MM-DD
+    due_date: string | null;
 }

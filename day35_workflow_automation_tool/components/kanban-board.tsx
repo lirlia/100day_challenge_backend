@@ -72,11 +72,8 @@ export default function KanbanBoard({
                 name: formData.name,
                 description: formData.description,
                 assigned_user_id: formData.assigned_user_id,
-                due_date: formData.due_date || null,
+                due_date: formData.due_date,
             };
-            if (updateData.due_date === '') {
-                updateData.due_date = null;
-            }
             await onTaskUpdate(editingTask.id, updateData);
             closeEditModal();
             toast.success(`Task "${formData.name}" updated.`);
