@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useDroppable, DndContext, DragEndEvent, UniqueIdentifier, closestCenter } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
 import { TaskCard } from './task-card';
@@ -41,6 +41,7 @@ interface KanbanBoardProps {
 
 // --- Kanban Column Component ---
 function KanbanColumn({ id, title, tasks, dependencies }: KanbanColumnProps) {
+    console.log(`[Render] KanbanColumn (id: ${id}, taskCount: ${tasks.length})`);
     const { setNodeRef } = useDroppable({ id });
 
     // Helper to check if a task has dependencies
@@ -78,27 +79,40 @@ function KanbanColumn({ id, title, tasks, dependencies }: KanbanColumnProps) {
 
 // --- Kanban Board Component ---
 export default function KanbanBoard({ tasks, dependencies, onTaskStatusChange }: KanbanBoardProps) {
+    // Define statuses within the component or receive as prop if dynamic
     const statuses: Task['status'][] = ['pending', 'in_progress', 'completed', 'on_hold'];
-    const columns = statuses.map(status => ({
-        id: status,
-        title: status.charAt(0).toUpperCase() + status.slice(1).replace('_', ' '), // e.g., In progress
-        tasks: tasks.filter(task => task.status === status).sort((a, b) => a.order_index - b.order_index),
-    }));
+
+    // Memoize the columns calculation to prevent unnecessary re-computation
+    const columns = useMemo(() => {
+        console.log('[KanbanBoard] Recalculating columns...'); // Log to check frequency
+        return statuses.map(status => ({
+            id: status,
+            title: status.charAt(0).toUpperCase() + status.slice(1).replace('_', ' '),
+            // Filter and sort tasks for each column
+            tasks: tasks.filter(task => task.status === status).sort((a, b) => a.order_index - b.order_index),
+        }));
+    // Depend on the tasks array. If tasks array reference changes, recalculate.
+    // statuses is constant within this scope, but included for completeness if it were dynamic.
+    }, [tasks, statuses]);
 
     const handleDragEnd = (event: DragEndEvent) => {
         const { active, over } = event;
 
+        // Ensure we have a valid drop target and the item moved
         if (over && active.id !== over.id) {
              const activeTask = tasks.find(t => t.id === active.id);
-             const targetStatus = over.id as Task['status']; // over.id should be the column status
+             // The droppable target ID is the status column ID
+             const targetStatus = over.id as Task['status'];
 
+             // Check if the target is a valid status column and the task status actually changes
              if (activeTask && targetStatus && activeTask.status !== targetStatus && statuses.includes(targetStatus)) {
                  console.log(`Attempting to move task ${active.id} from ${activeTask.status} to ${targetStatus}`);
+                 // Call the handler passed from the parent page to update the task status via API
                  onTaskStatusChange(active.id as number, targetStatus);
              } else {
-                 // Handle reordering within the same column (optional)
-                 console.log(`Task ${active.id} dropped over ${over.id}, but not a valid status change or same column.`);
-                 // Implement reordering logic if needed using arrayMove
+                 // Handle cases like dropping back into the same column or invalid drop target
+                 console.log(`Task ${active.id} dropped over ${over.id}, but not a valid status change.`);
+                 // Optional: Implement reordering within the same column if needed
              }
         } else {
             console.log('Drag ended without a valid target or on the same item.');
@@ -114,7 +128,7 @@ export default function KanbanBoard({ tasks, dependencies, onTaskStatusChange }:
                         key={column.id}
                         id={column.id}
                         title={column.title}
-                        tasks={column.tasks}
+                        tasks={column.tasks} // Pass the memoized tasks for this column
                         dependencies={dependencies}
                     />
                 ))}

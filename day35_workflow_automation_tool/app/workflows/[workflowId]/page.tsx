@@ -55,74 +55,65 @@ function formatDateTime(isoString: string | null): string {
 
 // --- Main Component ---
 export default function WorkflowDetailPage() {
+    console.log('[Render] WorkflowDetailPage');
     const params = useParams();
     const workflowId = params?.workflowId as string | undefined;
     const [workflow, setWorkflow] = useState<WorkflowDetail | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [optimisticTasks, setOptimisticTasks] = useState<Task[] | null>(null);
+    // Temporarily disable optimistic updates for debugging
+    // const [optimisticTasks, setOptimisticTasks] = useState<Task[] | null>(null);
 
     // Memoized fetch function
     const fetchWorkflowDetail = useCallback(async () => {
+        console.log(`[Exec] fetchWorkflowDetail (workflowId: ${workflowId})`);
         if (!workflowId) {
              setError('Workflow ID is missing.');
              setIsLoading(false);
              return;
         }
-        // Keep loading state true while fetching, reset optimistic updates
         setIsLoading(true);
-        setOptimisticTasks(null);
+        // setOptimisticTasks(null);
         setError(null);
         try {
-            console.log(`[Page][Workflow ${workflowId}] Fetching details...`);
+            console.log(`[Fetch] /api/workflows/${workflowId}`);
             const response = await fetch(`/api/workflows/${workflowId}`);
             if (!response.ok) {
                 if (response.status === 404) {
                     throw new Error('Workflow not found.');
                 } else {
-                    const errorData = await response.json().catch(() => ({})); // Try to parse error
+                    const errorData = await response.json().catch(() => ({}));
                     throw new Error(errorData.error || `Failed to fetch workflow details: ${response.statusText}`);
                 }
             }
             const data = await response.json() as WorkflowDetail;
-            console.log(`[Page][Workflow ${workflowId}] Details fetched successfully:`, data);
+            console.log(`[State Update Pre] setWorkflow in fetchWorkflowDetail`);
             setWorkflow(data);
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : 'Unknown error fetching workflow details';
             console.error(`[Page][Workflow ${workflowId}] Error fetching details:`, errorMessage);
             setError(errorMessage);
-            setWorkflow(null); // Clear workflow data on error
+            console.log(`[State Update Pre] setWorkflow(null) in fetchWorkflowDetail catch`);
+            setWorkflow(null);
         } finally {
             setIsLoading(false);
         }
-    }, [workflowId]); // Dependency is workflowId
+    }, [workflowId]);
 
     useEffect(() => {
+        console.log('[Effect] Running fetchWorkflowDetail effect');
         fetchWorkflowDetail();
-    }, [fetchWorkflowDetail]); // Use the memoized function
+    }, [fetchWorkflowDetail]);
 
-    // --- Task Status Change Handler ---
+    // --- Task Status Change Handler (Revised Dependencies and State Update) ---
     const handleTaskStatusChange = useCallback(async (taskId: number, newStatus: Task['status']) => {
-        console.log(`[Page][Workflow ${workflowId}] Attempting to update task ${taskId} status to ${newStatus}`);
-
-        // Find the original task
-        const originalTasks = workflow?.tasks || [];
-        const taskToUpdate = originalTasks.find(t => t.id === taskId);
-        if (!taskToUpdate || taskToUpdate.status === newStatus) {
-            console.log('[Page] Task not found or status unchanged.');
-            return; // No change needed
-        }
-
-        // --- Optimistic Update ---
-        const previousTasks = workflow?.tasks ?? [];
-        const updatedTasks = previousTasks.map(t =>
-            t.id === taskId ? { ...t, status: newStatus } : t
-        );
-        setOptimisticTasks(updatedTasks); // Apply optimistic update
-        // Note: This simple update doesn't reorder the task immediately within the new column
-        // A more complex optimistic update would also adjust order_index if needed.
+        const currentWorkflowId = workflowId; // Capture stable workflowId
+        if (!currentWorkflowId) return;
+        console.log(`[Exec] handleTaskStatusChange (taskId: ${taskId}, newStatus: ${newStatus})`);
+        setError(null);
 
         try {
+            console.log(`[Fetch] PUT /api/tasks/${taskId}`);
             const response = await fetch(`/api/tasks/${taskId}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
@@ -135,37 +126,42 @@ export default function WorkflowDetailPage() {
                 throw new Error(errorData.error || `Failed to update task status (${response.status})`);
             }
 
-            const updatedTask = await response.json() as Task;
-            console.log(`[Page][Workflow ${workflowId}] Task ${taskId} status updated successfully via API.`);
-
-            // --- Sync with server response (or refetch) ---
-            // Refetching is simpler and ensures consistency
-            fetchWorkflowDetail();
-            // Or, update the state more precisely based on updatedTask (more complex)
-            // setWorkflow(prev => prev ? ({
-            //     ...prev,
-            //     tasks: prev.tasks.map(t => t.id === taskId ? updatedTask : t)
-            // }) : null);
-            // setOptimisticTasks(null); // Clear optimistic state after successful API call and state update
-
+            const updatedTaskFromServer = await response.json() as Task;
+            console.log(`[State Update Pre] setWorkflow in handleTaskStatusChange`);
+            setWorkflow(prevWorkflow => {
+                console.log('[State Update] Running setWorkflow callback in handleTaskStatusChange');
+                if (!prevWorkflow) return null;
+                const taskIndex = prevWorkflow.tasks.findIndex(t => t.id === taskId);
+                if (taskIndex === -1 || prevWorkflow.tasks[taskIndex].status === updatedTaskFromServer.status) {
+                    console.log('[State Update] Task not found or status already updated, skipping state change.');
+                    return prevWorkflow;
+                }
+                const newTasks = [...prevWorkflow.tasks];
+                newTasks[taskIndex] = updatedTaskFromServer;
+                const newCompletedCount = newTasks.filter(t => t.status === 'completed').length;
+                console.log('[State Update] Calculating new state with updated task');
+                return {
+                    ...prevWorkflow,
+                    tasks: newTasks,
+                    completed_tasks: newCompletedCount,
+                };
+            });
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : 'Unknown error updating task status';
-            console.error(`[Page][Workflow ${workflowId}] Error updating task ${taskId}:`, errorMessage);
+            console.error(`[Page][Workflow ${currentWorkflowId}] Error updating task ${taskId}:`, errorMessage);
             setError(`Failed to update task ${taskId}: ${errorMessage}`);
-            // --- Revert Optimistic Update ---
-            setOptimisticTasks(null); // Revert to original state from `workflow`
-            // Optionally show a more prominent error message to the user
         }
-    }, [workflow, workflowId, fetchWorkflowDetail]); // Include fetchWorkflowDetail
+    }, [workflowId]); // Depend only on stable workflowId
 
-    // Determine which tasks to display (optimistic or actual)
-    const displayTasks = optimisticTasks ?? workflow?.tasks ?? [];
+    // Determine which tasks to display (use workflow state directly for now)
+    const displayTasks = workflow?.tasks ?? [];
+    console.log(`[Render] WorkflowDetailPage - displayTasks length: ${displayTasks.length}`);
 
-    if (isLoading && !workflow) { // Show loading only if workflow is not yet loaded
+    if (isLoading && !workflow) {
         return <p className="text-center text-gray-500 dark:text-gray-400">Loading workflow details...</p>;
     }
 
-    if (error && !workflow) { // Show error only if workflow failed to load initially
+    if (error && !workflow) {
         return (
             <div className="text-center">
                  <p className="text-red-500 mb-4">Error: {error}</p>
@@ -175,10 +171,10 @@ export default function WorkflowDetailPage() {
     }
 
     if (!workflow) {
-        // This case should ideally be covered by the error state if fetch fails
         return <p className="text-center text-gray-500 dark:text-gray-400">Workflow data not available.</p>;
     }
 
+    console.log(`[Render] WorkflowDetailPage - Rendering with isLoading: ${isLoading}, error: ${error}, workflow exists: ${!!workflow}`);
     return (
         <div>
             {/* Workflow Header */}
@@ -199,7 +195,6 @@ export default function WorkflowDetailPage() {
                         Add New Task
                     </button> {/* TODO: Implement Add Task Modal */}
                  </div>
-                 {/* Display API errors related to updates here */}
                  {error && !isLoading && <p className="text-red-500 text-sm mt-4">Update Error: {error}</p>}
             </div>
 

@@ -42,6 +42,7 @@ function formatShortDate(isoString: string | null): string {
 }
 
 export function TaskCard({ task, hasDependencies, isDependedOn }: TaskCardProps) {
+    console.log(`[Render] TaskCard (id: ${task.id}, name: ${task.name})`);
     const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
         useSortable({ id: task.id });
 
