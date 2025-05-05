@@ -52,21 +52,22 @@ function WorkflowCard({ workflow }: { workflow: WorkflowWithStats }) {
         : 'No description';
 
     return (
-        <Link href={`/workflows/${workflow.id}`} legacyBehavior>
-            <a className="block p-6 bg-white/60 dark:bg-gray-800/60 backdrop-blur-md rounded-xl shadow-lg border border-white/30 dark:border-gray-700/30 hover:shadow-xl transition-shadow duration-300 cursor-pointer hover:border-blue-300 dark:hover:border-blue-600">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2 truncate">{workflow.name}</h3>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-4 h-10 overflow-hidden">{truncatedDescription}</p>
-                <div className="mb-4">
-                    <ProgressBar value={workflow.completed_tasks} max={workflow.total_tasks} />
-                    <p className="text-xs text-right text-gray-500 dark:text-gray-400 mt-1">
-                        {workflow.completed_tasks} / {workflow.total_tasks} tasks completed
-                    </p>
-                </div>
-                <div className="flex justify-between items-center text-xs text-gray-500 dark:text-gray-400">
-                    <span>Created by: {workflow.creator_name ?? 'Unknown'}</span>
-                    <span>{formatDateTime(workflow.created_at)}</span>
-                </div>
-            </a>
+        <Link
+            href={`/workflows/${workflow.id}`}
+            className="block p-6 bg-white/60 dark:bg-gray-800/60 backdrop-blur-md rounded-xl shadow-lg border border-white/30 dark:border-gray-700/30 hover:shadow-xl transition-shadow duration-300 cursor-pointer hover:border-blue-300 dark:hover:border-blue-600"
+        >
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2 truncate">{workflow.name}</h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4 h-10 overflow-hidden">{truncatedDescription}</p>
+            <div className="mb-4">
+                <ProgressBar value={workflow.completed_tasks} max={workflow.total_tasks} />
+                <p className="text-xs text-right text-gray-500 dark:text-gray-400 mt-1">
+                    {workflow.completed_tasks} / {workflow.total_tasks} tasks completed
+                </p>
+            </div>
+            <div className="flex justify-between items-center text-xs text-gray-500 dark:text-gray-400">
+                <span>Created by: {workflow.creator_name ?? 'Unknown'}</span>
+                <span>{formatDateTime(workflow.created_at)}</span>
+            </div>
         </Link>
     );
 }
