@@ -2,7 +2,7 @@
 
 Go 言語を使用して、永続化機能を持つ B+Tree ベースのシンプルなリレーショナルデータベースエンジンを実装します。基本的な SQL 操作 (CREATE TABLE, INSERT, SELECT, DELETE) をサポートし、ディスクへの永続化を行います。
 
-https://github.com/user-attachments/assets/9bc4fd59-833d-4354-ba40-5b700f7ad0dc
+https://github.com/user-attachments/assets/16761ac4-6d03-4943-9db3-1091850ea543
 
 https://github.com/user-attachments/assets/3af0b7cb-1f85-489c-a346-053a831131b4
 
