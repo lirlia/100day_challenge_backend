@@ -109,7 +109,8 @@ export default function PlayPage({ params }: { params: Promise<PlayPageParams> }
                     <GameBoard
                         notes={notesData.notes}
                         difficulty={difficulty}
-                        onGameEnd={handleGameEnd} // Pass callback for score submission
+                        onGameEnd={handleGameEnd}
+                        songUrl="/audio/test_song.mp3" // Pass the song URL explicitly
                     />
                     {/* Display total notes count */}
                     <p className="text-sm text-gray-600">Total Notes: {notesData.totalNotes}</p>
