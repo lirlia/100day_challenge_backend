@@ -40,3 +40,5 @@ alwaysApply: true
 | 31  | Go ORM と CLI シェル          | Go, SQLite, database/sql, reflect, go-prompt                                         |
 | 32  | ユーザースペースネットワークスタック | Go, TUNデバイス, TCP/IP, TLS1.2, HTTP/2, ALPN, ログカラー/インデント統一, レイヤー一時停止 |
 | 33  | ゼロ知識証明"体験型"デモアプリ   | Next.js, TypeScript, TailwindCSS, Schnorr Protocol 体験（UI）、魔法体験（クイズ形式）   |
+| 34  | B+ Tree ベースのRDBMSとREPL     | Go, B+ Tree 実装, 永続化 (File I/O), Transaction  |
+| 35  | ワークフロー自動化ツール         | Next.js, TypeScript, Prisma, SQLite, TailwindCSS (グラスモーフィズム), Zustand, タスク依存関係, カンバンボード (ドロップダウン代替) |

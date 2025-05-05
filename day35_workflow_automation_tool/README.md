@@ -1,74 +1,78 @@
-# Day 35: Workflow Automation Tool
+# Day 35: ワークフロー自動化ツール
 
-## Overview
+## 概要
 
-This project implements a workflow automation tool using Next.js, TypeScript, Tailwind CSS (with Glassmorphism design), Zustand, and better-sqlite3. It allows users to define workflows, manage tasks within them, set dependencies between tasks, and visualize the progress on a Kanban board.
+このプロジェクトは、Next.js, TypeScript, Tailwind CSS（グラスモーフィズムデザイン採用）, Zustand, better-sqlite3 を使用したワークフロー自動化ツールです。ユーザーはワークフローを定義し、その中のタスクを管理し、タスク間の依存関係を設定し、カンバンボードで進捗を視覚化することができます。
 
-## Features
+https://github.com/user-attachments/assets/0b771504-5ae0-40b0-ba4b-12dbd2efd6b6
 
--   **User Switching:** Simple user switching mechanism via a dropdown in the header (using Zustand for state management).
--   **Workflow Management:**
-    -   List workflows with task statistics (total/completed count).
-    -   Create new workflows via a modal.
-    -   View workflow details (name, description, creator, dates).
-    -   (Edit/Delete workflow UI is stubbed but not implemented).
--   **Task Management (within a workflow):**
-    -   Visualize tasks on a Kanban board divided by status (Pending, In Progress, Completed, On Hold).
-    -   Change task status using a dropdown menu on the task card (replaced drag-and-drop due to library issues).
-    -   Create new tasks via a modal.
-    -   Edit existing tasks (name, description, assignee, due date) via a modal.
-    -   Delete tasks (with confirmation).
--   **Task Dependencies:**
-    -   Define prerequisite tasks for a task.
-    -   Add dependencies via a modal on the task card.
-    -   View dependencies listed on the task card.
-    -   Remove dependencies.
-    -   Backend validation prevents status changes if prerequisites are not met.
-    -   Backend validation prevents creating circular dependencies.
--   **Database:**
-    -   Uses SQLite (`db/dev.db`) with `better-sqlite3`.
-    -   Schema includes `users`, `workflows`, `tasks`, `task_dependencies`.
-    -   Automatic `updated_at` timestamping via triggers.
+[100日チャレンジ day35](https://zenn.dev/gin_nazo/scraps/1ef0285d9a2dab)
+
+## 機能
+
+-   **ユーザー切り替え:** ヘッダーのドロップダウンによるシンプルなユーザー切り替え機能 (状態管理には Zustand を使用)。
+-   **ワークフロー管理:**
+    -   タスク統計（合計/完了数）付きのワークフロー一覧表示。
+    -   モーダルによる新規ワークフロー作成。
+    -   ワークフロー詳細（名前、説明、作成者、日付）の表示。
+    -   (ワークフローの編集/削除UIはスタブのみで未実装)。
+-   **タスク管理 (ワークフロー内):**
+    -   ステータス（未着手, 進行中, 完了, 保留）で分割されたカンバンボードによるタスクの視覚化。
+    -   タスクカードのドロップダウンメニューによるタスクステータス変更（ライブラリの問題によりドラッグ＆ドロップから変更）。
+    -   モーダルによる新規タスク作成。
+    -   モーダルによる既存タスク（名前、説明、担当者、期日）の編集。
+    -   タスクの削除（確認付き）。
+-   **タスク依存関係:**
+    -   タスクに対する前提タスクの定義。
+    -   タスクカードのモーダルによる依存関係の追加。
+    -   タスクカードにリスト表示される依存関係の表示。
+    -   依存関係の削除。
+    -   前提条件が満たされていない場合のステータス変更を防ぐバックエンドバリデーション。
+    -   循環依存関係の作成を防ぐバックエンドバリデーション。
+-   **データベース:**
+    -   SQLite (`db/dev.db`) と `better-sqlite3` を使用。
+    -   スキーマには `users`, `workflows`, `tasks`, `task_dependencies` が含まれる。
+    -   トリガーによる `updated_at` タイムスタンプの自動更新。
 -   **API:**
-    -   Next.js Route Handlers for CRUD operations on workflows, tasks, and dependencies.
-    -   Includes endpoints for fetching workflow lists with statistics and workflow details with tasks/dependencies.
--   **Styling:**
-    -   Tailwind CSS with a Glassmorphism theme (blurred backgrounds, subtle borders).
-    -   Responsive design.
--   **State Management:**
-    -   Zustand for managing the current user selection and user list.
-    -   React `useState` and `useCallback` for component-level state and handlers.
--   **UI Components:**
-    -   Header with user switcher.
-    -   Workflow list page with cards.
-    -   Workflow detail page with Kanban board.
-    -   Task cards with details, status dropdown, and dependency management.
-    -   Reusable Modal component.
-    -   Forms for creating/editing workflows and tasks, and adding dependencies.
-    -   Notifications using `react-toastify`.
+    -   ワークフロー、タスク、依存関係に対するCRUD操作のためのNext.js Route Handlers。
+    -   統計情報付きのワークフローリスト、およびタスク/依存関係付きのワークフロー詳細を取得するエンドポイントを含む。
+-   **スタイリング:**
+    -   グラスモーフィズムテーマ（ぼかした背景、繊細な境界線）のTailwind CSS。
+    -   レスポンシブデザイン。
+-   **状態管理:**
+    -   現在のユーザー選択とユーザーリストの管理のためのZustand。
+    -   コンポーネントレベルの状態とハンドラのためのReact `useState` と `useCallback`。
+-   **UIコンポーネント:**
+    -   ユーザー切り替え付きヘッダー。
+    -   カード表示のワークフロー一覧ページ。
+    -   カンバンボード付きのワークフロー詳細ページ。
+    -   詳細、ステータスドロップダウン、依存関係管理機能付きのタスクカード。
+    -   再利用可能なモーダルコンポーネント。
+    -   ワークフローとタスクの作成/編集、依存関係追加のためのフォーム。
+    -   `react-toastify` を使用した通知。
 
-## Known Issues / Limitations
+## 既知の問題 / 制限事項
 
--   Workflow editing and deletion UI is not implemented.
--   Drag-and-drop for status changes was replaced with a dropdown due to persistent issues with `@hello-pangea/dnd` and React 18/StrictMode.
--   Error handling is basic.
--   No real authentication.
+-   ワークフローの編集・削除UIは未実装です。
+-   ステータス変更のためのドラッグ＆ドロップは、`@hello-pangea/dnd` と React 18/StrictMode との間に継続的な問題があったため、ドロップダウンに置き換えられました。
+-   エラーハンドリングは基本的なものです。
+-   実際の認証機能はありません。
 
-## Setup and Running
+## セットアップと実行
 
-1.  **Install dependencies:**
+1.  **依存関係のインストール:**
     ```bash
     npm install
     ```
-2.  **Run the development server:**
+2.  **開発サーバーの実行:**
     ```bash
     npm run dev -- -p 3001
     ```
-3.  Open [http://localhost:3001](http://localhost:3001) in your browser.
+3.  ブラウザで [http://localhost:3001](http://localhost:3001) を開きます。
 
-## Database Schema (`lib/db.ts`)
+## データベーススキーマ (`lib/db.ts`)
 
 -   **`users`**: `id`, `name`, `email`, `created_at`, `updated_at`
 -   **`workflows`**: `id`, `name`, `description`, `created_by_user_id`, `created_at`, `updated_at`
 -   **`tasks`**: `id`, `workflow_id`, `name`, `description`, `assigned_user_id`, `created_by_user_id`, `due_date`, `status`, `order_index`, `created_at`, `updated_at`
--   **`task_dependencies`**: `task_id`, `depends_on_task_id` (Composite PK, ON DELETE CASCADE)
+-   **`task_dependencies`**: `task_id`, `depends_on_task_id` (複合主キー, ON DELETE CASCADE)
