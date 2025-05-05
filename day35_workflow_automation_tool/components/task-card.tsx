@@ -1,103 +1,172 @@
 'use client';
 
 import React from 'react';
-import { useSortable } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
-import { GripVertical, User, Clock, GitBranch } from 'lucide-react'; // Using lucide-react for icons
-
-// Task type from page.tsx
-interface Task {
-    id: number;
-    workflow_id: number;
-    name: string;
-    description: string | null;
-    assigned_user_id: number | null;
-    assigned_user_name: string | null;
-    due_date: string | null;
-    status: 'pending' | 'in_progress' | 'completed' | 'on_hold';
-    order_index: number;
-    created_at: string;
-    updated_at: string;
-}
+// Remove dnd imports
+// import { Draggable, DraggableProvided, DraggableStateSnapshot } from '@hello-pangea/dnd';
+import { Pencil, Trash2, Users, Calendar, Link2, PlusCircle, XCircle, ChevronDown } from 'lucide-react';
+import type { Task, User as LibUser, TaskDependency } from '@/lib/types';
 
 interface TaskCardProps {
     task: Task;
-    hasDependencies: boolean; // Whether this task depends on others
-    isDependedOn: boolean;    // Whether other tasks depend on this one
-    // onClick: () => void; // TODO: Add handler to open edit modal
+    // index is no longer needed without dnd
+    users: LibUser[];
+    dependencies: TaskDependency[];
+    allTasks: Task[];
+    onEdit: (task: Task) => void;
+    onDelete: (taskId: number) => void;
+    onAddDependency: (taskId: number) => void;
+    onDeleteDependency: (taskId: number, dependsOnTaskId: number) => void;
+    onTaskStatusChange: (taskId: number, newStatus: Task['status']) => void; // Add status change handler prop
 }
 
-function formatShortDate(isoString: string | null): string {
-    if (!isoString) return 'N/A';
+const getTaskName = (taskId: number, allTasks: Task[]): string => {
+    const task = allTasks.find(t => t.id === taskId);
+    return task ? task.name : 'Unknown Task';
+};
+
+const getAssigneeName = (assigneeId: number | null, users: LibUser[]): string => {
+    if (assigneeId === null) return 'Unassigned';
+    const user = users.find(u => u.id === assigneeId);
+    return user ? user.name : 'Unknown User';
+};
+
+const formatDueDate = (dueDate: string | null): string => {
+    if (!dueDate) return 'No due date';
     try {
-        const date = new Date(isoString);
-        // Get only date part if time is midnight
-        if (date.getHours() === 0 && date.getMinutes() === 0 && date.getSeconds() === 0) {
-             return date.toLocaleDateString('ja-JP', { year: 'numeric', month: 'short', day: 'numeric' });
-        }
-        return date.toLocaleString('ja-JP', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        const date = new Date(dueDate);
+        if (isNaN(date.getTime())) return 'Invalid date';
+        return date.toLocaleDateString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit' });
     } catch (e) {
-        return 'Invalid Date';
+        console.error("Error formatting due date:", dueDate, e);
+        return 'Invalid date';
     }
-}
+};
 
-export function TaskCard({ task, hasDependencies, isDependedOn }: TaskCardProps) {
-    console.log(`[Render] TaskCard (id: ${task.id}, name: ${task.name})`);
-    const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-        useSortable({ id: task.id });
+// Define statuses and labels here or import if defined globally
+const statuses: Task['status'][] = ['pending', 'in_progress', 'completed', 'on_hold'];
+const statusLabels: Record<Task['status'], string> = {
+    pending: 'Pending',
+    in_progress: 'In Progress',
+    completed: 'Completed',
+    on_hold: 'On Hold',
+};
+const statusColors: Record<Task['status'], string> = {
+     pending: 'bg-gray-400',
+     in_progress: 'bg-blue-500',
+     completed: 'bg-green-500',
+     on_hold: 'bg-yellow-500',
+};
 
-    const style = {
-        transform: CSS.Transform.toString(transform),
-        transition,
-        opacity: isDragging ? 0.8 : 1,
-        zIndex: isDragging ? 10 : 'auto',
+export default function TaskCard({
+    task,
+    users,
+    dependencies,
+    allTasks,
+    onEdit,
+    onDelete,
+    onAddDependency,
+    onDeleteDependency,
+    onTaskStatusChange // Destructure the new prop
+}: TaskCardProps) {
+    const assigneeName = getAssigneeName(task.assigned_user_id, users);
+    const formattedDueDate = formatDueDate(task.due_date);
+    const taskDependencies = dependencies.filter(dep => dep.task_id === task.id);
+
+    const handleStatusChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
+        const newStatus = event.target.value as Task['status'];
+        if (statuses.includes(newStatus)) {
+            onTaskStatusChange(task.id, newStatus);
+        }
     };
 
     return (
+        // Remove Draggable wrapper
         <div
-            ref={setNodeRef}
-            style={style}
-            {...attributes}
-            className={`p-4 mb-2 bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 cursor-grab touch-none ${isDragging ? 'ring-2 ring-blue-500' : ''}`}
-            // onClick={onClick} // Re-enable when modal is ready
-            aria-labelledby={`task-title-${task.id}`}
+            className="mb-3 p-4 rounded-lg shadow-md bg-white/80 dark:bg-gray-700/80 backdrop-blur-sm border border-white/30 dark:border-gray-600/50"
+            // Remove style related to dragging
         >
-            <div className="flex justify-between items-start">
-                <h4 id={`task-title-${task.id}`} className="font-semibold text-gray-800 dark:text-white mb-1 text-sm break-words">
-                    {task.name}
-                </h4>
-                <button {...listeners} aria-label="Drag task" className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
-                    <GripVertical size={16} />
-                </button>
-            </div>
-            {(task.assigned_user_name || task.due_date || hasDependencies || isDependedOn) && (
-                 <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400 items-center">
-                    {task.assigned_user_name && (
-                        <div className="flex items-center" title={`Assigned to ${task.assigned_user_name}`}>
-                            <User size={12} className="mr-1" />
-                            <span>{task.assigned_user_name}</span>
-                        </div>
-                    )}
-                    {task.due_date && (
-                        <div className="flex items-center" title={`Due ${formatShortDate(task.due_date)}`}>
-                            <Clock size={12} className="mr-1" />
-                            <span>{formatShortDate(task.due_date)}</span>
-                        </div>
-                    )}
-                    {hasDependencies && (
-                        <div className="flex items-center text-orange-600 dark:text-orange-400" title="This task has prerequisites">
-                            <GitBranch size={12} className="mr-1 transform -scale-x-100" /> {/* Icon indicating dependency input */}
-                            <span>Blocked</span>
-                        </div>
-                    )}
-                     {isDependedOn && (
-                        <div className="flex items-center text-blue-600 dark:text-blue-400" title="Other tasks depend on this one">
-                            <GitBranch size={12} className="mr-1" /> {/* Icon indicating dependency output */}
-                             <span>Blocking</span>
-                        </div>
-                    )}
+            {/* Task Header */}
+            <div className="flex justify-between items-start mb-2">
+                <h4 className="font-semibold text-gray-800 dark:text-gray-100 break-words mr-2 flex-grow">{task.name}</h4>
+                <div className="flex-shrink-0 flex items-center space-x-1">
+                    {/* Use template literals for className for brevity */}
+                    <button onClick={() => onEdit(task)} className={`p-1 rounded-full text-gray-500 dark:text-gray-400 hover:bg-gray-200/60 dark:hover:bg-gray-600 hover:text-blue-600 dark:hover:text-blue-400 transition-colors duration-150`} aria-label="Edit task"> <Pencil size={16} /> </button>
+                    <button onClick={() => onDelete(task.id)} className={`p-1 rounded-full text-gray-500 dark:text-gray-400 hover:bg-gray-200/60 dark:hover:bg-gray-600 hover:text-red-600 dark:hover:text-red-400 transition-colors duration-150`} aria-label="Delete task"> <Trash2 size={16} /> </button>
                 </div>
+            </div>
+
+            {/* Description */}
+            {task.description && (
+                <p className="text-sm text-gray-600 dark:text-gray-300 mb-3 break-words">{task.description}</p>
             )}
+
+            {/* Task Details */}
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-gray-500 dark:text-gray-400 mt-auto mb-3">
+                {/* Status Dropdown */}
+                <div className="relative group">
+                     <span className={`absolute -left-1 top-1/2 transform -translate-y-1/2 inline-block w-3 h-3 rounded-full mr-1 ${statusColors[task.status]}`}></span>
+                     <select
+                         value={task.status}
+                         onChange={handleStatusChange}
+                         className={`pl-3 pr-6 py-0.5 appearance-none text-xs rounded border border-transparent hover:border-gray-300 dark:hover:border-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 bg-transparent cursor-pointer`}
+                         title={`Change status (Current: ${statusLabels[task.status]})`}
+                     >
+                         {statuses.map(s => (
+                             <option key={s} value={s}>{statusLabels[s]}</option>
+                         ))}
+                     </select>
+                     <ChevronDown size={12} className="absolute right-1 top-1/2 transform -translate-y-1/2 text-gray-400 group-hover:text-gray-600 pointer-events-none" />
+                </div>
+
+                {/* Assignee */}
+                <div className="flex items-center" title={`Assignee: ${assigneeName}`}>
+                    <Users size={14} className="mr-1" />
+                    <span>{assigneeName}</span>
+                </div>
+                {/* Due Date */}
+                <div className="flex items-center" title={`Due Date: ${formattedDueDate}`}>
+                    <Calendar size={14} className="mr-1" />
+                    <span>{formattedDueDate}</span>
+                </div>
+            </div>
+
+            {/* Dependencies Section (remains the same) */}
+             <div className="mt-3 pt-3 border-t border-gray-200/80 dark:border-gray-600/50 text-xs text-gray-500 dark:text-gray-400">
+                        <div className="flex justify-between items-center mb-1">
+                            <p className="font-medium text-gray-600 dark:text-gray-300 flex items-center">
+                                <Link2 size={14} className="mr-1.5" />
+                                Depends On:
+                            </p>
+                            <button
+                                onClick={() => onAddDependency(task.id)}
+                                className="p-1 rounded-full text-gray-400 dark:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-600 hover:text-green-600 dark:hover:text-green-400 transition-colors"
+                                aria-label="Add dependency"
+                            >
+                                <PlusCircle size={16} />
+                            </button>
+                        </div>
+                        {taskDependencies.length === 0 ? (
+                            <p className="italic text-gray-400 dark:text-gray-500">No dependencies</p>
+                        ) : (
+                            <ul className="space-y-1 max-h-16 overflow-y-auto custom-scrollbar-xs pr-1"> {/* Limit height and add scroll */}
+                                {taskDependencies.map((dep) => (
+                                    <li key={dep.depends_on_task_id} className="flex justify-between items-center group">
+                                        <span className="truncate pr-2" title={getTaskName(dep.depends_on_task_id, allTasks)}>
+                                            {getTaskName(dep.depends_on_task_id, allTasks)}
+                                        </span>
+                                        <button
+                                            onClick={() => onDeleteDependency(task.id, dep.depends_on_task_id)}
+                                            className="p-0.5 rounded-full text-gray-400 dark:text-gray-500 hover:bg-red-100 dark:hover:bg-red-900/50 hover:text-red-600 dark:hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+                                            aria-label={`Remove dependency on task ${dep.depends_on_task_id}`}
+                                        >
+                                            <XCircle size={14} />
+                                        </button>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                    </div>
         </div>
+        // Remove closing Draggable tag
     );
 }

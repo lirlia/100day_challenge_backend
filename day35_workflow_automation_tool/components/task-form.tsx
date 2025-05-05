@@ -1,21 +1,24 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { User, useUserStore } from '@/lib/store'; // Import User type and store
+// Import types from the central types file
+import { User as LibUser, TaskFormData } from '@/lib/types'; // Use LibUser alias, import TaskFormData
 
-// Task type subset needed for the form
+// Remove local TaskFormData interface if imported
+/*
 interface TaskFormData {
     name: string;
     description: string;
     assigned_user_id: number | null;
     due_date: string; // Store as YYYY-MM-DD string for input type="date"
 }
+*/
 
 interface TaskFormProps {
-    onSubmit: (data: TaskFormData) => Promise<void>;
+    onSubmit: (data: TaskFormData) => Promise<void>; // Use imported TaskFormData
     onCancel: () => void;
-    initialData?: Partial<TaskFormData> & { id?: number }; // id is useful for edit mode title
-    users: User[]; // Pass users for assignee dropdown
+    initialData?: Partial<TaskFormData> & { id?: number }; // Use imported TaskFormData
+    users: LibUser[]; // Use LibUser type
     isSubmitting: boolean;
     submitError: string | null;
 }
@@ -34,38 +37,32 @@ const formatDateForInput = (isoDateString: string | null | undefined): string =>
 export default function TaskForm({
     onSubmit,
     onCancel,
-    initialData = { name: '', description: '', assigned_user_id: null, due_date: '' },
-    users,
+    // Use Partial<TaskFormData> for initialData default
+    initialData = {},
+    users, // This is LibUser[]
     isSubmitting,
     submitError,
 }: TaskFormProps) {
-    const [formData, setFormData] = useState<TaskFormData>({
-        name: initialData.name ?? '',
-        description: initialData.description ?? '',
-        assigned_user_id: initialData.assigned_user_id ?? null,
-        due_date: formatDateForInput(initialData.due_date),
-    });
+    // Initialize formData state using TaskFormData type
+    const [formData, setFormData] = useState<TaskFormData>(() => ({
+        name: initialData?.name ?? '',
+        description: initialData?.description ?? '',
+        assigned_user_id: initialData?.assigned_user_id ?? null,
+        due_date: formatDateForInput(initialData?.due_date),
+    }));
     const [nameError, setNameError] = useState<string | null>(null);
 
-    // Reset form when initialData changes
+    // Reset form when initialData changes (using relevant props)
     useEffect(() => {
-        // Safely access initialData properties to set the form state
-        const name = initialData?.name ?? '';
-        const description = initialData?.description ?? '';
-        const assignedUserId = initialData?.assigned_user_id ?? null;
-        const dueDate = formatDateForInput(initialData?.due_date);
-
         setFormData({
-            name: name,
-            description: description,
-            assigned_user_id: assignedUserId,
-            due_date: dueDate,
+            name: initialData?.name ?? '',
+            description: initialData?.description ?? '',
+            assigned_user_id: initialData?.assigned_user_id ?? null,
+            due_date: formatDateForInput(initialData?.due_date),
         });
         setNameError(null);
-        // Depend on the actual primitive values that define the task being edited,
-        // rather than the object reference which might change on every render.
     }, [
-        initialData?.id, // Primary identifier for the task being edited
+        initialData?.id,
         initialData?.name,
         initialData?.description,
         initialData?.assigned_user_id,
@@ -76,12 +73,18 @@ export default function TaskForm({
         e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
     ) => {
         const { name, value } = e.target;
-        const newValue = name === 'assigned_user_id' ? (value ? parseInt(value, 10) : null) : value;
-        setFormData((prev) => ({ ...prev, [name]: newValue }));
+        // Use keyof TaskFormData for safer property access
+        const key = name as keyof TaskFormData;
+        const newValue = key === 'assigned_user_id' ? (value ? parseInt(value, 10) : null) : value;
 
-        if (name === 'name' && value.trim() === '') {
+        setFormData((prev) => ({
+            ...prev,
+            [key]: newValue
+        }));
+
+        if (key === 'name' && value.trim() === '') {
             setNameError('Task name is required.');
-        } else if (name === 'name') {
+        } else if (key === 'name') {
             setNameError(null);
         }
     };
@@ -93,9 +96,6 @@ export default function TaskForm({
             return;
         }
         if (isSubmitting) return;
-
-        // Convert date back to format API expects if needed, or handle in API
-        // Assuming API can handle YYYY-MM-DD for DATETIME column for simplicity here
         await onSubmit(formData);
     };
 
@@ -150,7 +150,7 @@ export default function TaskForm({
                     className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white dark:border-gray-600 disabled:opacity-50"
                 >
                     <option value="">Unassigned</option>
-                    {users.map((user) => (
+                    {users.map((user) => ( // user is LibUser here
                         <option key={user.id} value={user.id}>
                             {user.name}
                         </option>
@@ -195,7 +195,7 @@ export default function TaskForm({
                     disabled={isSubmitting || !!nameError}
                     className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 border border-transparent rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                    {isSubmitting ? 'Saving...' : initialData.id ? 'Update Task' : 'Create Task'}
+                    {isSubmitting ? 'Saving...' : initialData?.id ? 'Update Task' : 'Create Task'}
                 </button>
             </div>
         </form>

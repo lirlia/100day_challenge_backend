@@ -1,138 +1,229 @@
 'use client';
 
-import React, { useMemo } from 'react';
-import { useDroppable, DndContext, DragEndEvent, UniqueIdentifier, closestCenter } from '@dnd-kit/core';
-import { SortableContext, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
-import { TaskCard } from './task-card';
+import React, { useMemo, useState } from 'react';
+// Remove D&D imports
+// import { DragDropContext, Droppable, OnDragEndResponder, DropResult, DroppableProvided, DroppableStateSnapshot } from '@hello-pangea/dnd';
+import { toast } from 'react-toastify';
+import TaskCard from './task-card';
+import Modal from './modal';
+import TaskForm from './task-form';
+import DependencyForm from './dependency-form';
+import type { Task, User as LibUser, TaskDependency, Workflow, TaskFormData } from '@/lib/types';
 
-// --- Types ---
-interface Task {
-    id: number;
-    workflow_id: number;
-    name: string;
-    description: string | null;
-    assigned_user_id: number | null;
-    assigned_user_name: string | null;
-    due_date: string | null;
-    status: 'pending' | 'in_progress' | 'completed' | 'on_hold';
-    order_index: number;
-    created_at: string;
-    updated_at: string;
-}
-
-interface TaskDependency {
-    task_id: number;
-    depends_on_task_id: number;
-}
-
-interface KanbanColumnProps {
-    id: UniqueIdentifier; // Column ID (matches status)
-    title: string;
-    tasks: Task[];
-    dependencies: TaskDependency[];
-}
+// Define statuses array and labels locally (needed for columns)
+const statuses: Task['status'][] = ['pending', 'in_progress', 'completed', 'on_hold'];
+const statusLabels: Record<Task['status'], string> = {
+    pending: 'Pending',
+    in_progress: 'In Progress',
+    completed: 'Completed',
+    on_hold: 'On Hold',
+};
 
 interface KanbanBoardProps {
     tasks: Task[];
     dependencies: TaskDependency[];
-    onTaskStatusChange: (taskId: number, newStatus: Task['status']) => void;
-    // onTaskOrderChange: (taskId: number, newOrderIndex: number) => void; // Optional: for reordering within columns
+    users: LibUser[];
+    onTaskStatusChange: (taskId: number, newStatus: Task['status']) => Promise<void>;
+    onTaskCreate: (data: TaskFormData) => Promise<void>;
+    onTaskUpdate: (taskId: number, data: Partial<TaskFormData>) => Promise<void>;
+    onTaskDelete: (taskId: number) => Promise<void>;
+    onDependencyAdd: (taskId: number, dependsOnTaskId: number) => Promise<void>;
+    onDependencyDelete: (taskId: number, dependsOnTaskId: number) => Promise<void>;
 }
 
-// --- Kanban Column Component ---
-function KanbanColumn({ id, title, tasks, dependencies }: KanbanColumnProps) {
-    console.log(`[Render] KanbanColumn (id: ${id}, taskCount: ${tasks.length})`);
-    const { setNodeRef } = useDroppable({ id });
+export default function KanbanBoard({
+    tasks,
+    dependencies,
+    users,
+    onTaskStatusChange,
+    onTaskCreate,
+    onTaskUpdate,
+    onTaskDelete,
+    onDependencyAdd,
+    onDependencyDelete
+}: KanbanBoardProps) {
+    const [isEditTaskModalOpen, setIsEditTaskModalOpen] = useState(false);
+    const [editingTask, setEditingTask] = useState<Task | null>(null);
+    const [isSubmittingTask, setIsSubmittingTask] = useState(false);
+    const [taskSubmitError, setTaskSubmitError] = useState<string | null>(null);
+    const [isDependencyModalOpen, setIsDependencyModalOpen] = useState(false);
+    const [dependencyTargetTask, setDependencyTargetTask] = useState<Task | null>(null);
+    const [isSubmittingDependency, setIsSubmittingDependency] = useState(false);
+    const [dependencySubmitError, setDependencySubmitError] = useState<string | null>(null);
 
-    // Helper to check if a task has dependencies
-    const taskHasDependencies = (taskId: number) => {
-        return dependencies.some(dep => dep.task_id === taskId);
+    const openEditModal = (task: Task) => {
+        setEditingTask(task);
+        setIsSubmittingTask(false);
+        setTaskSubmitError(null);
+        setIsEditTaskModalOpen(true);
     };
 
-    // Helper to check if a task is depended on by others
-    const taskIsDependedOn = (taskId: number) => {
-         return dependencies.some(dep => dep.depends_on_task_id === taskId);
+    const closeEditModal = () => {
+        setIsEditTaskModalOpen(false);
+        setEditingTask(null);
     };
 
-    return (
-        <div
-            ref={setNodeRef}
-            className="flex-1 min-w-[280px] bg-gray-100/70 dark:bg-gray-800/50 rounded-lg p-4 shadow-inner border border-gray-200/50 dark:border-gray-700/30 backdrop-blur-sm"
-        >
-            <h3 className="font-semibold text-gray-700 dark:text-gray-200 mb-4 text-center border-b pb-2 border-gray-300 dark:border-gray-600">{title} ({tasks.length})</h3>
-            <SortableContext id={String(id)} items={tasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
-                <div className="space-y-2 min-h-[100px]"> {/* Min height for empty columns */}
-                    {tasks.map(task => (
-                        <TaskCard
-                            key={task.id}
-                            task={task}
-                            hasDependencies={taskHasDependencies(task.id)}
-                            isDependedOn={taskIsDependedOn(task.id)}
-                            // onClick={() => console.log('Task clicked:', task.id)} // Placeholder
-                        />
-                    ))}
-                </div>
-            </SortableContext>
-        </div>
-    );
-}
-
-// --- Kanban Board Component ---
-export default function KanbanBoard({ tasks, dependencies, onTaskStatusChange }: KanbanBoardProps) {
-    // Define statuses within the component or receive as prop if dynamic
-    const statuses: Task['status'][] = ['pending', 'in_progress', 'completed', 'on_hold'];
-
-    // Memoize the columns calculation to prevent unnecessary re-computation
-    const columns = useMemo(() => {
-        console.log('[KanbanBoard] Recalculating columns...'); // Log to check frequency
-        return statuses.map(status => ({
-            id: status,
-            title: status.charAt(0).toUpperCase() + status.slice(1).replace('_', ' '),
-            // Filter and sort tasks for each column
-            tasks: tasks.filter(task => task.status === status).sort((a, b) => a.order_index - b.order_index),
-        }));
-    // Depend on the tasks array. If tasks array reference changes, recalculate.
-    // statuses is constant within this scope, but included for completeness if it were dynamic.
-    }, [tasks, statuses]);
-
-    const handleDragEnd = (event: DragEndEvent) => {
-        const { active, over } = event;
-
-        // Ensure we have a valid drop target and the item moved
-        if (over && active.id !== over.id) {
-             const activeTask = tasks.find(t => t.id === active.id);
-             // The droppable target ID is the status column ID
-             const targetStatus = over.id as Task['status'];
-
-             // Check if the target is a valid status column and the task status actually changes
-             if (activeTask && targetStatus && activeTask.status !== targetStatus && statuses.includes(targetStatus)) {
-                 console.log(`Attempting to move task ${active.id} from ${activeTask.status} to ${targetStatus}`);
-                 // Call the handler passed from the parent page to update the task status via API
-                 onTaskStatusChange(active.id as number, targetStatus);
-             } else {
-                 // Handle cases like dropping back into the same column or invalid drop target
-                 console.log(`Task ${active.id} dropped over ${over.id}, but not a valid status change.`);
-                 // Optional: Implement reordering within the same column if needed
-             }
-        } else {
-            console.log('Drag ended without a valid target or on the same item.');
+    const handleTaskEditSubmit = async (formData: TaskFormData) => {
+        if (!editingTask) return;
+        setIsSubmittingTask(true);
+        setTaskSubmitError(null);
+        try {
+            const updateData: Partial<TaskFormData> = {
+                name: formData.name,
+                description: formData.description,
+                assigned_user_id: formData.assigned_user_id,
+                due_date: formData.due_date || null,
+            };
+            if (updateData.due_date === '') {
+                updateData.due_date = null;
+            }
+            await onTaskUpdate(editingTask.id, updateData);
+            closeEditModal();
+            toast.success(`Task "${formData.name}" updated.`);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Failed to update task.';
+            console.error("Task update error:", err);
+            setTaskSubmitError(message);
+        } finally {
+            setIsSubmittingTask(false);
         }
     };
 
-    // We need DndContext here to manage the drag and drop state
+    const handleTaskDeleteClick = async (taskId: number) => {
+        const taskToDelete = tasks.find(t => t.id === taskId);
+        if (!taskToDelete) return;
+        if (window.confirm(`Are you sure you want to delete task "${taskToDelete.name}"?`)) {
+            try {
+                await onTaskDelete(taskId);
+                toast.success(`Task "${taskToDelete.name}" deleted.`);
+            } catch (err) {
+                const message = err instanceof Error ? err.message : 'Failed to delete task.';
+                console.error("Task delete error:", err);
+                toast.error(message);
+            }
+        }
+    };
+
+    const openDependencyModal = (taskId: number) => {
+        const targetTask = tasks.find(t => t.id === taskId);
+        if (targetTask) {
+            setDependencyTargetTask(targetTask);
+            setIsSubmittingDependency(false);
+            setDependencySubmitError(null);
+            setIsDependencyModalOpen(true);
+        } else {
+            console.error("Target task for dependency not found:", taskId);
+            toast.error("Cannot add dependency: Task not found.");
+        }
+    };
+
+    const closeDependencyModal = () => {
+        setIsDependencyModalOpen(false);
+        setDependencyTargetTask(null);
+    };
+
+    const handleDependencyAddSubmit = async (dependsOnTaskId: number) => {
+        if (!dependencyTargetTask) return;
+        setIsSubmittingDependency(true);
+        setDependencySubmitError(null);
+        try {
+            await onDependencyAdd(dependencyTargetTask.id, dependsOnTaskId);
+            closeDependencyModal();
+            toast.success(`Dependency added to task "${dependencyTargetTask.name}".`);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Failed to add dependency.';
+            console.error("Dependency add error:", err);
+            setDependencySubmitError(message);
+        } finally {
+            setIsSubmittingDependency(false);
+        }
+    };
+
+    const handleDependencyDeleteClick = async (taskId: number, dependsOnTaskId: number) => {
+        const task = tasks.find(t => t.id === taskId);
+        const dependsOnTask = tasks.find(t => t.id === dependsOnTaskId);
+        if (!task || !dependsOnTask) return;
+
+        if (window.confirm(`Remove dependency: Task "${task.name}" will no longer depend on "${dependsOnTask.name}"?`)) {
+            try {
+                await onDependencyDelete(taskId, dependsOnTaskId);
+                toast.success(`Dependency removed from task "${task.name}".`);
+            } catch (err) {
+                const message = err instanceof Error ? err.message : 'Failed to remove dependency.';
+                console.error("Dependency delete error:", err);
+                toast.error(message);
+            }
+        }
+    };
+
+    const taskFormInitialData: (Partial<TaskFormData> & { id?: number }) | undefined = editingTask ? {
+        id: editingTask.id,
+        name: editingTask.name,
+        description: editingTask.description ?? '',
+        assigned_user_id: editingTask.assigned_user_id,
+        due_date: editingTask.due_date ? editingTask.due_date.split('T')[0].split(' ')[0] : '',
+    } : undefined;
+
     return (
-         <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-            <div className="flex space-x-4 overflow-x-auto pb-4">
-                {columns.map(column => (
-                    <KanbanColumn
-                        key={column.id}
-                        id={column.id}
-                        title={column.title}
-                        tasks={column.tasks} // Pass the memoized tasks for this column
-                        dependencies={dependencies}
-                    />
+        <>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+                {statuses.map((status) => (
+                    <div key={status} className="p-4 rounded-xl bg-gray-100/60 dark:bg-gray-800/60 backdrop-blur-sm border border-gray-200/50 dark:border-gray-700/40 min-h-[250px] transition-colors duration-200 flex flex-col">
+                        <h3 className="text-lg font-semibold mb-4 text-gray-700 dark:text-gray-200 text-center border-b border-gray-300/50 dark:border-gray-600/50 pb-2 capitalize">
+                            {statusLabels[status]} ({tasks.filter(t => t.status === status).length})
+                        </h3>
+                        <div className="flex-grow overflow-y-auto pr-1 -mr-1 custom-scrollbar">
+                            {tasks
+                                .filter((task) => task.status === status)
+                                .sort((a, b) => a.order_index - b.order_index)
+                                .map((task) => (
+                                    <TaskCard
+                                        key={task.id}
+                                        task={task}
+                                        users={users}
+                                        dependencies={dependencies}
+                                        allTasks={tasks}
+                                        onEdit={openEditModal}
+                                        onDelete={handleTaskDeleteClick}
+                                        onAddDependency={openDependencyModal}
+                                        onDeleteDependency={handleDependencyDeleteClick}
+                                        onTaskStatusChange={onTaskStatusChange}
+                                    />
+                                ))}
+                            {tasks.filter((task) => task.status === status).length === 0 && (
+                                <div className="text-center text-sm text-gray-400 dark:text-gray-500 mt-4 italic p-4">
+                                    No tasks in this column.
+                                </div>
+                            )}
+                        </div>
+                    </div>
                 ))}
             </div>
-        </DndContext>
+
+            <Modal isOpen={isEditTaskModalOpen} onClose={closeEditModal} title={`Edit Task ${editingTask?.id ?? ''}`}>
+                <TaskForm
+                    onSubmit={handleTaskEditSubmit}
+                    onCancel={closeEditModal}
+                    initialData={taskFormInitialData}
+                    users={users}
+                    isSubmitting={isSubmittingTask}
+                    submitError={taskSubmitError}
+                />
+            </Modal>
+
+            <Modal isOpen={isDependencyModalOpen} onClose={closeDependencyModal} title={`Add Dependency for "${dependencyTargetTask?.name}"`}>
+                {dependencyTargetTask && (
+                    <DependencyForm
+                        targetTask={dependencyTargetTask}
+                        allTasks={tasks}
+                        existingDependencies={dependencies}
+                        onSubmit={handleDependencyAddSubmit}
+                        onCancel={closeDependencyModal}
+                        isSubmitting={isSubmittingDependency}
+                        submitError={dependencySubmitError}
+                    />
+                )}
+            </Modal>
+        </>
     );
 }

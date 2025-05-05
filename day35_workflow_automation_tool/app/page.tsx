@@ -1,8 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useUserStore } from '@/lib/store';
+import Modal from '@/components/modal';
+import WorkflowForm from '@/components/workflow-form';
 
 // APIレスポンスの型 (GET /api/workflows)
 interface WorkflowWithStats {
@@ -79,59 +81,118 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null);
   const selectedUserId = useUserStore((state) => state.selectedUserId);
 
-  // Fetch workflows when the component mounts or selected user changes
-  useEffect(() => {
-    const fetchWorkflows = async () => {
-      setIsLoading(true);
-      setError(null);
-      try {
-        console.log('[Page] Fetching workflows...');
-        const response = await fetch('/api/workflows');
-        if (!response.ok) {
-          throw new Error(`Failed to fetch workflows: ${response.statusText}`);
-        }
-        const data = await response.json() as WorkflowWithStats[];
-        console.log('[Page] Workflows fetched successfully:', data);
-        setWorkflows(data);
-      } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : 'Unknown error fetching workflows';
-        console.error('[Page] Error fetching workflows:', errorMessage);
-        setError(errorMessage);
-      } finally {
-        setIsLoading(false);
-      }
-    };
+  // State for modal and form
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
+  // Memoized fetch function
+  const fetchWorkflows = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      console.log('[Page] Fetching workflows...');
+      const response = await fetch('/api/workflows');
+      if (!response.ok) {
+        throw new Error(`Failed to fetch workflows: ${response.statusText}`);
+      }
+      const data = await response.json() as WorkflowWithStats[];
+      console.log('[Page] Workflows fetched successfully:', data);
+      setWorkflows(data);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error fetching workflows';
+      console.error('[Page] Error fetching workflows:', errorMessage);
+      setError(errorMessage);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []); // Empty dependency array, fetch once on mount
+
+  useEffect(() => {
     fetchWorkflows();
-  }, []); // Re-fetch when needed, e.g., after creating a workflow
+  }, [fetchWorkflows]); // Use memoized function
+
+  // Modal control functions
+  const openModal = () => {
+      if (!selectedUserId) {
+          alert('Please select a user first to create a workflow.'); // Simple alert for now
+          return;
+      }
+      setSubmitError(null); // Clear previous errors
+      setIsModalOpen(true);
+  }
+  const closeModal = () => setIsModalOpen(false);
+
+  // Form submission handler
+  const handleCreateWorkflow = async (formData: { name: string; description: string }) => {
+      if (!selectedUserId) {
+          setSubmitError('Cannot create workflow without a selected user.');
+          return;
+      }
+      setIsSubmitting(true);
+      setSubmitError(null);
+      try {
+          console.log('[Page] Creating workflow:', formData);
+          const response = await fetch('/api/workflows', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ ...formData, created_by_user_id: selectedUserId }),
+          });
+
+          if (!response.ok) {
+              const errorData = await response.json().catch(() => ({}));
+              throw new Error(errorData.error || `Failed to create workflow: ${response.statusText}`);
+          }
+
+          console.log('[Page] Workflow created successfully.');
+          closeModal();
+          await fetchWorkflows(); // Re-fetch the list
+
+      } catch (err) {
+          const errorMessage = err instanceof Error ? err.message : 'Unknown error creating workflow';
+          console.error('[Page] Error creating workflow:', errorMessage);
+          setSubmitError(errorMessage);
+      } finally {
+          setIsSubmitting(false);
+      }
+  };
 
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold text-gray-800 dark:text-white">Workflows</h1>
         <button
-            // onClick={() => openCreateWorkflowModal()} // TODO: Implement modal later
+            onClick={openModal}
             className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg shadow-md transition duration-150 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed"
-            // disabled={!selectedUserId} // Enable when create is implemented
+            disabled={!selectedUserId || isLoading}
         >
           Create New Workflow
         </button>
       </div>
 
       {isLoading && <p className="text-center text-gray-500 dark:text-gray-400">Loading workflows...</p>}
-      {error && <p className="text-center text-red-500">Error: {error}</p>}
+      {error && !isLoading && workflows.length === 0 && <p className="text-center text-red-500">Error fetching workflows: {error}</p>}
 
-      {!isLoading && !error && (
+      {!isLoading && workflows.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {workflows.length > 0 ? (
-            workflows.map((workflow) => (
+            {workflows.map((workflow) => (
               <WorkflowCard key={workflow.id} workflow={workflow} />
-            ))
-          ) : (
-            <p className="text-center text-gray-500 dark:text-gray-400 col-span-full">No workflows found.</p>
-          )}
+            ))}
         </div>
       )}
+
+      {!isLoading && workflows.length === 0 && !error && (
+           <p className="text-center text-gray-500 dark:text-gray-400 col-span-full pt-10">No workflows found. Click 'Create New Workflow' to get started.</p>
+      )}
+
+      <Modal isOpen={isModalOpen} onClose={closeModal} title="Create New Workflow">
+          <WorkflowForm
+              onSubmit={handleCreateWorkflow}
+              onCancel={closeModal}
+              isSubmitting={isSubmitting}
+              submitError={submitError}
+          />
+      </Modal>
     </div>
   );
 }

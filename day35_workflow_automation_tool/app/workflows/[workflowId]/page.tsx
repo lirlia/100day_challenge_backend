@@ -1,209 +1,244 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useParams } from 'next/navigation'; // Use hook for client components
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import KanbanBoard from '@/components/kanban-board'; // Import the KanbanBoard component
-import { useUserStore } from '@/lib/store'; // Import user store if needed for actions
+import { toast } from 'react-toastify';
+import KanbanBoard from '@/components/kanban-board';
+import { useUserStore } from '@/lib/store';
+import Modal from '@/components/modal';
+import TaskForm from '@/components/task-form';
+import { WorkflowDetail, Task, TaskDependency, TaskFormData, User as LibUser } from '@/lib/types';
 
-// --- Types (align with API response) ---
-interface Task {
-    id: number;
-    workflow_id: number;
-    name: string;
-    description: string | null;
-    assigned_user_id: number | null;
-    assigned_user_name: string | null;
-    due_date: string | null;
-    status: 'pending' | 'in_progress' | 'completed' | 'on_hold';
-    order_index: number;
-    created_at: string;
-    updated_at: string;
-}
-
-interface TaskDependency {
-    task_id: number;
-    depends_on_task_id: number;
-}
-
-interface WorkflowDetail {
-    id: number;
-    name: string;
-    description: string | null;
-    created_by_user_id: number | null;
-    created_at: string;
-    updated_at: string;
-    creator_name: string | null;
-    total_tasks: number;
-    completed_tasks: number;
-    tasks: Task[];
-    dependencies: TaskDependency[];
-}
-
-// --- Helper Functions ---
 function formatDateTime(isoString: string | null): string {
     if (!isoString) return 'N/A';
     try {
         return new Date(isoString).toLocaleString('ja-JP', {
-            year: 'numeric', month: 'short', day: 'numeric',
-            hour: '2-digit', minute: '2-digit'
+            year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
         });
-    } catch (e) {
-        return 'Invalid Date';
-    }
+    } catch (e) { return 'Invalid Date'; }
 }
 
-// --- Main Component ---
 export default function WorkflowDetailPage() {
-    console.log('[Render] WorkflowDetailPage');
     const params = useParams();
+    const router = useRouter();
     const workflowId = params?.workflowId as string | undefined;
+    const workflowIdNumber = workflowId ? parseInt(workflowId, 10) : NaN;
     const [workflow, setWorkflow] = useState<WorkflowDetail | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    // Temporarily disable optimistic updates for debugging
-    // const [optimisticTasks, setOptimisticTasks] = useState<Task[] | null>(null);
+    const { users: userListFromStore, fetchUsers: fetchUserList } = useUserStore();
+    const userList: LibUser[] = userListFromStore as LibUser[];
 
-    // Memoized fetch function
-    const fetchWorkflowDetail = useCallback(async () => {
-        console.log(`[Exec] fetchWorkflowDetail (workflowId: ${workflowId})`);
-        if (!workflowId) {
-             setError('Workflow ID is missing.');
-             setIsLoading(false);
-             return;
-        }
-        setIsLoading(true);
-        // setOptimisticTasks(null);
-        setError(null);
+    const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
+    const [taskModalMode, setTaskModalMode] = useState<'create' | 'edit'>('create');
+    const [editingTaskData, setEditingTaskData] = useState<Task | null>(null);
+    const [isSubmittingTask, setIsSubmittingTask] = useState(false);
+    const [taskSubmitError, setTaskSubmitError] = useState<string | null>(null);
+
+    useEffect(() => { fetchUserList(); }, [fetchUserList]);
+
+    const fetchWorkflowDetail = useCallback(async (showLoading = true) => {
+        if (isNaN(workflowIdNumber)) { setError('Invalid Workflow ID.'); setIsLoading(false); return; }
+        if (showLoading) setIsLoading(true);
         try {
-            console.log(`[Fetch] /api/workflows/${workflowId}`);
-            const response = await fetch(`/api/workflows/${workflowId}`);
-            if (!response.ok) {
-                if (response.status === 404) {
-                    throw new Error('Workflow not found.');
-                } else {
-                    const errorData = await response.json().catch(() => ({}));
-                    throw new Error(errorData.error || `Failed to fetch workflow details: ${response.statusText}`);
-                }
-            }
-            const data = await response.json() as WorkflowDetail;
-            console.log(`[State Update Pre] setWorkflow in fetchWorkflowDetail`);
-            setWorkflow(data);
-        } catch (err) {
-            const errorMessage = err instanceof Error ? err.message : 'Unknown error fetching workflow details';
-            console.error(`[Page][Workflow ${workflowId}] Error fetching details:`, errorMessage);
-            setError(errorMessage);
-            console.log(`[State Update Pre] setWorkflow(null) in fetchWorkflowDetail catch`);
-            setWorkflow(null);
-        } finally {
-            setIsLoading(false);
-        }
-    }, [workflowId]);
-
-    useEffect(() => {
-        console.log('[Effect] Running fetchWorkflowDetail effect');
-        fetchWorkflowDetail();
-    }, [fetchWorkflowDetail]);
-
-    // --- Task Status Change Handler (Revised Dependencies and State Update) ---
-    const handleTaskStatusChange = useCallback(async (taskId: number, newStatus: Task['status']) => {
-        const currentWorkflowId = workflowId; // Capture stable workflowId
-        if (!currentWorkflowId) return;
-        console.log(`[Exec] handleTaskStatusChange (taskId: ${taskId}, newStatus: ${newStatus})`);
-        setError(null);
-
-        try {
-            console.log(`[Fetch] PUT /api/tasks/${taskId}`);
-            const response = await fetch(`/api/tasks/${taskId}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ status: newStatus }),
-            });
-
+            const response = await fetch(`/api/workflows/${workflowIdNumber}`);
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
-                console.error(`[API Error][PUT /api/tasks/${taskId}] Failed to update status:`, errorData);
-                throw new Error(errorData.error || `Failed to update task status (${response.status})`);
+                throw new Error(errorData.error || `Failed to fetch workflow details (${response.status})`);
             }
+            const data = await response.json() as WorkflowDetail;
+            setWorkflow(data);
+            setError(null);
+        } catch (err) {
+            const errorMessage = err instanceof Error ? err.message : 'Unknown error fetching workflow details';
+            console.error(`Error fetching details:`, errorMessage);
+            setError(errorMessage);
+        } finally {
+            if (showLoading) setIsLoading(false);
+        }
+    }, [workflowIdNumber]);
 
-            const updatedTaskFromServer = await response.json() as Task;
-            console.log(`[State Update Pre] setWorkflow in handleTaskStatusChange`);
-            setWorkflow(prevWorkflow => {
-                console.log('[State Update] Running setWorkflow callback in handleTaskStatusChange');
-                if (!prevWorkflow) return null;
-                const taskIndex = prevWorkflow.tasks.findIndex(t => t.id === taskId);
-                if (taskIndex === -1 || prevWorkflow.tasks[taskIndex].status === updatedTaskFromServer.status) {
-                    console.log('[State Update] Task not found or status already updated, skipping state change.');
-                    return prevWorkflow;
-                }
-                const newTasks = [...prevWorkflow.tasks];
-                newTasks[taskIndex] = updatedTaskFromServer;
-                const newCompletedCount = newTasks.filter(t => t.status === 'completed').length;
-                console.log('[State Update] Calculating new state with updated task');
-                return {
-                    ...prevWorkflow,
-                    tasks: newTasks,
-                    completed_tasks: newCompletedCount,
-                };
+    useEffect(() => { fetchWorkflowDetail(true); }, [fetchWorkflowDetail]);
+
+    const handleTaskStatusChange = useCallback(async (taskId: number, newStatus: Task['status']) => {
+        const originalWorkflow = workflow ? { ...workflow, tasks: [...workflow.tasks] } : null;
+        setWorkflow((prev: WorkflowDetail | null): WorkflowDetail | null => {
+            if (!prev) {
+                return null;
+            }
+            const taskIndex = prev.tasks.findIndex((t: Task) => t.id === taskId);
+
+            if (taskIndex === -1 || prev.tasks[taskIndex].status === newStatus) {
+                return prev;
+            }
+            const newTasks = [...prev.tasks];
+            newTasks[taskIndex] = { ...newTasks[taskIndex], status: newStatus, updated_at: new Date().toISOString() };
+            const newCompletedCount = newTasks.filter((t: Task) => t.status === 'completed').length;
+            return { ...prev, tasks: newTasks, completed_tasks: newCompletedCount };
+        });
+        setError(null);
+
+        try {
+            const response = await fetch(`/api/tasks/${taskId}`, {
+                method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: newStatus }),
             });
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.error || `API Error (${response.status})`);
+            }
+            toast.success(`Task status updated to ${newStatus}.`);
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : 'Unknown error updating task status';
-            console.error(`[Page][Workflow ${currentWorkflowId}] Error updating task ${taskId}:`, errorMessage);
             setError(`Failed to update task ${taskId}: ${errorMessage}`);
+            setWorkflow(originalWorkflow);
+            toast.error(`Failed to update status: ${errorMessage}`);
         }
-    }, [workflowId]); // Depend only on stable workflowId
+    }, [workflow, fetchWorkflowDetail]);
 
-    // Determine which tasks to display (use workflow state directly for now)
-    const displayTasks = workflow?.tasks ?? [];
-    console.log(`[Render] WorkflowDetailPage - displayTasks length: ${displayTasks.length}`);
+    const handleTaskCreate = async (formData: TaskFormData) => {
+        if (isNaN(workflowIdNumber)) throw new Error('Workflow ID is invalid.');
+        const body = {
+            name: formData.name,
+            description: formData.description || null,
+            assigned_user_id: formData.assigned_user_id,
+            due_date: formData.due_date || null,
+        };
+        const response = await fetch(`/api/workflows/${workflowIdNumber}/tasks`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+        });
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || `Failed to create task (${response.status})`);
+        }
+        await fetchWorkflowDetail(false);
+    };
 
-    if (isLoading && !workflow) {
-        return <p className="text-center text-gray-500 dark:text-gray-400">Loading workflow details...</p>;
-    }
+    const handleTaskUpdate = async (taskId: number, formData: Partial<TaskFormData>) => {
+         const body = {
+             name: formData.name,
+             description: formData.description === undefined ? undefined : (formData.description || null),
+             assigned_user_id: formData.assigned_user_id,
+             due_date: formData.due_date === undefined ? undefined : (formData.due_date || null),
+         };
+         const response = await fetch(`/api/tasks/${taskId}`, {
+             method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+         });
+         if (!response.ok) {
+             const errorData = await response.json().catch(() => ({}));
+             throw new Error(errorData.error || `Failed to update task (${response.status})`);
+         }
+         await fetchWorkflowDetail(false);
+     };
 
-    if (error && !workflow) {
-        return (
-            <div className="text-center">
-                 <p className="text-red-500 mb-4">Error: {error}</p>
-                 <Link href="/" className="text-blue-600 hover:underline">Back to Workflows</Link>
-            </div>
-        );
-    }
+    const handleTaskDelete = async (taskId: number) => {
+        const response = await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+             if (response.status === 400 && errorData.error?.includes('depend')) {
+                 throw new Error(errorData.error);
+             }
+            throw new Error(errorData.error || `Failed to delete task (${response.status})`);
+        }
+        await fetchWorkflowDetail(false);
+    };
 
+    const handleDependencyAdd = async (taskId: number, dependsOnTaskId: number) => {
+         const response = await fetch(`/api/tasks/${taskId}/dependencies`, {
+             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ depends_on_task_id: dependsOnTaskId }),
+         });
+         if (!response.ok) {
+             const errorData = await response.json().catch(() => ({}));
+             throw new Error(errorData.error || `Failed to add dependency (${response.status})`);
+         }
+         await fetchWorkflowDetail(false);
+     };
+
+    const handleDependencyDelete = async (taskId: number, dependsOnTaskId: number) => {
+        const response = await fetch(`/api/tasks/${taskId}/dependencies/${dependsOnTaskId}`, { method: 'DELETE' });
+         if (!response.ok) {
+             const errorData = await response.json().catch(() => ({}));
+             throw new Error(errorData.error || `Failed to delete dependency (${response.status})`);
+         }
+        await fetchWorkflowDetail(false);
+    };
+
+    const openCreateTaskModal = () => {
+        setEditingTaskData(null); setTaskModalMode('create');
+        setTaskSubmitError(null); setIsSubmittingTask(false); setIsTaskModalOpen(true);
+    };
+    const openEditTaskModal = (task: Task) => {
+         setEditingTaskData(task); setTaskModalMode('edit');
+         setTaskSubmitError(null); setIsSubmittingTask(false); setIsTaskModalOpen(true);
+    };
+    const closeTaskModal = () => { setIsTaskModalOpen(false); };
+
+    const handleTaskSubmit = async (formData: TaskFormData) => {
+        setIsSubmittingTask(true); setTaskSubmitError(null);
+        try {
+            if (taskModalMode === 'create') {
+                await handleTaskCreate(formData); toast.success(`Task "${formData.name}" created.`);
+            } else if (editingTaskData) {
+                await handleTaskUpdate(editingTaskData.id, formData); toast.success(`Task "${formData.name}" updated.`);
+            }
+            closeTaskModal();
+        } catch (err) {
+            const errorMessage = err instanceof Error ? err.message : `Unknown error ${taskModalMode}ing task`;
+            setTaskSubmitError(errorMessage);
+        } finally { setIsSubmittingTask(false); }
+    };
+
+    const taskFormInitialDataForModal: (Partial<TaskFormData> & { id?: number }) | undefined = editingTaskData ? {
+         id: editingTaskData.id, name: editingTaskData.name, description: editingTaskData.description ?? '',
+         assigned_user_id: editingTaskData.assigned_user_id,
+         due_date: editingTaskData.due_date ? editingTaskData.due_date.split('T')[0].split(' ')[0] : '',
+     } : undefined;
+
+    if (isLoading && !workflow) { return <div className="flex justify-center items-center h-64"><div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-blue-500"></div></div>; }
     if (!workflow) {
-        return <p className="text-center text-gray-500 dark:text-gray-400">Workflow data not available.</p>;
+        return ( <div className="text-center p-8"> <p className="text-red-500 dark:text-red-400 text-xl mb-4">Error loading workflow</p> <p className="text-gray-600 dark:text-gray-400 mb-6">{error || 'Could not retrieve workflow data.'}</p> <Link href="/" className="text-blue-600 dark:text-blue-400 hover:underline">&larr; Back to Workflows List</Link> </div> );
     }
 
-    console.log(`[Render] WorkflowDetailPage - Rendering with isLoading: ${isLoading}, error: ${error}, workflow exists: ${!!workflow}`);
+    const dummyOnTaskCreate = async (data: TaskFormData): Promise<void> => {
+        console.warn("onTaskCreate called from KanbanBoard unexpectedly, using page handler", data);
+    };
+
     return (
-        <div>
+        <div className="container mx-auto p-4 md:p-6 lg:p-8">
             {/* Workflow Header */}
-            <div className="mb-8 p-6 bg-white/60 dark:bg-gray-800/60 backdrop-blur-md rounded-xl shadow-lg border border-white/30 dark:border-gray-700/30">
-                <div className="flex justify-between items-start mb-4">
+            <div className="mb-8 p-6 bg-white/70 dark:bg-gray-800/70 backdrop-blur-lg rounded-xl shadow-lg border border-white/30 dark:border-gray-700/40">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
                     <div>
                         <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-1">{workflow.name}</h1>
-                        <p className="text-sm text-gray-600 dark:text-gray-400">Created by {workflow.creator_name ?? 'Unknown'} on {formatDateTime(workflow.created_at)}</p>
+                        <p className="text-sm text-gray-600 dark:text-gray-400"> Created by {workflow.creator_name ?? 'Unknown'} on {formatDateTime(workflow.created_at)} <span className="mx-2">|</span> Last updated: {formatDateTime(workflow.updated_at)} </p>
                     </div>
-                    <div className="flex space-x-2">
-                        <button className="px-3 py-1.5 text-sm bg-yellow-500 hover:bg-yellow-600 text-white rounded-md shadow disabled:opacity-50" disabled={isLoading}>Edit</button> {/* TODO: Implement Edit */}
-                        <button className="px-3 py-1.5 text-sm bg-red-600 hover:bg-red-700 text-white rounded-md shadow disabled:opacity-50" disabled={isLoading}>Delete</button> {/* TODO: Implement Delete */}
+                    <div className="flex space-x-2 flex-shrink-0">
+                        <button className="px-3 py-1.5 text-sm bg-yellow-500 hover:bg-yellow-600 text-white rounded-md shadow disabled:opacity-50" disabled>Edit WF</button>
+                        <button className="px-3 py-1.5 text-sm bg-red-600 hover:bg-red-700 text-white rounded-md shadow disabled:opacity-50" disabled>Delete WF</button>
+                        <button onClick={openCreateTaskModal} className="px-4 py-1.5 text-sm bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg shadow-md transition duration-150 ease-in-out disabled:opacity-50" disabled={isLoading}> Add Task </button>
                     </div>
                 </div>
-                <p className="text-gray-700 dark:text-gray-300 mb-4">{workflow.description || 'No description provided.'}</p>
-                 <div className="flex justify-end">
-                     <button className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg shadow-md transition duration-150 ease-in-out disabled:opacity-50" disabled={isLoading}>
-                        Add New Task
-                    </button> {/* TODO: Implement Add Task Modal */}
-                 </div>
-                 {error && !isLoading && <p className="text-red-500 text-sm mt-4">Update Error: {error}</p>}
+                <p className="text-gray-700 dark:text-gray-300 mb-4">{workflow.description || <span className="italic">No description.</span>}</p>
+                {error && <p className="text-red-500 dark:text-red-400 text-sm mt-2 p-2 bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-700 rounded">Error: {error}</p>}
             </div>
 
-            {/* Kanban Board Area - Pass displayTasks and dependencies */}
+            {/* Kanban Board Area */}
             <KanbanBoard
-                tasks={displayTasks}
-                dependencies={workflow.dependencies}
+                tasks={workflow.tasks} dependencies={workflow.dependencies} users={userList}
                 onTaskStatusChange={handleTaskStatusChange}
+                onTaskUpdate={handleTaskUpdate} onTaskDelete={handleTaskDelete}
+                onDependencyAdd={handleDependencyAdd} onDependencyDelete={handleDependencyDelete}
+                onTaskCreate={dummyOnTaskCreate}
             />
+
+            {/* Task Create/Edit Modal */}
+            <Modal isOpen={isTaskModalOpen} onClose={closeTaskModal} title={taskModalMode === 'create' ? 'Create New Task' : `Edit Task "${editingTaskData?.name ?? ''}"`}>
+                <TaskForm
+                    onSubmit={handleTaskSubmit} onCancel={closeTaskModal}
+                    initialData={taskFormInitialDataForModal} users={userList}
+                    isSubmitting={isSubmittingTask} submitError={taskSubmitError}
+                />
+            </Modal>
         </div>
     );
 }
