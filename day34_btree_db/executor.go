@@ -195,19 +195,27 @@ func (db *Database) executeSelect(sel *sqlparser.Select) (string, error) {
 	}
 	tableName := sqlparser.GetTableName(tableNameNode.Expr).String()
 
+	// ★★★★★ 追加: テーブルの存在とスキーマを先に確認 ★★★★★
+	schema, err := db.GetTable(tableName) // GetTable internally checks existence in db.schemas
+	if err != nil {
+		return "", err // エラーメッセージは GetTable が返す "table '...' not found" をそのまま利用
+	}
+	// ★★★★★ 追加ここまで ★★★★★
+
 	// SELECT カラムリストの解析
-	selectedColumns, err := db.parseSelectColumns(sel, tableName)
+	selectedColumns, err := db.parseSelectColumns(sel, schema) // スキーマを渡すように変更
 	if err != nil {
 		return "", err
 	}
 
-	var rows []map[string]interface{}
+	var rows []map[string]interface{} // rows の宣言をここに移動
 
-	// WHERE 句の解析と実行
 	if sel.Where == nil {
 		// WHERE 句がない場合: 全件スキャン
+		// ScanTable 内で LoadTableBTree が呼ばれる想定
 		rows, err = db.ScanTable(tableName)
 		if err != nil {
+			// ScanTable内でテーブルが見つからない場合もここでエラーになるはず
 			return "", fmt.Errorf("error scanning table '%s': %w", tableName, err)
 		}
 	} else {
@@ -222,69 +230,73 @@ func (db *Database) executeSelect(sel *sqlparser.Select) (string, error) {
 
 		// 実行
 		if isExactMatchQuery && startKey != nil {
+			// SearchRow 内で LoadTableBTree が呼ばれる想定
 			row, err := db.SearchRow(tableName, *startKey)
 			if err != nil {
 				if errors.Is(err, ErrNotFound) {
 					rows = []map[string]interface{}{}
 				} else {
+					// LoadTableBTreeでのエラーもここにくる可能性
 					return "", fmt.Errorf("error searching row in table '%s' for key %d: %w", tableName, *startKey, err)
 				}
 			} else {
 				rows = []map[string]interface{}{row}
 			}
 		} else {
+			// ScanTableRange 内で LoadTableBTree が呼ばれる想定
 			rows, err = db.ScanTableRange(tableName, startKey, endKey, includeStart, includeEnd)
 			if err != nil {
+				// LoadTableBTreeでのエラーもここにくる可能性
 				return "", fmt.Errorf("error scanning table range in '%s': %w", tableName, err)
 			}
 		}
 	}
 
-	// 結果を文字列として整形
+	// 結果を文字列として整形 (selectedColumns を使うように変更)
 	return formatSelectResults(rows, selectedColumns), nil
 }
 
 // parseSelectColumns は SELECT 文から選択されたカラム名のリストを解析します。
 // SELECT * の場合はテーブルスキーマから全カラム名を取得します。
-func (db *Database) parseSelectColumns(sel *sqlparser.Select, tableName string) ([]string, error) {
+// ★★★★★ 引数に schema を追加 ★★★★★
+func (db *Database) parseSelectColumns(sel *sqlparser.Select, schema *TableSchema) ([]string, error) {
 	var selectedColumns []string
-	isSelectStar := false
-
-	if len(sel.SelectExprs) > 0 {
-		if _, isStar := sel.SelectExprs[0].(*sqlparser.StarExpr); isStar {
-			isSelectStar = true
-		} else {
-			// 指定されたカラム名を取得
-			for _, selectExpr := range sel.SelectExprs {
-				aliasedExpr, ok := selectExpr.(*sqlparser.AliasedExpr)
-				if !ok {
-					// This case should not happen if sqlparser guarantees AliasedExpr for non-Star exprs
-					// If it can happen, we need to handle other sqlparser.SelectExpr types.
-					// For now, assume it's always AliasedExpr or StarExpr based on prior check.
-					return nil, fmt.Errorf("unexpected select expression type: %T", selectExpr)
-				}
-				col, ok := aliasedExpr.Expr.(*sqlparser.ColName)
-				if !ok {
-					return nil, fmt.Errorf("unsupported expression in select list (expected column name): %T", aliasedExpr.Expr)
-				}
-				selectedColumns = append(selectedColumns, col.Name.String())
-			}
+	isSelectAll := false
+	for _, expr := range sel.SelectExprs {
+		switch expr.(type) {
+		case *sqlparser.StarExpr:
+			isSelectAll = true
+			break // * が見つかったらループ終了
 		}
-	} else {
-		return nil, fmt.Errorf("no columns selected") // SELECT句がない場合
 	}
 
-	// SELECT *
-	if isSelectStar {
-		// カラム指定がない場合、スキーマから全カラムを取得する (id含む)
-		schema, err := db.GetTable(tableName)
-		if err != nil {
-			return nil, err
+	if isSelectAll {
+		// SELECT * の場合、スキーマからカラム名を取得
+		if schema == nil {
+			// このパスは通常通らないはず (executeSelectでチェック済みのため)
+			return nil, fmt.Errorf("internal error: schema is nil when processing SELECT *")
 		}
-		selectedColumns = []string{} // Reset in case other columns were accidentally added
 		for _, colDef := range schema.Columns {
 			selectedColumns = append(selectedColumns, colDef.Name)
 		}
+	} else {
+		// 特定のカラムが指定されている場合
+		for _, selectExpr := range sel.SelectExprs {
+			colExpr, ok := selectExpr.(*sqlparser.AliasedExpr)
+			if !ok {
+				return nil, fmt.Errorf("unsupported select expression type: %T", selectExpr)
+			}
+			colName, ok := colExpr.Expr.(*sqlparser.ColName)
+			if !ok {
+				return nil, fmt.Errorf("unsupported select expression: %s", sqlparser.String(colExpr.Expr))
+			}
+			// TODO: テーブルスキーマにカラムが存在するかチェックするべき
+			selectedColumns = append(selectedColumns, colName.Name.String())
+		}
+	}
+
+	if len(selectedColumns) == 0 {
+		return nil, fmt.Errorf("no columns selected") // SELECT COUNT(*) など未対応のため
 	}
 
 	return selectedColumns, nil

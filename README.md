@@ -47,5 +47,6 @@ LLMで生成したコードを置いています。
 | Day31 | Go Simple ORM and CLI | <video src="https://github.com/user-attachments/assets/9c99a7f1-3e65-40b3-bfcd-9126a5d370de" > |
 | Day32 | ユーザースペースネットワークスタック | <video src="https://github.com/user-attachments/assets/b9c37838-3951-49be-8005-3305b8044953" > |
 | Day33 | ゼロ知識証明 "体験型" デモアプリ | <video src="https://github.com/user-attachments/assets/d79ef239-4bf3-4a9a-a50c-e4265993856a" > |
-| Day34 | B+Tree データベース | <video src="https://github.com/user-attachments/assets/b839c41f-82ef-4856-a322-30957a89bda0" > |
+| Day34 | B+Tree データベース | <video src="https://github.com/user-attachments/assets/9bc4fd59-833d-4354-ba40-5b700f7ad0dc" > |
+|  | B+Tree ビジュアライザー | <video src="https://github.com/user-attachments/assets/3af0b7cb-1f85-489c-a346-053a831131b4" > |
 | Day35 | ワークフロー自動化ツール | <video src="https://github.com/user-attachments/assets/0b771504-5ae0-40b0-ba4b-12dbd2efd6b6" > |
