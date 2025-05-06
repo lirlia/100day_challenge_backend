@@ -351,6 +351,21 @@ func (c *Chip8) executeOpcode(opcode uint16) (redraw bool, collision bool) {
 		c.PC += 2 // Base increment
 		return false, false
 
+	case 0xB000: // JP V0, addr (Bnnn) - Jump to location nnn + V0.
+		// Not specified in the original plan, but a common CHIP-8 instruction.
+		// Let's add it here for completeness, or defer if strictly following the plan.
+		// Assuming we add it:
+		addr := opcode & 0x0FFF
+		c.PC = addr + uint16(c.V[0])
+		return false, false
+	case 0xC000: // RND Vx, byte (Cxkk) - Set Vx = random byte AND kk.
+		x := (opcode & 0x0F00) >> 8
+		kk := byte(opcode & 0x00FF)
+		randomByte := byte(c.rng.Intn(256)) // Generates random number in [0, 255]
+		c.V[x] = randomByte & kk
+		c.PC += 2
+		return false, false
+
 	default:
 		log.Printf("Unknown opcode: 0x%X (PC: 0x%X)", opcode, c.PC)
 		c.PC += 2 // For unknown opcodes, just skip and continue

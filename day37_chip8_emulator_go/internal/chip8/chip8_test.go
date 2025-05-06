@@ -263,8 +263,14 @@ func TestOpcodes(t *testing.T) {
 		assertChip func(t *testing.T, c *Chip8, redraw bool, collision bool, halted bool)
 	}
 
-	createChipWithOpcode := func(opcode uint16) *Chip8 {
-		c := New(1, false)
+	// Helper to create a Chip8 instance with a single opcode loaded at romOffset (PC)
+	// Uses a fixed seed for deterministic tests.
+	createChipWithOpcode := func(opcode uint16, variantSCHIP ...bool) *Chip8 {
+		useSCHIP := false
+		if len(variantSCHIP) > 0 {
+			useSCHIP = variantSCHIP[0]
+		}
+		c := NewWithSeed(1, useSCHIP, 1) // Fixed seed: 1
 		c.memory[romOffset] = byte(opcode >> 8)
 		c.memory[romOffset+1] = byte(opcode & 0x00FF)
 		c.PC = romOffset
@@ -1231,13 +1237,50 @@ func TestOpcodes(t *testing.T) {
 				}
 			},
 		},
+		{
+			name:      "Bnnn - JP V0, addr",
+			opcode:    0xB123, // JP V0, 0x123
+			setupChip: func(c *Chip8) { c.V[0] = 0x10 },
+			assertChip: func(t *testing.T, c *Chip8, _, _, _ bool) {
+				if c.PC != 0x123+0x10 {
+					t.Errorf("PC expected 0x133, got 0x%X", c.PC)
+				}
+			},
+		},
+		{
+			name:   "Cxkk - RND Vx, byte (check mask)",
+			opcode: 0xC5F0, // RND V5, 0xF0
+			setupChip: func(c *Chip8) {
+				// Seed is fixed by createChipWithOpcode
+			},
+			assertChip: func(t *testing.T, c *Chip8, _, _, _ bool) {
+				result := c.V[5]
+				mask := byte(0xF0)
+				if result & ^mask != 0 { // Check if any bits outside the mask are set
+					t.Errorf("RND result 0x%X has bits set outside mask 0x%X", result, mask)
+				}
+				// Optional: Check specific value for fixed seed 1
+				// rng := rand.New(rand.NewSource(1))
+				// expectedRandomByte := byte(rng.Intn(256)) // First value for seed 1
+				// expectedValue := expectedRandomByte & mask
+				// if result != expectedValue { t.Errorf("RND with seed 1: expected 0x%X, got 0x%X", expectedValue, result) }
+				if c.PC != romOffset+2 {
+					t.Errorf("PC expected 0x%X, got 0x%X", romOffset+2, c.PC)
+				}
+			},
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			c := createChipWithOpcode(tc.opcode)
+			// Pass variantSCHIP setting from setupChip if needed for helper
+			tempChipForSCHIPCheck := NewWithSeed(1, false, 1) // Temp just to get SCHIP setting
 			if tc.setupChip != nil {
-				tc.setupChip(c)
+				tc.setupChip(tempChipForSCHIPCheck)
+			}
+			c := createChipWithOpcode(tc.opcode, tempChipForSCHIPCheck.variantSCHIP)
+			if tc.setupChip != nil {
+				tc.setupChip(c) // Run setup again on the actual chip instance
 				// Simplified PC adjustment logic for tests
 				if tc.opcode&0xF000 != 0x1000 && // Not a JP instruction
 					!(tc.opcode == 0x0000 && c.waitingForKey) { // Not a HLT check
