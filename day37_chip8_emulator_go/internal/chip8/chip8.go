@@ -3,6 +3,7 @@ package chip8
 import (
 	// "embed" // Temporarily comment out due to build issue
 	"fmt"
+	"log" // Added for Cycle method logging
 	"math/rand"
 	"os"
 	"time"
@@ -145,4 +146,46 @@ func (c *Chip8) LoadROM(romPath string) error {
 	// So, no change to PC here needed after loading.
 
 	return nil
+}
+
+// fetchOpcode reads the 2-byte opcode from memory at the current PC.
+// It does not advance the PC.
+func (c *Chip8) fetchOpcode() uint16 {
+	if c.PC+1 >= memorySize {
+		// This is a critical error, likely a runaway PC or corrupted ROM.
+		// For now, log and return a NOP-like opcode (e.g., 0x0000) or panic.
+		// Returning 0x0000 might lead to infinite loops if not handled by SYS addr.
+		log.Printf("CRITICAL: Attempted to fetch opcode out of bounds at PC=0x%X", c.PC)
+		// Consider a more robust error handling strategy here, e.g., returning an error.
+		// For now, let's return an opcode that might be less harmful, or let it crash.
+		// For safety, we'll cause a panic to halt execution if this occurs during development.
+		panic(fmt.Sprintf("Opcode fetch out of bounds: PC=0x%X", c.PC))
+	}
+	return uint16(c.memory[c.PC])<<8 | uint16(c.memory[c.PC+1])
+}
+
+// Cycle executes one CHIP-8 CPU cycle.
+// It fetches an opcode, executes it, and updates timers (placeholder).
+// Returns redraw (bool): if the screen needs to be updated.
+// Returns collision (bool): if a collision occurred during a DRW operation.
+// Returns halted (bool): if the CPU is waiting for a key press (Fx0A).
+func (c *Chip8) Cycle() (redraw bool, collision bool, halted bool) {
+	// Step 6 will fully implement Fx0A key waiting logic.
+	// For now, if waitingForKey is true, we halt and do nothing else this cycle.
+	// Timers should still decrement if waiting for a key (handled by UpdateTimers later).
+	if c.waitingForKey {
+		// Placeholder for key check. Full logic in Step 6.
+		// log.Printf("CPU halted, waiting for key press for V%X", c.keyReg)
+		// c.UpdateTimers() // Timers update even when halted (will be called externally per frame or here)
+		return false, false, true // No redraw, no collision, but CPU is halted
+	}
+
+	opcode := c.fetchOpcode()
+	rd, col := c.executeOpcode(opcode) // PC is managed by executeOpcode
+
+	// Step 5 will implement timer updates.
+	// c.UpdateTimers() // This is typically called at 60Hz, not per CPU cycle.
+	// The main loop will call UpdateTimers().
+
+	return rd, col, false // Not halted (unless Fx0A was just processed and set waitingForKey)
 }
