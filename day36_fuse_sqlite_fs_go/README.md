@@ -2,6 +2,10 @@
 
 このプロジェクトは、Go を使用して FUSE (Filesystem in Userspace) に基づくユーザースペースファイルシステムを実装します。ファイルやディレクトリのメタデータ、およびファイルの内容のバックエンドストレージとして SQLite データベースを使用します。
 
+https://github.com/user-attachments/assets/6aaf21ba-5fee-4b94-97cc-1834e00a6ce9
+
+[100日チャレンジ day36](https://zenn.dev/gin_nazo/scraps/2c6a1fc6ba5310)
+
 ## 概要
 
 - **言語:** Go
@@ -45,10 +49,7 @@
     *   `day36_fuse_sqlite_fs_go` ディレクトリでターミナルを開きます。
     *   実行可能ファイルを実行し、マウントポイントとデータベースパスを指定します (信頼性のため絶対パス推奨):
         ```bash
-        # マウントポイントとDBパスには絶対パスを使用してください
-        # 例:
-        ./sqlitefs -mountpoint=/Users/noname/Cording/100day_challenge_backend/day36_fuse_sqlite_fs_go/mnt \
-                   -db=/Users/noname/Cording/100day_challenge_backend/day36_fuse_sqlite_fs_go/db/dev.db
+        go run . -mountpoint mnt
         ```
     *   詳細な FUSE 操作ログを表示するには `-debug` フラグを追加します:
         ```bash
