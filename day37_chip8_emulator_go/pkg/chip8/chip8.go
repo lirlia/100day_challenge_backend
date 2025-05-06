@@ -1,0 +1,109 @@
+package chip8
+
+import (
+	"fmt"
+)
+
+const (
+	memorySize = 4096
+	gfxWidth   = 64
+	gfxHeight  = 32
+	stackSize  = 16
+	numKeys    = 16
+	numRegs    = 16
+	fontOffset = 0x050 // Start address of the font set in memory
+	romOffset  = 0x200 // Start address for ROM loading
+)
+
+// Font set (0-F)
+var fontSet = [80]byte{
+	0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
+	0x20, 0x60, 0x20, 0x20, 0x70, // 1
+	0xF0, 0x10, 0xF0, 0x80, 0xF0, // 2
+	0xF0, 0x10, 0xF0, 0x10, 0xF0, // 3
+	0x90, 0x90, 0xF0, 0x10, 0x10, // 4
+	0xF0, 0x80, 0xF0, 0x10, 0xF0, // 5
+	0xF0, 0x80, 0xF0, 0x90, 0xF0, // 6
+	0xF0, 0x10, 0x20, 0x40, 0x40, // 7
+	0xF0, 0x90, 0xF0, 0x90, 0xF0, // 8
+	0xF0, 0x90, 0xF0, 0x10, 0xF0, // 9
+	0xF0, 0x90, 0xF0, 0x90, 0x90, // A
+	0xE0, 0x90, 0xE0, 0x90, 0xE0, // B
+	0xF0, 0x80, 0x80, 0x80, 0xF0, // C
+	0xE0, 0x90, 0x90, 0x90, 0xE0, // D
+	0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
+	0xF0, 0x80, 0xF0, 0x80, 0x80, // F
+}
+
+// Chip8 represents the state of the CHIP-8 virtual machine.
+type Chip8 struct {
+	memory [memorySize]byte // 4K memory
+	V      [numRegs]byte    // 16 general purpose 8-bit registers (V0-VF)
+	I      uint16           // Index register (16-bit)
+	PC     uint16           // Program counter (16-bit)
+
+	stack [stackSize]uint16 // Stack (16 levels)
+	SP    uint8             // Stack pointer
+
+	gfx      [gfxWidth * gfxHeight]byte // Graphics buffer (64x32 pixels, 1 byte per pixel, 0 or 1)
+	drawFlag bool                       // Flag indicating screen redraw needed
+
+	DT byte // Delay timer
+	ST byte // Sound timer
+
+	keys [numKeys]byte // Key states (0 or 1 for pressed)
+
+	// For Fx0A (LD Vx, K) - Halts execution until key press
+	waitingForKey bool
+	keyReg        byte // Register to store the pressed key
+}
+
+// New creates and initializes a new Chip8 instance.
+func New() *Chip8 {
+	c := &Chip8{}
+	c.initialize()
+	return c
+}
+
+// initialize resets the Chip8 state to its default values.
+func (c *Chip8) initialize() {
+	// Clear memory
+	for i := range c.memory {
+		c.memory[i] = 0
+	}
+	// Clear registers V0-VF
+	for i := range c.V {
+		c.V[i] = 0
+	}
+	// Clear stack
+	for i := range c.stack {
+		c.stack[i] = 0
+	}
+	// Clear graphics buffer
+	for i := range c.gfx {
+		c.gfx[i] = 0
+	}
+	// Clear keys
+	for i := range c.keys {
+		c.keys[i] = 0
+	}
+
+	// Reset index register, program counter, and stack pointer
+	c.I = 0
+	c.PC = romOffset // Program counter starts at 0x200 where ROM is loaded
+	c.SP = 0
+
+	// Reset timers
+	c.DT = 0
+	c.ST = 0
+
+	// Reset flags
+	c.drawFlag = false
+	c.waitingForKey = false
+	c.keyReg = 0
+
+	// Load font set into memory (0x050-0x0A0)
+	copy(c.memory[fontOffset:], fontSet[:])
+
+	fmt.Println("CHIP-8 Initialized. PC set to 0x200.")
+}
