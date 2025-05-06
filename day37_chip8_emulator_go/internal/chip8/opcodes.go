@@ -27,23 +27,12 @@ func (c *Chip8) executeOpcode(opcode uint16) (redraw bool, collision bool) {
 			return true, false // redraw = true, collision = false
 		case 0x00EE: // RET: Return from a subroutine.
 			if c.SP == 0 {
-				log.Printf("Stack underflow on RET (00EE) at PC 0x%X! SP is 0.", c.PC-2) // PC already advanced if this was fetched
-				// Behavior on stack underflow can vary. Some emulators halt, some corrupt.
-				// For now, we'll log and attempt to continue, PC will likely be invalid.
-				// Or, a more robust approach: treat as a halt or error state.
-				// For now, we'll log and attempt to continue, PC will likely be invalid.
-				// Or, a more robust approach: treat as a halt or error state.
-				c.PC += 2 // Default behavior if we don't halt
+				log.Printf("Stack underflow on RET (00EE) at PC 0x%X! SP is 0.", c.PC) // PC might not have advanced yet here
+				c.PC += 2                                                              // Default behavior if we don't halt
 				return false, false
 			}
 			c.SP--
 			c.PC = c.stack[c.SP]
-			// Note: RET should also advance PC by 2 after popping from stack to point to the instruction *after* the CALL.
-			// The PC stored on stack is the address of the instruction *after* the 2nnn CALL opcode.
-			// So, when we do c.PC = c.stack[c.SP], it's already the correct next instruction.
-			// The common `c.PC += 2` at the end of each opcode block should NOT be applied here. No, wait.
-			// When 2NNN is called, PC (address of 2NNN) + 2 is pushed. So c.stack[c.SP] is the address of the instruction *after* 2NNN.
-			// So, c.PC = c.stack[c.SP] is correct. No further PC increment needed for RET itself.
 			return false, false
 		default:
 			// SYS addr (0nnn) - Jump to machine code routine at nnn (ignored on modern interpreters)

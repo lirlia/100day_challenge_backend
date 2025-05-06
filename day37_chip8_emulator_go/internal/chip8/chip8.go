@@ -65,16 +65,18 @@ type Chip8 struct {
 	variantSCHIP   bool // Flag for SCHIP specific behaviors (e.g. Fx55/Fx65, SHL/SHR)
 }
 
-func New(cyclesPerFrame uint, variantSCHIP bool) *Chip8 {
+// NewWithSeed creates a new Chip8 instance with a specific random seed.
+// Useful for testing.
+func NewWithSeed(cyclesPerFrame uint, variantSCHIP bool, seed int64) *Chip8 {
 	if cyclesPerFrame == 0 {
 		cyclesPerFrame = 10 // Default if 0 is passed
 	}
 
 	c := &Chip8{
-		PC:             romOffset, // Program Counter starts at 0x200
+		PC:             romOffset,
 		cyclesPerFrame: cyclesPerFrame,
 		variantSCHIP:   variantSCHIP,
-		rng:            rand.New(rand.NewSource(time.Now().UnixNano())),
+		rng:            rand.New(rand.NewSource(seed)),
 	}
 
 	// Clear memory, registers, stack, gfx, keys
@@ -108,6 +110,11 @@ func New(cyclesPerFrame uint, variantSCHIP bool) *Chip8 {
 	copy(c.memory[fontOffset:], fontSet[:])
 
 	return c
+}
+
+// New creates a new Chip8 instance with a time-based random seed.
+func New(cyclesPerFrame uint, variantSCHIP bool) *Chip8 {
+	return NewWithSeed(cyclesPerFrame, variantSCHIP, time.Now().UnixNano())
 }
 
 // Gfx returns a copy of the graphics buffer.
