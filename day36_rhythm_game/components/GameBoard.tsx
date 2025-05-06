@@ -18,29 +18,40 @@ const noteHeight = 20; // Pixel height of a note
 const hitThreshold = 0.15; // Seconds within which a hit is registered
 const pixelsPerSecond = 200; // How many pixels a note travels per second (adjust for scroll speed)
 
+// Define Judgment types and windows (in seconds)
+type Judgment = 'PERFECT' | 'GREAT' | 'GOOD' | 'BAD' | 'MISS' | null;
+const PERFECT_WINDOW = 0.05; // ±50ms
+const GREAT_WINDOW = 0.10;  // ±100ms
+const GOOD_WINDOW = 0.15;   // ±150ms (Previously hitThreshold)
+const BAD_WINDOW = 0.20;    // ±200ms - Let's use this for BAD
+const MISS_THRESHOLD = BAD_WINDOW; // Anything outside this is a definite miss if a key is pressed
+
 // Simple note element
 const NoteElement = React.memo(({ note, topPosition, numLanes }: { note: Note; topPosition: number, numLanes: number }) => {
-    const laneIndex = note.lane - 1; // 0-based index
+    const laneIndex = note.lane - 1;
     const leftOffset = laneIndex * (100 / numLanes);
     const width = 100 / numLanes;
 
     return (
         <div
-            className="absolute bg-blue-400 border border-blue-600 rounded text-white text-xs flex items-center justify-center"
+            className="absolute bg-gradient-to-b from-cyan-400 to-blue-500 border border-blue-600 rounded-md text-black text-xs flex items-center justify-center shadow-lg"
             style={{
                 left: `${leftOffset}%`,
                 width: `${width}%`,
-                top: `${topPosition}px`, // Position based on time
+                top: `${topPosition}px`,
                 height: `${noteHeight}px`,
-                transform: 'translateY(-50%)' // Center note vertically
+                transform: 'translateY(-50%)'
             }}
-        >
-            {/* Optional: Display note time or type */}
-        </div>
+        ></div>
     );
 });
 NoteElement.displayName = 'NoteElement';
 
+interface VisibleNote {
+    id: number; // Use note index as ID for simplicity
+    note: Note;
+    topPosition: number;
+}
 
 export default function GameBoard({
     notes: initialNotes,
@@ -54,8 +65,11 @@ export default function GameBoard({
     const [isPlaying, setIsPlaying] = useState(false);
     const [currentTime, setCurrentTime] = useState(0);
     const [score, setScore] = useState(0);
-    const [activeNotes, setActiveNotes] = useState<Note[]>([]); // Notes currently on screen / active
+    const [visibleNotes, setVisibleNotes] = useState<VisibleNote[]>([]); // State for notes to render
     const [hitNotes, setHitNotes] = useState<Set<number>>(new Set()); // Store indices of hit notes
+    const [isAudioLoaded, setIsAudioLoaded] = useState(false); // State to track audio loading
+    const [judgment, setJudgment] = useState<Judgment>(null); // State for judgment text
+    const judgmentTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Ref for clearing judgment timeout
 
     const audioContextRef = useRef<AudioContext | null>(null);
     const audioBufferRef = useRef<AudioBuffer | null>(null);
@@ -64,8 +78,20 @@ export default function GameBoard({
     const gameLoopRef = useRef<number | null>(null);
     const boardRef = useRef<HTMLDivElement>(null); // Ref to the game board div for height calculation
 
+    // Log when initialNotes prop actually changes
+    useEffect(() => {
+        console.log('GameBoard received new initialNotes:', initialNotes);
+        // Reset relevant state when notes change (e.g., if difficulty switch needs full reset)
+        setHitNotes(new Set());
+        setVisibleNotes([]);
+        // Consider resetting score or currentTime depending on desired behavior
+        // setScore(0);
+        // setCurrentTime(0);
+    }, [initialNotes]); // Dependency array ensures this runs when initialNotes changes
+
     // --- Audio Setup ---
     useEffect(() => {
+        setIsAudioLoaded(false); // Reset on songUrl change
         audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
         fetch(songUrl)
             .then(response => {
@@ -81,12 +107,12 @@ export default function GameBoard({
                 // decodedAudio should be AudioBuffer here if decode succeeded
                 audioBufferRef.current = decodedAudio; // Assign directly
                 console.log("Audio loaded successfully");
-                // Force re-render to enable start button if needed, by updating a dummy state
-                // setAudioLoaded(true); // Example if using state
+                setIsAudioLoaded(true); // <--- Set state to true on success
             })
             .catch(error => {
                 console.error("Error loading or decoding audio file:", error);
                 audioBufferRef.current = null; // Ensure it's null on error
+                setIsAudioLoaded(false); // <--- Set state to false on error
             });
 
         return () => { // Cleanup on unmount
@@ -99,29 +125,79 @@ export default function GameBoard({
 
     // --- Game Loop ---
     const gameLoop = useCallback(() => {
+        console.log('Game Loop Tick - isPlaying:', isPlaying, 'currentTime:', audioContextRef.current?.currentTime); // Added for debugging loop execution
+
+        // ADDED LOG: Check values for the initial conditional check
+        console.log('gameLoop Check:', {
+            isPlaying: isPlaying,
+            hasAudioContext: !!audioContextRef.current,
+            startTimeValue: startTimeRef.current, // Log the actual value of startTimeRef
+            hasBoardRef: !!boardRef.current, // Check if boardRef.current exists
+            boardRefValue: boardRef.current // Log the actual boardRef.current value (might be null)
+        });
+
         if (!isPlaying || !audioContextRef.current || !startTimeRef.current || !boardRef.current) {
-            gameLoopRef.current = requestAnimationFrame(gameLoop);
+            if (isPlaying) gameLoopRef.current = requestAnimationFrame(gameLoop); // Keep requesting if supposed to be playing
             return;
         }
 
         const elapsed = audioContextRef.current.currentTime - startTimeRef.current;
         setCurrentTime(elapsed);
 
-        // Update active notes (simplified: just use initialNotes for now)
-        // A more optimized approach would filter notes based on current time window
-        setActiveNotes(initialNotes);
+        const boardHeight = boardRef.current.offsetHeight;
+        const judgeLinePosition = boardHeight * (1 - judgeLineBottom / 100);
 
-        // Check for game end condition (e.g., audio finished)
+        // Calculate which notes should be visible
+        const currentVisibleNotes: VisibleNote[] = [];
+
+        // ADDED LOG: Check initialNotes just before the loop
+        console.log('Inside gameLoop - initialNotes length:', initialNotes?.length, 'Is Array:', Array.isArray(initialNotes));
+
+        initialNotes.forEach((note, index) => {
+            if (hitNotes.has(index)) return; // Don't render hit notes
+
+            const noteTime = note.time;
+            const timeDifference = noteTime - elapsed; // How far in the future/past the note is
+            const topPosition = judgeLinePosition - timeDifference * pixelsPerSecond;
+
+            // Determine visibility window (e.g., slightly above the top to slightly below the bottom)
+            const visibilityThresholdTop = -noteHeight * 2; // Start rendering when slightly above screen
+            const visibilityThresholdBottom = boardHeight + noteHeight; // Stop rendering when below screen
+
+            // Added detailed console log for note calculation debugging
+            console.log('Note Calculation:', {
+                index: index,
+                noteTime: note.time,
+                elapsed: elapsed,
+                timeDifference: timeDifference,
+                boardHeight: boardHeight,
+                judgeLinePosition: judgeLinePosition,
+                pixelsPerSecond: pixelsPerSecond,
+                calculatedTop: topPosition,
+                isVisible: topPosition > visibilityThresholdTop && topPosition < visibilityThresholdBottom
+            });
+
+            if (topPosition > visibilityThresholdTop && topPosition < visibilityThresholdBottom) {
+                currentVisibleNotes.push({
+                    id: index,
+                    note: note,
+                    topPosition: topPosition
+                });
+            }
+        });
+        setVisibleNotes(currentVisibleNotes); // Update the state for React to re-render notes
+
+        // Check for game end condition
         if (audioBufferRef.current && elapsed >= audioBufferRef.current.duration) {
-             console.log("Song finished");
-             setIsPlaying(false);
-             onGameEnd(score); // Submit final score
-             return; // Stop the loop
+            console.log("Song finished");
+            setIsPlaying(false);
+            onGameEnd(score);
+            setVisibleNotes([]); // Clear notes on finish
+            return;
         }
 
-
         gameLoopRef.current = requestAnimationFrame(gameLoop);
-    }, [isPlaying, score, initialNotes, onGameEnd]);
+    }, [isPlaying, score, initialNotes, onGameEnd, hitNotes]);
 
     useEffect(() => {
         if (isPlaying) {
@@ -134,48 +210,79 @@ export default function GameBoard({
         };
     }, [isPlaying, gameLoop]);
 
-    // --- Input Handling ---
+    // --- Input Handling (Revised Logic) ---
     const handleKeyDown = useCallback((event: KeyboardEvent) => {
         if (!isPlaying || !boardRef.current) return;
-
         const keyIndex = keyMap.indexOf(event.key.toLowerCase());
-        if (keyIndex === -1) return; // Key not used for this difficulty
+        if (keyIndex === -1) return;
 
-        const targetLane = keyIndex + 1; // 1-based lane index
+        const targetLane = keyIndex + 1;
         const boardHeight = boardRef.current.offsetHeight;
         const judgeLinePosition = boardHeight * (1 - judgeLineBottom / 100);
 
-        let noteHit = false;
+        // 1. Collect all potential hits within the threshold
+        const potentialHits: { index: number; timeDiff: number; note: Note }[] = [];
         initialNotes.forEach((note, index) => {
-            // Skip already hit notes or notes for other lanes
             if (hitNotes.has(index) || note.lane !== targetLane) return;
-
-            const noteTime = note.time;
-             // Calculate expected position at noteTime and currentTime
-             const expectedTopAtNoteTime = judgeLinePosition; // Should be at judge line at its time
-             const currentTop = expectedTopAtNoteTime - (noteTime - currentTime) * pixelsPerSecond;
-
-             // Check if the note is near the judgment line based on *time*
-             const timeDifference = Math.abs(noteTime - currentTime);
-
-            if (timeDifference <= hitThreshold) {
-                // Basic hit!
-                console.log(`Hit note! Time diff: ${timeDifference.toFixed(3)}s, Lane: ${targetLane}, Key: ${event.key}`);
-                setScore(prevScore => prevScore + 100); // Simple scoring
-                setHitNotes(prev => new Set(prev).add(index)); // Mark note as hit
-                noteHit = true;
-                 // TODO: Add visual feedback (e.g., note disappears or changes color)
+            const timeDifference = Math.abs(note.time - currentTime);
+            // Check if within the widest threshold
+            if (timeDifference <= MISS_THRESHOLD) {
+                potentialHits.push({ index, timeDiff: timeDifference, note });
             }
         });
 
-        if (noteHit) {
-             // Add hit effect?
-        } else {
-            // Miss? Deduct score?
-            console.log(`Miss? Key: ${event.key}, Lane: ${targetLane}, Time: ${currentTime.toFixed(3)}`);
+        // 2. Find the best hit (closest in time) from the potential hits
+        let bestHit: { index: number; timeDiff: number; note: Note } | null = null;
+        if (potentialHits.length > 0) {
+            // Sort by timeDiff ascending and take the first one
+            potentialHits.sort((a, b) => a.timeDiff - b.timeDiff);
+            bestHit = potentialHits[0]; // The note with the smallest time difference
         }
 
-    }, [isPlaying, keyMap, currentTime, score, initialNotes, hitNotes]); // Include dependencies
+        // 3. Determine judgment and score based on the best hit
+        let currentJudgment: Judgment = 'MISS';
+        let scoreToAdd = 0;
+
+        if (bestHit !== null) {
+            // Now access properties of bestHit (type should be correctly inferred)
+            if (bestHit.timeDiff <= PERFECT_WINDOW) {
+                currentJudgment = 'PERFECT';
+                scoreToAdd = 300;
+            } else if (bestHit.timeDiff <= GREAT_WINDOW) {
+                currentJudgment = 'GREAT';
+                scoreToAdd = 200;
+            } else if (bestHit.timeDiff <= GOOD_WINDOW) {
+                currentJudgment = 'GOOD';
+                scoreToAdd = 100;
+            } else if (bestHit.timeDiff <= BAD_WINDOW) {
+                 currentJudgment = 'BAD';
+                 scoreToAdd = 10;
+            }
+
+             if (currentJudgment !== 'MISS') {
+                setHitNotes(prev => new Set(prev).add(bestHit.index)); // No '!' needed potentially
+                setScore(prevScore => prevScore + scoreToAdd);
+                console.log(`${currentJudgment}! Time diff: ${bestHit.timeDiff.toFixed(3)}s, Lane: ${targetLane}, Key: ${event.key}`);
+             } else {
+                 console.log(`Miss (near miss). Key: ${event.key}, Lane: ${targetLane}, Time: ${currentTime.toFixed(3)}, Closest note diff: ${bestHit.timeDiff.toFixed(3)}`);
+                 currentJudgment = 'MISS';
+             }
+        } else {
+            console.log(`Miss (no note). Key: ${event.key}, Lane: ${targetLane}, Time: ${currentTime.toFixed(3)}`);
+            currentJudgment = 'MISS';
+        }
+
+        // 4. Display judgment (remains the same)
+        setJudgment(currentJudgment);
+        if (judgmentTimeoutRef.current) {
+            clearTimeout(judgmentTimeoutRef.current);
+        }
+        judgmentTimeoutRef.current = setTimeout(() => {
+            setJudgment(null);
+            judgmentTimeoutRef.current = null;
+        }, 500);
+
+    }, [isPlaying, keyMap, currentTime, score, initialNotes, hitNotes]);
 
     useEffect(() => {
         window.addEventListener('keydown', handleKeyDown);
@@ -186,89 +293,125 @@ export default function GameBoard({
 
 
      // --- Start Game ---
-     const startGame = () => {
-         if (!audioContextRef.current || !audioBufferRef.current || isPlaying) return;
+     const startGame = async () => { // Make the function async
+         if (!isAudioLoaded || !audioContextRef.current || !audioBufferRef.current || isPlaying) return;
 
-         // Reset state
+         const context = audioContextRef.current;
+         const buffer = audioBufferRef.current;
+
+         // Log AudioContext state before attempting resume
+         console.log('startGame - AudioContext state BEFORE resume attempt:', context.state);
+
+         // Attempt to resume context if suspended (needs user interaction)
+         if (context.state === 'suspended') {
+             try {
+                 console.log('startGame - Attempting to resume AudioContext...');
+                 await context.resume(); // Use await to wait for resume
+                 console.log('startGame - AudioContext resumed successfully. New state:', context.state);
+             } catch (err) {
+                 console.error('startGame - Failed to resume AudioContext:', err);
+                 // If resume fails, currentTime might still be 0. Proceed anyway.
+             }
+         }
+
+         // Reset state including judgment
          setCurrentTime(0);
          setScore(0);
          setHitNotes(new Set());
-         setActiveNotes(initialNotes); // Reset active notes if necessary
+         setVisibleNotes([]);
+         setJudgment(null); // Clear judgment on start
+         if (judgmentTimeoutRef.current) clearTimeout(judgmentTimeoutRef.current); // Clear pending timeout
 
-         // Create and start audio source
-         sourceNodeRef.current = audioContextRef.current.createBufferSource();
-         sourceNodeRef.current.buffer = audioBufferRef.current;
+         // Stop previous source if it exists
+         sourceNodeRef.current?.stop();
 
-         // --- Volume Control ---
-         const gainNode = audioContextRef.current.createGain();
-         gainNode.gain.value = 0.2; // Set volume to 20% (adjust as needed)
-         // Connect source -> gain -> destination
-         sourceNodeRef.current.connect(gainNode);
-         gainNode.connect(audioContextRef.current.destination);
-         // --- End Volume Control ---
+         // Create and configure the audio source node
+         sourceNodeRef.current = context.createBufferSource();
+         sourceNodeRef.current.buffer = buffer;
+         sourceNodeRef.current.connect(context.destination);
 
+         // Record the start time *after* potential resume and *before* starting playback
+         console.log('startGame - context.currentTime BEFORE assignment:', context.currentTime);
+         startTimeRef.current = context.currentTime;
 
-         // Store the precise start time from the AudioContext
-         startTimeRef.current = audioContextRef.current.currentTime;
-         sourceNodeRef.current.start(startTimeRef.current); // Start playing now
+         // ADDED LOG: Verify the value of startTimeRef.current immediately after setting it
+         console.log('startGame - startTimeRef.current set to:', startTimeRef.current);
 
-         setIsPlaying(true); // This will trigger the game loop via useEffect
+         // Check if startTimeRef.current is still 0, which would be unexpected
+         if (startTimeRef.current === 0) {
+             console.warn('startGame - WARNING: startTimeRef.current is 0 immediately after setting! AudioContext state might be:', context.state);
+         }
 
-         console.log("Game started");
+         // Start playback now
+         sourceNodeRef.current.start(0);
+
+         // Set isPlaying *after* starting audio and recording time
+         setIsPlaying(true);
+         console.log("startGame - Game playback initiated. isPlaying:", true);
      };
-
 
     // --- Note Rendering Calculation ---
     const boardHeight = boardRef.current?.offsetHeight ?? 400; // Use a default height if ref not ready
     const judgeLinePosition = boardHeight * (1 - judgeLineBottom / 100);
 
+    // Function to get judgment text style
+    const getJudgmentStyle = (judg: Judgment): string => {
+        switch (judg) {
+            case 'PERFECT': return 'text-yellow-300 text-4xl font-extrabold';
+            case 'GREAT': return 'text-green-400 text-3xl font-bold';
+            case 'GOOD': return 'text-blue-400 text-2xl font-semibold';
+            case 'BAD': return 'text-red-500 text-xl font-medium';
+            case 'MISS': return 'text-gray-500 text-lg font-normal'; // Style for MISS if you want to display it
+            default: return '';
+        }
+    };
 
     return (
         <div className="space-y-2">
             {!isPlaying && (
                  <button
                     onClick={startGame}
-                    disabled={!audioBufferRef.current} // Disable until audio loads
+                    // Use isAudioLoaded state for disabled attribute
+                    disabled={!isAudioLoaded}
                     className="px-4 py-2 rounded-lg shadow-neumorphic hover:shadow-neumorphic-inset bg-green-500 text-white focus:outline-none transition-all duration-200 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                    {audioBufferRef.current ? 'Start Game' : 'Loading Audio...'}
+                    {/* Use isAudioLoaded state for button text */}
+                    {isAudioLoaded ? 'Start Game' : 'Loading Audio...'}
                 </button>
             )}
             {isPlaying && <p className="text-sm text-gray-600">Time: {currentTime.toFixed(2)}s | Score: {score}</p>}
 
-            {/* Game Board Area */}
-            <div ref={boardRef} className="relative bg-gray-800 h-96 w-full max-w-md mx-auto rounded-lg overflow-hidden shadow-neumorphic-inset">
-                 {/* Render visible notes */}
-                 {activeNotes.map((note, index) => {
-                     // Only render notes that haven't been hit
-                     if (hitNotes.has(index)) return null;
+            {/* Game Board Area - Updated height and background */}
+            <div
+                ref={boardRef}
+                className="relative bg-gradient-to-b from-gray-700 to-gray-900 h-[600px] w-full max-w-md mx-auto rounded-lg overflow-hidden shadow-neumorphic-inset" // Increased height and added gradient
+            >
+                 {/* Judgment Text Display */}
+                 {judgment && judgment !== 'MISS' && ( // Only display non-MISS judgments for now
+                     <div className={`absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-10 pointer-events-none ${getJudgmentStyle(judgment)} animate-ping-short`}>
+                         {judgment}
+                     </div>
+                 )}
 
-                     // Calculate position based on current time
-                     const noteTime = note.time;
-                     // Note reaches judge line at note.time
-                     // Position = judgeLinePos - distance_to_judge_line
-                     // distance = time_difference * speed
-                     const timeDifference = noteTime - currentTime;
-                     const topPosition = judgeLinePosition - timeDifference * pixelsPerSecond;
+                 {/* Render notes based on the visibleNotes state */}
+                 {visibleNotes.map(({ id, note, topPosition }) => (
+                     <NoteElement key={id} note={note} topPosition={topPosition} numLanes={numLanes} />
+                 ))}
 
-                     // Only render notes that are potentially visible on the board
-                     // (Adjust visibility window as needed)
-                     if (topPosition > -noteHeight && topPosition < boardHeight + noteHeight) {
-                        return <NoteElement key={index} note={note} topPosition={topPosition} numLanes={numLanes} />;
-                     }
-                     return null;
-                 })}
-
-                {/* Judgment Line */}
+                {/* Judgment Line - Updated styles */}
                 <div
-                    className="absolute left-0 right-0 h-1 bg-red-500 shadow-lg"
+                    className="absolute left-0 right-0 h-1.5 bg-pink-500 shadow-xl shadow-pink-500/50" // Brighter color, thicker, more shadow
                     style={{ bottom: `${judgeLineBottom}%` }}
                 ></div>
 
-                {/* Key indicators */}
-                <div className="absolute bottom-0 left-0 right-0 h-10 bg-gray-700 flex justify-around items-center px-2">
+                {/* Key indicators - Updated styles */}
+                <div className="absolute bottom-0 left-0 right-0 h-10 bg-gray-700 flex justify-around items-center px-2 border-t border-gray-600">
                     {keyMap.map((key, index) => (
-                        <div key={index} className="text-white font-bold text-lg uppercase w-10 h-8 flex items-center justify-center bg-gray-600 rounded shadow-neumorphic-sm">
+                        <div
+                            key={index}
+                            // Added neumorphic shadow and slightly lighter bg
+                            className="text-white font-bold text-lg uppercase w-11 h-8 flex items-center justify-center bg-gray-600 rounded shadow-neumorphic-sm"
+                        >
                             {key}
                         </div>
                     ))}
