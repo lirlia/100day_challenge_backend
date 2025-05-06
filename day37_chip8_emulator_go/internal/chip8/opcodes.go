@@ -100,6 +100,73 @@ func (c *Chip8) executeOpcode(opcode uint16) (redraw bool, collision bool) {
 		c.PC += 2
 		return pixelChanged, c.V[0xF] == 1
 
+	case 0x8000: // Arithmetic and Logic opcodes (8xy0 - 8xy7, 8xyE)
+		x := (opcode & 0x0F00) >> 8
+		y := (opcode & 0x00F0) >> 4
+		switch opcode & 0x000F {
+		case 0x0000: // LD Vx, Vy (8xy0) - Set Vx = Vy.
+			c.V[x] = c.V[y]
+		case 0x0001: // OR Vx, Vy (8xy1) - Set Vx = Vx OR Vy.
+			c.V[x] |= c.V[y]
+		case 0x0002: // AND Vx, Vy (8xy2) - Set Vx = Vx AND Vy.
+			c.V[x] &= c.V[y]
+		case 0x0003: // XOR Vx, Vy (8xy3) - Set Vx = Vx XOR Vy.
+			c.V[x] ^= c.V[y]
+		case 0x0004: // ADD Vx, Vy (8xy4) - Set Vx = Vx + Vy, set VF = carry.
+			// Cast to uint16 to detect overflow for carry
+			sum := uint16(c.V[x]) + uint16(c.V[y])
+			c.V[x] = byte(sum & 0xFF) // Lower 8 bits are the result
+			if sum > 0xFF {           // If sum is greater than 255, a carry occurred
+				c.V[0xF] = 1
+			} else {
+				c.V[0xF] = 0
+			}
+		case 0x0005: // SUB Vx, Vy (8xy5) - Set Vx = Vx - Vy, set VF = NOT borrow.
+			// If Vx > Vy, then VF is 1; otherwise 0.
+			borrow := byte(0)
+			if c.V[x] >= c.V[y] { // Note: NOT borrow means Vx >= Vy for VF=1
+				borrow = 1
+			}
+			c.V[x] -= c.V[y]
+			c.V[0xF] = borrow
+		case 0x0006: // SHR Vx {, Vy} (8xy6) - Set Vx = Vx SHR 1.
+			// If variantSCHIP is true, Vx = Vy SHR 1. VF = LSB of Vy.
+			// Otherwise, Vx = Vx SHR 1. VF = LSB of Vx.
+			var lsb byte
+			if c.variantSCHIP {
+				lsb = c.V[y] & 0x1
+				c.V[x] = c.V[y] >> 1
+			} else {
+				lsb = c.V[x] & 0x1
+				c.V[x] >>= 1
+			}
+			c.V[0xF] = lsb
+		case 0x0007: // SUBN Vx, Vy (8xy7) - Set Vx = Vy - Vx, set VF = NOT borrow.
+			// If Vy > Vx, then VF is 1; otherwise 0.
+			borrow := byte(0)
+			if c.V[y] >= c.V[x] { // Note: NOT borrow means Vy >= Vx for VF=1
+				borrow = 1
+			}
+			c.V[x] = c.V[y] - c.V[x]
+			c.V[0xF] = borrow
+		case 0x000E: // SHL Vx {, Vy} (8xyE) - Set Vx = Vx SHL 1.
+			// If variantSCHIP is true, Vx = Vy SHL 1. VF = MSB of Vy.
+			// Otherwise, Vx = Vx SHL 1. VF = MSB of Vx.
+			var msb byte
+			if c.variantSCHIP {
+				msb = (c.V[y] & 0x80) >> 7 // Get MSB (0x80 is 10000000b)
+				c.V[x] = c.V[y] << 1
+			} else {
+				msb = (c.V[x] & 0x80) >> 7
+				c.V[x] <<= 1
+			}
+			c.V[0xF] = msb
+		default:
+			log.Printf("Unknown 8xxx opcode: 0x%X (PC: 0x%X)", opcode, c.PC)
+		}
+		c.PC += 2
+		return false, false // Most 8xxx opcodes do not affect redraw
+
 	case 0xE000:
 		x := (opcode & 0x0F00) >> 8
 		switch opcode & 0x00FF {

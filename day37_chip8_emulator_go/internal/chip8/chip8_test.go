@@ -613,6 +613,227 @@ func TestOpcodes(t *testing.T) {
 				}
 			},
 		},
+		// Arithmetic and Logic Opcodes (8xxx series)
+		{
+			name:      "8xy0 - LD Vx, Vy",
+			opcode:    0x8010, // LD V0, V1
+			setupChip: func(c *Chip8) { c.V[1] = 0xAB },
+			assertChip: func(t *testing.T, c *Chip8, _, _, _ bool) {
+				if c.V[0] != 0xAB {
+					t.Errorf("V0 expected 0xAB, got 0x%X", c.V[0])
+				}
+				if c.PC != romOffset+2 {
+					t.Errorf("PC expected 0x%X, got 0x%X", romOffset+2, c.PC)
+				}
+			},
+		},
+		{
+			name:      "8xy1 - OR Vx, Vy",
+			opcode:    0x8011, // OR V0, V1
+			setupChip: func(c *Chip8) { c.V[0] = 0xF0; c.V[1] = 0x0F },
+			assertChip: func(t *testing.T, c *Chip8, _, _, _ bool) {
+				if c.V[0] != 0xFF {
+					t.Errorf("V0 expected 0xFF, got 0x%X", c.V[0])
+				}
+				if c.PC != romOffset+2 {
+					t.Errorf("PC expected 0x%X, got 0x%X", romOffset+2, c.PC)
+				}
+			},
+		},
+		{
+			name:      "8xy2 - AND Vx, Vy",
+			opcode:    0x8012, // AND V0, V1
+			setupChip: func(c *Chip8) { c.V[0] = 0xF0; c.V[1] = 0x1F },
+			assertChip: func(t *testing.T, c *Chip8, _, _, _ bool) {
+				if c.V[0] != 0x10 {
+					t.Errorf("V0 expected 0x10, got 0x%X", c.V[0])
+				}
+				if c.PC != romOffset+2 {
+					t.Errorf("PC expected 0x%X, got 0x%X", romOffset+2, c.PC)
+				}
+			},
+		},
+		{
+			name:      "8xy3 - XOR Vx, Vy",
+			opcode:    0x8013, // XOR V0, V1
+			setupChip: func(c *Chip8) { c.V[0] = 0xF0; c.V[1] = 0xFF },
+			assertChip: func(t *testing.T, c *Chip8, _, _, _ bool) {
+				if c.V[0] != 0x0F {
+					t.Errorf("V0 expected 0x0F, got 0x%X", c.V[0])
+				}
+				if c.PC != romOffset+2 {
+					t.Errorf("PC expected 0x%X, got 0x%X", romOffset+2, c.PC)
+				}
+			},
+		},
+		{
+			name:      "8xy4 - ADD Vx, Vy (no carry)",
+			opcode:    0x8014, // ADD V0, V1
+			setupChip: func(c *Chip8) { c.V[0] = 0x01; c.V[1] = 0x02; c.V[0xF] = 0xDD /* dummy */ },
+			assertChip: func(t *testing.T, c *Chip8, _, _, _ bool) {
+				if c.V[0] != 0x03 {
+					t.Errorf("V0 expected 0x03, got 0x%X", c.V[0])
+				}
+				if c.V[0xF] != 0 {
+					t.Errorf("VF expected 0 (no carry), got 0x%X", c.V[0xF])
+				}
+				if c.PC != romOffset+2 {
+					t.Errorf("PC expected 0x%X, got 0x%X", romOffset+2, c.PC)
+				}
+			},
+		},
+		{
+			name:      "8xy4 - ADD Vx, Vy (with carry)",
+			opcode:    0x8014, // ADD V0, V1
+			setupChip: func(c *Chip8) { c.V[0] = 0xFF; c.V[1] = 0x01; c.V[0xF] = 0xDD /* dummy */ },
+			assertChip: func(t *testing.T, c *Chip8, _, _, _ bool) {
+				if c.V[0] != 0x00 {
+					t.Errorf("V0 expected 0x00, got 0x%X", c.V[0])
+				}
+				if c.V[0xF] != 1 {
+					t.Errorf("VF expected 1 (carry), got 0x%X", c.V[0xF])
+				}
+				if c.PC != romOffset+2 {
+					t.Errorf("PC expected 0x%X, got 0x%X", romOffset+2, c.PC)
+				}
+			},
+		},
+		{
+			name:      "8xy5 - SUB Vx, Vy (Vx >= Vy, no borrow, VF=1)",
+			opcode:    0x8015, // SUB V0, V1
+			setupChip: func(c *Chip8) { c.V[0] = 0x0A; c.V[1] = 0x02; c.V[0xF] = 0xDD },
+			assertChip: func(t *testing.T, c *Chip8, _, _, _ bool) {
+				if c.V[0] != 0x08 {
+					t.Errorf("V0 expected 0x08, got 0x%X", c.V[0])
+				}
+				if c.V[0xF] != 1 {
+					t.Errorf("VF expected 1 (no borrow), got 0x%X", c.V[0xF])
+				}
+				if c.PC != romOffset+2 {
+					t.Errorf("PC expected 0x%X, got 0x%X", romOffset+2, c.PC)
+				}
+			},
+		},
+		{
+			name:      "8xy5 - SUB Vx, Vy (Vx < Vy, borrow, VF=0)",
+			opcode:    0x8015, // SUB V0, V1
+			setupChip: func(c *Chip8) { c.V[0] = 0x02; c.V[1] = 0x0A; c.V[0xF] = 0xDD },
+			assertChip: func(t *testing.T, c *Chip8, _, _, _ bool) {
+				if c.V[0] != 0xF8 {
+					t.Errorf("V0 expected 0xF8 (2-10 wrapped), got 0x%X", c.V[0])
+				}
+				if c.V[0xF] != 0 {
+					t.Errorf("VF expected 0 (borrow), got 0x%X", c.V[0xF])
+				}
+				if c.PC != romOffset+2 {
+					t.Errorf("PC expected 0x%X, got 0x%X", romOffset+2, c.PC)
+				}
+			},
+		},
+		{
+			name:      "8xy6 - SHR Vx (VF=LSB of Vx, classic)",
+			opcode:    0x8006, // SHR V0
+			setupChip: func(c *Chip8) { c.variantSCHIP = false; c.V[0] = 0xAB; /* 10101011 */ c.V[0xF] = 0xDD },
+			assertChip: func(t *testing.T, c *Chip8, _, _, _ bool) {
+				if c.V[0] != 0x55 {
+					t.Errorf("V0 expected 0x55 (0xAB>>1), got 0x%X", c.V[0]) /* 01010101 */
+				}
+				if c.V[0xF] != 1 {
+					t.Errorf("VF expected 1 (LSB of 0xAB), got 0x%X", c.V[0xF])
+				}
+				if c.PC != romOffset+2 {
+					t.Errorf("PC expected 0x%X, got 0x%X", romOffset+2, c.PC)
+				}
+			},
+		},
+		{
+			name:      "8xy6 - SHR Vx, Vy (VF=LSB of Vy, SCHIP)",
+			opcode:    0x8016, // SHR V0, V1
+			setupChip: func(c *Chip8) { c.variantSCHIP = true; c.V[0] = 0xFF; c.V[1] = 0xCD; /* 11001101 */ c.V[0xF] = 0xDD },
+			assertChip: func(t *testing.T, c *Chip8, _, _, _ bool) {
+				if c.V[0] != 0x66 {
+					t.Errorf("V0 expected 0x66 (0xCD>>1), got 0x%X", c.V[0]) /* 01100110 */
+				}
+				if c.V[0xF] != 1 {
+					t.Errorf("VF expected 1 (LSB of 0xCD), got 0x%X", c.V[0xF])
+				}
+				if c.V[0] == c.V[1]>>1 { /* V0 should be Vy >> 1 */
+				} else {
+					t.Errorf("V0 was not Vy >> 1")
+				}
+				if c.PC != romOffset+2 {
+					t.Errorf("PC expected 0x%X, got 0x%X", romOffset+2, c.PC)
+				}
+			},
+		},
+		{
+			name:      "8xy7 - SUBN Vx, Vy (Vy >= Vx, no borrow, VF=1)",
+			opcode:    0x8017, // SUBN V0, V1 (V0 = V1 - V0)
+			setupChip: func(c *Chip8) { c.V[0] = 0x02; c.V[1] = 0x0A; c.V[0xF] = 0xDD },
+			assertChip: func(t *testing.T, c *Chip8, _, _, _ bool) {
+				if c.V[0] != 0x08 {
+					t.Errorf("V0 expected 0x08 (0x0A-0x02), got 0x%X", c.V[0])
+				}
+				if c.V[0xF] != 1 {
+					t.Errorf("VF expected 1 (no borrow), got 0x%X", c.V[0xF])
+				}
+				if c.PC != romOffset+2 {
+					t.Errorf("PC expected 0x%X, got 0x%X", romOffset+2, c.PC)
+				}
+			},
+		},
+		{
+			name:      "8xy7 - SUBN Vx, Vy (Vy < Vx, borrow, VF=0)",
+			opcode:    0x8017, // SUBN V0, V1 (V0 = V1 - V0)
+			setupChip: func(c *Chip8) { c.V[0] = 0x0A; c.V[1] = 0x02; c.V[0xF] = 0xDD },
+			assertChip: func(t *testing.T, c *Chip8, _, _, _ bool) {
+				if c.V[0] != 0xF8 {
+					t.Errorf("V0 expected 0xF8 (0x02-0x0A wrapped), got 0x%X", c.V[0])
+				}
+				if c.V[0xF] != 0 {
+					t.Errorf("VF expected 0 (borrow), got 0x%X", c.V[0xF])
+				}
+				if c.PC != romOffset+2 {
+					t.Errorf("PC expected 0x%X, got 0x%X", romOffset+2, c.PC)
+				}
+			},
+		},
+		{
+			name:      "8xyE - SHL Vx (VF=MSB of Vx, classic)",
+			opcode:    0x800E, // SHL V0
+			setupChip: func(c *Chip8) { c.variantSCHIP = false; c.V[0] = 0xAB; /* 10101011 */ c.V[0xF] = 0xDD },
+			assertChip: func(t *testing.T, c *Chip8, _, _, _ bool) {
+				if c.V[0] != 0x56 {
+					t.Errorf("V0 expected 0x56 (0xAB<<1), got 0x%X", c.V[0]) /* 01010110 */
+				}
+				if c.V[0xF] != 1 {
+					t.Errorf("VF expected 1 (MSB of 0xAB), got 0x%X", c.V[0xF])
+				}
+				if c.PC != romOffset+2 {
+					t.Errorf("PC expected 0x%X, got 0x%X", romOffset+2, c.PC)
+				}
+			},
+		},
+		{
+			name:      "8xyE - SHL Vx, Vy (VF=MSB of Vy, SCHIP)",
+			opcode:    0x801E, // SHL V0, V1
+			setupChip: func(c *Chip8) { c.variantSCHIP = true; c.V[0] = 0xFF; c.V[1] = 0xCD; /* 11001101 */ c.V[0xF] = 0xDD },
+			assertChip: func(t *testing.T, c *Chip8, _, _, _ bool) {
+				if c.V[0] != 0x9A {
+					t.Errorf("V0 expected 0x9A (0xCD<<1), got 0x%X", c.V[0]) /* 10011010 */
+				}
+				if c.V[0xF] != 1 {
+					t.Errorf("VF expected 1 (MSB of 0xCD), got 0x%X", c.V[0xF])
+				}
+				if c.V[0] == c.V[1]<<1 { /* V0 should be Vy << 1 */
+				} else {
+					t.Errorf("V0 was not Vy << 1")
+				}
+				if c.PC != romOffset+2 {
+					t.Errorf("PC expected 0x%X, got 0x%X", romOffset+2, c.PC)
+				}
+			},
+		},
 	}
 
 	for _, tc := range testCases {
