@@ -4,12 +4,8 @@ import { useCpuSimulator } from '../../_lib/cpuEngine'; // 相対パスに変更
 import { OpCode } from '../../_lib/types'; // OpCodeもインポートしてHALTチェックなどに使える
 
 export default function CpuPage() {
-  const initialJs = "let a = 10;\\nlet b = 5;\\nlet sum = a + b;\\n// Add a HALT instruction to stop execution\\nHALT;";
+  const initialJs = "let a = 10;\nlet b = 5;\nlet sum = a + b;\n// Add a HALT instruction to stop execution\nHALT;";
   const simulator = useCpuSimulator(initialJs);
-
-  const handleJsCodeChangeAndCompile = (newCode: string) => {
-    simulator.compileAndLoad(newCode);
-  };
 
   const assemblyLinesForDisplay = simulator.getAssemblyForDisplay();
   const machineCodeLinesForDisplay = simulator.getMachineCodeForDisplay();
@@ -31,69 +27,69 @@ export default function CpuPage() {
     .slice(0, 10); // Display first 10 memory entries for brevity
 
   return (
-    <div className="container mx-auto p-4 min-h-screen flex flex-col items-center selection:bg-purple-500 selection:text-white">
+    <div className="container mx-auto p-4 min-h-screen flex flex-col items-center selection:bg-green-500 selection:text-black">
       <header className="mb-8 text-center w-full">
-        <h1 className="text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 via-pink-500 to-red-400 py-2">
-          Day38 - CPU Visualizer
+        <h1 className="text-5xl font-bold text-green-400 py-2 font-mono">
+          Day38 :: CPU_Visualizer_v1.0
         </h1>
-        <p className="text-gray-400 mt-2 text-lg">
-          シンプルなJavaScriptコードのCPUレベルでの実行をステップごとに追体験。
+        <p className="text-green-600 mt-2 text-lg font-mono">
+          -- Visualize simple JS execution at CPU level --
         </p>
       </header>
 
       <main className="grid grid-cols-1 lg:grid-cols-3 gap-6 w-full max-w-screen-2xl px-4">
         {/* Code Input & Controls */}
         <section className="lg:col-span-1 space-y-6">
-          <div className="glassmorphism-panel p-6">
-            <h2 className="text-2xl font-semibold mb-4 text-purple-300">JavaScript Code</h2>
+          <div className="terminal-panel">
+            <h2 className="text-2xl font-semibold mb-4 text-green-500 font-mono">// JavaScript_Input</h2>
             <textarea
-              className="w-full h-60 p-3 bg-gray-800/60 border border-gray-700 rounded-md text-sm font-mono focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none placeholder-gray-500"
+              className="terminal-input w-full h-60 p-3 text-sm font-mono"
               value={simulator.rawJsCode}
-              onChange={(e) => simulator.compileAndLoad(e.target.value)} // 直接 rawJsCode を更新し、再コンパイルを促す
-              placeholder="例:\nlet x = 10;\nlet y = 20;\nlet z = x + y;\nHALT;"
+              onChange={(e) => simulator.compileAndLoad(e.target.value)}
+              placeholder="> let x = 10;\n> let y = 20;\n> let z = x + y;\n> HALT;"
               spellCheck="false"
             />
             <button
               onClick={() => simulator.compileAndLoad(simulator.rawJsCode)}
-              className="mt-4 w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 px-4 rounded-lg transition-colors duration-200 shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
+              className="mt-4 w-full terminal-button-accent"
             >
-              Compile & Load
+              [ Compile & Load ]
             </button>
           </div>
 
-          <div className="glassmorphism-panel p-6 flex flex-col space-y-4">
-            <h2 className="text-2xl font-semibold mb-2 text-purple-300">Controls</h2>
+          <div className="terminal-panel flex flex-col space-y-4">
+            <h2 className="text-2xl font-semibold mb-2 text-green-500 font-mono">// Controls</h2>
             <button
               onClick={simulator.step}
               disabled={!simulator.cpuState.isRunning || !simulator.isProgramLoaded()}
-              className="w-full bg-purple-600 hover:bg-purple-700 disabled:bg-gray-500 text-white font-semibold py-3 px-4 rounded-lg transition-colors duration-200 shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-purple-400 disabled:cursor-not-allowed"
+              className="w-full terminal-button disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Step Execute (PC: {simulator.cpuState.registers.pc})
+              Step_Execute (PC: {simulator.cpuState.registers.pc})
             </button>
             <button
-              onClick={() => simulator.reset(true)} // Keep JS code
-              className="w-full bg-pink-600 hover:bg-pink-700 text-white font-semibold py-3 px-4 rounded-lg transition-colors duration-200 shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-pink-400"
+              onClick={() => simulator.reset(true)}
+              className="w-full terminal-button"
             >
-              Reset CPU State
+              Reset_CPU_State
             </button>
              <button
-              onClick={() => simulator.reset(false)} // Clear JS code
-              className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-3 px-4 rounded-lg transition-colors duration-200 shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-red-400"
+              onClick={() => simulator.reset(false)}
+              className="w-full terminal-button-danger"
             >
-              Reset All (Clear Code)
+              Reset_All_(Clear_Code)
             </button>
           </div>
         </section>
 
         {/* Assembly and Machine Code */}
         <section className="lg:col-span-1 space-y-6">
-          <div className="glassmorphism-panel p-6 h-full flex flex-col">
-            <h2 className="text-2xl font-semibold mb-4 text-purple-300">Assembly Code</h2>
-            <pre className="flex-grow w-full p-3 bg-gray-800/60 border border-gray-700 rounded-md text-sm font-mono overflow-auto pretty-scrollbar">
-              {assemblyLinesForDisplay.length === 0 && <span className="text-gray-500">JSコードをコンパイルしてください...</span>}
+          <div className="terminal-panel h-full flex flex-col">
+            <h2 className="text-2xl font-semibold mb-4 text-green-500 font-mono">// Assembly_Output</h2>
+            <pre className="flex-grow w-full p-3 bg-black/30 border border-green-700/50 rounded-sm text-xs font-mono overflow-auto pretty-scrollbar">
+              {assemblyLinesForDisplay.length === 0 && <span className="text-green-700">Waiting for JS compilation...</span>}
               {assemblyLinesForDisplay.map((line, index) => (
-                <div key={`asm-${index}`} className={`whitespace-pre-wrap py-0.5 px-2 rounded-sm transition-colors ${index === simulator.cpuState.currentAssemblyLine && simulator.cpuState.isRunning ? 'bg-purple-600/50 text-yellow-300 ring-1 ring-purple-400' : 'hover:bg-gray-700/50'}`}>
-                  <span className="text-gray-500 select-none mr-2">{index.toString().padStart(2, '0')}:</span>
+                <div key={`asm-${index}`} className={`whitespace-pre-wrap py-0.5 px-2 rounded-sm transition-colors ${index === simulator.cpuState.currentAssemblyLine && simulator.cpuState.isRunning ? 'bg-green-700/60 text-yellow-300 ring-1 ring-green-400' : 'hover:bg-black/40'}`}>
+                  <span className="text-green-700 select-none mr-2">{index.toString().padStart(2, '0')}:</span>
                   {line}
                 </div>
               ))}
@@ -102,13 +98,13 @@ export default function CpuPage() {
         </section>
 
         <section className="lg:col-span-1 space-y-6">
-           <div className="glassmorphism-panel p-6 h-full flex flex-col">
-            <h2 className="text-2xl font-semibold mb-4 text-purple-300">Machine Code (Hex)</h2>
-            <pre className="flex-grow w-full p-3 bg-gray-800/60 border border-gray-700 rounded-md text-sm font-mono overflow-auto pretty-scrollbar">
-              {machineCodeLinesForDisplay.length === 0 && <span className="text-gray-500">JSコードをコンパイルしてください...</span>}
+           <div className="terminal-panel h-full flex flex-col">
+            <h2 className="text-2xl font-semibold mb-4 text-green-500 font-mono">// Machine_Code_(Hex)</h2>
+            <pre className="flex-grow w-full p-3 bg-black/30 border border-green-700/50 rounded-sm text-xs font-mono overflow-auto pretty-scrollbar">
+              {machineCodeLinesForDisplay.length === 0 && <span className="text-green-700">Waiting for JS compilation...</span>}
               {machineCodeLinesForDisplay.map((line, index) => (
-                <div key={`mc-${index}`} className={`whitespace-pre-wrap py-0.5 px-2 rounded-sm transition-colors ${index === simulator.cpuState.currentAssemblyLine && simulator.cpuState.isRunning ? 'bg-pink-600/50 text-yellow-300 ring-1 ring-pink-400' : 'hover:bg-gray-700/50'}`}>
-                  <span className="text-gray-500 select-none mr-2">{(index * 2).toString(16).padStart(4, '0').toUpperCase()}:</span> {/* Assuming each instruction is 2 bytes for display address */}
+                <div key={`mc-${index}`} className={`whitespace-pre-wrap py-0.5 px-2 rounded-sm transition-colors ${index === simulator.cpuState.currentAssemblyLine && simulator.cpuState.isRunning ? 'bg-blue-700/60 text-yellow-300 ring-1 ring-blue-400' : 'hover:bg-black/40'}`}>
+                  <span className="text-green-700 select-none mr-2">{(index * 2).toString(16).padStart(4, '0').toUpperCase()}:</span>
                   {line}
                 </div>
               ))}
@@ -119,42 +115,42 @@ export default function CpuPage() {
 
         {/* Registers and Memory - Combined or separate as preferred */}
         <section className="lg:col-span-full grid md:grid-cols-2 gap-6 mt-0 md:mt-6">
-          <div className="glassmorphism-panel p-6">
-            <h2 className="text-2xl font-semibold mb-4 text-purple-300">CPU Registers</h2>
+          <div className="terminal-panel">
+            <h2 className="text-2xl font-semibold mb-4 text-green-500 font-mono">// CPU_Registers</h2>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-3 text-sm font-mono">
               {Object.entries(displayRegisters).map(([key, value]) => (
-                <div key={key} className="flex justify-between items-center border-b border-gray-700/50 pb-1">
-                  <span className="text-gray-400 mr-2">{key}:</span>
-                  <span className="text-purple-300 text-lg font-semibold">{String(value)}</span>
+                <div key={key} className="flex justify-between items-center border-b border-green-700/50 pb-1">
+                  <span className="text-green-600 mr-2">{key}:</span>
+                  <span className="text-green-300 text-lg font-semibold">{String(value)}</span>
                 </div>
               ))}
             </div>
-             <p className={`mt-4 text-sm font-semibold ${simulator.cpuState.isRunning ? 'text-green-400' : 'text-red-400'}`}>
-                CPU Status: {simulator.cpuState.isRunning ? 'Running' : 'Halted'}
+             <p className={`mt-4 text-sm font-semibold font-mono ${simulator.cpuState.isRunning ? 'text-green-400 animate-pulse' : 'text-red-500'}`}>
+                CPU_Status: {simulator.cpuState.isRunning ? 'RUNNING...' : 'HALTED.'}
              </p>
           </div>
 
-          <div className="glassmorphism-panel p-6">
-            <h2 className="text-2xl font-semibold mb-4 text-purple-300">Memory View (Simplified)</h2>
+          <div className="terminal-panel">
+            <h2 className="text-2xl font-semibold mb-4 text-green-500 font-mono">// Memory_View_(Sim)</h2>
             {displayMemory.length === 0 ? (
-                 <p className="text-gray-500 text-sm">メモリは現在空です。STORE命令などで値が書き込まれます。</p>
+                 <p className="text-green-700 text-sm font-mono">Memory bank empty. Use STORE op to load data.</p>
             ) : (
-                <div className="space-y-1 text-sm font-mono max-h-48 overflow-auto pretty-scrollbar">
+                <div className="space-y-1 text-xs font-mono max-h-48 overflow-auto pretty-scrollbar">
                 {displayMemory.map((memEntry, index) => (
-                    <div key={`mem-${index}`} className="flex justify-between p-1.5 bg-gray-800/50 rounded-sm hover:bg-gray-700/70">
-                    <span className="text-gray-400">{memEntry.address}:</span>
-                    <span className="text-pink-300">{memEntry.value}</span>
+                    <div key={`mem-${index}`} className="flex justify-between p-1.5 bg-black/40 rounded-sm hover:bg-black/60">
+                    <span className="text-green-700">{memEntry.address}:</span>
+                    <span className="text-blue-400">{memEntry.value}</span>
                     </div>
                 ))}
                 </div>
             )}
-             <p className="text-xs text-gray-500 mt-3">注: これは非常に簡略化されたメモリビューです。</p>
+             <p className="text-xs text-green-700 mt-3 font-mono">Note: Simplified memory representation.</p>
           </div>
         </section>
       </main>
 
-      <footer className="mt-12 mb-6 text-center text-gray-500 text-sm">
-        <p>&copy; {new Date().getFullYear()} Day38 CPU Visualizer Challenge. Crafted with Next.js & Tailwind CSS.</p>
+      <footer className="mt-12 mb-6 text-center text-green-700 text-sm font-mono">
+        <p>&copy; {new Date().getFullYear()} CYBER_CPU_SIM. All rights reserved by Day38_BIOS_Inc.</p>
       </footer>
       <style jsx global>{`
         .pretty-scrollbar::-webkit-scrollbar {
@@ -162,15 +158,15 @@ export default function CpuPage() {
           height: 8px;
         }
         .pretty-scrollbar::-webkit-scrollbar-track {
-          background: rgba(255,255,255,0.05);
+          background: rgba(0,0,0,0.3); /* Darker track for terminal theme */
           border-radius: 10px;
         }
         .pretty-scrollbar::-webkit-scrollbar-thumb {
-          background: rgba(192, 132, 252, 0.5); // purple-400 with opacity
+          background: rgba(22, 163, 74, 0.5); /* green-600 with opacity */
           border-radius: 10px;
         }
         .pretty-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: rgba(192, 132, 252, 0.7); // purple-400 with more opacity
+          background: rgba(22, 163, 74, 0.7); /* green-600 with more opacity */
         }
       `}</style>
     </div>
