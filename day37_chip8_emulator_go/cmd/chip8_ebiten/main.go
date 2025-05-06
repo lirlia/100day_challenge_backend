@@ -112,10 +112,10 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		pixels := make([]byte, chip8Width*chip8Height*4) // RGBA buffer
 		for i, v := range gfx {
 			if v == 1 {
-				pixels[i*4] = 0xff   // R
+				pixels[i*4] = 0x00   // R
 				pixels[i*4+1] = 0xff // G
-				pixels[i*4+2] = 0xff // B
-				pixels[i*4+3] = 0xff // A (White)
+				pixels[i*4+2] = 0x00 // B
+				pixels[i*4+3] = 0xff // A (Green)
 			} else {
 				pixels[i*4] = 0x00   // R
 				pixels[i*4+1] = 0x00 // G
