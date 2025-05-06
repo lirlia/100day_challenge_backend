@@ -502,6 +502,117 @@ func TestOpcodes(t *testing.T) {
 				}
 			},
 		},
+		// Key Opcodes
+		{
+			name:   "Ex9E - SKP Vx (key pressed)",
+			opcode: 0xE29E, // SKP V2
+			setupChip: func(c *Chip8) {
+				c.V[2] = 0x5 // Key 5
+				c.SetKey(0x5, true)
+			},
+			assertChip: func(t *testing.T, c *Chip8, redraw bool, collision bool, halted bool) {
+				if c.PC != romOffset+4 {
+					t.Errorf("PC after SKP (pressed): expected 0x%X, got 0x%X", romOffset+4, c.PC)
+				}
+			},
+		},
+		{
+			name:   "Ex9E - SKP Vx (key not pressed)",
+			opcode: 0xE29E, // SKP V2
+			setupChip: func(c *Chip8) {
+				c.V[2] = 0x5 // Key 5
+				c.SetKey(0x5, false)
+				c.SetKey(0x6, true) // Press a different key
+			},
+			assertChip: func(t *testing.T, c *Chip8, redraw bool, collision bool, halted bool) {
+				if c.PC != romOffset+2 {
+					t.Errorf("PC after SKP (not pressed): expected 0x%X, got 0x%X", romOffset+2, c.PC)
+				}
+			},
+		},
+		{
+			name:   "ExA1 - SKNP Vx (key not pressed)",
+			opcode: 0xE2A1, // SKNP V2
+			setupChip: func(c *Chip8) {
+				c.V[2] = 0x5 // Key 5
+				c.SetKey(0x5, false)
+			},
+			assertChip: func(t *testing.T, c *Chip8, redraw bool, collision bool, halted bool) {
+				if c.PC != romOffset+4 {
+					t.Errorf("PC after SKNP (not pressed): expected 0x%X, got 0x%X", romOffset+4, c.PC)
+				}
+			},
+		},
+		{
+			name:   "ExA1 - SKNP Vx (key pressed)",
+			opcode: 0xE2A1, // SKNP V2
+			setupChip: func(c *Chip8) {
+				c.V[2] = 0x5 // Key 5
+				c.SetKey(0x5, true)
+			},
+			assertChip: func(t *testing.T, c *Chip8, redraw bool, collision bool, halted bool) {
+				if c.PC != romOffset+2 {
+					t.Errorf("PC after SKNP (pressed): expected 0x%X, got 0x%X", romOffset+2, c.PC)
+				}
+			},
+		},
+		{
+			name:   "Fx0A - LD Vx, K (wait for key)",
+			opcode: 0xF10A, // LD V1, K
+			setupChip: func(c *Chip8) {
+				// Ensure no keys are pressed initially
+				for i := 0; i < 16; i++ {
+					c.SetKey(i, false)
+				}
+				c.PC = romOffset            // Set PC for the Fx0A opcode
+				c.memory[c.PC] = byte(0xF1) // Load Fx0A into memory at PC
+				c.memory[c.PC+1] = byte(0x0A)
+			},
+			assertChip: func(t *testing.T, c *Chip8, redraw bool, collision bool, halted bool) {
+				if !c.waitingForKey {
+					t.Error("Fx0A should set waitingForKey to true")
+				}
+				if c.keyReg != 1 {
+					t.Errorf("Fx0A should set keyReg to 1, got %d", c.keyReg)
+				}
+				if c.PC != romOffset {
+					t.Errorf("PC should not advance on Fx0A itself, got 0x%X", c.PC)
+				}
+				if !halted {
+					t.Error("Cycle should return halted=true when waiting for key after Fx0A")
+				}
+
+				// Simulate key press and next cycle
+				c.SetKey(0x7, true) // Press key 7
+				// Simulate timer update that would happen between frames/cycles
+				initialDT := c.DT
+				c.UpdateTimers()
+				if c.DT == initialDT && initialDT > 0 {
+					t.Error("DT should decrement even when waiting for key (tested via manual UpdateTimers call)")
+				}
+
+				r, col, h := c.Cycle() // Next cycle after key press
+
+				if c.waitingForKey {
+					t.Error("waitingForKey should be false after key press cycle")
+				}
+				if c.V[1] != 0x7 {
+					t.Errorf("V[1] should be 0x7 after key 7 pressed, got 0x%X", c.V[1])
+				}
+				if c.PC != romOffset+2 {
+					t.Errorf("PC should advance by 2 after key press completed Fx0A, got 0x%X", c.PC)
+				}
+				if h {
+					t.Error("Cycle should not be halted after key press processed for Fx0A")
+				}
+				if r {
+					t.Error("Key press processing for Fx0A should not cause redraw by itself")
+				}
+				if col {
+					t.Error("Key press processing for Fx0A should not cause collision by itself")
+				}
+			},
+		},
 	}
 
 	for _, tc := range testCases {

@@ -170,24 +170,31 @@ func (c *Chip8) fetchOpcode() uint16 {
 // Returns collision (bool): if a collision occurred during a DRW operation.
 // Returns halted (bool): if the CPU is waiting for a key press (Fx0A).
 func (c *Chip8) Cycle() (redraw bool, collision bool, halted bool) {
-	// Step 6 will fully implement Fx0A key waiting logic.
-	// For now, if waitingForKey is true, we halt and do nothing else this cycle.
-	// Timers should still decrement if waiting for a key (handled by UpdateTimers later).
 	if c.waitingForKey {
-		// Placeholder for key check. Full logic in Step 6.
-		// log.Printf("CPU halted, waiting for key press for V%X", c.keyReg)
-		// c.UpdateTimers() // Timers update even when halted (will be called externally per frame or here)
-		return false, false, true // No redraw, no collision, but CPU is halted
+		for i := 0; i < numRegisters; i++ {
+			if c.keys[i] {
+				c.V[c.keyReg] = byte(i)
+				c.waitingForKey = false
+				c.PC += 2
+				log.Printf("Key 0x%X pressed, V[0x%X] = 0x%X. PC advanced to 0x%X.", i, c.keyReg, c.V[c.keyReg], c.PC)
+				return false, false, false
+			}
+		}
+		return false, false, true
 	}
 
 	opcode := c.fetchOpcode()
-	rd, col := c.executeOpcode(opcode) // PC is managed by executeOpcode
+	rd, col := c.executeOpcode(opcode)
 
-	// Step 5 will implement timer updates.
-	// c.UpdateTimers() // This is typically called at 60Hz, not per CPU cycle.
-	// The main loop will call UpdateTimers().
+	// If Fx0A was just executed, executeOpcode set waitingForKey to true.
+	// In this case, the current cycle should report as halted, and PC was NOT advanced by Fx0A.
+	if opcode&0xF0FF == 0xF00A { // Check if the executed opcode was Fx0A
+		if c.waitingForKey { // Redundant check, Fx0A always sets it, but good for clarity
+			return rd, col, true // rd, col from Fx0A are false, false. halted is true.
+		}
+	}
 
-	return rd, col, false // Not halted (unless Fx0A was just processed and set waitingForKey)
+	return rd, col, false
 }
 
 // UpdateTimers decrements the delay and sound timers if they are greater than zero.
@@ -200,4 +207,27 @@ func (c *Chip8) UpdateTimers() {
 		c.ST--
 		// if c.ST == 0 { log.Println("BEEP!") } // Placeholder for actual sound output
 	}
+}
+
+// SetKey updates the state of a specific key.
+// keyIndex should be 0-15 (0x0-0xF).
+func (c *Chip8) SetKey(keyIndex int, pressed bool) {
+	if keyIndex >= 0 && keyIndex < numRegisters { // numRegisters is 16, same as number of keys
+		c.keys[keyIndex] = pressed
+		// If a key was pressed and we were waiting for one, this might be where we
+		// could potentially clear waitingForKey, but Fx0A specific logic is better handled
+		// within the Cycle or Fx0A execution itself to avoid premature state changes.
+	} else {
+		log.Printf("SetKey: Invalid key index %d", keyIndex)
+	}
+}
+
+// IsKeyPressed checks if a specific key is currently pressed.
+// keyIndex should be 0-15 (0x0-0xF).
+func (c *Chip8) IsKeyPressed(keyIndex byte) bool { // CHIP-8 opcodes use byte for register index
+	if keyIndex < numRegisters {
+		return c.keys[keyIndex]
+	}
+	log.Printf("IsKeyPressed: Invalid key index %d", keyIndex)
+	return false
 }

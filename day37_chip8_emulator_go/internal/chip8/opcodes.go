@@ -100,12 +100,37 @@ func (c *Chip8) executeOpcode(opcode uint16) (redraw bool, collision bool) {
 		c.PC += 2
 		return pixelChanged, c.V[0xF] == 1
 
+	case 0xE000:
+		x := (opcode & 0x0F00) >> 8
+		switch opcode & 0x00FF {
+		case 0x009E: // SKP Vx (Ex9E) - Skip next instruction if key with the value of Vx is pressed.
+			if c.IsKeyPressed(c.V[x]) {
+				c.PC += 2 // Skip the original PC += 2 by doing it here
+			}
+			c.PC += 2
+		case 0x00A1: // SKNP Vx (ExA1) - Skip next instruction if key with the value of Vx is not pressed.
+			if !c.IsKeyPressed(c.V[x]) {
+				c.PC += 2 // Skip the original PC += 2 by doing it here
+			}
+			c.PC += 2
+		default:
+			log.Printf("Unknown Ex opcode: 0x%X (PC: 0x%X)", opcode, c.PC)
+			c.PC += 2
+			return false, false
+		}
+		return false, false
+
 	case 0xF000:
 		x := (opcode & 0x0F00) >> 8 // Common for many Fx opcodes
 		switch opcode & 0x00FF {
 		case 0x0007: // LD Vx, DT (Fx07) - Set Vx = delay timer value.
 			c.V[x] = c.DT
 			c.PC += 2
+		case 0x000A: // LD Vx, K (Fx0A) - Wait for a key press, store the value of the key in Vx.
+			c.waitingForKey = true
+			c.keyReg = byte(x) // Store which register Vx to put the key value into
+			// PC does NOT advance here. It will be advanced in Cycle() when a key is pressed.
+			return false, false // Redraw false, Halted will be true via Cycle()
 		case 0x0015: // LD DT, Vx (Fx15) - Set delay timer = Vx.
 			c.DT = c.V[x]
 			c.PC += 2
