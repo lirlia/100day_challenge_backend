@@ -248,3 +248,181 @@ func TestNodeStoreOperations(t *testing.T) {
 		}
 	})
 }
+
+func TestDataStoreOperations(t *testing.T) {
+	db, cleanup := SetupInMemoryTestDB(t)
+	defer cleanup()
+
+	s := store.NewSQLStore(db)
+
+	// Create a test file first
+	fileNode := &models.Node{
+		ParentID: 1,
+		Name:     "data_test.txt",
+		IsDir:    false,
+		Mode:     0644,
+	}
+	testFile, err := s.CreateNode(fileNode)
+	if err != nil {
+		t.Fatalf("Failed to create test file for data operations: %v", err)
+	}
+
+	// 1. Write Initial Data
+	t.Run("WriteInitialData", func(t *testing.T) {
+		data := []byte("Hello, FUSE!")
+		n, err := s.WriteData(testFile.ID, 0, data)
+		if err != nil {
+			t.Fatalf("WriteData failed: %v", err)
+		}
+		if n != len(data) {
+			t.Errorf("WriteData returned %d bytes, expected %d", n, len(data))
+		}
+
+		// Verify size and mtime update
+		updatedNode, _ := s.GetNode(testFile.ID)
+		if updatedNode.Size != int64(len(data)) {
+			t.Errorf("Inode size not updated correctly: expected %d, got %d", len(data), updatedNode.Size)
+		}
+		// Mtime should be updated (equal or later than the original creation time, comparing Unix seconds)
+		originalMtimeUnix := testFile.Mtime.Unix()
+		updatedMtimeUnix := updatedNode.Mtime.Unix()
+		if updatedMtimeUnix < originalMtimeUnix { // Compare Unix timestamps (seconds)
+			t.Errorf("Inode mtime (Unix) decreased after write: original=%d, updated=%d (times: %v / %v)",
+				originalMtimeUnix, updatedMtimeUnix, testFile.Mtime, updatedNode.Mtime)
+		}
+		if updatedMtimeUnix == originalMtimeUnix {
+			// Log if Unix seconds are the same, which is acceptable
+			t.Logf("Mtime (Unix) unchanged (likely due to test speed and second precision): original=%d (%v)", originalMtimeUnix, testFile.Mtime)
+		}
+	})
+
+	// 2. Read Initial Data
+	t.Run("ReadInitialData", func(t *testing.T) {
+		expectedData := []byte("Hello, FUSE!")
+		readData, err := s.ReadData(testFile.ID, 0, len(expectedData)+10) // Read more than available
+		if err != nil {
+			t.Fatalf("ReadData failed: %v", err)
+		}
+		if string(readData) != string(expectedData) {
+			t.Errorf("ReadData returned %q, expected %q", string(readData), string(expectedData))
+		}
+	})
+
+	// 3. Overwrite Part of the Data
+	t.Run("OverwriteData", func(t *testing.T) {
+		newData := []byte("World") // Overwrite ", FUSE!"
+		offset := int64(7)         // Start after "Hello, "
+		n, err := s.WriteData(testFile.ID, offset, newData)
+		if err != nil {
+			t.Fatalf("WriteData (overwrite) failed: %v", err)
+		}
+		if n != len(newData) {
+			t.Errorf("WriteData (overwrite) returned %d bytes, expected %d", n, len(newData))
+		}
+
+		expectedCombined := "Hello, World"
+		updatedNode, _ := s.GetNode(testFile.ID)
+		if updatedNode.Size != int64(len(expectedCombined)) {
+			t.Errorf("Inode size after overwrite incorrect: expected %d, got %d", len(expectedCombined), updatedNode.Size)
+		}
+
+		readData, _ := s.ReadData(testFile.ID, 0, 100)
+		if string(readData) != expectedCombined {
+			t.Errorf("ReadData after overwrite returned %q, expected %q", string(readData), expectedCombined)
+		}
+	})
+
+	// 4. Read with Offset
+	t.Run("ReadWithOffset", func(t *testing.T) {
+		expectedData := []byte("World")
+		offset := int64(7)
+		readData, err := s.ReadData(testFile.ID, offset, len(expectedData))
+		if err != nil {
+			t.Fatalf("ReadData with offset failed: %v", err)
+		}
+		if string(readData) != string(expectedData) {
+			t.Errorf("ReadData with offset returned %q, expected %q", string(readData), string(expectedData))
+		}
+	})
+
+	// 5. Write Past EOF (Extend File)
+	t.Run("WritePastEOF", func(t *testing.T) {
+		extendData := []byte("!!!")
+		offset := int64(len("Hello, World")) // Write right after the current end
+		n, err := s.WriteData(testFile.ID, offset, extendData)
+		if err != nil {
+			t.Fatalf("WriteData (extend) failed: %v", err)
+		}
+		if n != len(extendData) {
+			t.Errorf("WriteData (extend) returned %d bytes, expected %d", n, len(extendData))
+		}
+
+		expectedExtended := "Hello, World!!!"
+		updatedNode, _ := s.GetNode(testFile.ID)
+		if updatedNode.Size != int64(len(expectedExtended)) {
+			t.Errorf("Inode size after extend incorrect: expected %d, got %d", len(expectedExtended), updatedNode.Size)
+		}
+
+		readData, _ := s.ReadData(testFile.ID, 0, 100)
+		if string(readData) != expectedExtended {
+			t.Errorf("ReadData after extend returned %q, expected %q", string(readData), expectedExtended)
+		}
+	})
+
+	// 6. Write with Gap (Should fill with zeros - implicitly handled by slice allocation)
+	t.Run("WriteWithGap", func(t *testing.T) {
+		gapData := []byte("END")
+		offset := int64(len("Hello, World!!!") + 5) // Leave a 5-byte gap
+		n, err := s.WriteData(testFile.ID, offset, gapData)
+		if err != nil {
+			t.Fatalf("WriteData (gap) failed: %v", err)
+		}
+		if n != len(gapData) {
+			t.Errorf("WriteData (gap) returned %d bytes, expected %d", n, len(gapData))
+		}
+
+		expectedGap := "Hello, World!!!\x00\x00\x00\x00\x00END"
+		updatedNode, _ := s.GetNode(testFile.ID)
+		if updatedNode.Size != int64(len(expectedGap)) {
+			t.Errorf("Inode size after gap write incorrect: expected %d, got %d", len(expectedGap), updatedNode.Size)
+		}
+
+		readData, _ := s.ReadData(testFile.ID, 0, 100)
+		if string(readData) != expectedGap {
+			t.Errorf("ReadData after gap write returned %q, expected %q", string(readData), expectedGap)
+		}
+	})
+
+	// 7. Delete Data (Truncate)
+	t.Run("DeleteData", func(t *testing.T) {
+		err := s.DeleteData(testFile.ID)
+		if err != nil {
+			t.Fatalf("DeleteData failed: %v", err)
+		}
+
+		// Verify data is empty
+		readData, _ := s.ReadData(testFile.ID, 0, 100)
+		if len(readData) != 0 {
+			t.Errorf("ReadData after DeleteData returned %d bytes, expected 0", len(readData))
+		}
+
+		// Verify size is 0
+		updatedNode, _ := s.GetNode(testFile.ID)
+		if updatedNode.Size != 0 {
+			t.Errorf("Inode size after DeleteData incorrect: expected 0, got %d", updatedNode.Size)
+		}
+	})
+
+	// 8. Read/Write Directory (Should Fail)
+	t.Run("ReadWriteDirectory", func(t *testing.T) {
+		rootDir, _ := s.GetNode(1)
+		_, err := s.ReadData(rootDir.ID, 0, 10)
+		if err == nil {
+			t.Error("ReadData on directory succeeded unexpectedly")
+		}
+		_, err = s.WriteData(rootDir.ID, 0, []byte("test"))
+		if err == nil {
+			t.Error("WriteData on directory succeeded unexpectedly")
+		}
+	})
+}

@@ -49,6 +49,6 @@ type sqlStore struct {
 // NewSQLStore creates a new SQL-backed store.
 // It embeds the *sql.DB to make NodeStore and DataStore implementations cleaner.
 // TODO: Change return type back to Store after implementing DataStore methods.
-func NewSQLStore(db *sql.DB) NodeStore {
+func NewSQLStore(db *sql.DB) Store {
 	return &sqlStore{db}
 }
