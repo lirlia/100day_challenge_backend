@@ -1,69 +1,71 @@
-# Day 36: FUSE SQLite Filesystem in Go
+# Day 36: Go による FUSE SQLite ファイルシステム
 
-This project implements a userspace filesystem using FUSE (Filesystem in Userspace) with Go. It uses a SQLite database as the backend storage for file and directory metadata and file content.
+このプロジェクトは、Go を使用して FUSE (Filesystem in Userspace) に基づくユーザースペースファイルシステムを実装します。ファイルやディレクトリのメタデータ、およびファイルの内容のバックエンドストレージとして SQLite データベースを使用します。
 
-## Overview
+## 概要
 
-- **Language:** Go
-- **FUSE Library:** `github.com/hanwen/go-fuse/v2`
-- **Database:** SQLite (`github.com/mattn/go-sqlite3`)
-- **Storage:**
-    - Metadata (inodes, names, permissions, timestamps, etc.) stored in the `nodes` table.
-    - File content stored as BLOBs in the `file_data` table.
-- **Goal:** Learn about FUSE implementation and interaction between userspace filesystems and the OS kernel.
+- **言語:** Go
+- **FUSE ライブラリ:** `github.com/hanwen/go-fuse/v2`
+- **データベース:** SQLite (`github.com/mattn/go-sqlite3`)
+- **ストレージ:**
+    - メタデータ（inode 情報、名前、パーミッション、タイムスタンプなど）は `nodes` テーブルに保存されます。
+    - ファイルの内容は `file_data` テーブルに BLOB として保存されます。
+- **目的:** FUSE の実装と、ユーザースペースファイルシステムと OS カーネル間の相互作用について学習します。
 
-## Features
+## 機能
 
-- Mountable filesystem via FUSE (`macfuse.io` or Linux FUSE required).
-- Stores filesystem structure and data in a SQLite DB (`db/dev.db`).
-- Supports basic operations:
+- FUSE によるマウント可能なファイルシステム (`macfuse.io` または Linux FUSE が必要)。
+- ファイルシステムの構造とデータを SQLite DB (`db/dev.db`) に保存。
+- 基本的な操作をサポート:
     - `mkdir`, `rmdir`
-    - `touch`, `create`
-    - `ls`, `stat` (Getattr)
-    - `echo "..." > file` (Write)
-    - `cat file` (Read)
-    - `rm file` (Unlink)
-    - Truncate (`Setattr` with size)
+    - `touch`, `create` (ファイルの新規作成)
+    - `ls`, `stat` (属性取得: Getattr)
+    - `echo "..." > file` (書き込み: Write)
+    - `cat file` (読み込み: Read)
+    - `rm file` (削除: Unlink)
+    - ファイルサイズの切り詰め (Truncate: `Setattr` でサイズ指定)
 
-## How to Build and Run
+## ビルドと実行方法
 
-1.  **Prerequisites:**
-    *   Go compiler (>= 1.18)
-    *   `macfuse` (on macOS) or FUSE development headers (on Linux).
-2.  **Build:**
+1.  **前提条件:**
+    *   Go コンパイラ (>= 1.18)
+    *   `macfuse` (macOS の場合) または FUSE 開発ヘッダー (Linux の場合)。
+2.  **ビルド:**
     ```bash
     cd day36_fuse_sqlite_fs_go
     go build -o sqlitefs .
     ```
-3.  **Create Mountpoint:**
+3.  **マウントポイント作成:**
     ```bash
+    # day36_fuse_sqlite_fs_go ディレクトリ内に作成
     mkdir mnt
     chmod 755 mnt
     ```
-4.  **Run (Mount):**
-    *   Open a terminal in the `day36_fuse_sqlite_fs_go` directory.
-    *   Run the executable, specifying the mountpoint and database path (use absolute paths for reliability):
+4.  **実行 (マウント):**
+    *   `day36_fuse_sqlite_fs_go` ディレクトリでターミナルを開きます。
+    *   実行可能ファイルを実行し、マウントポイントとデータベースパスを指定します (信頼性のため絶対パス推奨):
         ```bash
-        # Use absolute paths for mountpoint and db
-        ./sqlitefs -mountpoint=/path/to/100day_challenge_backend/day36_fuse_sqlite_fs_go/mnt \\
-                   -db=/path/to/100day_challenge_backend/day36_fuse_sqlite_fs_go/db/dev.db
+        # マウントポイントとDBパスには絶対パスを使用してください
+        # 例:
+        ./sqlitefs -mountpoint=/Users/noname/Cording/100day_challenge_backend/day36_fuse_sqlite_fs_go/mnt \
+                   -db=/Users/noname/Cording/100day_challenge_backend/day36_fuse_sqlite_fs_go/db/dev.db
         ```
-    *   Add the `-debug` flag for verbose FUSE operation logging:
+    *   詳細な FUSE 操作ログを表示するには `-debug` フラグを追加します:
         ```bash
         ./sqlitefs -mountpoint=... -db=... -debug
         ```
-5.  **Interact:**
-    *   Open *another* terminal.
-    *   Use standard commands (`ls`, `cd`, `mkdir`, `touch`, `echo`, `cat`, `rm`) on the mountpoint (`/path/to/.../mnt`).
-6.  **Unmount:**
-    *   Press `Ctrl+C` in the terminal where `sqlitefs` is running.
-    *   If it doesn't unmount cleanly, you might need `diskutil unmount /path/to/.../mnt` (macOS) or `fusermount -u /path/to/.../mnt` (Linux).
+5.  **操作:**
+    *   **別の** ターミナルを開きます。
+    *   マウントポイント (`/path/to/.../mnt`) に対して、通常のコマンド (`ls`, `cd`, `mkdir`, `touch`, `echo`, `cat`, `rm` など) を使用します。
+6.  **アンマウント:**
+    *   `sqlitefs` を実行しているターミナルで `Ctrl+C` を押します。
+    *   クリーンにアンマウントできない場合は、`diskutil unmount /path/to/.../mnt` (macOS) または `fusermount -u /path/to/.../mnt` (Linux) が必要になることがあります。
 
-## Notes
+## 注意点
 
-- The database file (`db/dev.db`) will be created automatically on the first run if it doesn't exist.
-- Deleting the `db/dev.db` file effectively resets the filesystem.
-- File content is stored entirely in memory within the Go process during read/write operations and then read/written to the SQLite BLOB. This is inefficient for large files.
-- Extended attributes (`xattr`) are not currently supported.
-- Hard links are not supported (link count is always 1).
-- On macOS, `ls -la` on the mountpoint itself might show `root wheel` as the owner due to FUSE/OS behavior, but files created *inside* the mountpoint should have the correct user/group ownership based on the running process and database entries.
+- データベースファイル (`db/dev.db`) は、初回実行時に存在しない場合、自動的に作成されます。
+- `db/dev.db` ファイルを削除すると、ファイルシステムの内容がリセットされます。
+- ファイルの内容は、読み書き操作中に Go プロセス内のメモリに完全に保持され、その後 SQLite の BLOB に読み書きされます。これは大きなファイルには非効率的です。
+- 拡張属性 (`xattr`) は現在サポートされていません。
+- ハードリンクはサポートされていません（リンクカウントは常に 1 です）。
+- macOS では、マウントポイント自体に対して `ls -la` を実行すると、FUSE/OS の挙動により所有者が `root wheel` と表示される場合がありますが、マウントポイント **内部に** 作成されたファイルは、実行中のプロセスとデータベースのエントリに基づいて正しいユーザー/グループの所有権を持つはずです。
