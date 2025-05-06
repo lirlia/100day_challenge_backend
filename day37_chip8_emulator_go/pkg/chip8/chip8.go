@@ -47,8 +47,9 @@ type Chip8 struct {
 	stack [stackSize]uint16 // Stack (16 levels)
 	SP    uint8             // Stack pointer
 
-	gfx      [gfxWidth * gfxHeight]byte // Graphics buffer (64x32 pixels, 1 byte per pixel, 0 or 1)
-	drawFlag bool                       // Flag indicating screen redraw needed
+	gfx                  [gfxWidth * gfxHeight]byte // Graphics buffer (64x32 pixels, 1 byte per pixel, 0 or 1)
+	drawnGfx             [gfxWidth * gfxHeight]byte // Previously drawn graphics buffer
+	clearScreenRequested bool                       // Flag for CLS instruction
 
 	DT byte // Delay timer
 	ST byte // Sound timer
@@ -85,6 +86,10 @@ func (c *Chip8) initialize() {
 	for i := range c.gfx {
 		c.gfx[i] = 0
 	}
+	// Clear drawn graphics buffer as well
+	for i := range c.drawnGfx {
+		c.drawnGfx[i] = 0
+	}
 	// Clear keys
 	for i := range c.keys {
 		c.keys[i] = false
@@ -100,9 +105,9 @@ func (c *Chip8) initialize() {
 	c.ST = 0
 
 	// Reset flags
-	c.drawFlag = false
 	c.waitingForKey = false
 	c.keyReg = 0
+	c.clearScreenRequested = false // Initialize clearScreenRequested
 
 	// Load font set into memory (0x050-0x0A0)
 	copy(c.memory[fontOffset:], fontSet[:])
@@ -149,18 +154,28 @@ func (c *Chip8) Gfx() [gfxWidth * gfxHeight]byte {
 	return c.gfx
 }
 
-// DrawFlag returns the draw flag status and resets it.
-func (c *Chip8) DrawFlag() bool {
-	if c.drawFlag {
-		c.drawFlag = false
-		return true
-	}
-	return false
+// DrawnGfx returns the previously drawn graphics buffer.
+// Used for differential rendering.
+func (c *Chip8) DrawnGfx() [gfxWidth * gfxHeight]byte {
+	return c.drawnGfx
 }
 
-// SetDrawFlag sets the draw flag.
-func (c *Chip8) SetDrawFlag() {
-	c.drawFlag = true
+// UpdateDrawnGfx copies the current gfx buffer to the drawnGfx buffer.
+// Should be called after a successful draw operation in the main loop.
+func (c *Chip8) UpdateDrawnGfx() {
+	copy(c.drawnGfx[:], c.gfx[:])
+	log.Println("[Chip8.UpdateDrawnGfx] drawnGfx updated with current gfx content.")
+}
+
+// WasClearScreenRequestedAndReset checks if a CLS (00E0) instruction was executed
+// and resets the flag.
+func (c *Chip8) WasClearScreenRequestedAndReset() bool {
+	requested := c.clearScreenRequested
+	if requested {
+		c.clearScreenRequested = false
+		log.Println("[Chip8.WasClearScreenRequestedAndReset] clearScreenRequested was true, now reset to false.")
+	}
+	return requested
 }
 
 // SetKey updates the state of a specific key.
@@ -212,38 +227,146 @@ func (c *Chip8) KeyPress(key byte) {
 }
 
 // Cycle executes a single CHIP-8 instruction cycle.
-func (c *Chip8) Cycle() {
-	// If waiting for key press (Fx0A), halt execution
+// Returns true if a draw operation occurred (CLS or DRW).
+func (c *Chip8) Cycle() bool {
+	log.Println("[Cycle] Starting cycle.")
 	if c.waitingForKey {
-		// log.Println("[Chip8.Cycle] Waiting for key press (Fx0A). Halting cycle.") // 必要ならログ追加
-		return // Do nothing until a key is pressed and waitingForKey becomes false
+		log.Println("[Cycle] Waiting for key press, halting.")
+		// Check if a key has been pressed
+		for i, pressed := range c.keys {
+			if pressed {
+				log.Printf("[Cycle] Key %X pressed while waiting. Storing in V%X.", i, c.keyReg)
+				c.V[c.keyReg] = byte(i)
+				c.waitingForKey = false
+				// Consume the key press event immediately, should not trigger redraw
+				c.keys[i] = false
+				break
+			}
+		}
+		if c.waitingForKey { // Still waiting if no key was found pressed
+			return false
+		}
 	}
 
-	// Fetch Opcode (2 bytes starting at PC)
+	// Fetch opcode
+	opcode := c.fetchOpcode()
+	log.Printf("[Cycle] Fetched opcode: 0x%X", opcode)
+
+	// Decode and execute opcode
+	// The executeOpcode function now returns true if a draw operation occurred
+	drawOccurred := c.executeOpcode(opcode)
+	log.Printf("[Cycle] Executed opcode: 0x%X, drawOccurred: %t", opcode, drawOccurred)
+
+	// Update timers
+	// Timers are decremented at a rate of 60Hz.
+	// This logic might need adjustment if Cycle is called at a different frequency.
+	// For now, assume Cycle is called frequently enough that timers update smoothly.
+	if c.DT > 0 {
+		// log.Printf("[Cycle] Decrementing DT from %d", c.DT) // Too verbose
+		c.DT--
+	}
+	if c.ST > 0 {
+		// log.Printf("[Cycle] Decrementing ST from %d", c.ST) // Too verbose
+		if c.ST == 1 {
+			log.Println("[Cycle] Sound timer reached 0! (BEEP)")
+			// TODO: Implement actual sound output if desired
+		}
+		c.ST--
+	}
+	log.Printf("[Cycle] Ending cycle. DT: %d, ST: %d", c.DT, c.ST)
+	return drawOccurred
+}
+
+// fetchOpcode fetches the next opcode from memory at PC.
+func (c *Chip8) fetchOpcode() uint16 {
 	if c.PC+1 >= memorySize {
 		fmt.Println("Error: Program Counter out of bounds!")
-		// TODO: Implement proper halting mechanism
-		return
+		return 0
 	}
-	opcode := uint16(c.memory[c.PC])<<8 | uint16(c.memory[c.PC+1])
-	// fmt.Printf("  Fetched Opcode: 0x%X\n", opcode) // DEBUG 削除
+	return uint16(c.memory[c.PC])<<8 | uint16(c.memory[c.PC+1])
+}
 
-	// Store PC before execution to check if it was modified by a jump/call/skip instruction
-	originalPC := c.PC
+// executeOpcode decodes and executes a single CHIP-8 opcode.
+// Returns true if a draw-related operation (CLS, DRW) occurred, false otherwise.
+func (c *Chip8) executeOpcode(opcode uint16) bool {
+	// log.Printf("[Opcode] Executing 0x%X at PC=0x%X", opcode, c.PC-2) // PC already advanced by fetchOpcode
 
-	// Decode and Execute Opcode
-	c.executeOpcode(opcode)
-	// fmt.Printf("  PC after execute: 0x%X\n", c.PC) // DEBUG 削除
+	// Decode opcode (Common patterns)
+	// ... existing code ...
+	// Switch on the first nibble (highest 4 bits)
+	switch opcode & 0xF000 {
+	case 0x0000:
+		switch opcode & 0x00FF {
+		case 0x00E0: // 00E0: CLS - Clear the display
+			log.Printf("[Opcode 00E0] CLS - Clearing display. PC: 0x%X", c.PC-2)
+			for i := range c.gfx {
+				c.gfx[i] = 0
+			}
+			c.clearScreenRequested = true // Signal that a full clear is needed
+			log.Println("[Opcode 00E0] gfx buffer cleared, clearScreenRequested set to true.")
+			return true // Redraw needed
+		// ... existing code ...
+		default:
+			log.Printf("[Opcode] Unknown opcode 0x0XXX: 0x%X", opcode)
+			return false
+		}
+	// ... existing code ...
+	case 0xD000: // Dxyn: DRW Vx, Vy, nibble - Display n-byte sprite starting at memory I at (Vx, Vy), set VF = collision.
+		vx := (opcode & 0x0F00) >> 8
+		vy := (opcode & 0x00F0) >> 4
+		n := opcode & 0x000F
+		x := int(c.V[vx]) % gfxWidth
+		y := int(c.V[vy]) % gfxHeight
+		log.Printf("[Opcode DxyN] DRW V%X=%d, V%X=%d, N=%d. I=0x%X. Drawing at (%d, %d)", vx, c.V[vx], vy, c.V[vy], n, c.I, x, y)
 
-	// Increment Program Counter only if it wasn't modified by the instruction itself
-	// (e.g., jumps, calls, returns, skips handle their own PC logic).
-	if c.PC == originalPC {
-		// fmt.Println("  Incrementing PC by 2") // DEBUG 削除
-		c.PC += 2
-	} else {
-		// fmt.Printf("  PC was modified by opcode, not incrementing. New PC: 0x%X\n", c.PC) // DEBUG 削除
+		c.V[0xF] = 0 // Reset collision flag
+		pixelChanged := false
+
+		for row := 0; row < int(n); row++ {
+			if y+row >= gfxHeight {
+				// log.Printf("[Opcode DxyN] Row %d out of bounds (y=%d, gfxHeight=%d)", row, y+row, gfxHeight)
+				break // Stop if row is out of bounds vertically
+			}
+			spriteByte := c.memory[c.I+uint16(row)]
+			// log.Printf("[Opcode DxyN] Row %d: Sprite byte 0x%X from M[0x%X]", row, spriteByte, c.I+uint16(row))
+
+			for col := 0; col < 8; col++ {
+				if x+col >= gfxWidth {
+					// log.Printf("[Opcode DxyN] Col %d out of bounds (x=%d, gfxWidth=%d)", col, x+col, gfxWidth)
+					break // Stop if col is out of bounds horizontally
+				}
+				// Check if the current sprite pixel is set (1)
+				if (spriteByte & (0x80 >> col)) != 0 {
+					// log.Printf("[Opcode DxyN] Sprite pixel at (%d, %d) is ON", x+col, y+row)
+					gfxIdx := (y+row)*gfxWidth + (x + col)
+					originalGfxPixel := c.gfx[gfxIdx]
+					// XOR the pixel onto the screen
+					c.gfx[gfxIdx] ^= 1
+					newGfxPixel := c.gfx[gfxIdx]
+
+					if originalGfxPixel == 1 && newGfxPixel == 0 { // If pixel was turned off (collision)
+						// log.Printf("[Opcode DxyN] Collision detected at (%d, %d)! Setting VF=1.", x+col, y+row)
+						c.V[0xF] = 1
+					}
+					if originalGfxPixel != newGfxPixel {
+						// log.Printf("[Opcode DxyN] Pixel at (%d, %d) changed from %d to %d.", x+col, y+row, originalGfxPixel, newGfxPixel)
+						pixelChanged = true
+					}
+				}
+			}
+		}
+		if pixelChanged {
+			log.Printf("[Opcode DxyN] Finished drawing. pixelChanged: %t, VF (collision): %d", pixelChanged, c.V[0xF])
+			return true // Redraw needed as gfx buffer was modified
+		}
+		log.Printf("[Opcode DxyN] Finished drawing. No pixels changed. VF (collision): %d", c.V[0xF])
+		return false // No redraw needed if no pixels actually changed state
+	// ... existing code ...
+	default:
+		log.Printf("[Opcode] Unknown opcode prefix: 0x%X (Full: 0x%X)", opcode&0xF000, opcode)
+		return false
 	}
-
-	// TODO: Update timers (DT and ST) - might move to main loop
-	// fmt.Printf("Cycle End: PC=0x%X\n", c.PC) // DEBUG 削除
+	// Should be unreachable if all cases return, but as a fallback:
+	// log.Println("[Opcode] Reached end of executeOpcode without explicit return, this might be an error.")
+	// return false
 }
