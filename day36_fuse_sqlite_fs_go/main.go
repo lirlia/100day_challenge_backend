@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/hanwen/go-fuse/v2/fs"
@@ -30,22 +31,25 @@ func main() {
 		os.Exit(1)
 	}
 
-	// --- Database Setup ---
-	db, err := store.NewDBConnection(*dbPath)
+	// Initialize the store
+	dbPath := "./db/dev.db" // Path relative to where the binary is run
+	// Ensure the db directory exists
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
+		log.Fatalf("Failed to create database directory: %v", err)
+	}
+	log.Printf("Using database at: %s", dbPath)
+
+	// Call NewSQLStore with the path (string), and handle the error return
+	storage, err := store.NewSQLStore(dbPath)
 	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
+		log.Fatalf("Failed to initialize store: %v", err)
 	}
-	defer db.Close()
+	defer storage.Close()
 
-	if err := store.InitializeSchema(db); err != nil {
-		log.Fatalf("Failed to initialize database schema: %v", err)
-	}
-
-	sqlStore := store.NewSQLStore(db)
+	// The root node implementation - use the constructor
+	root := fusefs.NewRoot(storage)
 
 	// --- FUSE Server Setup (hanwen/go-fuse) ---
-	root := fusefs.NewRoot(sqlStore)
-
 	opts := &fs.Options{}
 	opts.Debug = *debug
 	opts.AllowOther = false // Set to true if needed (requires /etc/fuse.conf change)

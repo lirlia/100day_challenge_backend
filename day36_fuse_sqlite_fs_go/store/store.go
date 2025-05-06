@@ -1,9 +1,18 @@
 package store
 
 import (
-	"database/sql"
+	"errors"
 
 	"github.com/lirlia/100day_challenge_backend/day36_fuse_sqlite_fs_go/models"
+)
+
+// Custom errors
+var (
+	ErrNotFound      = errors.New("store: item not found")
+	ErrExists        = errors.New("store: item already exists")
+	ErrNotEmpty      = errors.New("store: directory not empty")
+	ErrNotADirectory = errors.New("store: target is not a directory")
+	ErrIsDirectory   = errors.New("store: target is a directory")
 )
 
 // Store defines the combined interface for all data store operations.
@@ -11,6 +20,8 @@ import (
 type Store interface {
 	NodeStore
 	DataStore
+	InitializeSchema() error
+	Close() error
 }
 
 // NodeStore defines the interface for node (inode/metadata) operations.
@@ -25,30 +36,21 @@ type NodeStore interface {
 	CreateNode(node *models.Node) (newNode *models.Node, err error)
 	// UpdateNode updates an existing node's metadata (e.g., size, times, mode).
 	UpdateNode(node *models.Node) error
-	// DeleteNode removes a node (and its data if it's a file) by ID.
+	// DeleteNode removes a node (and its data if it's a file) by parent ID and name.
 	// Note: For directories, it should typically only delete if empty.
-	DeleteNode(id int64) error
+	// isDir helps differentiate between Rmdir and Unlink intentions.
+	DeleteNode(parentID int64, name string, isDir bool) error
 }
 
 // DataStore defines the interface for file content operations.
 type DataStore interface {
 	// ReadData reads data from a file node at a specific offset.
-	ReadData(inodeID int64, offset int64, size int) ([]byte, error)
+	ReadData(inodeID int64, offset int64, size int64) ([]byte, error)
 	// WriteData writes data to a file node at a specific offset.
 	// It should update the node's size and mtime.
-	WriteData(inodeID int64, offset int64, data []byte) (bytesWritten int, err error)
+	WriteData(inodeID int64, offset int64, data []byte) (newSize int64, err error)
 	// DeleteData removes the content associated with a file node.
 	DeleteData(inodeID int64) error
-}
-
-// NewSQLStore creates a new store implementation backed by SQL.
-type sqlStore struct {
-	*sql.DB
-}
-
-// NewSQLStore creates a new SQL-backed store.
-// It embeds the *sql.DB to make NodeStore and DataStore implementations cleaner.
-// TODO: Change return type back to Store after implementing DataStore methods.
-func NewSQLStore(db *sql.DB) Store {
-	return &sqlStore{db}
+	// TruncateFile truncates the content of a file node to a specified size.
+	TruncateFile(inodeID int64, size int64) error
 }
