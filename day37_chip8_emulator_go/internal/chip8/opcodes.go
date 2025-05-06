@@ -26,11 +26,24 @@ func (c *Chip8) executeOpcode(opcode uint16) (redraw bool, collision bool) {
 			c.PC += 2
 			return true, false // redraw = true, collision = false
 		case 0x00EE: // RET: Return from a subroutine.
-			// (To be implemented in a later step)
-			// c.SP--
-			// c.PC = c.stack[c.SP]
-			c.PC += 2 // Placeholder, will be correctly set by RET logic
-			log.Printf("Opcode 00EE (RET) not fully implemented yet.")
+			if c.SP == 0 {
+				log.Printf("Stack underflow on RET (00EE) at PC 0x%X! SP is 0.", c.PC-2) // PC already advanced if this was fetched
+				// Behavior on stack underflow can vary. Some emulators halt, some corrupt.
+				// For now, we'll log and attempt to continue, PC will likely be invalid.
+				// Or, a more robust approach: treat as a halt or error state.
+				// For now, we'll log and attempt to continue, PC will likely be invalid.
+				// Or, a more robust approach: treat as a halt or error state.
+				c.PC += 2 // Default behavior if we don't halt
+				return false, false
+			}
+			c.SP--
+			c.PC = c.stack[c.SP]
+			// Note: RET should also advance PC by 2 after popping from stack to point to the instruction *after* the CALL.
+			// The PC stored on stack is the address of the instruction *after* the 2nnn CALL opcode.
+			// So, when we do c.PC = c.stack[c.SP], it's already the correct next instruction.
+			// The common `c.PC += 2` at the end of each opcode block should NOT be applied here. No, wait.
+			// When 2NNN is called, PC (address of 2NNN) + 2 is pushed. So c.stack[c.SP] is the address of the instruction *after* 2NNN.
+			// So, c.PC = c.stack[c.SP] is correct. No further PC increment needed for RET itself.
 			return false, false
 		default:
 			// SYS addr (0nnn) - Jump to machine code routine at nnn (ignored on modern interpreters)
@@ -40,6 +53,25 @@ func (c *Chip8) executeOpcode(opcode uint16) (redraw bool, collision bool) {
 		}
 	case 0x1000: // JP addr (1nnn): Jump to location nnn.
 		c.PC = opcode & 0x0FFF
+		return false, false
+	case 0x2000: // CALL addr (2nnn): Call subroutine at nnn.
+		if c.SP >= stackSize {
+			log.Printf("Stack overflow on CALL (2nnn) at PC 0x%X! SP is %d.", c.PC, c.SP)
+			// Behavior on stack overflow can vary.
+			// For now, log and potentially overwrite last stack entry or halt.
+			// Let's overwrite the top of the stack if full, mimicking some hardware or just log.
+			// Or a more robust error: treat as a halt state.
+			// For now, we will not push if stack is full, and PC will just jump.
+			// This is not ideal. A better way is to define behavior (e.g. halt or error).
+			// Let's allow it to overwrite for now, but cap SP to prevent out of bounds write if strict.
+			// Actually, let's prevent SP from going out of bounds and log. This will cause RET to fail later.
+			log.Printf("Stack is full. CALL to 0x%X will proceed without pushing PC.", opcode&0x0FFF)
+			c.PC = opcode & 0x0FFF // Jump anyway
+			return false, false
+		}
+		c.stack[c.SP] = c.PC + 2 // Store next instruction's address (current PC + 2 since current opcode is 2 bytes)
+		c.SP++
+		c.PC = opcode & 0x0FFF // Set PC to nnn
 		return false, false
 	case 0x6000: // LD Vx, byte (6xkk): Set Vx = kk.
 		x := (opcode & 0x0F00) >> 8
