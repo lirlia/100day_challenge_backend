@@ -1,5 +1,6 @@
 "use client"; // ステートを持つため Client Component
 
+import { useState, useEffect } from 'react'; // useState, useEffect をインポート
 import { useCpuSimulator } from '../../_lib/cpuEngine'; // 相対パスに変更
 import { OpCode } from '../../_lib/types'; // OpCodeもインポートしてHALTチェックなどに使える
 
@@ -20,6 +21,14 @@ let sum = a + b;
 // 実行を停止するにはHALT命令を追加します
 HALT;`;
   const simulator = useCpuSimulator(initialJs);
+
+  // Textarea の内容を管理するローカルステートを追加
+  const [editorCode, setEditorCode] = useState<string>(initialJs);
+
+  // simulator.rawJsCode が変更されたら editorCode も同期する (Reset All などのため)
+  useEffect(() => {
+      setEditorCode(simulator.rawJsCode);
+  }, [simulator.rawJsCode]);
 
   const assemblyLinesForDisplay = simulator.getAssemblyForDisplay();
   const machineCodeLinesForDisplay = simulator.getMachineCodeForDisplay();
@@ -54,11 +63,8 @@ HALT;`;
     <div className="container mx-auto p-2 md:p-4 min-h-screen flex flex-col items-center selection:bg-green-500 selection:text-black">
       <header className="mb-4 md:mb-6 text-center w-full">
         <h1 className="text-4xl md:text-5xl font-bold text-green-400 py-1 md:py-2 font-mono">
-          Day38 :: CPU ビジュアライザー v1.0
+          Day38 - CPU Visualizer
         </h1>
-        <p className="text-green-600 mt-1 md:mt-2 text-base md:text-lg font-mono">
-          -- JavaScriptコードのCPUレベルでの実行をステップごとに可視化 --
-        </p>
       </header>
 
       {/* Main content area - adjusted for better one-page fit */}
@@ -68,15 +74,15 @@ HALT;`;
           <div className="terminal-panel flex-grow flex flex-col">
             <h2 className="text-xl font-semibold mb-2 text-green-500 font-mono">// JavaScript コード入力 & 表示</h2>
             <div className="grid grid-cols-2 gap-2 flex-grow">
-              {/* 左: 入力エリア */}
+              {/* 左: 入力エリア - onChange を変更 */}
               <textarea
                 className="terminal-input w-full h-full p-2 text-xs font-mono min-h-[100px] resize-none" // h-full, resize-none追加
-                value={simulator.rawJsCode}
-                onChange={(e) => simulator.compileAndLoad(e.target.value)}
+                value={editorCode} // value をローカルステートに
+                onChange={(e) => setEditorCode(e.target.value)} // onChange はローカルステート更新のみ
                 placeholder="> let x = 10;\n> let y = 20;\n> // HALT; で停止"
                 spellCheck="false"
               />
-              {/* 右: ハイライト付き表示エリア */}
+              {/* 右: ハイライト付き表示エリア - 表示内容は simulator.rawJsCode を使う */}
               <pre className="w-full h-full p-1.5 bg-black/30 border border-gray-700/50 rounded-sm text-xs font-mono overflow-auto pretty-scrollbar min-h-[100px]">
                 {jsCodeLines.map((line, index) => (
                   <div
@@ -89,8 +95,9 @@ HALT;`;
                 ))}
               </pre>
             </div>
+            {/* ボタンの onClick を変更 */}
             <button
-              onClick={() => simulator.compileAndLoad(simulator.rawJsCode)}
+              onClick={() => simulator.compileAndLoad(editorCode)} // ボタンで compileAndLoad を呼ぶ
               className="mt-2 w-full terminal-button-accent py-2"
             >
               [ コンパイル & ロード ]
@@ -180,10 +187,6 @@ HALT;`;
           </div>
         </section>
       </main>
-
-      <footer className="mt-4 mb-2 md:mt-6 text-center text-green-700 text-xs font-mono">
-        <p>&copy; {new Date().getFullYear()} サイバーCPUシミュレーター. All rights reserved by Day38 BIOS Inc.</p>
-      </footer>
     </div>
   );
 }

@@ -35,7 +35,8 @@ function parseJsToAssembly(jsCode: string): CompilationResult {
       nextMemoryAddress += 4; // 4バイト単位でアドレスを進める (仮定)
       return address;
     }
-    return variableToAddressMap[varName] || null;
+    const foundAddress = variableToAddressMap[varName] || null;
+    return foundAddress;
   };
 
   lines.forEach((line, jsLineIndex) => {
