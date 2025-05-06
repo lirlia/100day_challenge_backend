@@ -2,6 +2,7 @@ package chip8
 
 import (
 	"fmt"
+	"os"
 )
 
 const (
@@ -106,4 +107,38 @@ func (c *Chip8) initialize() {
 	copy(c.memory[fontOffset:], fontSet[:])
 
 	fmt.Println("CHIP-8 Initialized. PC set to 0x200.")
+}
+
+// LoadROM loads the program from the specified file path into memory.
+func (c *Chip8) LoadROM(filePath string) error {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to open ROM file %s: %w", filePath, err)
+	}
+	defer file.Close()
+
+	stats, err := file.Stat()
+	if err != nil {
+		return fmt.Errorf("failed to get file stats for %s: %w", filePath, err)
+	}
+
+	romSize := stats.Size()
+	if romSize > int64(memorySize-romOffset) {
+		return fmt.Errorf("ROM file %s is too large (%d bytes), max size is %d bytes", filePath, romSize, memorySize-romOffset)
+	}
+
+	buffer := make([]byte, romSize)
+	bytesRead, err := file.Read(buffer)
+	if err != nil {
+		return fmt.Errorf("failed to read ROM file %s: %w", filePath, err)
+	}
+	if int64(bytesRead) != romSize {
+		return fmt.Errorf("could not read the entire ROM file %s: read %d bytes, expected %d", filePath, bytesRead, romSize)
+	}
+
+	// Copy ROM data into memory starting at romOffset (0x200)
+	copy(c.memory[romOffset:], buffer)
+
+	fmt.Printf("Loaded ROM '%s' (%d bytes) into memory starting at 0x%X.\n", filePath, romSize, romOffset)
+	return nil
 }
