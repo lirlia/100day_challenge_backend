@@ -78,16 +78,20 @@ func (n *Node) Attr(ctx context.Context, a *fuse.Attr) error {
 
 // Dir represents a directory node.
 // This will be moved to dir.go
+/*
 type Dir struct {
 	Node // Embed the basic Node implementation
 }
+*/
 
 // TODO: Implement Dir specific methods like Lookup, Mkdir, Readdir, Remove
 
 // File represents a file node.
 // This will be moved to file.go
+/*
 type File struct {
 	Node // Embed the basic Node implementation
 }
+*/
 
 // TODO: Implement File specific methods like Open, Create
