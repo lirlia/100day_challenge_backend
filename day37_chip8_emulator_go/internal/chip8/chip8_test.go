@@ -2,6 +2,8 @@ package chip8
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -135,6 +137,119 @@ func TestNew(t *testing.T) {
 
 			if c.rng == nil {
 				t.Errorf("rng not initialized")
+			}
+		})
+	}
+}
+
+func TestLoadROM(t *testing.T) {
+	tempDir := t.TempDir() // Creates a temporary directory for test files
+
+	createTempROMFile := func(name string, content []byte, size int) string {
+		path := filepath.Join(tempDir, name)
+		data := content
+		if data == nil && size > 0 {
+			data = make([]byte, size)
+			for i := 0; i < size; i++ {
+				data[i] = byte(i % 256)
+			}
+		} else if data == nil && size == 0 {
+			// Handle case where content is nil and size is 0, perhaps create empty file
+			data = []byte{}
+		}
+		if err := os.WriteFile(path, data, 0644); err != nil {
+			t.Fatalf("Failed to create temp ROM file %s: %v", name, err)
+		}
+		return path
+	}
+
+	tests := []struct {
+		name        string
+		setup       func() (c *Chip8, romPath string, romData []byte)
+		expectError bool
+		checkMemory bool // whether to check if memory content matches romData
+	}{
+		{
+			name: "Valid ROM load",
+			setup: func() (*Chip8, string, []byte) {
+				c := New(10, false)
+				romData := []byte{0x12, 0x34, 0x56, 0x78}
+				romPath := createTempROMFile("valid.ch8", romData, 0)
+				return c, romPath, romData
+			},
+			expectError: false,
+			checkMemory: true,
+		},
+		{
+			name: "ROM too large",
+			setup: func() (*Chip8, string, []byte) {
+				c := New(10, false)
+				// Max ROM size is memorySize - romOffset (4096 - 512 = 3584)
+				romPath := createTempROMFile("toolarge.ch8", nil, memorySize-romOffset+1)
+				return c, romPath, nil // romData is nil as we don't care about its content for this error case
+			},
+			expectError: true,
+			checkMemory: false,
+		},
+		{
+			name: "Non-existent ROM",
+			setup: func() (*Chip8, string, []byte) {
+				c := New(10, false)
+				return c, filepath.Join(tempDir, "nonexistent.ch8"), nil
+			},
+			expectError: true,
+			checkMemory: false,
+		},
+		{
+			name: "ROM exactly max size",
+			setup: func() (*Chip8, string, []byte) {
+				c := New(10, false)
+				romData := make([]byte, memorySize-romOffset)
+				for i := range romData {
+					romData[i] = byte(i % 255) // Fill with some pattern
+				}
+				romPath := createTempROMFile("maxsize.ch8", romData, 0)
+				return c, romPath, romData
+			},
+			expectError: false,
+			checkMemory: true,
+		},
+		{
+			name: "Empty ROM file",
+			setup: func() (*Chip8, string, []byte) {
+				c := New(10, false)
+				romData := []byte{}
+				romPath := createTempROMFile("empty.ch8", romData, 0)
+				return c, romPath, romData
+			},
+			expectError: false,
+			checkMemory: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, romPath, romData := tt.setup()
+			err := c.LoadROM(romPath)
+
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("Expected error, got nil")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Expected no error, got %v", err)
+				}
+				if tt.checkMemory {
+					// Ensure romData is not nil before checking memory if we expect no error
+					// For some non-error cases like loading an empty ROM, romData might be an empty slice but not nil.
+					if romData != nil {
+						loadedData := c.memory[romOffset : romOffset+len(romData)]
+						if !bytes.Equal(romData, loadedData) {
+							t.Errorf("ROM data not loaded correctly into memory.\nExpected: %X\nGot:      %X", romData, loadedData)
+						}
+					}
+				}
 			}
 		})
 	}

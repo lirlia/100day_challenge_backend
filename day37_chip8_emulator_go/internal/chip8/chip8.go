@@ -2,7 +2,9 @@ package chip8
 
 import (
 	// "embed" // Temporarily comment out due to build issue
+	"fmt"
 	"math/rand"
+	"os"
 	"time"
 )
 
@@ -118,4 +120,29 @@ func (c *Chip8) Gfx() [gfxSize]byte {
 // CyclesPerFrame returns the configured cycles per frame.
 func (c *Chip8) CyclesPerFrame() uint {
 	return c.cyclesPerFrame
+}
+
+// LoadROM loads a CHIP-8 ROM from the given path into memory.
+func (c *Chip8) LoadROM(romPath string) error {
+	romData, err := os.ReadFile(romPath)
+	if err != nil {
+		return fmt.Errorf("failed to read ROM file '%s': %w", romPath, err)
+	}
+
+	// ROMs are loaded starting at address 0x200 (romOffset)
+	// Available memory for ROM is memorySize - romOffset
+	if len(romData) > (memorySize - romOffset) {
+		return fmt.Errorf("ROM file '%s' is too large: %d bytes (max %d bytes)",
+			romPath, len(romData), memorySize-romOffset)
+	}
+
+	// Copy ROM data into memory
+	// Note: New() already initializes memory to 0, so no need to clear here.
+	copy(c.memory[romOffset:], romData)
+
+	// According to Cowgod's technical reference, after loading a ROM,
+	// the PC should still be at 0x200 (which is its initial state from New()).
+	// So, no change to PC here needed after loading.
+
+	return nil
 }
