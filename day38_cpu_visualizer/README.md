@@ -6,6 +6,10 @@ JavaScriptコードがアセンブリ風コード、マシンコード風コー�
 レジスタ、メモリ、フラグの状態変化を追跡しながら、プログラムがどのように実行されるかを理解する助けとなります。
 バックエンドは使用せず、フロントエンドのみで実装されています。
 
+https://github.com/user-attachments/assets/3a0270f3-348d-44b8-89bd-c5d8c89dee37
+
+[100日チャレンジ day38](https://zenn.dev/gin_nazo/scraps/4ca1014e82ea2e)
+
 ## 主な機能
 
 -   **JavaScriptコード入力:**

@@ -43,3 +43,5 @@ alwaysApply: true
 | 34  | B+ Tree ベース RDBMS (Go)     | Go, B+ Tree 実装, 永続化 (File I/O), 基本SQL (CRUD), CLI                |
 | 35  | ワークフロー自動化ツール         | Next.js, TypeScript, Prisma, SQLite, TailwindCSS (グラスモーフィズム), Zustand, タスク依存関係, カンバンボード (ドロップダウン代替) |
 | 36  | FUSE Filesystem (SQLite Backend) | Go, hanwen/go-fuse/v2, go-sqlite3, FUSE, SQLite                           |
+| 37  | 未定                           |                                                                               |
+| 38  | CPU ビジュアライザー           | Next.js, TypeScript, Tailwind CSS, CPU動作シミュレーション, 簡易JSパーサー, UI視覚化 |
