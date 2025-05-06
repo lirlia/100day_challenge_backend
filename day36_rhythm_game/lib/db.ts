@@ -53,15 +53,61 @@ function initializeSchema() {
     );
   `);
 
-  // 既存の users テーブル作成処理 (テンプレート由来) は削除またはコメントアウト
-  // db.exec(`
-  //   CREATE TABLE IF NOT EXISTS users (
-  //     id INTEGER PRIMARY KEY AUTOINCREMENT,
-  //     name TEXT NOT NULL,
-  //     email TEXT UNIQUE NOT NULL,
-  //     createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
-  //   );
-  // `);
+  // --- Initial Data Insertion ---
+  const songCountStmt = db.prepare('SELECT COUNT(*) as count FROM songs');
+  const { count: songCount } = songCountStmt.get() as { count: number };
+
+  if (songCount === 0) {
+    console.log('Inserting initial song and notes data...');
+
+    // Helper function to generate notes
+    const generateNotes = (durationSeconds: number, bpm: number, lanes: number): { time: number, lane: number }[] => {
+      const notes = [];
+      const beatsPerSecond = bpm / 60;
+      const eighthNoteInterval = 1 / (beatsPerSecond * 2); // Interval for 8th notes
+      let currentTime = 1.5; // Start notes slightly after the beginning
+
+      while (currentTime < durationSeconds) {
+        notes.push({
+          time: currentTime,
+          lane: Math.floor(Math.random() * lanes) + 1 // Random lane (1-based)
+        });
+        currentTime += eighthNoteInterval;
+      }
+      return notes;
+    };
+
+    // Generate notes data (approx 30 seconds)
+    const easyLanes = 3;
+    const hardLanes = 6;
+    const bpm = 60;
+    const duration = 30;
+
+    const easyNotes = generateNotes(duration, bpm, easyLanes);
+    const hardNotes = generateNotes(duration, bpm, hardLanes);
+
+    const easyNotesData = JSON.stringify({ totalNotes: easyNotes.length, notes: easyNotes });
+    const hardNotesData = JSON.stringify({ totalNotes: hardNotes.length, notes: hardNotes });
+
+    // Insert notes into notes table
+    const insertNoteStmt = db.prepare('INSERT INTO notes (notesData) VALUES (?)');
+    const easyNotesResult = insertNoteStmt.run(easyNotesData);
+    const hardNotesResult = insertNoteStmt.run(hardNotesData);
+
+    const easyNotesId = easyNotesResult.lastInsertRowid;
+    const hardNotesId = hardNotesResult.lastInsertRowid;
+
+    // Insert song referencing the notes
+    const insertSongStmt = db.prepare(`
+      INSERT INTO songs (title, artist, bpm, easyNotesId, hardNotesId)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+    insertSongStmt.run('Test Song', 'Composer', bpm, easyNotesId, hardNotesId);
+
+    console.log('Initial data inserted.');
+  } else {
+    console.log('Songs table already has data, skipping initial data insertion.');
+  }
 
   console.log('Database schema initialized.');
 }

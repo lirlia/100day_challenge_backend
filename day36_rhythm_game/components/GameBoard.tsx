@@ -63,10 +63,11 @@ export default function GameBoard({
     const keyMap = difficulty === 'easy' ? easyKeys : hardKeys;
 
     const [isPlaying, setIsPlaying] = useState(false);
-    const [currentTime, setCurrentTime] = useState(0); // Represents context elapsed time
+    const [currentTime, setCurrentTime] = useState(0); // Represents song's elapsed time based on rate
     const [score, setScore] = useState(0);
-    const [visibleNotes, setVisibleNotes] = useState<VisibleNote[]>([]); // State for notes to render
-    const [hitNotes, setHitNotes] = useState<Set<number>>(new Set()); // Store indices of hit notes
+    const [playbackRate, setPlaybackRate] = useState<number>(1); // State for playback rate
+    const [visibleNotes, setVisibleNotes] = useState<VisibleNote[]>([]);
+    const [hitNotes, setHitNotes] = useState<Set<number>>(new Set());
     const [isAudioLoaded, setIsAudioLoaded] = useState(false); // State to track audio loading
     const [judgment, setJudgment] = useState<Judgment>(null); // State for judgment text
     const judgmentTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Ref for clearing judgment timeout
@@ -135,21 +136,22 @@ export default function GameBoard({
             return;
         }
 
-        const elapsed = audioContextRef.current.currentTime - startTimeRef.current;
-        setCurrentTime(elapsed);
+        const contextElapsedTime = audioContextRef.current.currentTime - startTimeRef.current;
+        const songElapsedTime = contextElapsedTime * playbackRate; // Calculate song's elapsed time
+        setCurrentTime(songElapsedTime); // Update state with song's elapsed time
 
         const boardHeight = boardRef.current.offsetHeight;
         const judgeLinePosition = boardHeight * (1 - judgeLineBottom / 100);
 
-        // Calculate which notes should be visible based on elapsed time
+        // Calculate which notes should be visible based on songElapsedTime
         const currentVisibleNotes: VisibleNote[] = [];
 
         initialNotes.forEach((note, index) => {
             if (hitNotes.has(index)) return;
 
             const noteTime = note.time;
-            // Use elapsed time for time difference calculation
-            const timeDifference = noteTime - elapsed;
+            // Use songElapsedTime for time difference calculation
+            const timeDifference = noteTime - songElapsedTime;
             const topPosition = judgeLinePosition - timeDifference * pixelsPerSecond;
 
             const visibilityThresholdTop = -noteHeight * 2;
@@ -165,17 +167,18 @@ export default function GameBoard({
         });
         setVisibleNotes(currentVisibleNotes); // Update the state for React to re-render notes
 
-        // Check for game end condition using elapsed time
-        if (audioBufferRef.current && elapsed >= audioBufferRef.current.duration) {
+        // Check for game end condition using songElapsedTime
+        // Adjust duration check for playback rate
+        if (audioBufferRef.current && songElapsedTime >= audioBufferRef.current.duration) {
             console.log("Song finished");
             setIsPlaying(false);
             onGameEnd(score);
-            setVisibleNotes([]); // Clear notes on finish
+            setVisibleNotes([]);
             return;
         }
 
         gameLoopRef.current = requestAnimationFrame(gameLoop);
-    }, [isPlaying, score, initialNotes, onGameEnd, hitNotes]);
+    }, [isPlaying, score, initialNotes, onGameEnd, hitNotes, playbackRate]);
 
     useEffect(() => {
         if (isPlaying) {
@@ -302,6 +305,7 @@ export default function GameBoard({
          // Connect SourceNode to GainNode (instead of directly to destination)
          if (gainNodeRef.current) {
              sourceNodeRef.current.connect(gainNodeRef.current);
+             sourceNodeRef.current.playbackRate.value = playbackRate; // Set playback rate
          } else {
              // Fallback: connect directly if GainNode somehow failed (should not happen)
              console.error("startGame - GainNode ref is null, connecting directly to destination.");
@@ -334,7 +338,24 @@ export default function GameBoard({
     };
 
     return (
-        <div className="space-y-2">
+        <div className="space-y-4">
+            {/* Playback Rate Selector (only visible when not playing) */}
+            {!isPlaying && (
+                <div className="flex space-x-2 mb-4">
+                    <span className="text-gray-700 font-medium self-center">Speed:</span>
+                    {[1, 1.5, 2].map((rate) => (
+                        <button
+                            key={rate}
+                            onClick={() => setPlaybackRate(rate)}
+                            disabled={isPlaying} // Disable when playing
+                            className={`px-3 py-1 rounded-lg shadow-neumorphic hover:shadow-neumorphic-inset focus:outline-none transition-all duration-200 ease-in-out ${playbackRate === rate ? 'shadow-neumorphic-inset text-blue-600 font-semibold' : 'bg-gray-200 text-gray-700'} ${!isAudioLoaded ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        >
+                            {rate}x
+                        </button>
+                    ))}
+                </div>
+            )}
+
             {/* Start Game Button */}
             {!isPlaying && (
                  <button
