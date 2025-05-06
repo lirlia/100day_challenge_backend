@@ -7,7 +7,7 @@
   }
 
   .terminal-panel {
-    @apply bg-gray-900/70 backdrop-blur-sm border border-green-500/50 rounded-sm shadow-lg p-6;
+    @apply bg-gray-900/70 backdrop-blur-sm border border-green-500/50 rounded-sm shadow-lg p-3;
   }
 
   .terminal-input {
@@ -15,14 +15,62 @@
   }
 
   .terminal-button {
-    @apply border border-green-500/80 bg-green-700/30 hover:bg-green-600/50 text-green-300 font-semibold py-2.5 px-4 rounded-sm transition-colors duration-150 shadow-md hover:shadow-green-500/30 focus:outline-none focus:ring-1 focus:ring-green-400;
+    @apply border border-green-500/80 bg-green-700/30 hover:bg-green-600/50 text-green-300 font-semibold py-2 px-3 rounded-sm transition-colors duration-150 shadow-md hover:shadow-green-500/30 focus:outline-none focus:ring-1 focus:ring-green-400 text-xs;
   }
   .terminal-button-accent {
-     @apply border border-blue-500/80 bg-blue-700/30 hover:bg-blue-600/50 text-blue-300 font-semibold py-2.5 px-4 rounded-sm transition-colors duration-150 shadow-md hover:shadow-blue-500/30 focus:outline-none focus:ring-1 focus:ring-blue-400;
+     @apply border border-blue-500/80 bg-blue-700/30 hover:bg-blue-600/50 text-blue-300 font-semibold py-2 px-3 rounded-sm transition-colors duration-150 shadow-md hover:shadow-blue-500/30 focus:outline-none focus:ring-1 focus:ring-blue-400 text-xs;
   }
    .terminal-button-danger {
-    @apply border border-red-500/80 bg-red-700/30 hover:bg-red-600/50 text-red-300 font-semibold py-2.5 px-4 rounded-sm transition-colors duration-150 shadow-md hover:shadow-red-500/30 focus:outline-none focus:ring-1 focus:ring-red-400;
+    @apply border border-red-500/80 bg-red-700/30 hover:bg-red-600/50 text-red-300 font-semibold py-2 px-3 rounded-sm transition-colors duration-150 shadow-md hover:shadow-red-500/30 focus:outline-none focus:ring-1 focus:ring-red-400 text-xs;
   }
 
   /* スクロールバーは既存のものを活かすか、テーマに合わせて調整 */
+}
+
+@layer components {
+  .cpu-package-panel {
+    @apply bg-gray-900 border-2 border-gray-700 shadow-xl rounded-lg relative p-2;
+  }
+  .cpu-package-panel::before { /* 1番ピンマーカー */
+    content: '';
+    @apply absolute top-1.5 left-1.5 w-2 h-2 bg-gray-600 rounded-full border border-gray-500;
+  }
+  .cpu-die-surface {
+    @apply bg-gradient-to-br from-slate-700 via-slate-800 to-slate-700 p-1.5 rounded-sm border-2 border-slate-600 shadow-inner;
+    box-shadow: inset 1px 1px 3px rgba(0,0,0,0.6), inset -1px -1px 2px rgba(255,255,255,0.05);
+  }
+  .terminal-register-block {
+    @apply bg-slate-800/80 border border-cyan-700/50 rounded-sm p-1.5 text-center shadow-md;
+    min-height: 54px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    transition: all 0.2s ease-in-out;
+  }
+  .terminal-register-block:hover {
+    @apply bg-slate-700/90 border-cyan-500/70 shadow-lg shadow-cyan-600/25;
+  }
+  .terminal-register-name {
+    @apply text-cyan-500 text-[9px] md:text-[10px] uppercase tracking-wider font-semibold mb-0.5;
+  }
+  .terminal-register-value {
+    @apply text-green-400 text-base md:text-lg font-bold tracking-wider;
+  }
+
+  /* スクロールバーのスタイルもこちらに移動 */
+  .pretty-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .pretty-scrollbar::-webkit-scrollbar-track {
+    background: rgba(0,0,0,0.3);
+    border-radius: 8px;
+  }
+  .pretty-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(22, 163, 74, 0.4);
+    border-radius: 8px;
+  }
+  .pretty-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: rgba(22, 163, 74, 0.6);
+  }
 }
