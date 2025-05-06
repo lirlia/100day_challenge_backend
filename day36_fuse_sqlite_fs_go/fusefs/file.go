@@ -23,13 +23,15 @@ var _ fs.NodeOpener = (*sqliteFile)(nil)
 
 // Getattr delegates to the embedded sqliteNode.
 func (f *sqliteFile) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
-	log.Printf("File (Ino:%d) -> Getattr() called", f.sqliteNode.Inode.StableAttr().Ino) // Use StableAttr().Ino
-	return f.sqliteNode.Getattr(ctx, fh, out)                                            // Access via sqliteNode
+	// Debug logging for Getattr is handled within sqliteNode.Getattr itself
+	return f.sqliteNode.Getattr(ctx, fh, out)
 }
 
 // Setattr updates file attributes (currently supports size truncation).
 func (f *sqliteFile) Setattr(ctx context.Context, fh fs.FileHandle, in *fuse.SetAttrIn, out *fuse.AttrOut) syscall.Errno {
-	log.Printf("File (Ino:%d) -> Setattr() called with input: %+v", f.sqliteNode.Inode.StableAttr().Ino, in) // Use StableAttr().Ino
+	if f.sqliteNode.debug {
+		log.Printf("File (Ino:%d) -> Setattr() called with input: %+v", f.sqliteNode.Inode.StableAttr().Ino, in)
+	}
 
 	// Ensure model is loaded for modification
 	if err := f.sqliteNode.loadModel(ctx); err != nil { // Access via sqliteNode
@@ -38,15 +40,19 @@ func (f *sqliteFile) Setattr(ctx context.Context, fh fs.FileHandle, in *fuse.Set
 
 	updated := false
 	if sz, ok := in.GetSize(); ok {
-		log.Printf("File (Ino:%d) -> Setattr() attempting to truncate to size: %d", f.sqliteNode.Inode.StableAttr().Ino, sz) // Use StableAttr().Ino
-		err := f.sqliteNode.store.TruncateFile(f.sqliteNode.model.ID, int64(sz))                                             // Access via sqliteNode
+		if f.sqliteNode.debug {
+			log.Printf("File (Ino:%d) -> Setattr() attempting to truncate to size: %d", f.sqliteNode.Inode.StableAttr().Ino, sz)
+		}
+		err := f.sqliteNode.store.TruncateFile(f.sqliteNode.model.ID, int64(sz)) // Access via sqliteNode
 		if err != nil {
-			log.Printf("ERROR: File (Ino:%d) -> Setattr() failed truncating: %v", f.sqliteNode.Inode.StableAttr().Ino, err) // Use StableAttr().Ino
-			return syscall.EIO                                                                                              // Or a more specific error?
+			log.Printf("ERROR: File (Ino:%d) -> Setattr() failed truncating: %v", f.sqliteNode.Inode.StableAttr().Ino, err)
+			return syscall.EIO // Or a more specific error?
 		}
 		f.sqliteNode.model.Size = int64(sz) // Update cached model size
 		updated = true
-		log.Printf("File (Ino:%d) -> Setattr() truncated successfully", f.sqliteNode.Inode.StableAttr().Ino) // Use StableAttr().Ino
+		if f.sqliteNode.debug {
+			log.Printf("File (Ino:%d) -> Setattr() truncated successfully", f.sqliteNode.Inode.StableAttr().Ino)
+		}
 	}
 
 	// Handle other attributes like mode, timestamps if needed
@@ -60,13 +66,17 @@ func (f *sqliteFile) Setattr(ctx context.Context, fh fs.FileHandle, in *fuse.Set
 	// If nothing changed that we handle, just return OK.
 	// However, fuse library might expect Getattr to be called.
 	// Let's call Getattr anyway for consistency.
-	log.Printf("File (Ino:%d) -> Setattr() finished, calling Getattr for final state.", f.sqliteNode.Inode.StableAttr().Ino) // Use StableAttr().Ino
-	return f.sqliteNode.Getattr(ctx, fh, out)                                                                                // Access via sqliteNode
+	if f.sqliteNode.debug {
+		log.Printf("File (Ino:%d) -> Setattr() finished, calling Getattr for final state.", f.sqliteNode.Inode.StableAttr().Ino)
+	}
+	return f.sqliteNode.Getattr(ctx, fh, out) // Access via sqliteNode
 }
 
 // Open creates a handle for the file.
 func (f *sqliteFile) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFlags uint32, errno syscall.Errno) {
-	log.Printf("File (Ino:%d) -> Open() called with flags: %x", f.sqliteNode.Inode.StableAttr().Ino, flags) // Use StableAttr().Ino
+	if f.sqliteNode.debug {
+		log.Printf("File (Ino:%d) -> Open() called with flags: %x", f.sqliteNode.Inode.StableAttr().Ino, flags)
+	}
 
 	// Ensure model is loaded (might be needed by handle)
 	if err := f.sqliteNode.loadModel(ctx); err != nil { // Access via sqliteNode
@@ -82,7 +92,9 @@ func (f *sqliteFile) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, 
 	// Decide on cache behavior. FOPEN_KEEP_CACHE is usually good.
 	fuseFlags = fuse.FOPEN_KEEP_CACHE
 
-	log.Printf("File (Ino:%d) -> Open() succeeded, returning handle", f.sqliteNode.Inode.StableAttr().Ino) // Use StableAttr().Ino
+	if f.sqliteNode.debug {
+		log.Printf("File (Ino:%d) -> Open() succeeded, returning handle", f.sqliteNode.Inode.StableAttr().Ino)
+	}
 	return handle, fuseFlags, fs.OK
 }
 
@@ -102,7 +114,9 @@ var _ fs.FileReleaser = (*sqliteHandle)(nil)
 // Read reads data from the file.
 func (fh *sqliteHandle) Read(ctx context.Context, dest []byte, off int64) (fuse.ReadResult, syscall.Errno) {
 	fino := fh.fileNode.sqliteNode.Inode.StableAttr().Ino // Get Ino
-	log.Printf("Handle (FileIno:%d) -> Read() called, offset: %d, buffer size: %d", fino, off, len(dest))
+	if fh.fileNode.sqliteNode.debug {
+		log.Printf("Handle (FileIno:%d) -> Read() called, offset: %d, buffer size: %d", fino, off, len(dest))
+	}
 
 	// Ensure model is loaded (contains size info)
 	if err := fh.fileNode.sqliteNode.loadModel(ctx); err != nil { // Access via fileNode.sqliteNode
@@ -117,14 +131,18 @@ func (fh *sqliteHandle) Read(ctx context.Context, dest []byte, off int64) (fuse.
 	}
 
 	n := copy(dest, data)
-	log.Printf("Handle (FileIno:%d) -> Read() read %d bytes", fino, n)
+	if fh.fileNode.sqliteNode.debug {
+		log.Printf("Handle (FileIno:%d) -> Read() read %d bytes", fino, n)
+	}
 	return fuse.ReadResultData(dest[:n]), fs.OK
 }
 
 // Write writes data to the file.
 func (fh *sqliteHandle) Write(ctx context.Context, data []byte, off int64) (written uint32, errno syscall.Errno) {
 	fino := fh.fileNode.sqliteNode.Inode.StableAttr().Ino // Get Ino
-	log.Printf("Handle (FileIno:%d) -> Write() called, offset: %d, data size: %d", fino, off, len(data))
+	if fh.fileNode.sqliteNode.debug {
+		log.Printf("Handle (FileIno:%d) -> Write() called, offset: %d, data size: %d", fino, off, len(data))
+	}
 
 	// Ensure model is loaded for updates
 	if err := fh.fileNode.sqliteNode.loadModel(ctx); err != nil { // Access via fileNode.sqliteNode
@@ -142,14 +160,18 @@ func (fh *sqliteHandle) Write(ctx context.Context, data []byte, off int64) (writ
 	fh.fileNode.sqliteNode.model.Size = newSize // Access via fileNode.sqliteNode
 	written = uint32(len(data))
 
-	log.Printf("Handle (FileIno:%d) -> Write() wrote %d bytes, new size: %d", fino, written, newSize)
+	if fh.fileNode.sqliteNode.debug {
+		log.Printf("Handle (FileIno:%d) -> Write() wrote %d bytes, new size: %d", fino, written, newSize)
+	}
 	return written, fs.OK
 }
 
 // Release is called when the file handle is closed.
 func (fh *sqliteHandle) Release(ctx context.Context) syscall.Errno {
 	fino := fh.fileNode.sqliteNode.Inode.StableAttr().Ino // Get Ino
-	log.Printf("Handle (FileIno:%d) -> Release() called", fino)
+	if fh.fileNode.sqliteNode.debug {
+		log.Printf("Handle (FileIno:%d) -> Release() called", fino)
+	}
 	// No specific action needed for release in this simple implementation
 	return fs.OK
 }

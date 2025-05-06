@@ -17,6 +17,7 @@ type sqliteNode struct {
 	fs.Inode              // Embed the standard Inode struct
 	store    store.Store  // Reference to the database store
 	model    *models.Node // Cached node model from the database
+	debug    bool         // Enable debug logging for this node
 	// We might need a mutex here if we modify the model concurrently,
 	// but reads should be safe after initialization.
 }
@@ -36,7 +37,9 @@ func (n *sqliteNode) loadModel(ctx context.Context) error {
 			// For other nodes, this indicates an issue.
 			return syscall.EIO
 		}
-		log.Printf("Node -> loadModel() loading model for ID: %d", inodeID)
+		if n.debug {
+			log.Printf("Node -> loadModel() loading model for ID: %d", inodeID)
+		}
 		model, err := n.store.GetNode(int64(inodeID))
 		if err != nil {
 			log.Printf("ERROR: Node -> loadModel() failed for ID %d: %v", inodeID, err)
@@ -51,7 +54,9 @@ func (n *sqliteNode) loadModel(ctx context.Context) error {
 func (n *sqliteNode) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
 	// Inode ID should be available via n.Inode.StableAttr().Ino
 	inodeID := n.Inode.StableAttr().Ino
-	log.Printf("Node -> Getattr() called for ID: %d", inodeID)
+	if n.debug {
+		log.Printf("Node -> Getattr() called for ID: %d", inodeID)
+	}
 
 	// Ensure the model is loaded (might be redundant if loaded elsewhere, but safe)
 	if err := n.loadModel(ctx); err != nil {
@@ -79,7 +84,9 @@ func (n *sqliteNode) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.At
 	out.Attr.Uid = n.model.UID
 	out.Attr.Gid = n.model.GID
 
-	log.Printf("Node -> Getattr() success for ID: %d, Size: %d, Mode: %v", n.model.ID, out.Attr.Size, n.model.Mode)
+	if n.debug {
+		log.Printf("Node -> Getattr() success for ID: %d, Size: %d, Mode: %v", n.model.ID, out.Attr.Size, n.model.Mode)
+	}
 	return fs.OK // Use fs.OK for success
 }
 

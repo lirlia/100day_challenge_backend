@@ -47,7 +47,7 @@ func main() {
 	defer storage.Close()
 
 	// The root node implementation - use the constructor
-	root := fusefs.NewRoot(storage)
+	root := fusefs.NewRoot(storage, *debug)
 
 	// --- FUSE Server Setup (hanwen/go-fuse) ---
 	opts := &fs.Options{}
@@ -57,6 +57,10 @@ func main() {
 	opts.Name = "sqlitefs"
 	// Add other options as needed, e.g.:
 	// opts.MountOptions.Options = []string{"volname=SQLiteFS"} // For macOS volume name
+
+	// Explicitly set the UID/GID for the mount using raw mount options
+	opts.MountOptions.Options = append(opts.MountOptions.Options, fmt.Sprintf("uid=%d", os.Getuid()))
+	opts.MountOptions.Options = append(opts.MountOptions.Options, fmt.Sprintf("gid=%d", os.Getgid()))
 
 	server, err := fs.Mount(*mountpoint, root, opts)
 	if err != nil {
