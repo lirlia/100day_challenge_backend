@@ -142,3 +142,22 @@ func (c *Chip8) LoadROM(filePath string) error {
 	fmt.Printf("Loaded ROM '%s' (%d bytes) into memory starting at 0x%X.\n", filePath, romSize, romOffset)
 	return nil
 }
+
+// Gfx returns the current graphics buffer.
+func (c *Chip8) Gfx() [gfxWidth * gfxHeight]byte {
+	return c.gfx
+}
+
+// DrawFlag returns the draw flag status and resets it.
+func (c *Chip8) DrawFlag() bool {
+	if c.drawFlag {
+		c.drawFlag = false
+		return true
+	}
+	return false
+}
+
+// SetDrawFlag sets the draw flag.
+func (c *Chip8) SetDrawFlag() {
+	c.drawFlag = true
+}
