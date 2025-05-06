@@ -161,3 +161,35 @@ func (c *Chip8) DrawFlag() bool {
 func (c *Chip8) SetDrawFlag() {
 	c.drawFlag = true
 }
+
+// Cycle executes a single CHIP-8 instruction cycle.
+func (c *Chip8) Cycle() {
+	// fmt.Printf("Cycle Start: PC=0x%X\n", c.PC) // DEBUG 削除
+	// Fetch Opcode (2 bytes starting at PC)
+	if c.PC+1 >= memorySize {
+		fmt.Println("Error: Program Counter out of bounds!")
+		// TODO: Implement proper halting mechanism
+		return
+	}
+	opcode := uint16(c.memory[c.PC])<<8 | uint16(c.memory[c.PC+1])
+	// fmt.Printf("  Fetched Opcode: 0x%X\n", opcode) // DEBUG 削除
+
+	// Store PC before execution to check if it was modified by a jump/call/skip instruction
+	originalPC := c.PC
+
+	// Decode and Execute Opcode
+	c.executeOpcode(opcode)
+	// fmt.Printf("  PC after execute: 0x%X\n", c.PC) // DEBUG 削除
+
+	// Increment Program Counter only if it wasn't modified by the instruction itself
+	// (e.g., jumps, calls, returns, skips handle their own PC logic).
+	if c.PC == originalPC {
+		// fmt.Println("  Incrementing PC by 2") // DEBUG 削除
+		c.PC += 2
+	} else {
+		// fmt.Printf("  PC was modified by opcode, not incrementing. New PC: 0x%X\n", c.PC) // DEBUG 削除
+	}
+
+	// TODO: Update timers (DT and ST) - might move to main loop
+	// fmt.Printf("Cycle End: PC=0x%X\n", c.PC) // DEBUG 削除
+}

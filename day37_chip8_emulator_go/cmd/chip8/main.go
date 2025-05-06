@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"image/color"
 	"log"
+	"math/rand"
 	"os"
+	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/vector"
@@ -31,7 +33,11 @@ type Game struct {
 
 // Update proceeds the game state. Update is called every tick (1/60 [s] by default).
 func (g *Game) Update() error {
-	// TODO: Implement CHIP-8 cycle execution
+	// Execute multiple CHIP-8 cycles per frame for speed
+	cyclesPerFrame := 10
+	for i := 0; i < cyclesPerFrame; i++ {
+		g.chip8.Cycle()
+	}
 	return nil
 }
 
@@ -43,13 +49,14 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	for y := 0; y < chip8Height; y++ {
 		for x := 0; x < chip8Width; x++ {
 			if gfx[y*chip8Width+x] == 1 {
-				// Draw a white rectangle for each set pixel, scaled up
+				// Draw a 1x1 white rectangle at the logical coordinate (x, y).
+				// Ebiten handles scaling based on Layout function.
 				vector.DrawFilledRect(
 					screen,
-					float32(x*scaleFactor),
-					float32(y*scaleFactor),
-					float32(scaleFactor),
-					float32(scaleFactor),
+					float32(x), // scaleFactor を削除
+					float32(y), // scaleFactor を削除
+					1,          // width を 1 に
+					1,          // height を 1 に
 					color.White,
 					false, // anti-alias off for sharp pixels
 				)
@@ -67,7 +74,10 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
 }
 
 func main() {
-	// Define command-line flag for ROM path
+	// Seed the random number generator
+	rand.Seed(time.Now().UnixNano())
+
+	// Command-line flags
 	romPath := flag.String("rom", "", "Path to the CHIP-8 ROM file")
 	flag.Parse()
 
