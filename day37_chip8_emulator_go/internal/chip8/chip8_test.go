@@ -994,7 +994,7 @@ func TestOpcodes(t *testing.T) {
 		},
 		{
 			name:      "Stack Underflow on RET",
-			opcode:    0x00EE, // RET
+			opcode:    0x00EE,
 			setupChip: func(c *Chip8) { c.SP = 0 },
 			assertChip: func(t *testing.T, c *Chip8, _, _, _ bool) {
 				if c.SP != 0 {
@@ -1040,7 +1040,6 @@ func TestOpcodes(t *testing.T) {
 			opcode:    0xF61E, // ADD I, V6
 			setupChip: func(c *Chip8) { c.I = 0xFFF0; c.V[6] = 0x15; c.V[0xF] = 0xDD /* dummy */ },
 			assertChip: func(t *testing.T, c *Chip8, _, _, _ bool) {
-				// 0xFFF0 + 0x15 = 0x10005. As uint16, this wraps to 0x0005.
 				expectedI := uint16(0x0005)
 				if c.I != expectedI {
 					t.Errorf("I expected 0x%X (wrap-around), got 0x%X", expectedI, c.I)
@@ -1048,6 +1047,184 @@ func TestOpcodes(t *testing.T) {
 				if c.V[0xF] == 0xDD { /* Check VF is unchanged */
 				} else {
 					t.Errorf("VF changed after Fx1E (overflow case), expected 0xDD, got 0x%X", c.V[0xF])
+				}
+				if c.PC != romOffset+2 {
+					t.Errorf("PC expected 0x%X, got 0x%X", romOffset+2, c.PC)
+				}
+			},
+		},
+		// Memory Operation Opcodes
+		{
+			name:      "Fx29 - LD F, Vx (digit 0)",
+			opcode:    0xF029, // LD F, V0
+			setupChip: func(c *Chip8) { c.V[0] = 0 },
+			assertChip: func(t *testing.T, c *Chip8, _, _, _ bool) {
+				if c.I != uint16(fontOffset+(0*5)) {
+					t.Errorf("I expected font addr for 0 (0x%X), got 0x%X", uint16(fontOffset), c.I)
+				}
+				if c.PC != romOffset+2 {
+					t.Errorf("PC expected 0x%X, got 0x%X", romOffset+2, c.PC)
+				}
+			},
+		},
+		{
+			name:      "Fx29 - LD F, Vx (digit F)",
+			opcode:    0xF129, // LD F, V1
+			setupChip: func(c *Chip8) { c.V[1] = 0xF },
+			assertChip: func(t *testing.T, c *Chip8, _, _, _ bool) {
+				if c.I != uint16(fontOffset+(15*5)) {
+					t.Errorf("I expected font addr for F (0x%X), got 0x%X", uint16(fontOffset+(15*5)), c.I)
+				}
+				if c.PC != romOffset+2 {
+					t.Errorf("PC expected 0x%X, got 0x%X", romOffset+2, c.PC)
+				}
+			},
+		},
+		{
+			name:      "Fx33 - LD B, Vx (123)",
+			opcode:    0xF233, // LD B, V2
+			setupChip: func(c *Chip8) { c.I = 0x300; c.V[2] = 123 },
+			assertChip: func(t *testing.T, c *Chip8, _, _, _ bool) {
+				if c.memory[c.I] != 1 {
+					t.Errorf("Memory[I] expected 1, got %d", c.memory[c.I])
+				}
+				if c.memory[c.I+1] != 2 {
+					t.Errorf("Memory[I+1] expected 2, got %d", c.memory[c.I+1])
+				}
+				if c.memory[c.I+2] != 3 {
+					t.Errorf("Memory[I+2] expected 3, got %d", c.memory[c.I+2])
+				}
+				if c.PC != romOffset+2 {
+					t.Errorf("PC expected 0x%X, got 0x%X", romOffset+2, c.PC)
+				}
+			},
+		},
+		{
+			name:      "Fx33 - LD B, Vx (5)",
+			opcode:    0xF333, // LD B, V3
+			setupChip: func(c *Chip8) { c.I = 0x310; c.V[3] = 5 },
+			assertChip: func(t *testing.T, c *Chip8, _, _, _ bool) {
+				if c.memory[c.I] != 0 {
+					t.Errorf("Memory[I] expected 0, got %d", c.memory[c.I])
+				}
+				if c.memory[c.I+1] != 0 {
+					t.Errorf("Memory[I+1] expected 0, got %d", c.memory[c.I+1])
+				}
+				if c.memory[c.I+2] != 5 {
+					t.Errorf("Memory[I+2] expected 5, got %d", c.memory[c.I+2])
+				}
+				if c.PC != romOffset+2 {
+					t.Errorf("PC expected 0x%X, got 0x%X", romOffset+2, c.PC)
+				}
+			},
+		},
+		{
+			name:   "Fx55 - LD [I], Vx (classic, I unchanged)",
+			opcode: 0xF355, // LD [I], V3
+			setupChip: func(c *Chip8) {
+				c.variantSCHIP = false
+				c.I = 0x400
+				c.V[0] = 0x11
+				c.V[1] = 0x22
+				c.V[2] = 0x33
+				c.V[3] = 0x44
+			},
+			assertChip: func(t *testing.T, c *Chip8, _, _, _ bool) {
+				if c.memory[c.I] != 0x11 {
+					t.Errorf("Mem[I] expected 0x11, got 0x%X", c.memory[c.I])
+				}
+				if c.memory[c.I+1] != 0x22 {
+					t.Errorf("Mem[I+1] expected 0x22, got 0x%X", c.memory[c.I+1])
+				}
+				if c.memory[c.I+2] != 0x33 {
+					t.Errorf("Mem[I+2] expected 0x33, got 0x%X", c.memory[c.I+2])
+				}
+				if c.memory[c.I+3] != 0x44 {
+					t.Errorf("Mem[I+3] expected 0x44, got 0x%X", c.memory[c.I+3])
+				}
+				if c.I != 0x400 {
+					t.Errorf("I should be unchanged (classic), expected 0x400, got 0x%X", c.I)
+				}
+				if c.PC != romOffset+2 {
+					t.Errorf("PC expected 0x%X, got 0x%X", romOffset+2, c.PC)
+				}
+			},
+		},
+		{
+			name:   "Fx55 - LD [I], Vx (SCHIP, I changed)",
+			opcode: 0xF355, // LD [I], V3
+			setupChip: func(c *Chip8) {
+				c.variantSCHIP = true
+				c.I = 0x400
+				c.V[0] = 0x11
+				c.V[1] = 0x22
+				c.V[2] = 0x33
+				c.V[3] = 0x44
+			},
+			assertChip: func(t *testing.T, c *Chip8, _, _, _ bool) {
+				// Memory content check is same as classic
+				if c.memory[0x400] != 0x11 {
+					t.Errorf("Mem[0x400] expected 0x11, got 0x%X", c.memory[0x400])
+				}
+				if c.memory[0x403] != 0x44 {
+					t.Errorf("Mem[0x403] expected 0x44, got 0x%X", c.memory[0x403])
+				}
+				if c.I != 0x400+3+1 {
+					t.Errorf("I should be incremented (SCHIP), expected 0x%X, got 0x%X", 0x400+3+1, c.I)
+				}
+				if c.PC != romOffset+2 {
+					t.Errorf("PC expected 0x%X, got 0x%X", romOffset+2, c.PC)
+				}
+			},
+		},
+		{
+			name:   "Fx65 - LD Vx, [I] (classic, I unchanged)",
+			opcode: 0xF265, // LD V2, [I]
+			setupChip: func(c *Chip8) {
+				c.variantSCHIP = false
+				c.I = 0x500
+				c.memory[c.I] = 0xAA
+				c.memory[c.I+1] = 0xBB
+				c.memory[c.I+2] = 0xCC
+			},
+			assertChip: func(t *testing.T, c *Chip8, _, _, _ bool) {
+				if c.V[0] != 0xAA {
+					t.Errorf("V0 expected 0xAA, got 0x%X", c.V[0])
+				}
+				if c.V[1] != 0xBB {
+					t.Errorf("V1 expected 0xBB, got 0x%X", c.V[1])
+				}
+				if c.V[2] != 0xCC {
+					t.Errorf("V2 expected 0xCC, got 0x%X", c.V[2])
+				}
+				if c.I != 0x500 {
+					t.Errorf("I should be unchanged (classic), expected 0x500, got 0x%X", c.I)
+				}
+				if c.PC != romOffset+2 {
+					t.Errorf("PC expected 0x%X, got 0x%X", romOffset+2, c.PC)
+				}
+			},
+		},
+		{
+			name:   "Fx65 - LD Vx, [I] (SCHIP, I changed)",
+			opcode: 0xF265, // LD V2, [I]
+			setupChip: func(c *Chip8) {
+				c.variantSCHIP = true
+				c.I = 0x500
+				c.memory[c.I] = 0xAA
+				c.memory[c.I+1] = 0xBB
+				c.memory[c.I+2] = 0xCC
+			},
+			assertChip: func(t *testing.T, c *Chip8, _, _, _ bool) {
+				// Register value check is same as classic
+				if c.V[0] != 0xAA {
+					t.Errorf("V0 expected 0xAA, got 0x%X", c.V[0])
+				}
+				if c.V[2] != 0xCC {
+					t.Errorf("V2 expected 0xCC, got 0x%X", c.V[2])
+				}
+				if c.I != 0x500+2+1 {
+					t.Errorf("I should be incremented (SCHIP), expected 0x%X, got 0x%X", 0x500+2+1, c.I)
 				}
 				if c.PC != romOffset+2 {
 					t.Errorf("PC expected 0x%X, got 0x%X", romOffset+2, c.PC)

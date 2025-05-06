@@ -235,11 +235,7 @@ func (c *Chip8) executeOpcode(opcode uint16) (redraw bool, collision bool) {
 		case 0x0018: // LD ST, Vx (Fx18) - Set sound timer = Vx.
 			c.ST = c.V[x]
 			c.PC += 2
-		case 0x001E: // ADD I, Vx (Fx1E) - Set I = I + Vx.
-			// VF is not affected by this operation on most interpreters.
-			// Some older CHIP-8 specifications mention setting VF on overflow (I > 0xFFF),
-			// but this is often ignored in modern emulators. We will not modify VF.
-			// If overflow behavior for I itself (beyond uint16) is critical, ROMs usually manage it.
+		case 0x001E: // ADD I, Vx (Fx1E)
 			c.I += uint16(c.V[x])
 			c.PC += 2
 		default:
@@ -270,9 +266,52 @@ func (c *Chip8) executeOpcode(opcode uint16) (redraw bool, collision bool) {
 			c.PC += 2
 			return false, false // Added return
 		case 0x001E: // ADD I, Vx (Fx1E)
+			// VF not affected
 			c.I += uint16(c.V[x])
 			c.PC += 2
-			return false, false // Added return
+			return false, false
+		case 0x0029: // LD F, Vx (Fx29) - Set I = location of sprite for digit Vx.
+			digit := c.V[x] & 0x0F
+			c.I = uint16(fontOffset + (int(digit) * 5))
+			c.PC += 2
+			return false, false
+		case 0x0033: // LD B, Vx (Fx33) - Store BCD representation of Vx.
+			if c.I+2 >= memorySize {
+				log.Printf("Memory out of bounds on LD B, Vx (Fx33) at PC 0x%X. I=0x%X", c.PC, c.I)
+			} else {
+				val := c.V[x]
+				c.memory[c.I] = val / 100
+				c.memory[c.I+1] = (val / 10) % 10
+				c.memory[c.I+2] = val % 10
+			}
+			c.PC += 2
+			return false, false
+		case 0x0055: // LD [I], Vx (Fx55) - Store V0..Vx to memory starting at I.
+			// Check bounds before copy
+			if c.I+uint16(x) >= memorySize {
+				log.Printf("Memory out of bounds on LD [I], Vx (Fx55) at PC 0x%X. I=0x%X, x=%d", c.PC, c.I, x)
+			} else {
+				// copy(dst, src)
+				copy(c.memory[c.I:c.I+uint16(x)+1], c.V[:x+1])
+				if c.variantSCHIP {
+					c.I += uint16(x) + 1
+				}
+			}
+			c.PC += 2
+			return false, false
+		case 0x0065: // LD Vx, [I] (Fx65) - Read V0..Vx from memory starting at I.
+			// Check bounds before copy
+			if c.I+uint16(x) >= memorySize {
+				log.Printf("Memory out of bounds on LD Vx, [I] (Fx65) at PC 0x%X. I=0x%X, x=%d", c.PC, c.I, x)
+			} else {
+				// copy(dst, src)
+				copy(c.V[:x+1], c.memory[c.I:c.I+uint16(x)+1])
+				if c.variantSCHIP {
+					c.I += uint16(x) + 1
+				}
+			}
+			c.PC += 2
+			return false, false
 		default:
 			log.Printf("Unknown Fx opcode: 0x%X (PC: 0x%X)", opcode, c.PC)
 			c.PC += 2
