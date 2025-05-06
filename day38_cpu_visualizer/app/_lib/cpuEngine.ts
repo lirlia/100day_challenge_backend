@@ -52,8 +52,11 @@ function parseJsToAssembly(jsCode: string): CompilationResult {
 
       instructions.push({ opCode: OpCode.ADD_REG, operands: [reg1, reg2, destReg], originalJsLine: jsLineIndex });
       sourceMap[instructions.length - 1] = jsLineIndex;
+    } else if (line.toLowerCase().includes('halt')) { // Support 'halt', '// HALT', 'HALT;'
+      instructions.push({ opCode: OpCode.HALT, operands: [], originalJsLine: jsLineIndex });
+      sourceMap[instructions.length - 1] = jsLineIndex;
     } else if (line.startsWith('//') || line.length === 0) {
-        // Comments or empty lines are ignored
+        // Comments or empty lines are ignored (must be after HALT check if HALT can be a comment)
     }
     else {
       console.warn(`Unsupported JS syntax: ${line}`);

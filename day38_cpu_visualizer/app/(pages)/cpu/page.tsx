@@ -1,156 +1,178 @@
 "use client"; // ステートを持つため Client Component
 
-import { useState } from 'react';
+import { useCpuSimulator } from '../../_lib/cpuEngine'; // 相対パスに変更
+import { OpCode } from '../../_lib/types'; // OpCodeもインポートしてHALTチェックなどに使える
 
 export default function CpuPage() {
-  const [jsCode, setJsCode] = useState<string>("let a = 10;\nlet b = 20;\nlet sum = a + b;");
-  const [assemblyCode, setAssemblyCode] = useState<string[]>([
-    "LOAD_VAL 10, R0",
-    "STORE_VAL R0, a",
-    "LOAD_VAL 20, R1",
-    "STORE_VAL R1, b",
-    "LOAD_MEM a, R0",
-    "LOAD_MEM b, R1",
-    "ADD R0, R1, R2",
-    "STORE_VAL R2, sum",
-  ]);
-  const [machineCode, setMachineCode] = useState<string[]>([
-    "0x100A00",
-    "0x200000", // 仮の値
-    "0x101401",
-    "0x200101", // 仮の値
-    "0x300000", // 仮の値
-    "0x300101", // 仮の値
-    "0x400001",
-    "0x200202", // 仮の値
-  ]);
-  const [registers, setRegisters] = useState<{ [key: string]: string | number }>({
-    PC: "0x0000",
-    ACC: 0,
-    R0: 0,
-    R1: 0,
-    R2: 0,
-    FLAGS: "Z N C V",
-  });
-  const [memory, setMemory] = useState<{ address: string; value: string }[]>([
-    { address: "0x1000 (a)", value: "0 (初期値)" },
-    { address: "0x1004 (b)", value: "0 (初期値)" },
-    { address: "0x1008 (sum)", value: "0 (初期値)" },
-  ]);
-  const [currentStep, setCurrentStep] = useState<number>(0);
+  const initialJs = "let a = 10;\\nlet b = 5;\\nlet sum = a + b;\\n// Add a HALT instruction to stop execution\\nHALT;";
+  const simulator = useCpuSimulator(initialJs);
 
-  const handleStep = () => {
-    // TODO: CPU実行ロジックを呼び出し、各状態を更新
-    console.log("Stepping through code...");
-    if (currentStep < assemblyCode.length -1) {
-      setCurrentStep(prev => prev + 1);
-    }
+  const handleJsCodeChangeAndCompile = (newCode: string) => {
+    simulator.compileAndLoad(newCode);
   };
 
-  const handleReset = () => {
-    // TODO: 状態を初期化
-    setJsCode("let a = 10;\nlet b = 20;\nlet sum = a + b;");
-    setCurrentStep(0);
-    // 他のステートも初期化
-    console.log("Resetting state...");
+  const assemblyLinesForDisplay = simulator.getAssemblyForDisplay();
+  const machineCodeLinesForDisplay = simulator.getMachineCodeForDisplay();
+
+  const { pc, acc, r0, r1, r2, flags } = simulator.cpuState.registers;
+  const displayRegisters = {
+    PC: pc.toString(16).padStart(4, '0').toUpperCase(),
+    ACC: acc,
+    R0: r0,
+    R1: r1,
+    R2: r2,
+    FLAGS: `Z:${flags.zero ? 1:0} C:${flags.carry ? 1:0}`,
   };
+
+  // メモリ表示: cpuState.memoryは Instruction[] には存在しないため、cpuEngine.ts の CpuState.memory (Record<string, number>) を使う想定で修正が必要。
+  // 現状の cpuEngine.ts ではメモリはあまり活用されていないが、表示だけは cpuState.memory から行う。
+  const displayMemory = Object.entries(simulator.cpuState.memory)
+    .map(([address, value]) => ({ address, value: String(value) }))
+    .slice(0, 10); // Display first 10 memory entries for brevity
 
   return (
-    <div className="container mx-auto p-4 min-h-screen flex flex-col items-center">
-      <header className="mb-8 text-center">
-        <h1 className="text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-500 py-2">
+    <div className="container mx-auto p-4 min-h-screen flex flex-col items-center selection:bg-purple-500 selection:text-white">
+      <header className="mb-8 text-center w-full">
+        <h1 className="text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 via-pink-500 to-red-400 py-2">
           Day38 - CPU Visualizer
         </h1>
-        <p className="text-gray-400 mt-2">
-          簡単なJavaScriptコードの実行をステップごとに視覚化します。
+        <p className="text-gray-400 mt-2 text-lg">
+          シンプルなJavaScriptコードのCPUレベルでの実行をステップごとに追体験。
         </p>
       </header>
 
-      <main className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-7xl">
+      <main className="grid grid-cols-1 lg:grid-cols-3 gap-6 w-full max-w-screen-2xl px-4">
         {/* Code Input & Controls */}
-        <section className="md:col-span-1 space-y-6">
+        <section className="lg:col-span-1 space-y-6">
           <div className="glassmorphism-panel p-6">
             <h2 className="text-2xl font-semibold mb-4 text-purple-300">JavaScript Code</h2>
             <textarea
-              className="w-full h-48 p-3 bg-gray-700/50 border border-gray-600 rounded-md text-sm font-mono focus:ring-purple-500 focus:border-purple-500"
-              value={jsCode}
-              onChange={(e) => setJsCode(e.target.value)}
-              placeholder="Enter simple JS code here (e.g., let x = 10;)"
+              className="w-full h-60 p-3 bg-gray-800/60 border border-gray-700 rounded-md text-sm font-mono focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none placeholder-gray-500"
+              value={simulator.rawJsCode}
+              onChange={(e) => simulator.compileAndLoad(e.target.value)} // 直接 rawJsCode を更新し、再コンパイルを促す
+              placeholder="例:\nlet x = 10;\nlet y = 20;\nlet z = x + y;\nHALT;"
+              spellCheck="false"
             />
+            <button
+              onClick={() => simulator.compileAndLoad(simulator.rawJsCode)}
+              className="mt-4 w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 px-4 rounded-lg transition-colors duration-200 shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
+            >
+              Compile & Load
+            </button>
           </div>
+
           <div className="glassmorphism-panel p-6 flex flex-col space-y-4">
             <h2 className="text-2xl font-semibold mb-2 text-purple-300">Controls</h2>
             <button
-              onClick={handleStep}
-              className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 px-4 rounded-lg transition-colors duration-200 shadow-md hover:shadow-lg"
+              onClick={simulator.step}
+              disabled={!simulator.cpuState.isRunning || !simulator.isProgramLoaded()}
+              className="w-full bg-purple-600 hover:bg-purple-700 disabled:bg-gray-500 text-white font-semibold py-3 px-4 rounded-lg transition-colors duration-200 shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-purple-400 disabled:cursor-not-allowed"
             >
-              Step Execute
+              Step Execute (PC: {simulator.cpuState.registers.pc})
             </button>
             <button
-              onClick={handleReset}
-              className="w-full bg-pink-600 hover:bg-pink-700 text-white font-semibold py-3 px-4 rounded-lg transition-colors duration-200 shadow-md hover:shadow-lg"
+              onClick={() => simulator.reset(true)} // Keep JS code
+              className="w-full bg-pink-600 hover:bg-pink-700 text-white font-semibold py-3 px-4 rounded-lg transition-colors duration-200 shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-pink-400"
             >
-              Reset
+              Reset CPU State
             </button>
-             {/* TODO: Compile button */}
+             <button
+              onClick={() => simulator.reset(false)} // Clear JS code
+              className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-3 px-4 rounded-lg transition-colors duration-200 shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-red-400"
+            >
+              Reset All (Clear Code)
+            </button>
           </div>
         </section>
 
         {/* Assembly and Machine Code */}
-        <section className="md:col-span-1 space-y-6">
-          <div className="glassmorphism-panel p-6">
+        <section className="lg:col-span-1 space-y-6">
+          <div className="glassmorphism-panel p-6 h-full flex flex-col">
             <h2 className="text-2xl font-semibold mb-4 text-purple-300">Assembly Code</h2>
-            <pre className="w-full h-72 p-3 bg-gray-700/50 border border-gray-600 rounded-md text-sm font-mono overflow-auto">
-              {assemblyCode.map((line, index) => (
-                <div key={index} className={`${index === currentStep ? 'bg-purple-500/30 text-yellow-300' : ''} py-0.5 px-1 rounded-sm`}>
-                  {`${index.toString().padStart(2, '0')}: ${line}`}
-                </div>
-              ))}
-            </pre>
-          </div>
-          <div className="glassmorphism-panel p-6">
-            <h2 className="text-2xl font-semibold mb-4 text-purple-300">Machine Code (Hex)</h2>
-            <pre className="w-full h-72 p-3 bg-gray-700/50 border border-gray-600 rounded-md text-sm font-mono overflow-auto">
-              {machineCode.map((line, index) => (
-                <div key={index} className={`${index === currentStep ? 'bg-pink-500/30 text-yellow-300' : ''} py-0.5 px-1 rounded-sm`}>
-                  {`${(index * 4).toString(16).padStart(4, '0')}: ${line}`}
+            <pre className="flex-grow w-full p-3 bg-gray-800/60 border border-gray-700 rounded-md text-sm font-mono overflow-auto pretty-scrollbar">
+              {assemblyLinesForDisplay.length === 0 && <span className="text-gray-500">JSコードをコンパイルしてください...</span>}
+              {assemblyLinesForDisplay.map((line, index) => (
+                <div key={`asm-${index}`} className={`whitespace-pre-wrap py-0.5 px-2 rounded-sm transition-colors ${index === simulator.cpuState.currentAssemblyLine && simulator.cpuState.isRunning ? 'bg-purple-600/50 text-yellow-300 ring-1 ring-purple-400' : 'hover:bg-gray-700/50'}`}>
+                  <span className="text-gray-500 select-none mr-2">{index.toString().padStart(2, '0')}:</span>
+                  {line}
                 </div>
               ))}
             </pre>
           </div>
         </section>
 
-        {/* Registers and Memory */}
-        <section className="md:col-span-1 space-y-6">
-          <div className="glassmorphism-panel p-6">
-            <h2 className="text-2xl font-semibold mb-4 text-purple-300">Registers</h2>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm font-mono">
-              {Object.entries(registers).map(([key, value]) => (
-                <div key={key} className="flex justify-between">
-                  <span className="text-gray-400">{key}:</span>
-                  <span className="text-purple-300">{String(value)}</span>
+        <section className="lg:col-span-1 space-y-6">
+           <div className="glassmorphism-panel p-6 h-full flex flex-col">
+            <h2 className="text-2xl font-semibold mb-4 text-purple-300">Machine Code (Hex)</h2>
+            <pre className="flex-grow w-full p-3 bg-gray-800/60 border border-gray-700 rounded-md text-sm font-mono overflow-auto pretty-scrollbar">
+              {machineCodeLinesForDisplay.length === 0 && <span className="text-gray-500">JSコードをコンパイルしてください...</span>}
+              {machineCodeLinesForDisplay.map((line, index) => (
+                <div key={`mc-${index}`} className={`whitespace-pre-wrap py-0.5 px-2 rounded-sm transition-colors ${index === simulator.cpuState.currentAssemblyLine && simulator.cpuState.isRunning ? 'bg-pink-600/50 text-yellow-300 ring-1 ring-pink-400' : 'hover:bg-gray-700/50'}`}>
+                  <span className="text-gray-500 select-none mr-2">{(index * 2).toString(16).padStart(4, '0').toUpperCase()}:</span> {/* Assuming each instruction is 2 bytes for display address */}
+                  {line}
                 </div>
               ))}
-            </div>
+            </pre>
           </div>
+        </section>
+
+
+        {/* Registers and Memory - Combined or separate as preferred */}
+        <section className="lg:col-span-full grid md:grid-cols-2 gap-6 mt-0 md:mt-6">
           <div className="glassmorphism-panel p-6">
-            <h2 className="text-2xl font-semibold mb-4 text-purple-300">Memory View</h2>
-            <div className="space-y-1 text-sm font-mono">
-              {memory.map((memEntry, index) => (
-                <div key={index} className="flex justify-between p-1 bg-gray-700/30 rounded-sm">
-                  <span className="text-gray-400">{memEntry.address}:</span>
-                  <span className="text-pink-300">{memEntry.value}</span>
+            <h2 className="text-2xl font-semibold mb-4 text-purple-300">CPU Registers</h2>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-3 text-sm font-mono">
+              {Object.entries(displayRegisters).map(([key, value]) => (
+                <div key={key} className="flex justify-between items-center border-b border-gray-700/50 pb-1">
+                  <span className="text-gray-400 mr-2">{key}:</span>
+                  <span className="text-purple-300 text-lg font-semibold">{String(value)}</span>
                 </div>
               ))}
             </div>
-             <p className="text-xs text-gray-500 mt-3">Simplified memory view. Actual addresses and values will depend on the simulation.</p>
+             <p className={`mt-4 text-sm font-semibold ${simulator.cpuState.isRunning ? 'text-green-400' : 'text-red-400'}`}>
+                CPU Status: {simulator.cpuState.isRunning ? 'Running' : 'Halted'}
+             </p>
+          </div>
+
+          <div className="glassmorphism-panel p-6">
+            <h2 className="text-2xl font-semibold mb-4 text-purple-300">Memory View (Simplified)</h2>
+            {displayMemory.length === 0 ? (
+                 <p className="text-gray-500 text-sm">メモリは現在空です。STORE命令などで値が書き込まれます。</p>
+            ) : (
+                <div className="space-y-1 text-sm font-mono max-h-48 overflow-auto pretty-scrollbar">
+                {displayMemory.map((memEntry, index) => (
+                    <div key={`mem-${index}`} className="flex justify-between p-1.5 bg-gray-800/50 rounded-sm hover:bg-gray-700/70">
+                    <span className="text-gray-400">{memEntry.address}:</span>
+                    <span className="text-pink-300">{memEntry.value}</span>
+                    </div>
+                ))}
+                </div>
+            )}
+             <p className="text-xs text-gray-500 mt-3">注: これは非常に簡略化されたメモリビューです。</p>
           </div>
         </section>
       </main>
 
-      <footer className="mt-12 text-center text-gray-500 text-sm">
-        <p>&copy; {new Date().getFullYear()} Day38 Challenge. Inspired by CPU architecture.</p>
+      <footer className="mt-12 mb-6 text-center text-gray-500 text-sm">
+        <p>&copy; {new Date().getFullYear()} Day38 CPU Visualizer Challenge. Crafted with Next.js & Tailwind CSS.</p>
       </footer>
+      <style jsx global>{`
+        .pretty-scrollbar::-webkit-scrollbar {
+          width: 8px;
+          height: 8px;
+        }
+        .pretty-scrollbar::-webkit-scrollbar-track {
+          background: rgba(255,255,255,0.05);
+          border-radius: 10px;
+        }
+        .pretty-scrollbar::-webkit-scrollbar-thumb {
+          background: rgba(192, 132, 252, 0.5); // purple-400 with opacity
+          border-radius: 10px;
+        }
+        .pretty-scrollbar::-webkit-scrollbar-thumb:hover {
+          background: rgba(192, 132, 252, 0.7); // purple-400 with more opacity
+        }
+      `}</style>
     </div>
   );
 }
