@@ -214,6 +214,11 @@ func (c *Chip8) executeOpcode(opcode uint16) (redraw bool, collision bool) {
 		c.PC += 2 // Base increment
 		return false, false
 
+	case 0xA000: // LD I, addr (Annn) - Set I = nnn.
+		c.I = opcode & 0x0FFF
+		c.PC += 2
+		return false, false
+
 	case 0xE000:
 		x := (opcode & 0x0F00) >> 8
 		switch opcode & 0x00FF {
@@ -227,6 +232,16 @@ func (c *Chip8) executeOpcode(opcode uint16) (redraw bool, collision bool) {
 				c.PC += 2 // Skip the original PC += 2 by doing it here
 			}
 			c.PC += 2
+		case 0x0018: // LD ST, Vx (Fx18) - Set sound timer = Vx.
+			c.ST = c.V[x]
+			c.PC += 2
+		case 0x001E: // ADD I, Vx (Fx1E) - Set I = I + Vx.
+			// VF is not affected by this operation on most interpreters.
+			// Some older CHIP-8 specifications mention setting VF on overflow (I > 0xFFF),
+			// but this is often ignored in modern emulators. We will not modify VF.
+			// If overflow behavior for I itself (beyond uint16) is critical, ROMs usually manage it.
+			c.I += uint16(c.V[x])
+			c.PC += 2
 		default:
 			log.Printf("Unknown Ex opcode: 0x%X (PC: 0x%X)", opcode, c.PC)
 			c.PC += 2
@@ -237,27 +252,34 @@ func (c *Chip8) executeOpcode(opcode uint16) (redraw bool, collision bool) {
 	case 0xF000:
 		x := (opcode & 0x0F00) >> 8 // Common for many Fx opcodes
 		switch opcode & 0x00FF {
-		case 0x0007: // LD Vx, DT (Fx07) - Set Vx = delay timer value.
+		case 0x0007: // LD Vx, DT (Fx07)
 			c.V[x] = c.DT
 			c.PC += 2
-		case 0x000A: // LD Vx, K (Fx0A) - Wait for a key press, store the value of the key in Vx.
+			return false, false // Added return
+		case 0x000A: // LD Vx, K (Fx0A)
 			c.waitingForKey = true
-			c.keyReg = byte(x) // Store which register Vx to put the key value into
-			// PC does NOT advance here. It will be advanced in Cycle() when a key is pressed.
-			return false, false // Redraw false, Halted will be true via Cycle()
-		case 0x0015: // LD DT, Vx (Fx15) - Set delay timer = Vx.
+			c.keyReg = byte(x)
+			// PC does NOT advance here.
+			return false, false // No redraw, Halted state determined by Cycle()
+		case 0x0015: // LD DT, Vx (Fx15)
 			c.DT = c.V[x]
 			c.PC += 2
-		case 0x0018: // LD ST, Vx (Fx18) - Set sound timer = Vx.
+			return false, false // Added return
+		case 0x0018: // LD ST, Vx (Fx18)
 			c.ST = c.V[x]
 			c.PC += 2
-		// Other Fx opcodes (Fx0A, Fx1E, Fx29, Fx33, Fx55, Fx65) will be added later.
+			return false, false // Added return
+		case 0x001E: // ADD I, Vx (Fx1E)
+			c.I += uint16(c.V[x])
+			c.PC += 2
+			return false, false // Added return
 		default:
 			log.Printf("Unknown Fx opcode: 0x%X (PC: 0x%X)", opcode, c.PC)
 			c.PC += 2
-			return false, false // Default for unknown Fx opcodes
+			return false, false // Return for default case too
 		}
-		return false, false // Default for Fx opcodes (redraw typically false unless specified)
+		// This final return is now unreachable if all cases return, which is good.
+		// return false, false
 
 	case 0x3000: // SE Vx, byte (3xkk) - Skip next instruction if Vx = kk.
 		x := (opcode & 0x0F00) >> 8

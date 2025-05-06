@@ -993,18 +993,64 @@ func TestOpcodes(t *testing.T) {
 			},
 		},
 		{
-			name:   "Stack Underflow on RET",
-			opcode: 0x00EE, // RET
-			setupChip: func(c *Chip8) {
-				c.SP = 0 // Empty stack
-			},
+			name:      "Stack Underflow on RET",
+			opcode:    0x00EE, // RET
+			setupChip: func(c *Chip8) { c.SP = 0 },
 			assertChip: func(t *testing.T, c *Chip8, _, _, _ bool) {
 				if c.SP != 0 {
 					t.Errorf("SP should remain 0 on underflow, got %d", c.SP)
 				}
-				// PC behavior on underflow is tricky; current code advances it by 2 from original PC.
 				if c.PC != romOffset+2 {
 					t.Errorf("PC after RET underflow: expected 0x%X, got 0x%X", romOffset+2, c.PC)
+				}
+			},
+		},
+		// Index Register Opcodes
+		{
+			name:   "Annn - LD I, addr",
+			opcode: 0xA123,
+			assertChip: func(t *testing.T, c *Chip8, _, _, _ bool) {
+				if c.I != 0x0123 {
+					t.Errorf("I expected 0x123, got 0x%X", c.I)
+				}
+				if c.PC != romOffset+2 {
+					t.Errorf("PC expected 0x%X, got 0x%X", romOffset+2, c.PC)
+				}
+			},
+		},
+		{
+			name:      "Fx1E - ADD I, Vx",
+			opcode:    0xF51E, // ADD I, V5
+			setupChip: func(c *Chip8) { c.I = 0x100; c.V[5] = 0x23; c.V[0xF] = 0xDD /* dummy */ },
+			assertChip: func(t *testing.T, c *Chip8, _, _, _ bool) {
+				if c.I != 0x123 {
+					t.Errorf("I expected 0x123, got 0x%X", c.I)
+				}
+				if c.V[0xF] == 0xDD { /* Check VF is unchanged */
+				} else {
+					t.Errorf("VF changed after Fx1E, expected 0xDD, got 0x%X", c.V[0xF])
+				}
+				if c.PC != romOffset+2 {
+					t.Errorf("PC expected 0x%X, got 0x%X", romOffset+2, c.PC)
+				}
+			},
+		},
+		{
+			name:      "Fx1E - ADD I, Vx (potential I overflow, no VF change)",
+			opcode:    0xF61E, // ADD I, V6
+			setupChip: func(c *Chip8) { c.I = 0xFFF0; c.V[6] = 0x15; c.V[0xF] = 0xDD /* dummy */ },
+			assertChip: func(t *testing.T, c *Chip8, _, _, _ bool) {
+				// 0xFFF0 + 0x15 = 0x10005. As uint16, this wraps to 0x0005.
+				expectedI := uint16(0x0005)
+				if c.I != expectedI {
+					t.Errorf("I expected 0x%X (wrap-around), got 0x%X", expectedI, c.I)
+				}
+				if c.V[0xF] == 0xDD { /* Check VF is unchanged */
+				} else {
+					t.Errorf("VF changed after Fx1E (overflow case), expected 0xDD, got 0x%X", c.V[0xF])
+				}
+				if c.PC != romOffset+2 {
+					t.Errorf("PC expected 0x%X, got 0x%X", romOffset+2, c.PC)
 				}
 			},
 		},
