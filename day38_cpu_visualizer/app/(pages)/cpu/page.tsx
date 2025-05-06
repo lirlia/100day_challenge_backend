@@ -142,11 +142,11 @@ HALT;`;
             {displayMemory.length === 0 ? (
                  <p className="text-green-700 text-xs font-mono">メモリは空です。</p>
             ) : (
-                <div className="space-y-0.5 text-[10px] font-mono max-h-[60px] overflow-auto pretty-scrollbar"> {/* Adjusted max-h and spacing */}
+                <div className="space-y-0.5 text-[10px] font-mono max-h-[60px] overflow-auto pretty-scrollbar">
                 {displayMemory.map((memEntry, index) => (
                     <div key={`mem-${index}`} className="flex justify-between p-0.5 bg-black/40 rounded-sm hover:bg-black/60">
-                    <span className="text-green-700">{memEntry.address}:</span>
-                    <span className="text-blue-400">{memEntry.value}</span>
+                    <span className="text-green-700">0x{memEntry.address.replace('mem_', '')}:</span>
+                    <span className="text-blue-400 font-semibold">{memEntry.value}</span>
                     </div>
                 ))}
                 </div>
