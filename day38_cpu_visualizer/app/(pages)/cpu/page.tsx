@@ -40,6 +40,16 @@ HALT;`;
     .map(([address, value]) => ({ address, value: String(value) }))
     .slice(0, 10); // Display first 10 memory entries for brevity
 
+  // --- JS行ハイライトのためのロジック ---
+  const currentAssemblyLine = simulator.cpuState.currentAssemblyLine;
+  const sourceMap = simulator.sourceMap;
+  let currentJsLineIndex: number | undefined = undefined;
+  if (sourceMap && currentAssemblyLine !== undefined && sourceMap[currentAssemblyLine] !== undefined) {
+    currentJsLineIndex = sourceMap[currentAssemblyLine];
+  }
+  const jsCodeLines = simulator.rawJsCode.split('\n');
+  // --- ここまで ---
+
   return (
     <div className="container mx-auto p-2 md:p-4 min-h-screen flex flex-col items-center selection:bg-green-500 selection:text-black">
       <header className="mb-4 md:mb-6 text-center w-full">
@@ -56,14 +66,29 @@ HALT;`;
         {/* Column 1: JS Input & Controls */}
         <section className="lg:col-span-1 flex flex-col gap-3">
           <div className="terminal-panel flex-grow flex flex-col">
-            <h2 className="text-xl font-semibold mb-2 text-green-500 font-mono">// JavaScript コード入力</h2>
-            <textarea
-              className="terminal-input w-full flex-grow p-2 text-xs font-mono min-h-[100px]" // Adjusted height
-              value={simulator.rawJsCode}
-              onChange={(e) => simulator.compileAndLoad(e.target.value)}
-              placeholder="> let x = 10;\n> let y = 20;\n> // HALT; で停止"
-              spellCheck="false"
-            />
+            <h2 className="text-xl font-semibold mb-2 text-green-500 font-mono">// JavaScript コード入力 & 表示</h2>
+            <div className="grid grid-cols-2 gap-2 flex-grow">
+              {/* 左: 入力エリア */}
+              <textarea
+                className="terminal-input w-full h-full p-2 text-xs font-mono min-h-[100px] resize-none" // h-full, resize-none追加
+                value={simulator.rawJsCode}
+                onChange={(e) => simulator.compileAndLoad(e.target.value)}
+                placeholder="> let x = 10;\n> let y = 20;\n> // HALT; で停止"
+                spellCheck="false"
+              />
+              {/* 右: ハイライト付き表示エリア */}
+              <pre className="w-full h-full p-1.5 bg-black/30 border border-gray-700/50 rounded-sm text-xs font-mono overflow-auto pretty-scrollbar min-h-[100px]">
+                {jsCodeLines.map((line, index) => (
+                  <div
+                    key={`js-line-${index}`}
+                    className={`whitespace-pre-wrap py-0.5 px-1 rounded-sm transition-colors ${index === currentJsLineIndex && simulator.cpuState.isRunning ? 'js-highlight-class' : ''}`}
+                  >
+                    <span className="text-gray-600 select-none mr-1">{(index + 1).toString().padStart(2, '0')}:</span>
+                    {line || ' '}{/* 空行でも高さを保つ */}
+                  </div>
+                ))}
+              </pre>
+            </div>
             <button
               onClick={() => simulator.compileAndLoad(simulator.rawJsCode)}
               className="mt-2 w-full terminal-button-accent py-2"

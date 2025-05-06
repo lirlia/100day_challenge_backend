@@ -73,4 +73,9 @@
   .pretty-scrollbar::-webkit-scrollbar-thumb:hover {
     background: rgba(22, 163, 74, 0.6);
   }
+
+  /* JS行ハイライト用クラス */
+  .js-highlight-class {
+    @apply bg-yellow-600/40 text-yellow-200 ring-1 ring-yellow-500/70;
+  }
 }
