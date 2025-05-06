@@ -19,6 +19,7 @@ var _ fs.NodeLookuper = (*Dir)(nil)
 var _ fs.NodeMkdirer = (*Dir)(nil)
 var _ fs.HandleReadDirAller = (*Dir)(nil)
 var _ fs.NodeRemover = (*Dir)(nil)
+var _ fs.NodeCreater = (*Dir)(nil)
 
 // Dir represents a directory node in the FUSE filesystem.
 type Dir struct {
@@ -146,4 +147,47 @@ func (d *Dir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
 
 	log.Printf("Dir -> Remove() successfully removed node %d (%s)", childModel.ID, req.Name)
 	return nil
+}
+
+// Create handles the creation of a new file within this directory.
+func (d *Dir) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.CreateResponse) (fs.Node, fs.Handle, error) {
+	log.Printf("Dir -> Create() called in dir ID: %d, Name: %s, creating file: %s with mode %v, flags %s",
+		d.model.ID, d.model.Name, req.Name, req.Mode, req.Flags.String())
+
+	// Check if a node with the same name already exists
+	_, err := d.store.GetChildNode(d.model.ID, req.Name)
+	if err == nil {
+		log.Printf("Dir -> Create() file already exists: %s", req.Name)
+		return nil, nil, fuse.EEXIST // File exists
+	} else if !errors.Is(err, os.ErrNotExist) {
+		log.Printf("ERROR: Dir -> Create() failed checking for existing child: %v", err)
+		return nil, nil, fuse.EIO // Other error during check
+	}
+
+	// Create the node model for the new file
+	newFileModel := &models.Node{
+		ParentID: d.model.ID,
+		Name:     req.Name,
+		IsDir:    false,
+		Mode:     req.Mode, // Use mode from request
+		Size:     0,
+		UID:      req.Header.Uid,
+		GID:      req.Header.Gid,
+	}
+
+	createdModel, err := d.store.CreateNode(newFileModel)
+	if err != nil {
+		log.Printf("ERROR: Dir -> Create() failed to create node in store: %v", err)
+		return nil, nil, fuse.EIO // Internal error
+	}
+
+	log.Printf("Dir -> Create() created file node: %+v", createdModel)
+	newFileNode := &File{Node: newNode(createdModel, d.store)}
+
+	// Open the newly created file and return a handle
+	// Mimic the Open logic from File.Open
+	handle := &FileHandle{file: newFileNode} // FileHandle defined in handle.go
+
+	log.Printf("Dir -> Create() returning new File node and handle")
+	return newFileNode, handle, nil
 }
