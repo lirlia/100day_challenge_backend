@@ -7,6 +7,10 @@ CHIP-8 エミュレーターを Go 言語で実装します。
 このプロジェクトは、古典的な仮想マシン CHIP-8 のエミュレータを Go 言語で実装する試みです。
 Ebiten ライブラリを使用してグラフィカルなインターフェースを提供し、基本的な CHIP-8 ROM を実行できます。
 
+https://github.com/user-attachments/assets/ddb59048-c0df-40c5-bf78-4052726bc875
+
+[100日チャレンジ day37](https://zenn.dev/gin_nazo/scraps/148f40cdb27127)
+
 ## プロジェクト構成
 
 ```

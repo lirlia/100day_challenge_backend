@@ -51,5 +51,5 @@ LLMで生成したコードを置いています。
 |  | B+Tree ビジュアライザー | <video src="https://github.com/user-attachments/assets/3af0b7cb-1f85-489c-a346-053a831131b4" > |
 | Day35 | ワークフロー自動化ツール | <video src="https://github.com/user-attachments/assets/0b771504-5ae0-40b0-ba4b-12dbd2efd6b6" > |
 | Day36 | Fuse SQLite FS | <video src="https://github.com/user-attachments/assets/6aaf21ba-5fee-4b94-97cc-1834e00a6ce9" > |
-| Day37 | CHIP-8 Emulator (Go) | TBD |
+| Day37 | CHIP-8 Emulator (Go) | <video src="https://github.com/user-attachments/assets/ddb59048-c0df-40c5-bf78-4052726bc875" > |
 | Day38 | CPU Visualizer | <video src="https://github.com/user-attachments/assets/3a0270f3-348d-44b8-89bd-c5d8c89dee37" > |
