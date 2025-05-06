@@ -8,186 +8,227 @@ import (
 	"os"
 	"syscall"
 
-	"bazil.org/fuse"
-	"bazil.org/fuse/fs"
+	"github.com/hanwen/go-fuse/v2/fs"
+	"github.com/hanwen/go-fuse/v2/fuse"
 	"github.com/lirlia/100day_challenge_backend/day36_fuse_sqlite_fs_go/models"
 )
 
-// Compile-time checks to ensure Dir implements the necessary FUSE interfaces.
-var _ fs.Node = (*Dir)(nil)
-var _ fs.NodeLookuper = (*Dir)(nil)
-var _ fs.NodeMkdirer = (*Dir)(nil)
-var _ fs.HandleReadDirAller = (*Dir)(nil)
-var _ fs.NodeRemover = (*Dir)(nil)
-var _ fs.NodeCreater = (*Dir)(nil)
-
-// Dir represents a directory node in the FUSE filesystem.
-type Dir struct {
-	Node // Embed the common Node implementation
+// sqliteDir represents a directory node.
+type sqliteDir struct {
+	sqliteNode // Embed the base node logic
 }
 
-// Lookup looks up a specific entry in the directory.
-func (d *Dir) Lookup(ctx context.Context, name string) (fs.Node, error) {
-	log.Printf("Dir -> Lookup() called in dir ID: %d, Name: %s, looking for: %s", d.model.ID, d.model.Name, name)
+// Ensure sqliteDir implements necessary interfaces
+var _ fs.NodeGetattrer = (*sqliteDir)(nil)
+var _ fs.NodeLookuper = (*sqliteDir)(nil)
+var _ fs.NodeMkdirer = (*sqliteDir)(nil)
+var _ fs.NodeCreater = (*sqliteDir)(nil)
+var _ fs.NodeReaddirer = (*sqliteDir)(nil)
+var _ fs.NodeRmdirer = (*sqliteDir)(nil)
+var _ fs.NodeUnlinker = (*sqliteDir)(nil) // For removing files
 
-	childModel, err := d.store.GetChildNode(d.model.ID, name)
+// Getattr delegates to the embedded sqliteNode.
+func (d *sqliteDir) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
+	return d.sqliteNode.Getattr(ctx, fh, out)
+}
+
+// Lookup looks up a name in this directory.
+func (d *sqliteDir) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
+	log.Printf("Dir -> Lookup() in ID: %d, looking for: %s", d.sqliteNode.model.ID, name)
+	if d.sqliteNode.model == nil {
+		log.Println("ERROR: Dir -> Lookup() called on node with nil model")
+		return nil, syscall.EIO
+	}
+
+	childModel, err := d.sqliteNode.store.GetChildNode(d.sqliteNode.model.ID, name)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			log.Printf("Dir -> Lookup() entry not found: %s", name)
-			return nil, fuse.ENOENT // Entry not found
+			return nil, syscall.ENOENT
 		}
-		log.Printf("ERROR: Dir -> Lookup() failed to get child node: %v", err)
-		return nil, fuse.EIO // Input/output error or other internal error
+		log.Printf("ERROR: Dir -> Lookup() failed getting child %s in dir %d: %v", name, d.sqliteNode.model.ID, err)
+		return nil, syscall.EIO
 	}
 
-	// Create the appropriate node type (Dir or File) based on the model
-	if childModel.IsDir {
-		log.Printf("Dir -> Lookup() found directory: %+v", childModel)
-		return &Dir{Node: newNode(childModel, d.store)}, nil
-	} else {
-		log.Printf("Dir -> Lookup() found file: %+v", childModel)
-		return &File{Node: newNode(childModel, d.store)}, nil // File struct defined in file.go
-	}
+	// Use the helper from root.go (or move it to node.go)
+	childNode := d.newChildInode(ctx, childModel)
+	entryOutFromModel(childModel, &out.Attr)
+	return childNode, fs.OK
 }
 
-// Mkdir creates a new directory.
-func (d *Dir) Mkdir(ctx context.Context, req *fuse.MkdirRequest) (fs.Node, error) {
-	log.Printf("Dir -> Mkdir() called in dir ID: %d, Name: %s, creating: %s with mode %v", d.model.ID, d.model.Name, req.Name, req.Mode)
-
-	// Create the node model for the new directory
-	newDirModel := &models.Node{
-		ParentID: d.model.ID,
-		Name:     req.Name,
-		IsDir:    true,
-		Mode:     req.Mode,
-		Size:     0, // Directories have size 0 in this model
-		UID:      req.Header.Uid,
-		GID:      req.Header.Gid,
+// Readdir reads the content of this directory.
+func (d *sqliteDir) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
+	log.Printf("Dir -> Readdir() called for ID: %d", d.sqliteNode.model.ID)
+	if d.sqliteNode.model == nil {
+		log.Println("ERROR: Dir -> Readdir() called on node with nil model")
+		return nil, syscall.EIO
 	}
 
-	createdModel, err := d.store.CreateNode(newDirModel)
+	children, err := d.sqliteNode.store.ListChildren(d.sqliteNode.model.ID)
 	if err != nil {
-		log.Printf("ERROR: Dir -> Mkdir() failed to create node in store: %v", err)
-		// TODO: Check for specific errors like EEXIST (duplicate name)
-		// For now, return a generic error
-		return nil, fuse.EIO
+		log.Printf("ERROR: Dir -> Readdir() failed listing children for dir %d: %v", d.sqliteNode.model.ID, err)
+		return nil, syscall.EIO
 	}
 
-	log.Printf("Dir -> Mkdir() created directory: %+v", createdModel)
-	return &Dir{Node: newNode(createdModel, d.store)}, nil
-}
-
-// ReadDirAll reads all directory entries.
-func (d *Dir) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
-	log.Printf("Dir -> ReadDirAll() called for dir ID: %d, Name: %s", d.model.ID, d.model.Name)
-
-	children, err := d.store.ListChildren(d.model.ID)
-	if err != nil {
-		log.Printf("ERROR: Dir -> ReadDirAll() failed to list children: %v", err)
-		return nil, fuse.EIO
-	}
-
-	var entries []fuse.Dirent
+	entries := make([]fuse.DirEntry, 0, len(children))
 	for _, child := range children {
-		entry := fuse.Dirent{
-			Inode: uint64(child.ID),
-			Name:  child.Name,
-		}
-		if child.IsDir {
-			entry.Type = fuse.DT_Dir
-		} else {
-			entry.Type = fuse.DT_File
+		entry := fuse.DirEntry{
+			Mode: uint32(child.Mode),
+			Name: child.Name,
+			Ino:  uint64(child.ID),
 		}
 		entries = append(entries, entry)
-		log.Printf("Dir -> ReadDirAll() adding entry: %+v", entry)
 	}
-
-	log.Printf("Dir -> ReadDirAll() returning %d entries", len(entries))
-	return entries, nil
+	return fs.NewListDirStream(entries), fs.OK
 }
 
-// Remove removes a file or directory.
-func (d *Dir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
-	log.Printf("Dir -> Remove() called in dir ID: %d, Name: %s, removing: %s (IsDir: %v)", d.model.ID, d.model.Name, req.Name, req.Dir)
+// Mkdir creates a directory inside this directory.
+func (d *sqliteDir) Mkdir(ctx context.Context, name string, mode uint32, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
+	log.Printf("Dir -> Mkdir() in ID: %d, creating: %s with mode %v", d.sqliteNode.model.ID, name, os.FileMode(mode))
+	if d.sqliteNode.model == nil {
+		log.Println("ERROR: Dir -> Mkdir() called on node with nil model")
+		return nil, syscall.EIO
+	}
 
-	// Find the node to be removed
-	childModel, err := d.store.GetChildNode(d.model.ID, req.Name)
+	caller, _ := fuse.FromContext(ctx)
+	newDirModel := &models.Node{
+		ParentID: d.sqliteNode.model.ID,
+		Name:     name,
+		IsDir:    true,
+		Mode:     os.FileMode(mode) | os.ModeDir,
+		Size:     0,
+		UID:      caller.Uid,
+		GID:      caller.Gid,
+	}
+
+	createdModel, err := d.sqliteNode.store.CreateNode(newDirModel)
+	if err != nil {
+		log.Printf("ERROR: Dir -> Mkdir() failed creating node %s in dir %d: %v", name, d.sqliteNode.model.ID, err)
+		// TODO: Map EEXIST
+		return nil, syscall.EIO
+	}
+
+	childNode := d.newChildInode(ctx, createdModel)
+	entryOutFromModel(createdModel, &out.Attr)
+	return childNode, fs.OK
+}
+
+// Create creates a file inside this directory.
+func (d *sqliteDir) Create(ctx context.Context, name string, flags uint32, mode uint32, out *fuse.EntryOut) (node *fs.Inode, fh fs.FileHandle, fuseFlags uint32, errno syscall.Errno) {
+	log.Printf("Dir -> Create() in ID: %d, creating file: %s with mode %v, flags %x", d.sqliteNode.model.ID, name, os.FileMode(mode), flags)
+	if d.sqliteNode.model == nil {
+		log.Println("ERROR: Dir -> Create() called on node with nil model")
+		return nil, nil, 0, syscall.EIO
+	}
+
+	// Check existence
+	_, err := d.sqliteNode.store.GetChildNode(d.sqliteNode.model.ID, name)
+	if err == nil {
+		return nil, nil, 0, syscall.EEXIST
+	} else if !errors.Is(err, os.ErrNotExist) {
+		log.Printf("ERROR: Dir -> Create() failed checking for existing child %s in dir %d: %v", name, d.sqliteNode.model.ID, err)
+		return nil, nil, 0, syscall.EIO
+	}
+
+	caller, _ := fuse.FromContext(ctx)
+	newFileModel := &models.Node{
+		ParentID: d.sqliteNode.model.ID,
+		Name:     name,
+		IsDir:    false,
+		Mode:     os.FileMode(mode) & ^os.ModeType,
+		Size:     0,
+		UID:      caller.Uid,
+		GID:      caller.Gid,
+	}
+
+	createdModel, err := d.sqliteNode.store.CreateNode(newFileModel)
+	if err != nil {
+		log.Printf("ERROR: Dir -> Create() failed creating node %s in dir %d: %v", name, d.sqliteNode.model.ID, err)
+		return nil, nil, 0, syscall.EIO
+	}
+
+	childInode := d.newChildInode(ctx, createdModel)
+	fileNode := childInode.Operations().(*sqliteFile)
+	handle := &sqliteHandle{fileNode: fileNode}
+	entryOutFromModel(createdModel, &out.Attr)
+	fuseFlags = fuse.FOPEN_KEEP_CACHE
+	return childInode, handle, fuseFlags, fs.OK
+}
+
+// Rmdir removes an empty directory.
+func (d *sqliteDir) Rmdir(ctx context.Context, name string) syscall.Errno {
+	log.Printf("Dir -> Rmdir() in ID: %d, removing: %s", d.sqliteNode.model.ID, name)
+	if d.sqliteNode.model == nil {
+		log.Println("ERROR: Dir -> Rmdir() called on node with nil model")
+		return syscall.EIO
+	}
+
+	childModel, err := d.sqliteNode.store.GetChildNode(d.sqliteNode.model.ID, name)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			log.Printf("Dir -> Remove() entry not found: %s", req.Name)
-			return fuse.ENOENT
+			return syscall.ENOENT
 		}
-		log.Printf("ERROR: Dir -> Remove() failed to get child node %s: %v", req.Name, err)
-		return fuse.EIO
+		log.Printf("ERROR: Dir -> Rmdir() failed getting child %s in dir %d: %v", name, d.sqliteNode.model.ID, err)
+		return syscall.EIO
 	}
 
-	// Check if the type matches (trying to rmdir a file or rm a dir)
-	if req.Dir != childModel.IsDir {
-		if req.Dir {
-			log.Printf("Dir -> Remove() attempt to rmdir a file: %s", req.Name)
-			return fuse.Errno(syscall.ENOTDIR) // Not a directory
-		} else {
-			log.Printf("Dir -> Remove() attempt to rm a directory: %s", req.Name)
-			return fuse.Errno(syscall.EISDIR) // Is a directory
-		}
+	if !childModel.IsDir {
+		return syscall.ENOTDIR // Trying to rmdir a file
 	}
 
-	// Delete the node from the store
-	err = d.store.DeleteNode(childModel.ID)
+	// store.DeleteNode should check for emptiness
+	err = d.sqliteNode.store.DeleteNode(childModel.ID)
 	if err != nil {
-		log.Printf("ERROR: Dir -> Remove() failed to delete node %d (%s): %v", childModel.ID, req.Name, err)
-		// Check if the error was due to directory not being empty
-		// The store's DeleteNode currently returns a generic error. Need to improve error mapping.
-		// For now, assume EIO for store errors.
-		if err.Error() == fmt.Sprintf("directory %d is not empty", childModel.ID) { // Fragile check
-			return fuse.Errno(syscall.ENOTEMPTY)
+		log.Printf("ERROR: Dir -> Rmdir() failed deleting node %d (%s): %v", childModel.ID, name, err)
+		// TODO: Map ENOTEMPTY from store error
+		if err.Error() == "directory "+fmt.Sprintf("%d", childModel.ID)+" is not empty" { // Fragile
+			return syscall.ENOTEMPTY
 		}
-		return fuse.EIO
+		return syscall.EIO
 	}
 
-	log.Printf("Dir -> Remove() successfully removed node %d (%s)", childModel.ID, req.Name)
-	return nil
+	return fs.OK
 }
 
-// Create handles the creation of a new file within this directory.
-func (d *Dir) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.CreateResponse) (fs.Node, fs.Handle, error) {
-	log.Printf("Dir -> Create() called in dir ID: %d, Name: %s, creating file: %s with mode %v, flags %s",
-		d.model.ID, d.model.Name, req.Name, req.Mode, req.Flags.String())
-
-	// Check if a node with the same name already exists
-	_, err := d.store.GetChildNode(d.model.ID, req.Name)
-	if err == nil {
-		log.Printf("Dir -> Create() file already exists: %s", req.Name)
-		return nil, nil, fuse.EEXIST // File exists
-	} else if !errors.Is(err, os.ErrNotExist) {
-		log.Printf("ERROR: Dir -> Create() failed checking for existing child: %v", err)
-		return nil, nil, fuse.EIO // Other error during check
+// Unlink removes a file.
+func (d *sqliteDir) Unlink(ctx context.Context, name string) syscall.Errno {
+	log.Printf("Dir -> Unlink() in ID: %d, removing: %s", d.sqliteNode.model.ID, name)
+	if d.sqliteNode.model == nil {
+		log.Println("ERROR: Dir -> Unlink() called on node with nil model")
+		return syscall.EIO
 	}
 
-	// Create the node model for the new file
-	newFileModel := &models.Node{
-		ParentID: d.model.ID,
-		Name:     req.Name,
-		IsDir:    false,
-		Mode:     req.Mode, // Use mode from request
-		Size:     0,
-		UID:      req.Header.Uid,
-		GID:      req.Header.Gid,
-	}
-
-	createdModel, err := d.store.CreateNode(newFileModel)
+	childModel, err := d.sqliteNode.store.GetChildNode(d.sqliteNode.model.ID, name)
 	if err != nil {
-		log.Printf("ERROR: Dir -> Create() failed to create node in store: %v", err)
-		return nil, nil, fuse.EIO // Internal error
+		if errors.Is(err, os.ErrNotExist) {
+			return syscall.ENOENT
+		}
+		log.Printf("ERROR: Dir -> Unlink() failed getting child %s in dir %d: %v", name, d.sqliteNode.model.ID, err)
+		return syscall.EIO
 	}
 
-	log.Printf("Dir -> Create() created file node: %+v", createdModel)
-	newFileNode := &File{Node: newNode(createdModel, d.store)}
+	if childModel.IsDir {
+		return syscall.EISDIR // Trying to unlink a directory
+	}
 
-	// Open the newly created file and return a handle
-	// Mimic the Open logic from File.Open
-	handle := &FileHandle{file: newFileNode} // FileHandle defined in handle.go
+	err = d.sqliteNode.store.DeleteNode(childModel.ID)
+	if err != nil {
+		log.Printf("ERROR: Dir -> Unlink() failed deleting node %d (%s): %v", childModel.ID, name, err)
+		return syscall.EIO
+	}
 
-	log.Printf("Dir -> Create() returning new File node and handle")
-	return newFileNode, handle, nil
+	return fs.OK
+}
+
+// Helper to create child inodes (moved from root.go or duplicated/refined)
+func (d *sqliteDir) newChildInode(ctx context.Context, model *models.Node) *fs.Inode {
+	var child fs.NodeEmbedder
+	if model.IsDir {
+		child = &sqliteDir{sqliteNode: sqliteNode{store: d.sqliteNode.store, model: model}}
+	} else {
+		child = &sqliteFile{sqliteNode: sqliteNode{store: d.sqliteNode.store, model: model}}
+	}
+	stable := &fuse.StableAttr{Ino: uint64(model.ID), Mode: uint32(model.Mode)}
+	// Use d.Inode as the parent Inode for creating the child
+	childInode := d.Inode.NewInode(ctx, child, stable)
+	return childInode
 }
