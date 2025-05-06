@@ -63,7 +63,7 @@ export default function GameBoard({
     const keyMap = difficulty === 'easy' ? easyKeys : hardKeys;
 
     const [isPlaying, setIsPlaying] = useState(false);
-    const [currentTime, setCurrentTime] = useState(0);
+    const [currentTime, setCurrentTime] = useState(0); // Represents context elapsed time
     const [score, setScore] = useState(0);
     const [visibleNotes, setVisibleNotes] = useState<VisibleNote[]>([]); // State for notes to render
     const [hitNotes, setHitNotes] = useState<Set<number>>(new Set()); // Store indices of hit notes
@@ -74,6 +74,7 @@ export default function GameBoard({
     const audioContextRef = useRef<AudioContext | null>(null);
     const audioBufferRef = useRef<AudioBuffer | null>(null);
     const sourceNodeRef = useRef<AudioBufferSourceNode | null>(null);
+    const gainNodeRef = useRef<GainNode | null>(null); // Ref for GainNode
     const startTimeRef = useRef<number>(0); // AudioContext start time
     const gameLoopRef = useRef<number | null>(null);
     const boardRef = useRef<HTMLDivElement>(null); // Ref to the game board div for height calculation
@@ -93,6 +94,10 @@ export default function GameBoard({
     useEffect(() => {
         setIsAudioLoaded(false); // Reset on songUrl change
         audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+        gainNodeRef.current = audioContextRef.current.createGain(); // Create GainNode
+        gainNodeRef.current.gain.value = 0.3; // Set initial volume to 30%
+        gainNodeRef.current.connect(audioContextRef.current.destination); // Connect GainNode to output
+
         fetch(songUrl)
             .then(response => {
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
@@ -125,19 +130,8 @@ export default function GameBoard({
 
     // --- Game Loop ---
     const gameLoop = useCallback(() => {
-        console.log('Game Loop Tick - isPlaying:', isPlaying, 'currentTime:', audioContextRef.current?.currentTime); // Added for debugging loop execution
-
-        // ADDED LOG: Check values for the initial conditional check
-        console.log('gameLoop Check:', {
-            isPlaying: isPlaying,
-            hasAudioContext: !!audioContextRef.current,
-            startTimeValue: startTimeRef.current, // Log the actual value of startTimeRef
-            hasBoardRef: !!boardRef.current, // Check if boardRef.current exists
-            boardRefValue: boardRef.current // Log the actual boardRef.current value (might be null)
-        });
-
         if (!isPlaying || !audioContextRef.current || !startTimeRef.current || !boardRef.current) {
-            if (isPlaying) gameLoopRef.current = requestAnimationFrame(gameLoop); // Keep requesting if supposed to be playing
+            if (isPlaying) gameLoopRef.current = requestAnimationFrame(gameLoop);
             return;
         }
 
@@ -147,35 +141,19 @@ export default function GameBoard({
         const boardHeight = boardRef.current.offsetHeight;
         const judgeLinePosition = boardHeight * (1 - judgeLineBottom / 100);
 
-        // Calculate which notes should be visible
+        // Calculate which notes should be visible based on elapsed time
         const currentVisibleNotes: VisibleNote[] = [];
 
-        // ADDED LOG: Check initialNotes just before the loop
-        console.log('Inside gameLoop - initialNotes length:', initialNotes?.length, 'Is Array:', Array.isArray(initialNotes));
-
         initialNotes.forEach((note, index) => {
-            if (hitNotes.has(index)) return; // Don't render hit notes
+            if (hitNotes.has(index)) return;
 
             const noteTime = note.time;
-            const timeDifference = noteTime - elapsed; // How far in the future/past the note is
+            // Use elapsed time for time difference calculation
+            const timeDifference = noteTime - elapsed;
             const topPosition = judgeLinePosition - timeDifference * pixelsPerSecond;
 
-            // Determine visibility window (e.g., slightly above the top to slightly below the bottom)
-            const visibilityThresholdTop = -noteHeight * 2; // Start rendering when slightly above screen
-            const visibilityThresholdBottom = boardHeight + noteHeight; // Stop rendering when below screen
-
-            // Added detailed console log for note calculation debugging
-            console.log('Note Calculation:', {
-                index: index,
-                noteTime: note.time,
-                elapsed: elapsed,
-                timeDifference: timeDifference,
-                boardHeight: boardHeight,
-                judgeLinePosition: judgeLinePosition,
-                pixelsPerSecond: pixelsPerSecond,
-                calculatedTop: topPosition,
-                isVisible: topPosition > visibilityThresholdTop && topPosition < visibilityThresholdBottom
-            });
+            const visibilityThresholdTop = -noteHeight * 2;
+            const visibilityThresholdBottom = boardHeight + noteHeight;
 
             if (topPosition > visibilityThresholdTop && topPosition < visibilityThresholdBottom) {
                 currentVisibleNotes.push({
@@ -187,7 +165,7 @@ export default function GameBoard({
         });
         setVisibleNotes(currentVisibleNotes); // Update the state for React to re-render notes
 
-        // Check for game end condition
+        // Check for game end condition using elapsed time
         if (audioBufferRef.current && elapsed >= audioBufferRef.current.duration) {
             console.log("Song finished");
             setIsPlaying(false);
@@ -299,18 +277,11 @@ export default function GameBoard({
          const context = audioContextRef.current;
          const buffer = audioBufferRef.current;
 
-         // Log AudioContext state before attempting resume
-         console.log('startGame - AudioContext state BEFORE resume attempt:', context.state);
-
-         // Attempt to resume context if suspended (needs user interaction)
          if (context.state === 'suspended') {
              try {
-                 console.log('startGame - Attempting to resume AudioContext...');
                  await context.resume(); // Use await to wait for resume
-                 console.log('startGame - AudioContext resumed successfully. New state:', context.state);
              } catch (err) {
                  console.error('startGame - Failed to resume AudioContext:', err);
-                 // If resume fails, currentTime might still be 0. Proceed anyway.
              }
          }
 
@@ -320,7 +291,7 @@ export default function GameBoard({
          setHitNotes(new Set());
          setVisibleNotes([]);
          setJudgment(null); // Clear judgment on start
-         if (judgmentTimeoutRef.current) clearTimeout(judgmentTimeoutRef.current); // Clear pending timeout
+         if (judgmentTimeoutRef.current) clearTimeout(judgmentTimeoutRef.current);
 
          // Stop previous source if it exists
          sourceNodeRef.current?.stop();
@@ -328,26 +299,22 @@ export default function GameBoard({
          // Create and configure the audio source node
          sourceNodeRef.current = context.createBufferSource();
          sourceNodeRef.current.buffer = buffer;
-         sourceNodeRef.current.connect(context.destination);
-
-         // Record the start time *after* potential resume and *before* starting playback
-         console.log('startGame - context.currentTime BEFORE assignment:', context.currentTime);
-         startTimeRef.current = context.currentTime;
-
-         // ADDED LOG: Verify the value of startTimeRef.current immediately after setting it
-         console.log('startGame - startTimeRef.current set to:', startTimeRef.current);
-
-         // Check if startTimeRef.current is still 0, which would be unexpected
-         if (startTimeRef.current === 0) {
-             console.warn('startGame - WARNING: startTimeRef.current is 0 immediately after setting! AudioContext state might be:', context.state);
+         // Connect SourceNode to GainNode (instead of directly to destination)
+         if (gainNodeRef.current) {
+             sourceNodeRef.current.connect(gainNodeRef.current);
+         } else {
+             // Fallback: connect directly if GainNode somehow failed (should not happen)
+             console.error("startGame - GainNode ref is null, connecting directly to destination.");
+             sourceNodeRef.current.connect(context.destination);
          }
+
+         startTimeRef.current = context.currentTime;
 
          // Start playback now
          sourceNodeRef.current.start(0);
 
          // Set isPlaying *after* starting audio and recording time
          setIsPlaying(true);
-         console.log("startGame - Game playback initiated. isPlaying:", true);
      };
 
     // --- Note Rendering Calculation ---
@@ -368,6 +335,7 @@ export default function GameBoard({
 
     return (
         <div className="space-y-2">
+            {/* Start Game Button */}
             {!isPlaying && (
                  <button
                     onClick={startGame}
