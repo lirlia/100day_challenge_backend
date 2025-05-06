@@ -189,3 +189,15 @@ func (c *Chip8) Cycle() (redraw bool, collision bool, halted bool) {
 
 	return rd, col, false // Not halted (unless Fx0A was just processed and set waitingForKey)
 }
+
+// UpdateTimers decrements the delay and sound timers if they are greater than zero.
+// This method should be called at a rate of 60Hz by the main loop.
+func (c *Chip8) UpdateTimers() {
+	if c.DT > 0 {
+		c.DT--
+	}
+	if c.ST > 0 {
+		c.ST--
+		// if c.ST == 0 { log.Println("BEEP!") } // Placeholder for actual sound output
+	}
+}

@@ -263,12 +263,11 @@ func TestOpcodes(t *testing.T) {
 		assertChip func(t *testing.T, c *Chip8, redraw bool, collision bool, halted bool)
 	}
 
-	// Helper to create a Chip8 instance with a single opcode loaded at romOffset (PC)
 	createChipWithOpcode := func(opcode uint16) *Chip8 {
-		c := New(1, false) // cyclesPerFrame=1, variantSCHIP=false for simple tests
+		c := New(1, false)
 		c.memory[romOffset] = byte(opcode >> 8)
 		c.memory[romOffset+1] = byte(opcode & 0x00FF)
-		c.PC = romOffset // Set PC to the opcode location
+		c.PC = romOffset
 		return c
 	}
 
@@ -277,7 +276,6 @@ func TestOpcodes(t *testing.T) {
 			name:   "00E0 - CLS",
 			opcode: 0x00E0,
 			setupChip: func(c *Chip8) {
-				// Fill gfx with some data to ensure CLS clears it
 				for i := range c.gfx {
 					c.gfx[i] = 1
 				}
@@ -320,7 +318,7 @@ func TestOpcodes(t *testing.T) {
 		},
 		{
 			name:   "6XKK - LD Vx, byte",
-			opcode: 0x63AB, // LD V3, 0xAB
+			opcode: 0x63AB,
 			assertChip: func(t *testing.T, c *Chip8, redraw bool, collision bool, halted bool) {
 				if redraw {
 					t.Error("LD Vx, byte should not set redraw")
@@ -337,11 +335,9 @@ func TestOpcodes(t *testing.T) {
 			},
 		},
 		{
-			name:   "7XKK - ADD Vx, byte",
-			opcode: 0x7405, // ADD V4, 0x05
-			setupChip: func(c *Chip8) {
-				c.V[4] = 0x10
-			},
+			name:      "7XKK - ADD Vx, byte",
+			opcode:    0x7405,
+			setupChip: func(c *Chip8) { c.V[4] = 0x10 },
 			assertChip: func(t *testing.T, c *Chip8, redraw bool, collision bool, halted bool) {
 				if redraw {
 					t.Error("ADD Vx, byte should not set redraw")
@@ -349,8 +345,7 @@ func TestOpcodes(t *testing.T) {
 				if c.V[4] != 0x15 {
 					t.Errorf("V[4] after ADD: expected 0x15, got 0x%X", c.V[4])
 				}
-				// VF (V[0xF]) should not change for 7XKK
-				initialVF := c.V[0xF] // Store it if set in setupChip, though not for this test
+				initialVF := c.V[0xF]
 				if c.V[0xF] != initialVF {
 					t.Errorf("V[0xF] changed after 7XKK: expected 0x%X, got 0x%X", initialVF, c.V[0xF])
 				}
@@ -359,16 +354,14 @@ func TestOpcodes(t *testing.T) {
 				}
 			},
 		},
-		// DRW Tests - more complex setup
 		{
 			name:   "DXYN - DRW (no collision)",
-			opcode: 0xD011, // DRW V0, V1, 1 (draw 1-byte sprite from I at (V0,V1))
+			opcode: 0xD011,
 			setupChip: func(c *Chip8) {
-				c.V[0] = 0 // x = 0
-				c.V[1] = 0 // y = 0
+				c.V[0] = 0
+				c.V[1] = 0
 				c.I = 0x300
-				c.memory[c.I] = 0b11000011 // Sprite data (byte 1)
-				// Ensure gfx is clear
+				c.memory[c.I] = 0b11000011
 				for i := range c.gfx {
 					c.gfx[i] = 0
 				}
@@ -386,33 +379,20 @@ func TestOpcodes(t *testing.T) {
 				if c.PC != romOffset+2 {
 					t.Errorf("PC after DRW: expected 0x%X, got 0x%X", romOffset+2, c.PC)
 				}
-				// Check specific pixels (e.g., first two and last two bits of the sprite)
-				if c.gfx[0] != 1 {
-					t.Error("gfx[0] expected 1 after DRW")
-				}
-				if c.gfx[1] != 1 {
-					t.Error("gfx[1] expected 1 after DRW")
-				}
-				if c.gfx[2] != 0 {
-					t.Error("gfx[2] expected 0 after DRW")
-				}
-				if c.gfx[6] != 1 {
-					t.Error("gfx[6] expected 1 after DRW")
-				}
-				if c.gfx[7] != 1 {
-					t.Error("gfx[7] expected 1 after DRW")
+				if c.gfx[0] != 1 || c.gfx[1] != 1 || c.gfx[2] != 0 || c.gfx[6] != 1 || c.gfx[7] != 1 {
+					t.Error("DRW no collision pixel check failed")
 				}
 			},
 		},
 		{
 			name:   "DXYN - DRW (with collision)",
-			opcode: 0xD011, // DRW V0, V1, 1
+			opcode: 0xD011,
 			setupChip: func(c *Chip8) {
 				c.V[0] = 0
 				c.V[1] = 0
 				c.I = 0x300
-				c.memory[c.I] = 0b10000000 // Sprite: first pixel on
-				c.gfx[0] = 1               // Pre-set pixel to cause collision
+				c.memory[c.I] = 0b10000000
+				c.gfx[0] = 1
 			},
 			assertChip: func(t *testing.T, c *Chip8, redraw bool, collision bool, halted bool) {
 				if !redraw {
@@ -426,64 +406,39 @@ func TestOpcodes(t *testing.T) {
 				}
 				if c.gfx[0] != 0 {
 					t.Error("gfx[0] expected 0 after XOR collision")
-				} // 1 ^ 1 = 0
+				}
 			},
 		},
 		{
 			name:   "DXYN - DRW (wrapping)",
-			opcode: 0xD011, // DRW V0, V1, 1 (sprite height 1)
+			opcode: 0xD011,
 			setupChip: func(c *Chip8) {
-				c.V[0] = gfxWidth - 4  // x = 60 (sprite is 8 pixels wide, so 4 will wrap)
-				c.V[1] = gfxHeight - 1 // y = 31 (sprite is 1 pixel high, so this row wraps if n > 1, but here y itself is at edge)
+				c.V[0] = gfxWidth - 4
+				c.V[1] = gfxHeight - 1
 				c.I = 0x300
-				c.memory[c.I] = 0b11111111 // Full byte sprite
+				c.memory[c.I] = 0b11111111
 				for i := range c.gfx {
 					c.gfx[i] = 0
-				} // Clear gfx
+				}
 			},
 			assertChip: func(t *testing.T, c *Chip8, redraw bool, collision bool, halted bool) {
 				if !redraw {
 					t.Error("DRW wrapping should set redraw")
 				}
-				// Check pixels around the wrap points. E.g. last 4 pixels of the screen line and first 4.
-				// y = 31. Sprite line index: (31+0)%32 * 64 = 31*64 = 1984
-				// x = 60. pixels at 1984+60, 1984+61, 1984+62, 1984+63 (on screen)
-				// and 1984+0, 1984+1, 1984+2, 1984+3 (wrapped)
 				lastRowBase := uint16((gfxHeight - 1) * gfxWidth)
-				if c.gfx[lastRowBase+60] != 1 {
-					t.Errorf("gfx[%d] (pre-wrap) expected 1", lastRowBase+60)
-				}
-				if c.gfx[lastRowBase+61] != 1 {
-					t.Errorf("gfx[%d] (pre-wrap) expected 1", lastRowBase+61)
-				}
-				if c.gfx[lastRowBase+62] != 1 {
-					t.Errorf("gfx[%d] (pre-wrap) expected 1", lastRowBase+62)
-				}
-				if c.gfx[lastRowBase+63] != 1 {
-					t.Errorf("gfx[%d] (pre-wrap) expected 1", lastRowBase+63)
-				}
-				// Wrapped pixels
-				if c.gfx[lastRowBase+0] != 1 {
-					t.Errorf("gfx[%d] (wrapped) expected 1", lastRowBase+0)
-				}
-				if c.gfx[lastRowBase+1] != 1 {
-					t.Errorf("gfx[%d] (wrapped) expected 1", lastRowBase+1)
-				}
-				if c.gfx[lastRowBase+2] != 1 {
-					t.Errorf("gfx[%d] (wrapped) expected 1", lastRowBase+2)
-				}
-				if c.gfx[lastRowBase+3] != 1 {
-					t.Errorf("gfx[%d] (wrapped) expected 1", lastRowBase+3)
+				pixelsOk := c.gfx[lastRowBase+60] == 1 && c.gfx[lastRowBase+61] == 1 &&
+					c.gfx[lastRowBase+62] == 1 && c.gfx[lastRowBase+63] == 1 &&
+					c.gfx[lastRowBase+0] == 1 && c.gfx[lastRowBase+1] == 1 &&
+					c.gfx[lastRowBase+2] == 1 && c.gfx[lastRowBase+3] == 1
+				if !pixelsOk {
+					t.Error("DRW wrapping pixel check failed")
 				}
 			},
 		},
 		{
-			name:   "Cycle - waitingForKey should halt",
-			opcode: 0x0000, // Opcode doesn't matter if halted
-			setupChip: func(c *Chip8) {
-				c.waitingForKey = true
-				c.PC = romOffset // Keep PC stable for check
-			},
+			name:      "Cycle - waitingForKey should halt",
+			opcode:    0x0000,
+			setupChip: func(c *Chip8) { c.waitingForKey = true; c.PC = romOffset },
 			assertChip: func(t *testing.T, c *Chip8, redraw bool, collision bool, halted bool) {
 				if !halted {
 					t.Error("CPU should be halted if waitingForKey is true")
@@ -499,6 +454,54 @@ func TestOpcodes(t *testing.T) {
 				}
 			},
 		},
+		{
+			name:      "Fx07 - LD Vx, DT",
+			opcode:    0xF307, // LD V3, DT
+			setupChip: func(c *Chip8) { c.DT = 0xAB },
+			assertChip: func(t *testing.T, c *Chip8, redraw bool, collision bool, halted bool) {
+				if redraw {
+					t.Error("Fx07 should not cause redraw")
+				}
+				if c.V[3] != 0xAB {
+					t.Errorf("V[3] after Fx07: expected 0xAB, got 0x%X", c.V[3])
+				}
+				if c.PC != romOffset+2 {
+					t.Errorf("PC after Fx07: expected 0x%X, got 0x%X", romOffset+2, c.PC)
+				}
+			},
+		},
+		{
+			name:      "Fx15 - LD DT, Vx",
+			opcode:    0xF515, // LD DT, V5
+			setupChip: func(c *Chip8) { c.V[5] = 0xCD },
+			assertChip: func(t *testing.T, c *Chip8, redraw bool, collision bool, halted bool) {
+				if redraw {
+					t.Error("Fx15 should not cause redraw")
+				}
+				if c.DT != 0xCD {
+					t.Errorf("DT after Fx15: expected 0xCD, got 0x%X", c.DT)
+				}
+				if c.PC != romOffset+2 {
+					t.Errorf("PC after Fx15: expected 0x%X, got 0x%X", romOffset+2, c.PC)
+				}
+			},
+		},
+		{
+			name:      "Fx18 - LD ST, Vx",
+			opcode:    0xF818, // LD ST, V8
+			setupChip: func(c *Chip8) { c.V[8] = 0xEF },
+			assertChip: func(t *testing.T, c *Chip8, redraw bool, collision bool, halted bool) {
+				if redraw {
+					t.Error("Fx18 should not cause redraw")
+				}
+				if c.ST != 0xEF {
+					t.Errorf("ST after Fx18: expected 0xEF, got 0x%X", c.ST)
+				}
+				if c.PC != romOffset+2 {
+					t.Errorf("PC after Fx18: expected 0x%X, got 0x%X", romOffset+2, c.PC)
+				}
+			},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -506,27 +509,53 @@ func TestOpcodes(t *testing.T) {
 			c := createChipWithOpcode(tc.opcode)
 			if tc.setupChip != nil {
 				tc.setupChip(c)
-				// If setupChip changes PC, ensure opcode is still at new PC or adjust test
-				// For these tests, assume opcode is at c.PC set by createChipWithOpcode or setupChip
-				if c.PC != romOffset && (tc.opcode != 0x1ABC && tc.opcode != 0x0000) { // JP and halt test set PC differently
-					// Ensure the opcode is at the (potentially modified) PC
-					// This is a bit tricky if setupChip moves PC *and* we use a fixed opcode.
-					// For simplicity, our test opcodes are loaded at romOffset.
-					// If setupChip changes PC for a non-Jump/non-Halt test, this might be an issue.
-					// Current tests: JP sets PC, Halt test verifies PC doesn't change.
-					// CLS, LD, ADD, DRW all start with PC at romOffset where the opcode is.
-					// So this explicit reload might not be needed for current cases but good to be aware of.
+				// Simplified PC adjustment logic for tests
+				if tc.opcode&0xF000 != 0x1000 && // Not a JP instruction
+					!(tc.opcode == 0x0000 && c.waitingForKey) { // Not a HLT check
+					// Ensure opcode is at PC if setup didn't change it to where opcode should be
 					c.memory[c.PC] = byte(tc.opcode >> 8)
 					c.memory[c.PC+1] = byte(tc.opcode & 0x00FF)
 				}
 			}
-
-			// Store V[0xF] before Cycle for tests that shouldn't change it (like 7XKK)
-			// Note: some setups might change V[0xF], so this is a bit fragile or needs per-test consideration.
-			// For 7XKK, we added a local initialVF check inside its assertChip.
-
 			redraw, collision, halted := c.Cycle()
 			tc.assertChip(t, c, redraw, collision, halted)
 		})
 	}
+}
+
+func TestUpdateTimers(t *testing.T) {
+	c := New(1, false)
+	c.DT = 5
+	c.ST = 3
+	t.Run("Initial decrement", func(t *testing.T) {
+		c.UpdateTimers()
+		if c.DT != 4 {
+			t.Errorf("DT expected 4, got %d", c.DT)
+		}
+		if c.ST != 2 {
+			t.Errorf("ST expected 2, got %d", c.ST)
+		}
+	})
+	t.Run("Decrement to zero", func(t *testing.T) {
+		c.DT = 1
+		c.ST = 1
+		c.UpdateTimers()
+		if c.DT != 0 {
+			t.Errorf("DT expected 0, got %d", c.DT)
+		}
+		if c.ST != 0 {
+			t.Errorf("ST expected 0, got %d", c.ST)
+		}
+	})
+	t.Run("No decrement below zero", func(t *testing.T) {
+		c.DT = 0
+		c.ST = 0
+		c.UpdateTimers()
+		if c.DT != 0 {
+			t.Errorf("DT expected 0 (not below), got %d", c.DT)
+		}
+		if c.ST != 0 {
+			t.Errorf("ST expected 0 (not below), got %d", c.ST)
+		}
+	})
 }

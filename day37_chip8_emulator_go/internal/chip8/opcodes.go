@@ -100,6 +100,26 @@ func (c *Chip8) executeOpcode(opcode uint16) (redraw bool, collision bool) {
 		c.PC += 2
 		return pixelChanged, c.V[0xF] == 1
 
+	case 0xF000:
+		x := (opcode & 0x0F00) >> 8 // Common for many Fx opcodes
+		switch opcode & 0x00FF {
+		case 0x0007: // LD Vx, DT (Fx07) - Set Vx = delay timer value.
+			c.V[x] = c.DT
+			c.PC += 2
+		case 0x0015: // LD DT, Vx (Fx15) - Set delay timer = Vx.
+			c.DT = c.V[x]
+			c.PC += 2
+		case 0x0018: // LD ST, Vx (Fx18) - Set sound timer = Vx.
+			c.ST = c.V[x]
+			c.PC += 2
+		// Other Fx opcodes (Fx0A, Fx1E, Fx29, Fx33, Fx55, Fx65) will be added later.
+		default:
+			log.Printf("Unknown Fx opcode: 0x%X (PC: 0x%X)", opcode, c.PC)
+			c.PC += 2
+			return false, false // Default for unknown Fx opcodes
+		}
+		return false, false // Default for Fx opcodes (redraw typically false unless specified)
+
 	default:
 		log.Printf("Unknown opcode: 0x%X (PC: 0x%X)", opcode, c.PC)
 		c.PC += 2 // For unknown opcodes, just skip and continue
