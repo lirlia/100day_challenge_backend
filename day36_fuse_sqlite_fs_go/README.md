@@ -62,6 +62,83 @@ https://github.com/user-attachments/assets/6aaf21ba-5fee-4b94-97cc-1834e00a6ce9
     *   `sqlitefs` を実行しているターミナルで `Ctrl+C` を押します。
     *   クリーンにアンマウントできない場合は、`diskutil unmount /path/to/.../mnt` (macOS) または `fusermount -u /path/to/.../mnt` (Linux) が必要になることがあります。
 
+## シーケンス
+
+```mermaid
+graph TD
+    subgraph UserInteraction [User Interaction]
+        UserCommand["User Command\n(ls, echo, mkdir)"]
+    end
+
+    subgraph KernelSpace [OS Kernel Space]
+        VFS["Kernel (VFS Layer)"]
+        FUSE_Kernel["FUSE Kernel Module"]
+    end
+
+    subgraph UserSpace [Userspace]
+        subgraph SQLiteFSProcess [sqlitefs Process Go Impl]
+            subgraph GoFUSELibrary [FUSE Library hanwen_go_fuse_v2]
+                Lib_Server["FUSE Server (fs.Mount)"]
+                Lib_Inode["fs.Inode (Node State)"]
+                Lib_Interfaces["fs.Node* Interfaces"]
+            end
+            subgraph FuseFSImpl [FS Impl fusefs pkg]
+                Impl_Node["sqliteNode (Embeds fs.Inode)"]
+                Impl_Root["sqliteRoot (Root)"]
+                Impl_Dir["sqliteDir (Directory)"]
+                Impl_File["sqliteFile (File)"]
+                Impl_Handle["sqliteHandle (File Handle)"]
+            end
+            subgraph StoreLayer [Data Store store pkg]
+                Store_IF["Store Interface"]
+                Store_Impl["sqlStore Implementation"]
+            end
+            subgraph DataModel [Data Model models pkg]
+                Model_Node["models.Node (DB mapping)"]
+            end
+        end
+        SQLiteDB["SQLite Database\n(db/dev.db)\n- nodes table\n- file_data table"]
+    end
+
+    %% Core Flow
+    UserCommand -- "File Operation" --> VFS;
+    VFS -- "Forward to FUSE" --> FUSE_Kernel;
+    FUSE_Kernel -- "Request to Process" --> Lib_Server;
+    Lib_Server -- "Call Interface" --> Lib_Interfaces;
+
+    %% Library and Implementation
+    Lib_Interfaces -- "Invoke Method" --> FuseFSImpl;
+    Impl_Node -- "Uses/Embeds" --> Lib_Inode;
+    Impl_Root -- "Implements" --> Lib_Interfaces;
+    Impl_Dir -- "Implements" --> Lib_Interfaces;
+    Impl_File -- "Implements" --> Lib_Interfaces;
+    Impl_Handle -- "Implements" --> Lib_Interfaces;
+
+    %% Internal Implementation Links
+    Impl_Root -- "Uses" --> Impl_Node;
+    Impl_Dir -- "Uses" --> Impl_Node;
+    Impl_File -- "Uses" --> Impl_Node;
+    Impl_Handle -- "Uses" --> Impl_File;
+
+    %% Implementation and Store Layer
+    FuseFSImpl -- "DB Operation Request" --> Store_IF;
+    Store_IF -- "Implemented By" --> Store_Impl;
+
+    %% Store Layer and DB/Model
+    Store_Impl -- "Uses Model" --> DataModel;
+    Store_Impl -- "Executes SQL" --> SQLiteDB;
+    Model_Node -- "Maps To" --> SQLiteDB;
+
+    %% Return Flow (Simplified)
+    Store_Impl --> FuseFSImpl;
+    FuseFSImpl --> Lib_Interfaces;
+    Lib_Interfaces --> Lib_Server;
+    Lib_Server --> FUSE_Kernel;
+    FUSE_Kernel --> VFS;
+    VFS --> UserCommand;
+```
+
+
 ## 注意点
 
 - データベースファイル (`db/dev.db`) は、初回実行時に存在しない場合、自動的に作成されます。
