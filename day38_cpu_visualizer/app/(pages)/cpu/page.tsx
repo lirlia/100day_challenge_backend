@@ -1,6 +1,6 @@
 "use client"; // ステートを持つため Client Component
 
-import { useState, useEffect } from 'react'; // useState, useEffect をインポート
+import { useState, useEffect, useCallback } from 'react'; // useState, useEffect, useCallback をインポート
 import { useCpuSimulator } from '../../_lib/cpuEngine'; // 相対パスに変更
 import { OpCode } from '../../_lib/types'; // OpCodeもインポートしてHALTチェックなどに使える
 
@@ -29,6 +29,29 @@ HALT;`;
   useEffect(() => {
       setEditorCode(simulator.rawJsCode);
   }, [simulator.rawJsCode]);
+
+  // キー入力でステップ実行する useEffect フック
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+
+      if (event.code === 'Space' || event.code === 'Enter') {
+        event.preventDefault();
+
+        if (simulator.cpuState.isRunning && simulator.isProgramLoaded()) {
+          simulator.step();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [simulator]);
 
   const assemblyLinesForDisplay = simulator.getAssemblyForDisplay();
   const machineCodeLinesForDisplay = simulator.getMachineCodeForDisplay();
