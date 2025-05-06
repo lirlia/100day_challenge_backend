@@ -2,6 +2,7 @@ package chip8
 
 import (
 	"fmt"
+	"log"
 	"os"
 )
 
@@ -52,7 +53,7 @@ type Chip8 struct {
 	DT byte // Delay timer
 	ST byte // Sound timer
 
-	keys [numKeys]byte // Key states (0 or 1 for pressed)
+	keys [numKeys]bool // Keypad state (true if pressed)
 
 	// For Fx0A (LD Vx, K) - Halts execution until key press
 	waitingForKey bool
@@ -86,7 +87,7 @@ func (c *Chip8) initialize() {
 	}
 	// Clear keys
 	for i := range c.keys {
-		c.keys[i] = 0
+		c.keys[i] = false
 	}
 
 	// Reset index register, program counter, and stack pointer
@@ -162,9 +163,62 @@ func (c *Chip8) SetDrawFlag() {
 	c.drawFlag = true
 }
 
+// SetKey updates the state of a specific key.
+// Called from the main loop based on Ebiten input.
+func (c *Chip8) SetKey(key byte, isPressed bool) {
+	if key < numKeys { // Check if key index is valid
+		c.keys[key] = isPressed
+	} else {
+		// Optionally log an error for invalid key index
+		// log.Printf("SetKey: Invalid key index %d", key)
+	}
+}
+
+// IsKeyPressed checks if a specific key is currently pressed.
+// Used by opcodes Ex9E and ExA1.
+func (c *Chip8) IsKeyPressed(key byte) bool {
+	if key < numKeys {
+		return c.keys[key]
+	} else {
+		// Optionally log an error for invalid key index
+		// log.Printf("IsKeyPressed: Invalid key index %d", key)
+		return false // Treat invalid keys as not pressed
+	}
+}
+
+// IsWaitingForKey returns true if the CHIP-8 is waiting for a key press (Fx0A).
+// Called from the main loop (Update function).
+func (c *Chip8) IsWaitingForKey() bool {
+	return c.waitingForKey
+}
+
+// KeyPress handles a key press event when the emulator is waiting for one (Fx0A).
+// Called from the main loop (Update function).
+func (c *Chip8) KeyPress(key byte) {
+	if c.waitingForKey {
+		if c.keyReg < numRegs { // Ensure the target register index is valid
+			c.V[c.keyReg] = key
+			c.waitingForKey = false // Stop waiting
+			log.Printf("[Chip8.KeyPress] Key 0x%X pressed. Stored in V%X. Stopped waiting.", key, c.keyReg)
+			// PC will naturally increment in the *next* cycle because waitingForKey is now false
+		} else {
+			log.Printf("[Chip8.KeyPress] Error: Invalid register V%X specified by Fx0A.", c.keyReg)
+			c.waitingForKey = false // Stop waiting even on error to prevent deadlock
+		}
+	} else {
+		// This shouldn't normally be called if not waiting, but good to handle.
+		log.Println("[Chip8.KeyPress] Warning: KeyPress called but not waitingForKey.")
+	}
+}
+
 // Cycle executes a single CHIP-8 instruction cycle.
 func (c *Chip8) Cycle() {
-	// fmt.Printf("Cycle Start: PC=0x%X\n", c.PC) // DEBUG 削除
+	// If waiting for key press (Fx0A), halt execution
+	if c.waitingForKey {
+		// log.Println("[Chip8.Cycle] Waiting for key press (Fx0A). Halting cycle.") // 必要ならログ追加
+		return // Do nothing until a key is pressed and waitingForKey becomes false
+	}
+
 	// Fetch Opcode (2 bytes starting at PC)
 	if c.PC+1 >= memorySize {
 		fmt.Println("Error: Program Counter out of bounds!")

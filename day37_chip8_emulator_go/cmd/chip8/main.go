@@ -5,9 +5,7 @@ import (
 	"fmt"
 	"image/color"
 	"log"
-	"math/rand"
 	"os"
-	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/vector"
@@ -21,97 +19,162 @@ const (
 	// CHIP-8 logical screen size
 	chip8Width  = 64
 	chip8Height = 32
-
-	// Scale factor for drawing CHIP-8 pixels
-	scaleFactor = 10
 )
+
+// Standard CHIP-8 Keypad Mapping to Physical Keyboard (追加)
+var keyMap = map[ebiten.Key]byte{
+	ebiten.KeyDigit1: 0x1, ebiten.KeyDigit2: 0x2, ebiten.KeyDigit3: 0x3, ebiten.KeyDigit4: 0xC,
+	ebiten.KeyQ: 0x4, ebiten.KeyW: 0x5, ebiten.KeyE: 0x6, ebiten.KeyR: 0xD,
+	ebiten.KeyA: 0x7, ebiten.KeyS: 0x8, ebiten.KeyD: 0x9, ebiten.KeyF: 0xE,
+	ebiten.KeyZ: 0xA, ebiten.KeyX: 0x0, ebiten.KeyC: 0xB, ebiten.KeyV: 0xF,
+}
 
 // Game implements ebiten.Game interface.
 type Game struct {
-	chip8 *chip8.Chip8
+	chip8          *chip8.Chip8 // CHIP-8 instance (確認: 存在)
+	cyclesPerFrame int
+	needsRedraw    bool
 }
 
-// Update proceeds the game state. Update is called every tick (1/60 [s] by default).
-func (g *Game) Update() error {
-	// Execute multiple CHIP-8 cycles per frame for speed
-	cyclesPerFrame := 10
-	for i := 0; i < cyclesPerFrame; i++ {
-		g.chip8.Cycle()
+// NewGame creates a new Game instance.
+func NewGame(c *chip8.Chip8, speed int) *Game {
+	return &Game{
+		chip8:          c,
+		cyclesPerFrame: speed,
+		needsRedraw:    true, // Start with redraw needed
 	}
+}
+
+// Update proceeds the game state.
+func (g *Game) Update() error {
+	// log.Println("[Game.Update] Update function called") // ログが多いためコメントアウト
+
+	// Handle Fx0A wait state first (追加)
+	if g.chip8.IsWaitingForKey() {
+		// log.Println("[Game.Update] Chip8 is waiting for a key press (Fx0A).") // ログは後で調整
+		for physicalKey, chip8Key := range keyMap {
+			if ebiten.IsKeyPressed(physicalKey) {
+				// log.Printf("[Game.Update-Fx0A] Key pressed: Physical=%s, Chip8=0x%X", physicalKey, chip8Key) // ログは後で調整
+				g.chip8.KeyPress(chip8Key) // ★ コメントを解除
+				// log.Printf("[TEMP] KeyPress(0x%X) would be called here.", chip8Key) // 仮ログを削除
+				break // 最初のキー入力で処理を抜ける
+			}
+		}
+		// 待機中は CHIP-8 サイクル実行や通常のキー更新は行わない
+		return nil
+	}
+
+	// --- Regular key state update ---
+	// log.Println("[Game.Update] Not waiting for key. Entering regular key processing loop...") // ログが多いためコメントアウト
+	for physicalKey, chip8Key := range keyMap {
+		isPressed := ebiten.IsKeyPressed(physicalKey)
+		// CHIP-8内部のキー状態と比較し、変化があった場合のみSetKeyとログ出力を実行
+		// if g.chip8.IsKeyPressed(chip8Key) != isPressed { // IsKeyPressed は chip8 側の状態なので、ここでは使わない
+		// log.Printf("[Game.Update] PhysicalKey: %s (Chip8Key: 0x%X) state is now: %t", physicalKey, chip8Key, isPressed)
+		g.chip8.SetKey(chip8Key, isPressed) // 状態が変わっていなくても毎フレーム呼ぶ (chip8側で変化を検知)
+		// }
+	}
+
+	// --- Update Timers (DT and ST) --- (追加)
+	if g.chip8.DT > 0 {
+		g.chip8.DT--
+		// log.Printf("[Game.Update] DT decremented to %d", g.chip8.DT) // 必要ならログ追加
+	}
+	if g.chip8.ST > 0 {
+		g.chip8.ST--
+		if g.chip8.ST > 0 { // デクリメント後も ST > 0 ならBEEP
+			log.Println("[Game.Update] BEEP! (ST is active)") // 仮のビープ音
+		}
+		// log.Printf("[Game.Update] ST decremented to %d", g.chip8.ST) // 必要ならログ追加
+	}
+	// --- End Update Timers ---
+
+	// Execute CHIP-8 cycles
+	// log.Printf("[Game.Update] Executing %d CHIP-8 cycles.", g.cpuSpeed) // ログが多いためコメントアウト
+	for i := 0; i < g.cyclesPerFrame; i++ {
+		g.chip8.Cycle()
+		// if g.chip8.DrawFlag() { // このチェックは cycle 内の DXYN 命令で行われる
+		// g.needsRedraw = true
+		// log.Println("[Game.Update] Chip8 drawFlag set during cycle execution. Setting Game.needsRedraw = true")
+		// }
+	}
+	if g.chip8.DrawFlag() { // Cycle実行後にまとめてDrawFlagをチェック
+		g.needsRedraw = true
+		// log.Println("[Game.Update] Chip8 drawFlag is set after cycles. Setting Game.needsRedraw = true")
+	}
+
 	return nil
 }
 
-// Draw draws the game screen. Draw is called every frame (typically 1/60[s] for 60Hz display).
+// Draw draws the game screen.
 func (g *Game) Draw(screen *ebiten.Image) {
-	screen.Fill(color.Black) // Clear screen with black background
+	// Only redraw if needed
+	if !g.needsRedraw {
+		return
+	}
+	screen.Fill(color.Black) // Clear screen
 	gfx := g.chip8.Gfx()
-
 	for y := 0; y < chip8Height; y++ {
 		for x := 0; x < chip8Width; x++ {
 			if gfx[y*chip8Width+x] == 1 {
-				// Draw a 1x1 white rectangle at the logical coordinate (x, y).
-				// Ebiten handles scaling based on Layout function.
 				vector.DrawFilledRect(
 					screen,
-					float32(x), // scaleFactor を削除
-					float32(y), // scaleFactor を削除
-					1,          // width を 1 に
-					1,          // height を 1 に
+					float32(x),
+					float32(y),
+					1,
+					1,
 					color.White,
-					false, // anti-alias off for sharp pixels
+					false,
 				)
 			}
 		}
 	}
+	g.needsRedraw = false // Reset flag after drawing
 }
 
-// Layout takes the outside size (e.g., window size) and returns the (logical) screen size.
-// If you don't have to adjust the screen size with the outside size, just return a fixed size.
+// Layout returns the logical screen size.
 func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
-	// Return the logical CHIP-8 screen size
-	// Ebiten will scale this up to the window size
 	return chip8Width, chip8Height
 }
 
 func main() {
-	// Seed the random number generator
-	rand.Seed(time.Now().UnixNano())
+	// --- Log file setup --- (現状維持)
+	logFilePath := "log"
+	f, err := os.OpenFile(logFilePath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0666)
+	if err != nil {
+		panic(fmt.Sprintf("CRITICAL: Failed to open log file '%s': %v", logFilePath, err))
+	}
+	defer f.Close()
+	log.SetOutput(f)
+	// --- End Log file setup ---
 
-	// Command-line flags
-	romPath := flag.String("rom", "", "Path to the CHIP-8 ROM file")
+	romPath := flag.String("rom", "roms/keyboard.ch8", "Path to the CHIP-8 ROM file") // Default を keyboard.ch8 に変更
+	cpuSpeed := flag.Int("speed", 5, "CHIP-8 CPU speed in cycles per frame")          // Default を 5 に変更
 	flag.Parse()
 
-	if *romPath == "" {
-		fmt.Println("Usage: go run ./cmd/chip8 -rom <path_to_rom>")
-		flag.PrintDefaults()
-		os.Exit(1)
-	}
+	log.Printf("[main] Using ROM Path: '%s', CPU Speed: %d cycles/frame", *romPath, *cpuSpeed)
 
 	// Initialize CHIP-8 system
 	c8 := chip8.New()
 
 	// Load ROM
-	err := c8.LoadROM(*romPath)
-	if err != nil {
-		log.Fatalf("Error loading ROM: %v\n", err)
+	if err := c8.LoadROM(*romPath); err != nil {
+		log.Fatalf("[main] CRITICAL: Error loading ROM '%s': %v", *romPath, err)
 	}
 
 	// Create game instance
-	game := &Game{
-		chip8: c8,
-	}
+	game := NewGame(c8, *cpuSpeed)
 
-	// Set ebiten window properties
-	ebiten.SetWindowSize(chip8Width*scaleFactor, chip8Height*scaleFactor)
-	ebiten.SetWindowTitle("Day 37 - CHIP-8 Emulator (Go + Ebiten)")
-	// Set window resizable so Layout works as intended with scaling
+	// Setup ebiten window
+	ebiten.SetWindowSize(screenWidth, screenHeight)
+	ebiten.SetWindowTitle(fmt.Sprintf("CHIP-8 Emulator (Go) - %s", *romPath))
+	ebiten.SetTPS(60)
 	ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)
 
 	// Run the game loop
-	fmt.Printf("Starting CHIP-8 emulation for ROM: %s\n", *romPath)
+	log.Println("[main] Starting Ebiten game loop via ebiten.RunGame()...")
 	if err := ebiten.RunGame(game); err != nil {
-		log.Fatalf("Ebiten run failed: %v\n", err)
+		log.Fatalf("[main] CRITICAL: Ebiten run failed: %v", err)
 	}
-
-	fmt.Println("CHIP-8 emulation stopped.")
+	log.Println("[main] CHIP-8 emulation stopped.")
 }

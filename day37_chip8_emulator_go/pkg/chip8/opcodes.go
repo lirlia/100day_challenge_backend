@@ -2,7 +2,7 @@ package chip8
 
 import (
 	"fmt"
-	// "log" // log パッケージの import を削除 (またはコメントアウト)
+	"log" // log パッケージの import を削除 (またはコメントアウト)
 )
 
 // executeOpcode decodes and executes a single CHIP-8 opcode.
@@ -55,8 +55,62 @@ func (c *Chip8) executeOpcode(opcode uint16) {
 		// fmt.Printf("  -> Opcode Dxyn: DRW V[%X](=0x%X), V[%X](=0x%X), %d at I=0x%X\n", x, c.V[x], y, c.V[y], n, c.I) // DEBUG 削除
 		c.drawSprite(x, y, n)
 		// PC incremented in Cycle
-	// case 0xE000: // ExNN opcodes - To be implemented later
-	// case 0xF000: // FxNN opcodes - To be implemented later
+	case 0xE000:
+		switch kk {
+		case 0x9E: // Ex9E - SKP Vx (Skip next instruction if key with the value of Vx is pressed)
+			key := c.V[x]
+			log.Printf("  -> Opcode Ex9E: SKP V%X (Key 0x%X)", x, key)
+			if c.IsKeyPressed(key) {
+				log.Printf("    Key 0x%X is pressed. Skipping next instruction (PC + 2 -> +4)", key)
+				c.PC += 2 // Skip the *next* instruction, so PC += 4 in total (2 here, 2 in Cycle)
+			} else {
+				log.Printf("    Key 0x%X is not pressed. Not skipping.", key)
+			}
+		case 0xA1: // ExA1 - SKNP Vx (Skip next instruction if key with the value of Vx is NOT pressed)
+			key := c.V[x]
+			log.Printf("  -> Opcode ExA1: SKNP V%X (Key 0x%X)", x, key)
+			if !c.IsKeyPressed(key) {
+				log.Printf("    Key 0x%X is not pressed. Skipping next instruction (PC + 2 -> +4)", key)
+				c.PC += 2 // Skip the *next* instruction
+			} else {
+				log.Printf("    Key 0x%X is pressed. Not skipping.", key)
+			}
+		default:
+			fmt.Printf("Opcode 0x%X: Unknown or unimplemented ExKK pattern\n", opcode)
+		}
+	case 0xF000:
+		switch kk {
+		case 0x07: // Fx07 - LD Vx, DT
+			log.Printf("  -> Opcode Fx07: LD V%X, DT", x)
+			c.V[x] = c.DT
+		case 0x0A: // Fx0A - LD Vx, K (Wait for key press)
+			log.Printf("  -> Opcode Fx0A: LD V%X, K (Wait for key press)", x)
+			c.waitingForKey = true
+			c.keyReg = x
+			// Cycle() 関数側で waitingForKey が true の間は PC を進めないようにする必要がある
+		case 0x15: // Fx15 - LD DT, Vx
+			log.Printf("  -> Opcode Fx15: LD DT, V%X", x)
+			c.DT = c.V[x]
+		case 0x18: // Fx18 - LD ST, Vx
+			log.Printf("  -> Opcode Fx18: LD ST, V%X", x)
+			c.ST = c.V[x]
+		case 0x1E: // Fx1E - ADD I, Vx
+			log.Printf("  -> Opcode Fx1E: ADD I, V%X (I=0x%X, V%X=0x%X)", x, c.I, x, c.V[x])
+			// VF is not affected by this instruction.
+			// Check for overflow (I + Vx > 0xFFF for 12-bit CHIP-8, but I is 16-bit)
+			// Standard CHIP-8 does not set VF on overflow for ADD I, Vx
+			newI := c.I + uint16(c.V[x])
+			// if newI < c.I { // Check for 16-bit overflow (not standard CHIP-8 behavior to set VF)
+			// c.V[0xF] = 1
+			// } else {
+			// c.V[0xF] = 0
+			// }
+			c.I = newI
+			log.Printf("     New I: 0x%X", c.I)
+		default:
+			fmt.Printf("Opcode 0x%X: Unknown or unimplemented pattern\n", opcode) // Unknown は残す
+			// PC incremented in Cycle for unknown opcodes
+		}
 	default:
 		fmt.Printf("Opcode 0x%X: Unknown or unimplemented pattern\n", opcode) // Unknown は残す
 		// PC incremented in Cycle for unknown opcodes
