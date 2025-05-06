@@ -70,6 +70,7 @@ export default function GameBoard({
     const [hitNotes, setHitNotes] = useState<Set<number>>(new Set());
     const [isAudioLoaded, setIsAudioLoaded] = useState(false); // State to track audio loading
     const [judgment, setJudgment] = useState<Judgment>(null); // State for judgment text
+    const [activeLanes, setActiveLanes] = useState<{ [key: number]: { color: number } }>({}); // State for active lane colors
     const judgmentTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Ref for clearing judgment timeout
 
     const audioContextRef = useRef<AudioContext | null>(null);
@@ -79,6 +80,7 @@ export default function GameBoard({
     const startTimeRef = useRef<number>(0); // AudioContext start time
     const gameLoopRef = useRef<number | null>(null);
     const boardRef = useRef<HTMLDivElement>(null); // Ref to the game board div for height calculation
+    const laneTimeoutRefs = useRef<{ [key: number]: NodeJS.Timeout }>({}); // Refs for lane flash timeouts
 
     // Log when initialNotes prop actually changes
     useEffect(() => {
@@ -191,11 +193,44 @@ export default function GameBoard({
         };
     }, [isPlaying, gameLoop]);
 
+    // Helper function to generate a random bright HSL color
+    const getRandomLaneColor = () => {
+        const hue = Math.floor(Math.random() * 360);
+        return hue; // Return only the hue value
+    };
+
+    // useEffect to log activeLanes changes
+    useEffect(() => {
+        console.log('activeLanes state changed:', activeLanes);
+    }, [activeLanes]);
+
     // --- Input Handling (Revised Logic) ---
     const handleKeyDown = useCallback((event: KeyboardEvent) => {
         if (!isPlaying || !boardRef.current) return;
         const keyIndex = keyMap.indexOf(event.key.toLowerCase());
         if (keyIndex === -1) return;
+
+        // --- Lane Flash Effect ---
+        const laneHue = getRandomLaneColor(); // Get hue
+        if (laneTimeoutRefs.current[keyIndex]) {
+            clearTimeout(laneTimeoutRefs.current[keyIndex]);
+        }
+        console.log(`handleKeyDown: Setting active lane ${keyIndex} with hue ${laneHue}`); // Log hue
+        // Store only the hue in the state
+        setActiveLanes(prev => ({ ...prev, [keyIndex]: { color: laneHue } }));
+        const timeoutId = setTimeout(() => { // Assign timeoutId to variable
+            console.log(`setTimeout: Clearing active state for lane ${keyIndex}`); // Log timeout execution
+            setActiveLanes(prev => {
+                const next = { ...prev };
+                console.log(`setTimeout: State BEFORE delete for lane ${keyIndex}:`, prev);
+                delete next[keyIndex]; // Remove the specific lane's active state
+                console.log(`setTimeout: State AFTER delete for lane ${keyIndex}:`, next);
+                return next;
+            });
+            delete laneTimeoutRefs.current[keyIndex]; // Clean up the ref
+        }, 150); // Flash duration: 150ms
+        laneTimeoutRefs.current[keyIndex] = timeoutId; // Store the timeout ID
+        console.log(`handleKeyDown: Scheduled timeout ID ${timeoutId} for lane ${keyIndex}`); // Log scheduled ID
 
         const targetLane = keyIndex + 1;
         const boardHeight = boardRef.current.offsetHeight;
@@ -263,14 +298,17 @@ export default function GameBoard({
             judgmentTimeoutRef.current = null;
         }, 500);
 
-    }, [isPlaying, keyMap, currentTime, score, initialNotes, hitNotes]);
+    }, [isPlaying, keyMap, currentTime, score, initialNotes, hitNotes, playbackRate, setScore, setHitNotes, setActiveLanes]);
 
     useEffect(() => {
         window.addEventListener('keydown', handleKeyDown);
         return () => {
             window.removeEventListener('keydown', handleKeyDown);
+            // Clear all active timeouts when component unmounts
+            console.log('GameBoard unmounting, clearing timeouts:', laneTimeoutRefs.current); // Log before clearing
+            Object.values(laneTimeoutRefs.current).forEach(clearTimeout);
         };
-    }, [handleKeyDown]); // Re-attach listener if handleKeyDown changes
+    }, [handleKeyDown]);
 
 
      // --- Start Game ---
@@ -373,32 +411,54 @@ export default function GameBoard({
             {/* Game Board Area - Updated height and background */}
             <div
                 ref={boardRef}
-                className="relative bg-gradient-to-b from-gray-700 to-gray-900 h-[600px] w-full max-w-md mx-auto rounded-lg overflow-hidden shadow-neumorphic-inset" // Increased height and added gradient
+                className="relative bg-gradient-to-b from-gray-700 to-gray-900 h-[600px] w-full max-w-md mx-auto rounded-lg overflow-hidden shadow-neumorphic-inset"
             >
-                 {/* Judgment Text Display */}
-                 {judgment && judgment !== 'MISS' && ( // Only display non-MISS judgments for now
-                     <div className={`absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-10 pointer-events-none ${getJudgmentStyle(judgment)} animate-ping-short`}>
-                         {judgment}
-                     </div>
-                 )}
+                {/* Lane Backgrounds/Flashes */}
+                <div className="absolute inset-0 flex z-0"> {/* Container for lane backgrounds */}
+                    {keyMap.map((_, index) => {
+                        const isActive = activeLanes[index];
+                        // Construct hsla color string if active
+                        const bgColor = isActive ? `hsla(${isActive.color}, 80%, 70%, 0.5)` : 'transparent'; // Use hsla format
+                        // Log the calculated background color for each lane
+                        console.log(`Rendering Lane ${index}: isActive=${!!isActive}, hue=${isActive?.color}, bgColor=${bgColor}`); // Log hue and final color
+                        return (
+                            <div
+                                key={`lane-bg-${index}`}
+                                className="h-full transition-colors duration-100 ease-in-out" // Re-add transition
+                                style={{
+                                    width: `${100 / numLanes}%`,
+                                    backgroundColor: bgColor,
+                                }}
+                            />
+                        );
+                    })}
+                </div>
 
-                 {/* Render notes based on the visibleNotes state */}
-                 {visibleNotes.map(({ id, note, topPosition }) => (
-                     <NoteElement key={id} note={note} topPosition={topPosition} numLanes={numLanes} />
-                 ))}
+                {/* Judgment Text Display - Increase z-index */}
+                {judgment && judgment !== 'MISS' && (
+                    <div className={`absolute top-1/2 left-1/2 transform -translate-x-1/2 -translatey-1/2 z-20 pointer-events-none ${getJudgmentStyle(judgment)} animate-ping-short`}>
+                        {judgment}
+                    </div>
+                )}
+
+                {/* Render notes - Increase z-index */}
+                <div className="absolute inset-0 z-10"> {/* Container for notes, above lane flashes */}
+                    {visibleNotes.map(({ id, note, topPosition }) => (
+                        <NoteElement key={id} note={note} topPosition={topPosition} numLanes={numLanes} />
+                    ))}
+                </div>
 
                 {/* Judgment Line - Updated styles */}
                 <div
-                    className="absolute left-0 right-0 h-1.5 bg-pink-500 shadow-xl shadow-pink-500/50" // Brighter color, thicker, more shadow
+                    className="absolute left-0 right-0 h-1.5 bg-pink-500 shadow-xl shadow-pink-500/50"
                     style={{ bottom: `${judgeLineBottom}%` }}
                 ></div>
 
-                {/* Key indicators - Updated styles */}
-                <div className="absolute bottom-0 left-0 right-0 h-10 bg-gray-700 flex justify-around items-center px-2 border-t border-gray-600">
+                {/* Key indicators - Increase z-index */}
+                <div className="absolute bottom-0 left-0 right-0 h-10 bg-gray-700 flex justify-around items-center px-2 border-t border-gray-600 z-10">
                     {keyMap.map((key, index) => (
                         <div
                             key={index}
-                            // Added neumorphic shadow and slightly lighter bg
                             className="text-white font-bold text-lg uppercase w-11 h-8 flex items-center justify-center bg-gray-600 rounded shadow-neumorphic-sm"
                         >
                             {key}
