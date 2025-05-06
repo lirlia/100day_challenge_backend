@@ -167,6 +167,21 @@ func (c *Chip8) executeOpcode(opcode uint16) (redraw bool, collision bool) {
 		c.PC += 2
 		return false, false // Most 8xxx opcodes do not affect redraw
 
+	case 0x9000: // SNE Vx, Vy (9xy0) - Skip next instruction if Vx != Vy.
+		// Ensure last nibble is 0 for this opcode
+		if opcode&0x000F != 0x0000 {
+			log.Printf("Unknown 9xxx opcode (last nibble not 0): 0x%X", opcode)
+			c.PC += 2
+			return false, false
+		}
+		x := (opcode & 0x0F00) >> 8
+		y := (opcode & 0x00F0) >> 4
+		if c.V[x] != c.V[y] {
+			c.PC += 2 // Skip additional 2 bytes
+		}
+		c.PC += 2 // Base increment
+		return false, false
+
 	case 0xE000:
 		x := (opcode & 0x0F00) >> 8
 		switch opcode & 0x00FF {
@@ -211,6 +226,37 @@ func (c *Chip8) executeOpcode(opcode uint16) (redraw bool, collision bool) {
 			return false, false // Default for unknown Fx opcodes
 		}
 		return false, false // Default for Fx opcodes (redraw typically false unless specified)
+
+	case 0x3000: // SE Vx, byte (3xkk) - Skip next instruction if Vx = kk.
+		x := (opcode & 0x0F00) >> 8
+		kk := byte(opcode & 0x00FF)
+		if c.V[x] == kk {
+			c.PC += 2 // Skip additional 2 bytes
+		}
+		c.PC += 2 // Base increment
+		return false, false
+	case 0x4000: // SNE Vx, byte (4xkk) - Skip next instruction if Vx != kk.
+		x := (opcode & 0x0F00) >> 8
+		kk := byte(opcode & 0x00FF)
+		if c.V[x] != kk {
+			c.PC += 2 // Skip additional 2 bytes
+		}
+		c.PC += 2 // Base increment
+		return false, false
+	case 0x5000: // SE Vx, Vy (5xy0) - Skip next instruction if Vx = Vy.
+		// Ensure last nibble is 0 for this opcode
+		if opcode&0x000F != 0x0000 {
+			log.Printf("Unknown 5xxx opcode (last nibble not 0): 0x%X", opcode)
+			c.PC += 2
+			return false, false
+		}
+		x := (opcode & 0x0F00) >> 8
+		y := (opcode & 0x00F0) >> 4
+		if c.V[x] == c.V[y] {
+			c.PC += 2 // Skip additional 2 bytes
+		}
+		c.PC += 2 // Base increment
+		return false, false
 
 	default:
 		log.Printf("Unknown opcode: 0x%X (PC: 0x%X)", opcode, c.PC)

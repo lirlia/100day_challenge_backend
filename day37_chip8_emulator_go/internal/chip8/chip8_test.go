@@ -834,6 +834,87 @@ func TestOpcodes(t *testing.T) {
 				}
 			},
 		},
+		// Conditional Skip Opcodes
+		{
+			name:      "3xkk - SE Vx, byte (Vx == kk, skip)",
+			opcode:    0x31AB, // SE V1, 0xAB
+			setupChip: func(c *Chip8) { c.V[1] = 0xAB },
+			assertChip: func(t *testing.T, c *Chip8, _, _, _ bool) {
+				if c.PC != romOffset+4 {
+					t.Errorf("PC expected 0x%X (skip), got 0x%X", romOffset+4, c.PC)
+				}
+			},
+		},
+		{
+			name:      "3xkk - SE Vx, byte (Vx != kk, no skip)",
+			opcode:    0x31AB, // SE V1, 0xAB
+			setupChip: func(c *Chip8) { c.V[1] = 0xAC },
+			assertChip: func(t *testing.T, c *Chip8, _, _, _ bool) {
+				if c.PC != romOffset+2 {
+					t.Errorf("PC expected 0x%X (no skip), got 0x%X", romOffset+2, c.PC)
+				}
+			},
+		},
+		{
+			name:      "4xkk - SNE Vx, byte (Vx != kk, skip)",
+			opcode:    0x41AB, // SNE V1, 0xAB
+			setupChip: func(c *Chip8) { c.V[1] = 0xAC },
+			assertChip: func(t *testing.T, c *Chip8, _, _, _ bool) {
+				if c.PC != romOffset+4 {
+					t.Errorf("PC expected 0x%X (skip), got 0x%X", romOffset+4, c.PC)
+				}
+			},
+		},
+		{
+			name:      "4xkk - SNE Vx, byte (Vx == kk, no skip)",
+			opcode:    0x41AB, // SNE V1, 0xAB
+			setupChip: func(c *Chip8) { c.V[1] = 0xAB },
+			assertChip: func(t *testing.T, c *Chip8, _, _, _ bool) {
+				if c.PC != romOffset+2 {
+					t.Errorf("PC expected 0x%X (no skip), got 0x%X", romOffset+2, c.PC)
+				}
+			},
+		},
+		{
+			name:      "5xy0 - SE Vx, Vy (Vx == Vy, skip)",
+			opcode:    0x5120, // SE V1, V2
+			setupChip: func(c *Chip8) { c.V[1] = 0xCC; c.V[2] = 0xCC },
+			assertChip: func(t *testing.T, c *Chip8, _, _, _ bool) {
+				if c.PC != romOffset+4 {
+					t.Errorf("PC expected 0x%X (skip), got 0x%X", romOffset+4, c.PC)
+				}
+			},
+		},
+		{
+			name:      "5xy0 - SE Vx, Vy (Vx != Vy, no skip)",
+			opcode:    0x5120, // SE V1, V2
+			setupChip: func(c *Chip8) { c.V[1] = 0xCC; c.V[2] = 0xCD },
+			assertChip: func(t *testing.T, c *Chip8, _, _, _ bool) {
+				if c.PC != romOffset+2 {
+					t.Errorf("PC expected 0x%X (no skip), got 0x%X", romOffset+2, c.PC)
+				}
+			},
+		},
+		{
+			name:      "9xy0 - SNE Vx, Vy (Vx != Vy, skip)",
+			opcode:    0x9120, // SNE V1, V2
+			setupChip: func(c *Chip8) { c.V[1] = 0xCC; c.V[2] = 0xCD },
+			assertChip: func(t *testing.T, c *Chip8, _, _, _ bool) {
+				if c.PC != romOffset+4 {
+					t.Errorf("PC expected 0x%X (skip), got 0x%X", romOffset+4, c.PC)
+				}
+			},
+		},
+		{
+			name:      "9xy0 - SNE Vx, Vy (Vx == Vy, no skip)",
+			opcode:    0x9120, // SNE V1, V2
+			setupChip: func(c *Chip8) { c.V[1] = 0xCC; c.V[2] = 0xCC },
+			assertChip: func(t *testing.T, c *Chip8, _, _, _ bool) {
+				if c.PC != romOffset+2 {
+					t.Errorf("PC expected 0x%X (no skip), got 0x%X", romOffset+2, c.PC)
+				}
+			},
+		},
 	}
 
 	for _, tc := range testCases {
