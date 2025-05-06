@@ -17,14 +17,13 @@ function parseJsToAssembly(jsCode: string): CompilationResult {
   const instructions: Instruction[] = [];
   const sourceMap: Record<number, number> = {};
   const variableToAddressMap: Record<string, string> = {};
-  let nextMemoryAddress = 0x1000; // 仮想的なメモリアドレス開始位置 (16進数で管理)
-  let tempRegCounter = 0; // R0, R1, R2を巡回するためのカウンター
+  console.log('[parseJsToAssembly] Initialized variableToAddressMap:', JSON.stringify(variableToAddressMap));
+  let nextMemoryAddress = 0x1000;
+  let tempRegCounter = 0;
+  let labelCounter = 0; // ラベル生成用カウンター
 
   const getTempRegister = (): string => {
     const reg = `r${tempRegCounter % 3}`;
-    // 注意: 複雑な式ではレジスタが不足/上書きされる可能性がある。簡易的な実装。
-    // 本来はレジスタ割り当てアルゴリズムが必要。
-    // tempRegCounter++; // simple increment might overwrite too early
     return reg;
   };
 
@@ -32,121 +31,212 @@ function parseJsToAssembly(jsCode: string): CompilationResult {
     if (!variableToAddressMap[varName] && allocate) {
       const address = `mem_${nextMemoryAddress.toString(16).toUpperCase()}`;
       variableToAddressMap[varName] = address;
-      nextMemoryAddress += 4; // 4バイト単位でアドレスを進める (仮定)
+      nextMemoryAddress += 4;
       return address;
     }
-    const foundAddress = variableToAddressMap[varName] || null;
-    return foundAddress;
+    return variableToAddressMap[varName] || null;
   };
 
-  lines.forEach((line, jsLineIndex) => {
+  const generateLabel = (prefix: string = 'L'): string => {
+    labelCounter++;
+    return `${prefix}${labelCounter}`;
+  };
+
+  // Main parsing loop - needs to handle block structures like if
+  // This simple line-by-line approach will need to be smarter or use a multi-pass strategy for labels.
+  // For now, we can try to parse simple if statements.
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const jsLineIndex = i;
+    tempRegCounter = 0;
+    console.log(`[parseJsToAssembly] Processing line ${jsLineIndex}: "${line}"`);
+
     let match;
-    tempRegCounter = 0; // 各行でレジスタカウンタリセット (簡易的)
 
     if ((match = line.match(/^let\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*(\d+);?$/))) {
       const varName = match[1];
       const value = parseInt(match[2], 10);
-      const address = getAddressForVar(varName, true); // 新規変数なのでアドレス割り当て
-      const tempReg = getTempRegister(); // R0
+      console.log(`[parseJsToAssembly] Matched: let var = number. varName: ${varName}, value: ${value}. Current map:`, JSON.stringify(variableToAddressMap));
+      const address = getAddressForVar(varName, true);
+      const tempReg = getTempRegister();
       tempRegCounter++;
-
       if (address) {
-        const instr1: Instruction = { opCode: OpCode.LOAD_VAL, operands: [value, tempReg], originalJsLine: jsLineIndex };
-        instructions.push(instr1);
+        instructions.push({ opCode: OpCode.LOAD_VAL, operands: [value, tempReg], originalJsLine: jsLineIndex });
         sourceMap[instructions.length - 1] = jsLineIndex;
-
-        const instr2: Instruction = { opCode: OpCode.STORE_MEM, operands: [tempReg, address], originalJsLine: jsLineIndex };
-        instructions.push(instr2);
+        instructions.push({ opCode: OpCode.STORE_MEM, operands: [tempReg, address], originalJsLine: jsLineIndex });
         sourceMap[instructions.length - 1] = jsLineIndex;
-      } else {
-        // Error handling - should not happen if allocate is true
-        console.error("Failed to allocate address for:", varName);
       }
-    }
-    else if ((match = line.match(/^let\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*([a-zA-Z_][a-zA-Z0-9_]*);?$/))) {
+    } else if ((match = line.match(/^let\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*([a-zA-Z_][a-zA-Z0-9_]*);?$/))) {
       const destVar = match[1];
       const sourceVar = match[2];
+      console.log(`[parseJsToAssembly] Matched: let destVar = sourceVar. destVar: ${destVar}, sourceVar: ${sourceVar}. Current map:`, JSON.stringify(variableToAddressMap));
       const sourceAddr = getAddressForVar(sourceVar);
-      const destAddr = getAddressForVar(destVar, true); // yは新規変数
-      const tempReg = getTempRegister(); // R0
+      const destAddr = getAddressForVar(destVar, true);
+      const tempReg = getTempRegister();
       tempRegCounter++;
-
       if (sourceAddr && destAddr) {
-        const instr1: Instruction = { opCode: OpCode.LOAD_MEM, operands: [sourceAddr, tempReg], originalJsLine: jsLineIndex };
-        instructions.push(instr1);
+        instructions.push({ opCode: OpCode.LOAD_MEM, operands: [sourceAddr, tempReg], originalJsLine: jsLineIndex });
         sourceMap[instructions.length - 1] = jsLineIndex;
-
-        const instr2: Instruction = { opCode: OpCode.STORE_MEM, operands: [tempReg, destAddr], originalJsLine: jsLineIndex };
-        instructions.push(instr2);
+        instructions.push({ opCode: OpCode.STORE_MEM, operands: [tempReg, destAddr], originalJsLine: jsLineIndex });
         sourceMap[instructions.length - 1] = jsLineIndex;
       } else {
-        console.error(`Variable not defined or failed to allocate address: ${sourceVar} or ${destVar}`);
-        instructions.push({ opCode: OpCode.NOP, operands: [`Error: Undefined variable or address error: ${line}`], originalJsLine: jsLineIndex });
-        sourceMap[instructions.length -1] = jsLineIndex;
+        console.error(`[parseJsToAssembly] ERROR (let destVar = sourceVar): Variable not defined or failed to allocate. sourceVar: ${sourceVar}, sourceAddr: ${sourceAddr}, destVar: ${destVar}, destAddr: ${destAddr}. Map:`, JSON.stringify(variableToAddressMap));
+        instructions.push({ opCode: OpCode.NOP, operands: [`Error: Undefined variable ${sourceVar}`], originalJsLine: jsLineIndex });
+        sourceMap[instructions.length-1] = jsLineIndex;
       }
-    }
-    else if ((match = line.match(/^let\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\+\s*([a-zA-Z_][a-zA-Z0-9_]*);?$/))) {
+    } else if ((match = line.match(/^let\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\+\s*([a-zA-Z_][a-zA-Z0-9_]*);?$/))) {
       const destVar = match[1];
       const var1 = match[2];
       const var2 = match[3];
-
+      console.log(`[parseJsToAssembly] Matched: let destVar = var1 + var2. destVar: ${destVar}, var1: ${var1}, var2: ${var2}. Current map:`, JSON.stringify(variableToAddressMap));
       const addr1 = getAddressForVar(var1);
       const addr2 = getAddressForVar(var2);
       const destAddr = getAddressForVar(destVar, true);
-      const reg1 = getTempRegister(); // R0
-      tempRegCounter++;
-      const reg2 = getTempRegister(); // R1
-      tempRegCounter++;
-      const destReg = getTempRegister(); // R2
-      // Note: Very naive register use. This ADD might need R2 available before this line.
-      // For a simple sequential model, R2 might be okay here.
-
+      const reg1 = getTempRegister(); tempRegCounter++;
+      const reg2 = getTempRegister(); tempRegCounter++;
+      const resReg = getTempRegister(); tempRegCounter++;
       if (addr1 && addr2 && destAddr) {
-        const instr1: Instruction = { opCode: OpCode.LOAD_MEM, operands: [addr1, reg1], originalJsLine: jsLineIndex };
-        instructions.push(instr1);
+        instructions.push({ opCode: OpCode.LOAD_MEM, operands: [addr1, reg1], originalJsLine: jsLineIndex });
         sourceMap[instructions.length - 1] = jsLineIndex;
-
-        const instr2: Instruction = { opCode: OpCode.LOAD_MEM, operands: [addr2, reg2], originalJsLine: jsLineIndex };
-        instructions.push(instr2);
+        instructions.push({ opCode: OpCode.LOAD_MEM, operands: [addr2, reg2], originalJsLine: jsLineIndex });
         sourceMap[instructions.length - 1] = jsLineIndex;
-
-        const instr3: Instruction = { opCode: OpCode.ADD_REG, operands: [reg1, reg2, destReg], originalJsLine: jsLineIndex };
-        instructions.push(instr3);
+        instructions.push({ opCode: OpCode.ADD_REG, operands: [reg1, reg2, resReg], originalJsLine: jsLineIndex });
         sourceMap[instructions.length - 1] = jsLineIndex;
-
-        const instr4: Instruction = { opCode: OpCode.STORE_MEM, operands: [destReg, destAddr], originalJsLine: jsLineIndex };
-        instructions.push(instr4);
+        instructions.push({ opCode: OpCode.STORE_MEM, operands: [resReg, destAddr], originalJsLine: jsLineIndex });
         sourceMap[instructions.length - 1] = jsLineIndex;
       } else {
-        console.error(`Variable not defined or failed to allocate address: ${var1}, ${var2} or ${destVar}`);
-        instructions.push({ opCode: OpCode.NOP, operands: [`Error: Undefined variable or address error: ${line}`], originalJsLine: jsLineIndex });
-        sourceMap[instructions.length -1] = jsLineIndex;
+        console.error(`[parseJsToAssembly] ERROR (let destVar = var1 + var2): Variable not defined. var1: ${var1}(${addr1}), var2: ${var2}(${addr2}), dest: ${destAddr}. Map:`, JSON.stringify(variableToAddressMap));
+        instructions.push({ opCode: OpCode.NOP, operands: [`Error: Undefined variable in sum`], originalJsLine: jsLineIndex });
+        sourceMap[instructions.length-1] = jsLineIndex;
       }
-    }
-    else if (line.toLowerCase().includes('halt')) { // Support 'halt', '// HALT', 'HALT;'
+    } else if ((match = line.match(/^if\s*\(\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*([<>=!]{1,3})\s*(\d+)\s*\)\s*\{$/))) {
+      const conditionVar = match[1];
+      const operator = match[2];
+      const conditionValue = parseInt(match[3], 10);
+      console.log(`[parseJsToAssembly] Matched: if (var OP num) {. Var: ${conditionVar}, Op: ${operator}, Val: ${conditionValue}. Map:`, JSON.stringify(variableToAddressMap));
+
+      const varAddr = getAddressForVar(conditionVar);
+      if (!varAddr) {
+        console.error(`[parseJsToAssembly] ERROR (if condition): Variable ${conditionVar} not defined. Map:`, JSON.stringify(variableToAddressMap));
+        instructions.push({ opCode: OpCode.NOP, operands: [`Error: Undefined variable ${conditionVar} in if`], originalJsLine: jsLineIndex });
+        sourceMap[instructions.length-1] = jsLineIndex;
+        let blockEnd = i + 1;
+        while(blockEnd < lines.length && !lines[blockEnd].match(/^\s*\}\s*$/)) blockEnd++;
+        i = blockEnd;
+        continue;
+      }
+
+      const tempReg = getTempRegister(); tempRegCounter++;
+      instructions.push({ opCode: OpCode.LOAD_MEM, operands: [varAddr, tempReg], originalJsLine: jsLineIndex });
+      sourceMap[instructions.length - 1] = jsLineIndex;
+      instructions.push({ opCode: OpCode.CMP_REG_VAL, operands: [tempReg, conditionValue], originalJsLine: jsLineIndex });
+      sourceMap[instructions.length - 1] = jsLineIndex;
+
+      const endIfLabel = generateLabel('END_IF');
+      let jumpOp: OpCode | null = null;
+
+      switch (operator) {
+        case '<': jumpOp = OpCode.JMP_IF_GTE; break;
+        case '<=': jumpOp = OpCode.JMP_IF_GT; break;
+        case '>': jumpOp = OpCode.JMP_IF_LTE; break;
+        case '>=': jumpOp = OpCode.JMP_IF_LT; break;
+        case '===':
+        case '==': jumpOp = OpCode.JMP_IF_NEQ; break;
+        case '!==':
+        case '!=': jumpOp = OpCode.JMP_IF_EQ; break;
+        default:
+          console.error(`[parseJsToAssembly] ERROR (if condition): Unsupported operator ${operator}`);
+          instructions.push({ opCode: OpCode.NOP, operands: [`Error: Unsupported operator ${operator} in if`], originalJsLine: jsLineIndex });
+          sourceMap[instructions.length-1] = jsLineIndex;
+          let blockEnd = i + 1;
+          while(blockEnd < lines.length && !lines[blockEnd].match(/^\s*\}\s*$/)) blockEnd++;
+          i = blockEnd;
+          continue;
+      }
+
+      if (jumpOp) {
+        instructions.push({ opCode: jumpOp, operands: [endIfLabel], originalJsLine: jsLineIndex });
+        sourceMap[instructions.length - 1] = jsLineIndex;
+      }
+
+      const ifBlockLineIndex = i + 1;
+      if (ifBlockLineIndex < lines.length && !lines[ifBlockLineIndex].match(/^\s*\}\s*$/)) {
+        const ifBlockLine = lines[ifBlockLineIndex];
+        let blockMatch;
+        if ((blockMatch = ifBlockLine.match(/^(?:let\s+)?([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*(\d+);?$/))) {
+          const varName = blockMatch[1];
+          const value = parseInt(blockMatch[2], 10);
+          const destAddr = getAddressForVar(varName, true);
+          const blkTempReg = getTempRegister(); tempRegCounter++;
+          if (destAddr) {
+            instructions.push({ opCode: OpCode.LOAD_VAL, operands: [value, blkTempReg], originalJsLine: ifBlockLineIndex });
+            sourceMap[instructions.length - 1] = ifBlockLineIndex;
+            instructions.push({ opCode: OpCode.STORE_MEM, operands: [blkTempReg, destAddr], originalJsLine: ifBlockLineIndex });
+            sourceMap[instructions.length - 1] = ifBlockLineIndex;
+          } else {
+            console.error(`[parseJsToAssembly] ERROR (if-block assign number): Failed to get/allocate address for ${varName}`);
+            instructions.push({ opCode: OpCode.NOP, operands: [`Error: Assign in if for ${varName}`], originalJsLine: ifBlockLineIndex });
+            sourceMap[instructions.length - 1] = ifBlockLineIndex;
+          }
+        } else if ((blockMatch = ifBlockLine.match(/^(?:let\s+)?([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*([a-zA-Z_][a-zA-Z0-9_]*);?$/))) {
+          const destVar = blockMatch[1];
+          const sourceVar = blockMatch[2];
+          const sourceAddr = getAddressForVar(sourceVar);
+          const destAddr = getAddressForVar(destVar, true);
+          const blkTempReg = getTempRegister(); tempRegCounter++;
+          if (sourceAddr && destAddr) {
+            instructions.push({ opCode: OpCode.LOAD_MEM, operands: [sourceAddr, blkTempReg], originalJsLine: ifBlockLineIndex });
+            sourceMap[instructions.length - 1] = ifBlockLineIndex;
+            instructions.push({ opCode: OpCode.STORE_MEM, operands: [blkTempReg, destAddr], originalJsLine: ifBlockLineIndex });
+            sourceMap[instructions.length - 1] = ifBlockLineIndex;
+          } else {
+             console.error(`[parseJsToAssembly] ERROR (if-block assign var): Var not defined or alloc failed. Source: ${sourceVar}, Dest: ${destVar}`);
+             instructions.push({ opCode: OpCode.NOP, operands: [`Error: Assign in if ${sourceVar} to ${destVar}`], originalJsLine: ifBlockLineIndex });
+             sourceMap[instructions.length - 1] = ifBlockLineIndex;
+          }
+        } else if (ifBlockLine.toLowerCase().includes('halt')) {
+            instructions.push({ opCode: OpCode.HALT, operands: [], originalJsLine: ifBlockLineIndex });
+            sourceMap[instructions.length - 1] = ifBlockLineIndex;
+        } else {
+            console.warn(`[parseJsToAssembly] Unsupported statement in if-block: ${ifBlockLine}`);
+            instructions.push({ opCode: OpCode.NOP, operands: [`Unsupported in if: ${ifBlockLine}`], originalJsLine: ifBlockLineIndex });
+            sourceMap[instructions.length - 1] = ifBlockLineIndex;
+        }
+        i++;
+      } else {
+          console.warn(`[parseJsToAssembly] Empty or malformed if-block starting at JS line: ${jsLineIndex}`);
+      }
+
+      if (i + 1 < lines.length && lines[i + 1].match(/^\s*\}\s*$/)) {
+        i++;
+        instructions.push({ opCode: OpCode.NOP, operands: [], label: endIfLabel, originalJsLine: i });
+        sourceMap[instructions.length - 1] = i;
+      } else {
+        console.error(`[parseJsToAssembly] ERROR: Missing closing '}' for if statement that started at JS line ${jsLineIndex}. Current line: ${lines[i+1]}`);
+        instructions.push({ opCode: OpCode.NOP, operands: [`Error: Missing '}' for if`], label: endIfLabel, originalJsLine: jsLineIndex });
+        sourceMap[instructions.length - 1] = jsLineIndex;
+      }
+    } else if (line.toLowerCase().includes('halt')) {
       instructions.push({ opCode: OpCode.HALT, operands: [], originalJsLine: jsLineIndex });
       sourceMap[instructions.length - 1] = jsLineIndex;
     } else if (line.startsWith('//') || line.length === 0) {
-        // Comments or empty lines are ignored (must be after HALT check if HALT can be a comment)
-    }
-    else {
+    } else {
       console.warn(`Unsupported JS syntax: ${line}`);
       instructions.push({ opCode: OpCode.NOP, operands: [`Unsupported: ${line}`], originalJsLine: jsLineIndex });
-      sourceMap[instructions.length -1] = jsLineIndex;
+      sourceMap[instructions.length-1] = jsLineIndex;
     }
-  });
+  }
 
   const machineCode: MachineCodeInstruction[] = instructions.map(instr => {
     const opCodeNum = Object.values(OpCode).indexOf(instr.opCode) + 1;
     const operandsNum = instr.operands.map(op => {
       if (typeof op === 'number') return op;
       if (typeof op === 'string' && op.match(/^r[0-2]$/)) return parseInt(op.substring(1),10);
-      // アドレス文字列も数値化が必要だが、ここでは簡易的に0
       if (typeof op === 'string' && op.startsWith('mem_')) {
-        try {
-          return parseInt(op.substring(4), 16); // mem_を除去して16進数パース
-        } catch { return 0; }
+        try { return parseInt(op.substring(4), 16); } catch { return 0; }
       }
+      if (typeof op === 'string') return 0;
       return 0;
     });
     while(operandsNum.length < 2) operandsNum.push(0);
@@ -167,7 +257,7 @@ export function initializeCpuState(): CpuState {
       r0: 0,
       r1: 0,
       r2: 0,
-      flags: { zero: false, carry: false },
+      flags: { zero: false, carry: false, negative: false },
     },
     memory: {},
     isRunning: true,
@@ -181,10 +271,15 @@ export function stepExecute(currentState: CpuState, program: Instruction[]): Cpu
     return { ...currentState, isRunning: false };
   }
 
+  // Helper function to find label (moved to the top of the function scope)
+  const findLabelIndex = (label: string): number => {
+    const index = program.findIndex(instr => instr.label === label);
+    if (index === -1) throw new Error(`Label ${label} not found`);
+    return index;
+  };
+
   const instruction = program[currentState.registers.pc];
-  // Use structuredClone for a more robust deep copy if available (Node.js >= 17)
-  // const nextState = structuredClone(currentState);
-  const nextState = JSON.parse(JSON.stringify(currentState)) as CpuState; // Fallback deep copy
+  const nextState = JSON.parse(JSON.stringify(currentState)) as CpuState;
 
   nextState.currentAssemblyLine = currentState.registers.pc;
   if (instruction.originalJsLine !== undefined) {
@@ -192,6 +287,7 @@ export function stepExecute(currentState: CpuState, program: Instruction[]): Cpu
   }
 
   let incrementPC = true;
+  let jumpTaken = false;
 
   try {
     switch (instruction.opCode) {
@@ -199,7 +295,7 @@ export function stepExecute(currentState: CpuState, program: Instruction[]): Cpu
         const value = instruction.operands[0] as number;
         const regName = instruction.operands[1] as string;
         if (regName in nextState.registers) {
-          nextState.registers[regName] = value;
+          (nextState.registers as any)[regName] = value;
         } else {
             throw new Error(`Unknown register ${regName} in LOAD_VAL`);
         }
@@ -207,15 +303,13 @@ export function stepExecute(currentState: CpuState, program: Instruction[]): Cpu
       }
       case OpCode.STORE_MEM: { // STORE_MEM reg, addressKey
         const regName = instruction.operands[0] as string;
-        const addressKey = instruction.operands[1] as string; // e.g., "mem_1000"
+        const addressKey = instruction.operands[1] as string;
         if (regName in nextState.registers) {
-          const valueToStore = nextState.registers[regName];
-          // Ensure memory object exists
+          const valueToStore = (nextState.registers as any)[regName];
           if (!nextState.memory) {
               nextState.memory = {};
           }
-          nextState.memory[addressKey] = Number(valueToStore); // Ensure value is number
-          // console.log(`Memory Write: ${addressKey} = ${valueToStore}`); // Debug log
+          nextState.memory[addressKey] = Number(valueToStore);
         } else {
           throw new Error(`Unknown register ${regName} in STORE_MEM`);
         }
@@ -225,11 +319,9 @@ export function stepExecute(currentState: CpuState, program: Instruction[]): Cpu
         const addressKey = instruction.operands[0] as string;
         const regName = instruction.operands[1] as string;
         if (regName in nextState.registers) {
-          // Ensure memory object exists before reading
           const memoryExists = nextState.memory && (addressKey in nextState.memory);
-          const valueLoaded = memoryExists ? nextState.memory[addressKey] : 0; // Default to 0 if not exists
-          nextState.registers[regName] = valueLoaded;
-          // console.log(`Memory Read: ${addressKey} -> ${valueLoaded} into ${regName}`); // Debug log
+          const valueLoaded = memoryExists ? nextState.memory[addressKey] : 0;
+          (nextState.registers as any)[regName] = valueLoaded;
         } else {
           throw new Error(`Unknown register ${regName} in LOAD_MEM`);
         }
@@ -245,15 +337,96 @@ export function stepExecute(currentState: CpuState, program: Instruction[]): Cpu
              (reg2Name in nextState.registers) &&
              (destRegName in nextState.registers)
         ) {
-          const val1 = Number(nextState.registers[reg1Name]);
-          const val2 = Number(nextState.registers[reg2Name]);
+          const val1 = Number((nextState.registers as any)[reg1Name]);
+          const val2 = Number((nextState.registers as any)[reg2Name]);
           if (isNaN(val1) || isNaN(val2)) throw new Error(`Invalid number in ADD_REG operands: ${val1}, ${val2}`);
           const result = val1 + val2;
-          nextState.registers[destRegName] = result;
+          (nextState.registers as any)[destRegName] = result;
           nextState.registers.flags.zero = result === 0;
-          // TODO: Implement Carry flag logic for ADD
+          nextState.registers.flags.negative = result < 0; // Assuming signed addition for negative flag
+          // TODO: Implement Carry flag logic for ADD more accurately
         } else {
             throw new Error(`Unknown register in ADD_REG: ${reg1Name}, ${reg2Name} or ${destRegName}`);
+        }
+        break;
+      }
+      case OpCode.CMP_REG_VAL: { // CMP_REG_VAL reg, value
+        const regName = instruction.operands[0] as string;
+        const value = instruction.operands[1] as number;
+        if (regName in nextState.registers) {
+          const regValue = Number((nextState.registers as any)[regName]);
+          if (isNaN(regValue) || isNaN(value)) throw new Error(`Invalid number in CMP_REG_VAL operands: ${regValue}, ${value}`);
+          const result = regValue - value; // Perform subtraction to set flags
+          nextState.registers.flags.zero = result === 0;
+          nextState.registers.flags.negative = result < 0;
+          // Carry flag for CMP (a - b): set if no borrow occurred (a >= b for unsigned)
+          // Or, more simply for now for signed: if regValue < value, and result is negative without overflow, it might be complex.
+          // Let's keep carry simple: carry is true if regValue >= value (unsigned sense)
+          nextState.registers.flags.carry = regValue >= value;
+        } else {
+          throw new Error(`Unknown register ${regName} in CMP_REG_VAL`);
+        }
+        break;
+      }
+      // JMP opcodes now correctly see findLabelIndex
+      case OpCode.JMP: {
+        const label = instruction.operands[0] as string;
+        nextState.registers.pc = findLabelIndex(label);
+        incrementPC = false;
+        jumpTaken = true;
+        break;
+      }
+      case OpCode.JMP_IF_EQ: { // Jump if Zero flag is true
+        if (nextState.registers.flags.zero) {
+          const label = instruction.operands[0] as string;
+          nextState.registers.pc = findLabelIndex(label);
+          incrementPC = false;
+          jumpTaken = true;
+        }
+        break;
+      }
+      case OpCode.JMP_IF_NEQ: { // Jump if Zero flag is false
+        if (!nextState.registers.flags.zero) {
+          const label = instruction.operands[0] as string;
+          nextState.registers.pc = findLabelIndex(label);
+          incrementPC = false;
+          jumpTaken = true;
+        }
+        break;
+      }
+      case OpCode.JMP_IF_LT: { // Jump if Negative flag is true (and Zero is false, for strict less than)
+        if (nextState.registers.flags.negative && !nextState.registers.flags.zero) {
+          const label = instruction.operands[0] as string;
+          nextState.registers.pc = findLabelIndex(label);
+          incrementPC = false;
+          jumpTaken = true;
+        }
+        break;
+      }
+      case OpCode.JMP_IF_GTE: { // Jump if Negative is false OR Zero is true
+        if (!nextState.registers.flags.negative || nextState.registers.flags.zero) {
+          const label = instruction.operands[0] as string;
+          nextState.registers.pc = findLabelIndex(label);
+          incrementPC = false;
+          jumpTaken = true;
+        }
+        break;
+      }
+      case OpCode.JMP_IF_GT: { // Jump if Negative is false AND Zero is false
+        if (!nextState.registers.flags.negative && !nextState.registers.flags.zero) {
+          const label = instruction.operands[0] as string;
+          nextState.registers.pc = findLabelIndex(label);
+          incrementPC = false;
+          jumpTaken = true;
+        }
+        break;
+      }
+      case OpCode.JMP_IF_LTE: { // Jump if Negative is true OR Zero is true
+         if (nextState.registers.flags.negative || nextState.registers.flags.zero) {
+          const label = instruction.operands[0] as string;
+          nextState.registers.pc = findLabelIndex(label);
+          incrementPC = false;
+          jumpTaken = true;
         }
         break;
       }
@@ -265,20 +438,17 @@ export function stepExecute(currentState: CpuState, program: Instruction[]): Cpu
         // Do nothing
         break;
       default:
-        // Handle other opcodes like SUB, MUL, DIV, JMP etc. if added later
         throw new Error(`Unsupported OpCode execution: ${instruction.opCode}`);
     }
   } catch (e: any) {
     console.error(`Runtime Error at PC=${currentState.registers.pc}, Op=${instruction.opCode}, Operands=${instruction.operands.join(', ')}: ${e.message}`);
-    nextState.isRunning = false; // Halt on runtime error
-    // Consider adding error message to state: nextState.error = e.message;
+    nextState.isRunning = false;
   }
 
-  if (incrementPC && nextState.isRunning) {
+  if (incrementPC && nextState.isRunning && !jumpTaken) { // jumpTaken をチェック
     nextState.registers.pc++;
   }
 
-  // If PC reaches end without HALT, consider it halted
   if (nextState.registers.pc >= program.length && nextState.isRunning) {
     nextState.isRunning = false;
   }
