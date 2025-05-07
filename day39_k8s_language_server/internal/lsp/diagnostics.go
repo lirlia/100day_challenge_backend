@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/lirlia/100day_challenge_backend/day39_k8s_language_server/internal/k8s/schema"
 	protocol "go.lsp.dev/protocol"
 	"gopkg.in/yaml.v3" // YAML パーサーを追加
@@ -256,18 +257,129 @@ func (h *Handler) validateK8sStructure(docMappingNode *yaml.Node) []protocol.Dia
 		// カスタムビジターを実装する代わりに、エラー処理のプレースホルダーを置く。
 		// 実際のバリデーションエラーをどう取得し、どのフィールドでエラーが起きたかを特定するのが難しい。
 
-		// TODO: 実際のスキーマバリデーションとエラー報告ロジックを実装する
-		// この部分は複雑なので、一旦プレースホルダーの警告を出す。
-		h.logger.Printf("Schema validation for %s/%s against provided data is not fully implemented yet.", apiVersion, kind)
-		/* diagnostics = append(diagnostics, protocol.Diagnostic{
-			Range:    getRangeFromNode(docMappingNode),
-			Severity: protocol.DiagnosticSeverityHint,
-			Source:   "kls-schema-validator",
-			Message:  fmt.Sprintf("Schema validation for %s/%s is pending implementation.", apiVersion, kind),
-		}) */
+		// --- ここからスキーマバリデーションの実装 ---
+		validationContext := context.Background() // バリデーション用のコンテキスト (必要に応じてLSPのctxを使う)
+
+		if k8sSchemaRef != nil && k8sSchemaRef.Value != nil {
+			schemaToValidate := k8sSchemaRef.Value
+
+			// 1. 必須フィールドのチェック
+			for _, requiredFieldName := range schemaToValidate.Required {
+				if _, ok := dataToValidate[requiredFieldName]; !ok {
+					// エラー位置の特定: このフィールドがdocMappingNodeのどこにあるべきだったか。
+					// 現状はdocMappingNodeの戦闘を指す。
+					diag := protocol.Diagnostic{
+						Range:    getRangeFromNode(docMappingNode), // 親ノードの位置
+						Severity: protocol.DiagnosticSeverityError,
+						Source:   "kls-schema-validator",
+						Message:  fmt.Sprintf("Missing required property: '%s'", requiredFieldName),
+					}
+					diagnostics = append(diagnostics, diag)
+				}
+			}
+
+			// 2. プロパティごとの型チェックとスキーマにないプロパティの警告
+			for dataKey, dataValue := range dataToValidate {
+				propSchemaRef, propExists := schemaToValidate.Properties[dataKey]
+				var keyNodeForError *yaml.Node // エラー報告用のキーノード
+				// 元のYAMLノードからこのキーに対応するノードを探す
+				for i := 0; i < len(docMappingNode.Content); i += 2 {
+					kNode := docMappingNode.Content[i]
+					if kNode.Kind == yaml.ScalarNode && kNode.Value == dataKey {
+						keyNodeForError = kNode
+						break
+					}
+				}
+
+				if !propExists {
+					// スキーマに定義されていないプロパティ
+					diag := protocol.Diagnostic{
+						Range:    getRangeFromNode(keyNodeForError), // 見つかったキーノードの位置
+						Severity: protocol.DiagnosticSeverityWarning,
+						Source:   "kls-schema-validator",
+						Message:  fmt.Sprintf("Property '%s' is not defined in schema for %s/%s", dataKey, apiVersion, kind),
+					}
+					diagnostics = append(diagnostics, diag)
+					continue
+				}
+
+				if propSchemaRef != nil && propSchemaRef.Value != nil {
+					propSchema := propSchemaRef.Value
+					// 型チェック (基本的なもの)
+					diags := validateDataType(validationContext, propSchema, dataValue, keyNodeForError, dataKey)
+					diagnostics = append(diagnostics, diags...)
+					// TODO: ネストされた object や array の再帰的なバリデーション
+				}
+			}
+		}
+
+		// TODO: 実際のスキーマバリデーションとエラー報告ロジックを実装する (これはステップの一部)
+		// h.logger.Printf("Schema validation for %s/%s against provided data is not fully implemented yet.", apiVersion, kind)
 
 	}
 
+	return diagnostics
+}
+
+// validateDataType は、指定されたスキーマとデータに対して基本的な型チェックを行います。
+func validateDataType(ctx context.Context, schema *openapi3.Schema, dataValue interface{}, yamlKeyNode *yaml.Node, dataKey string) []protocol.Diagnostic {
+	var diagnostics []protocol.Diagnostic
+	if schema.Type == nil || len(*schema.Type) == 0 {
+		return diagnostics // スキーマに型指定がなければチェックしようがない
+	}
+	schemaType := (*schema.Type)[0] // 最初の型定義を使用 (oneOf, anyOf などは別途考慮)
+
+	valid := false
+	actualType := fmt.Sprintf("%T", dataValue)
+
+	switch schemaType {
+	case "string":
+		if _, ok := dataValue.(string); ok {
+			valid = true
+			// TODO: pattern, minLength, maxLength, format などの検証
+		}
+	case "integer":
+		// YAMLデコード時に数値は float64 になることが多いので、それを考慮
+		if _, okFloat := dataValue.(float64); okFloat {
+			valid = true // 整数であるかは別途 isIntegerFloat64 のような関数で判定可能
+		} else if _, okInt := dataValue.(int); okInt {
+			valid = true
+		} else if _, okInt64 := dataValue.(int64); okInt64 {
+			valid = true
+		}
+		// TODO: minimum, maximum, multipleOf などの検証
+	case "number":
+		if _, ok := dataValue.(float64); ok {
+			valid = true
+		} else if _, ok := dataValue.(int); ok { // 整数も数値型
+			valid = true
+		}
+		// TODO: minimum, maximum, multipleOf などの検証
+	case "boolean":
+		if _, ok := dataValue.(bool); ok {
+			valid = true
+		}
+	case "object":
+		if _, ok := dataValue.(map[string]interface{}); ok {
+			valid = true
+			// TODO: object 内部のプロパティを再帰的にバリデーション
+		}
+	case "array":
+		if _, ok := dataValue.([]interface{}); ok {
+			valid = true
+			// TODO: array の items スキーマに対するバリデーション、minItems, maxItemsなど
+		}
+	}
+
+	if !valid {
+		diag := protocol.Diagnostic{
+			Range:    getRangeFromNode(yamlKeyNode), // エラー箇所はキーのノードを指す
+			Severity: protocol.DiagnosticSeverityError,
+			Source:   "kls-schema-validator",
+			Message:  fmt.Sprintf("Invalid type for property '%s'. Expected '%s', got '%s'", dataKey, schemaType, actualType),
+		}
+		diagnostics = append(diagnostics, diag)
+	}
 	return diagnostics
 }
 
