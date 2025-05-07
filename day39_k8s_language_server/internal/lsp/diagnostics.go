@@ -3,6 +3,7 @@ package lsp
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/lirlia/100day_challenge_backend/day39_k8s_language_server/internal/k8s/schema"
@@ -76,13 +77,13 @@ func (h *Handler) validateKubernetesManifest(ctx context.Context, content string
 	if rootNode.Kind == yaml.DocumentNode {
 		for _, docNode := range rootNode.Content {
 			if docNode.Kind == yaml.MappingNode { // 各ドキュメントはマッピングであるべき
-				diags := h.validateK8sStructure(docNode)
+				diags := h.validateK8sStructure(ctx, docNode)
 				diagnostics = append(diagnostics, diags...)
 			}
 		}
 	} else if rootNode.Kind == yaml.MappingNode {
 		// 単一のYAMLドキュメントの場合
-		diags := h.validateK8sStructure(&rootNode)
+		diags := h.validateK8sStructure(ctx, &rootNode)
 		diagnostics = append(diagnostics, diags...)
 	}
 
@@ -109,7 +110,7 @@ func (h *Handler) validateKubernetesManifest(ctx context.Context, content string
 
 // validateK8sStructure は、単一のKubernetesマニフェストの基本的な構造を検証します。
 // (apiVersion と kind が存在するかどうかなど)
-func (h *Handler) validateK8sStructure(docMappingNode *yaml.Node) []protocol.Diagnostic {
+func (h *Handler) validateK8sStructure(ctx context.Context, docMappingNode *yaml.Node) []protocol.Diagnostic {
 	var diagnostics []protocol.Diagnostic
 	fields := map[string]struct {
 		found   bool
@@ -218,111 +219,23 @@ func (h *Handler) validateK8sStructure(docMappingNode *yaml.Node) []protocol.Dia
 		}
 
 		// 3. スキーマバリデーション実行
-		// kin-openapi/openapi3.Schema.VisitJSON を使うか、Validate() を直接使う。
-		// Validate() は context.Context を要求する。現状、スキーマロード時に context.Background() を使っている。
-		// ここでも同様に context.Background() で良いか、LSP のリクエストコンテキストを使うべきか。
-		// 診断はリクエスト処理の一部なので、LSP のコンテキスト (ctx) を渡すのが適切。
-		// ただし、kin-openapi の Validate メソッドは現在 context を取らない (v0.123.0 時点)。
-		// 代わりに loader.Context を渡す必要があるかもしれない、あるいは VisitJSON を使う。
-		// スキーマ自体はロード済みなので、SchemaRef.Value.Validate(ctx, dataToValidate) のような形になる。
-		// --> 確認したところ、`openapi3.Schema.Validate(context.Context, interface{}) error` は存在しない。
-		// --> `openapi3.SchemaRef.Validate(context.Context, interface{}) error` も存在しない。
-		// --> `openapi3.T.Validate(context.Context) error` はドキュメント全体のバリデーション。
-		// --> 特定のスキーマでデータを検証するには、`kinপূর্বopenapi3filter.ValidateRequestBody` や
-		//     `kin-openapi/openapi3utils.Visit()` を利用するか、手動でやる必要がある。
-		// --> 恐らく、kin-openapi v0.123.0 では `(s *Schema).Visit()` を使用してバリデータ関数を渡すのが一般的。
-		//     もしくは、`jsoninfo.Validate()` (kin-openapi 内部で使われている) のようなものが必要。
-		// --> より簡単なのは、`kin-openapi/openapi3checker.ForSchemaRef(k8sSchemaRef).Check(dataToValidate)` だが、
-		//     これは `openapi3filter.SchemaValidationOption` を返すもので、直接的なエラーを返さない。
-
-		// 簡単な方法として、kin-openapi が OpenAPI ドキュメント自体をロードする際に内部的に行うバリデーションを
-		// 利用することを考える。しかし、ここでは既にロードされたスキーマに対して「データ」を検証したい。
-
-		// `openapi3.SchemaValidationOption` を使ってエラーを取得するアプローチ。
-		// `openapi3filter.NewSchemaChecker()` を使う。
-		// しかし、`SchemaChecker` は HTTP リクエスト/レスポンスの文脈で使われることが多い。
-
-		// ここでは、最も直接的な `SchemaRef.Value.VisitJSON()` を使うことを試みるが、
-		// これはバリデーションエラーを直接返すわけではなく、カスタムビジターが必要になる。
-
-		// 最終手段: `openapi3.NewLoader().Context` を使って、スキーマとデータを関連付けて Validate。これは複雑。
-
 		// kin-openapi の Issues や Example を見ると、個別のデータ片をスキーマに対して検証する
 		// 直接的で簡単な方法は提供されていないように見える。
 		// 一般的には、データをまずJSONにマーシャルし、それを再度アンマーシャルする際にスキーマ情報を使うなど。
 
-		_ = dataToValidate // Linter の unused variable 警告を回避
-
-		// 簡略化のため、ここでは `k8sSchemaRef.Value.VisitJSON(dataToValidate, ...)` のような
-		// カスタムビジターを実装する代わりに、エラー処理のプレースホルダーを置く。
-		// 実際のバリデーションエラーをどう取得し、どのフィールドでエラーが起きたかを特定するのが難しい。
-
-		// --- ここからスキーマバリデーションの実装 ---
-		validationContext := context.Background() // バリデーション用のコンテキスト (必要に応じてLSPのctxを使う)
-
-		if k8sSchemaRef != nil && k8sSchemaRef.Value != nil {
-			schemaToValidate := k8sSchemaRef.Value
-
-			// 1. 必須フィールドのチェック
-			for _, requiredFieldName := range schemaToValidate.Required {
-				if _, ok := dataToValidate[requiredFieldName]; !ok {
-					// エラー位置の特定: このフィールドがdocMappingNodeのどこにあるべきだったか。
-					// 現状はdocMappingNodeの戦闘を指す。
-					diag := protocol.Diagnostic{
-						Range:    getRangeFromNode(docMappingNode), // 親ノードの位置
-						Severity: protocol.DiagnosticSeverityError,
-						Source:   "kls-schema-validator",
-						Message:  fmt.Sprintf("Missing required property: '%s'", requiredFieldName),
-					}
-					diagnostics = append(diagnostics, diag)
-				}
-			}
-
-			// 2. プロパティごとの型チェックとスキーマにないプロパティの警告
-			for dataKey, dataValue := range dataToValidate {
-				propSchemaRef, propExists := schemaToValidate.Properties[dataKey]
-				var keyNodeForError *yaml.Node // エラー報告用のキーノード
-				// 元のYAMLノードからこのキーに対応するノードを探す
-				for i := 0; i < len(docMappingNode.Content); i += 2 {
-					kNode := docMappingNode.Content[i]
-					if kNode.Kind == yaml.ScalarNode && kNode.Value == dataKey {
-						keyNodeForError = kNode
-						break
-					}
-				}
-
-				if !propExists {
-					// スキーマに定義されていないプロパティ
-					diag := protocol.Diagnostic{
-						Range:    getRangeFromNode(keyNodeForError), // 見つかったキーノードの位置
-						Severity: protocol.DiagnosticSeverityWarning,
-						Source:   "kls-schema-validator",
-						Message:  fmt.Sprintf("Property '%s' is not defined in schema for %s/%s", dataKey, apiVersion, kind),
-					}
-					diagnostics = append(diagnostics, diag)
-					continue
-				}
-
-				if propSchemaRef != nil && propSchemaRef.Value != nil {
-					propSchema := propSchemaRef.Value
-					// 型チェック (基本的なもの)
-					diags := validateDataType(validationContext, propSchema, dataValue, keyNodeForError, dataKey)
-					diagnostics = append(diagnostics, diags...)
-					// TODO: ネストされた object や array の再帰的なバリデーション
-				}
-			}
+		// ここで ValidateObjectProperties を呼び出して詳細な検証を開始する
+		if k8sSchemaRef != nil && k8sSchemaRef.Value != nil && dataToValidate != nil {
+			validationDiagnostics := ValidateObjectProperties(ctx, k8sSchemaRef.Value, dataToValidate, docMappingNode, "", h.logger)
+			diagnostics = append(diagnostics, validationDiagnostics...)
+			h.logger.Printf("Completed schema validation. Found %d potential issues.", len(validationDiagnostics))
 		}
 
-		// TODO: 実際のスキーマバリデーションとエラー報告ロジックを実装する (これはステップの一部)
-		// h.logger.Printf("Schema validation for %s/%s against provided data is not fully implemented yet.", apiVersion, kind)
-
 	}
-
 	return diagnostics
 }
 
 // validateDataType は、指定されたスキーマとデータに対して基本的な型チェックを行います。
-func validateDataType(ctx context.Context, schema *openapi3.Schema, dataValue interface{}, yamlKeyNode *yaml.Node, dataKey string) []protocol.Diagnostic {
+func validateDataType(ctx context.Context, schema *openapi3.Schema, dataValue interface{}, yamlKeyNode *yaml.Node, dataKey string, logger *log.Logger) []protocol.Diagnostic {
 	var diagnostics []protocol.Diagnostic
 	if schema.Type == nil || len(*schema.Type) == 0 {
 		return diagnostics // スキーマに型指定がなければチェックしようがない
@@ -376,7 +289,7 @@ func validateDataType(ctx context.Context, schema *openapi3.Schema, dataValue in
 			// 簡単のため、ここではネストされたオブジェクトの yaml.Node の特定は一旦保留し、
 			// エラーメッセージは親キーを示す。
 
-			nestedDiagnostics := validateObjectProperties(ctx, schema, typedDataValue, yamlKeyNode /* placeholder */, dataKey)
+			nestedDiagnostics := ValidateObjectProperties(ctx, schema, typedDataValue, yamlKeyNode /* placeholder */, dataKey, logger)
 			diagnostics = append(diagnostics, nestedDiagnostics...)
 		}
 	case "array":
@@ -389,7 +302,7 @@ func validateDataType(ctx context.Context, schema *openapi3.Schema, dataValue in
 					// 各アイテムに対応する YAML ノードを見つけるのは難しい。
 					// エラーは配列全体か、インデックスを示す形になる。
 					// 簡単のため、エラー位置は親配列のキーノードとする。
-					itemDiagnostics := validateDataType(ctx, itemSchema, itemData, yamlKeyNode, fmt.Sprintf("%s[%d]", dataKey, i))
+					itemDiagnostics := validateDataType(ctx, itemSchema, itemData, yamlKeyNode, fmt.Sprintf("%s[%d]", dataKey, i), logger)
 					diagnostics = append(diagnostics, itemDiagnostics...)
 				}
 			}
@@ -408,18 +321,20 @@ func validateDataType(ctx context.Context, schema *openapi3.Schema, dataValue in
 	return diagnostics
 }
 
-// validateObjectProperties は、オブジェクトのプロパティをスキーマに基づいて検証します。
+// ValidateObjectProperties は、オブジェクトのプロパティをスキーマに基づいて検証します。
 // baseDataPath はエラーメッセージ用です (例: "metadata.labels")
 // parentYamlNode は、このオブジェクトが含まれる親の構造の中での、このオブジェクト自体を指す yaml.Node であるべきだが、
 // 現在の実装では、オブジェクトの「キー」を指す yamlNode を渡しているため、位置特定が不正確になる可能性がある。
-func validateObjectProperties(ctx context.Context, objectSchema *openapi3.Schema, data map[string]interface{}, parentYamlNode *yaml.Node, baseDataPath string) []protocol.Diagnostic {
+func ValidateObjectProperties(ctx context.Context, objectSchema *openapi3.Schema, data map[string]interface{}, parentYamlNode *yaml.Node, baseDataPath string, logger *log.Logger) []protocol.Diagnostic {
 	var diagnostics []protocol.Diagnostic
 
 	// 1. 必須フィールドのチェック
 	for _, requiredFieldName := range objectSchema.Required {
 		if _, ok := data[requiredFieldName]; !ok {
+			// 必須フィールドが見つからない場合のエラー位置は、そのフィールドが含まれるべき親オブジェクトを示すのが妥当
+			// parentYamlNode は現在その親オブジェクトのキーまたは親オブジェクト自体を指しているはず
 			diag := protocol.Diagnostic{
-				Range:    getRangeFromNode(parentYamlNode), // 不正確だが、一旦親を示す
+				Range:    getRangeFromNode(parentYamlNode),
 				Severity: protocol.DiagnosticSeverityError,
 				Source:   "kls-schema-validator",
 				Message:  fmt.Sprintf("Missing required property: '%s' in object '%s'", requiredFieldName, baseDataPath),
@@ -428,19 +343,23 @@ func validateObjectProperties(ctx context.Context, objectSchema *openapi3.Schema
 		}
 	}
 
-	// 2. プロパティごとの型チェックとスキーマにないプロパティの警告
+	// 2. プロパティごとの型チェックとスキーマにないプロパティの警告、および再帰的な検証
 	for dataKey, dataValue := range data {
 		propSchemaRef, propExists := objectSchema.Properties[dataKey]
-		currentDataPath := baseDataPath + "." + dataKey
+		currentDataPath := baseDataPath
+		if baseDataPath == "" {
+			currentDataPath = dataKey
+		} else {
+			currentDataPath = baseDataPath + "." + dataKey
+		}
 
-		// この dataKey に対応する正確な yaml.Node を見つけるのは難しい。
-		// parentYamlNode はオブジェクト全体のキーを指している。
-		// エラー位置は不正確になるが、メッセージでパスを示す。
-		var keyNodeForError *yaml.Node = parentYamlNode // 仮
+		// dataKey に対応するキーノードを親の YAML ノードから探す
+		// これにより、エラーメッセージの Range をより正確に設定できる
+		var keyNodeForError *yaml.Node = findKeyNodeInMapping(parentYamlNode, dataKey)
 
 		if !propExists {
 			diag := protocol.Diagnostic{
-				Range:    getRangeFromNode(keyNodeForError),
+				Range:    getRangeFromNode(keyNodeForError), // 未定義プロパティのキーを指す
 				Severity: protocol.DiagnosticSeverityWarning,
 				Source:   "kls-schema-validator",
 				Message:  fmt.Sprintf("Property '%s' is not defined in schema for object '%s'", dataKey, baseDataPath),
@@ -451,8 +370,82 @@ func validateObjectProperties(ctx context.Context, objectSchema *openapi3.Schema
 
 		if propSchemaRef != nil && propSchemaRef.Value != nil {
 			propSchema := propSchemaRef.Value
-			diags := validateDataType(ctx, propSchema, dataValue, keyNodeForError, currentDataPath)
-			diagnostics = append(diagnostics, diags...)
+
+			// 型チェック (基本的な型に対して)
+			typeDiags := validateDataType(ctx, propSchema, dataValue, keyNodeForError, currentDataPath, logger)
+			diagnostics = append(diagnostics, typeDiags...)
+
+			// --- 再帰処理 ---
+			actualSchemaType := "" // Use a more robust way to get schema type
+			if propSchema.Type != nil && len(*propSchema.Type) > 0 {
+				actualSchemaType = (*propSchema.Type)[0]
+			}
+
+			// プロパティがオブジェクトの場合
+			if actualSchemaType == "object" {
+				if subObjectData, ok := dataValue.(map[string]interface{}); ok {
+					// subObjectNode は dataValue (オブジェクト) に対応する YAML マッピングノード
+					subObjectNode := findValueNodeForKey(parentYamlNode, dataKey)
+					if subObjectNode != nil && subObjectNode.Kind == yaml.MappingNode {
+						subDiagnostics := ValidateObjectProperties(ctx, propSchema, subObjectData, subObjectNode, currentDataPath, logger) // logger を渡す
+						diagnostics = append(diagnostics, subDiagnostics...)
+					} else if subObjectNode == nil {
+						logger.Printf("Debug (ValidateObjectProperties): Could not find YAML MappingNode for sub-object key '%s' at path '%s'", dataKey, currentDataPath)
+					} else {
+						logger.Printf("Debug (ValidateObjectProperties): Expected YAML MappingNode for sub-object key '%s' at path '%s', got kind %v", dataKey, currentDataPath, subObjectNode.Kind)
+					}
+				} else {
+					// dataValue が期待した map[string]interface{} 型でない場合 (型の不一致)
+					// validateDataType で既にエラーが出ているはずだが、念のためログ
+					logger.Printf("Debug (ValidateObjectProperties): Expected map[string]interface{} for object type at path '%s', got %T", currentDataPath, dataValue)
+				}
+			} else if actualSchemaType == "array" && propSchema.Items != nil && propSchema.Items.Value != nil {
+				// プロパティが配列の場合
+				itemsSchema := propSchema.Items.Value // 配列の各要素のスキーマ
+				itemsActualSchemaType := ""
+				if itemsSchema.Type != nil && len(*itemsSchema.Type) > 0 {
+					itemsActualSchemaType = (*itemsSchema.Type)[0]
+				}
+
+				if itemsActualSchemaType == "object" { // 配列の要素がオブジェクトの場合のみ再帰
+					if subArrayData, ok := dataValue.([]interface{}); ok {
+						// subArrayNode は dataValue (配列) に対応する YAML シーケンスノード
+						subArrayNode := findValueNodeForKey(parentYamlNode, dataKey)
+						if subArrayNode != nil && subArrayNode.Kind == yaml.SequenceNode {
+							for i, itemInterface := range subArrayData {
+								if itemMap, ok := itemInterface.(map[string]interface{}); ok {
+									itemPath := fmt.Sprintf("%s[%d]", currentDataPath, i)
+									// itemNode は配列の i 番目の要素に対応する YAML ノード (マッピングノードのはず)
+									var itemNode *yaml.Node
+									if i < len(subArrayNode.Content) {
+										itemNode = subArrayNode.Content[i]
+									}
+
+									if itemNode != nil && itemNode.Kind == yaml.MappingNode {
+										itemDiagnostics := ValidateObjectProperties(ctx, itemsSchema, itemMap, itemNode, itemPath, logger) // logger を渡す
+										diagnostics = append(diagnostics, itemDiagnostics...)
+									} else if itemNode == nil {
+										logger.Printf("Debug (ValidateObjectProperties): Could not find YAML Node for array item at path '%s'", itemPath)
+									} else {
+										logger.Printf("Debug (ValidateObjectProperties): Expected YAML MappingNode for array item at path '%s', got kind %v", itemPath, itemNode.Kind)
+									}
+								} else {
+									// 配列要素が期待した map[string]interface{} 型でない場合
+									logger.Printf("Debug (ValidateObjectProperties): Expected map[string]interface{} for array item at path '%s[%d]', got %T", currentDataPath, i, itemInterface)
+								}
+							}
+						} else if subArrayNode == nil {
+							logger.Printf("Debug (ValidateObjectProperties): Could not find YAML SequenceNode for array key '%s' at path '%s'", dataKey, currentDataPath)
+						} else {
+							logger.Printf("Debug (ValidateObjectProperties): Expected YAML SequenceNode for array key '%s' at path '%s', got kind %v", dataKey, currentDataPath, subArrayNode.Kind)
+						}
+					} else {
+						// dataValue が期待した []interface{} 型でない場合
+						logger.Printf("Debug (ValidateObjectProperties): Expected []interface{} for array type at path '%s', got %T", currentDataPath, dataValue)
+					}
+				}
+			}
+			// --- 再帰処理ここまで ---
 		}
 	}
 	return diagnostics

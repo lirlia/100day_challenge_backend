@@ -118,22 +118,27 @@ func (h *Handler) CreateRPCHandler() jsonrpc2.Handler {
 			h.handleTextDocumentDidSave(ctx, &params)
 			return nil
 
-		// Example for a request that might need an ID for logging or other purposes,
-		// though Replier handles sending the response with the correct ID.
-		// case protocol.MethodTextDocumentCompletion:
-		// 	var params protocol.CompletionParams
-		// 	if err := json.Unmarshal(req.Params(), &params); err != nil {
-		// 		// Log and reply with parse error
-		// 		// Determine if req is a Call to get ID for logging, if needed.
-		// 		// call, ok := req.(*jsonrpc2.Call)
-		// 		// if ok { h.logger.Printf("Parse error on completion for ID: %v", call.ID()) }
-		// 		return reply(ctx, nil, &jsonrpc2.Error{
-		// 			Code: jsonrpc2.CodeParseError,
-		// 			Message: fmt.Sprintf("completion: %v", err),
-		// 		})
-		// 	}
-		// 	// result, rpcErr := h.handleCompletion(ctx, &params) // Assuming handleCompletion exists
-		// 	// return reply(ctx, result, rpcErr)
+		case protocol.MethodTextDocumentCompletion:
+			var params protocol.CompletionParams
+			if err := json.Unmarshal(req.Params(), &params); err != nil {
+				return reply(ctx, nil, &jsonrpc2.Error{
+					Code:    jsonrpc2.ParseError,
+					Message: fmt.Sprintf("completion: %v", err),
+				})
+			}
+			result, rpcErr := h.handleTextDocumentCompletion(ctx, &params)
+			return reply(ctx, result, rpcErr)
+
+		case protocol.MethodTextDocumentHover:
+			var params protocol.HoverParams
+			if err := json.Unmarshal(req.Params(), &params); err != nil {
+				return reply(ctx, nil, &jsonrpc2.Error{
+					Code:    jsonrpc2.ParseError,
+					Message: fmt.Sprintf("hover: failed to unmarshal params: %v", err),
+				})
+			}
+			result, rpcErr := h.handleTextDocumentHover(ctx, &params)
+			return reply(ctx, result, rpcErr)
 
 		default:
 			// Check if it's a request (expects response) or notification

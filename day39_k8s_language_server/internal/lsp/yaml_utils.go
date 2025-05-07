@@ -207,3 +207,99 @@ func isPositionInsideNode(node *yaml.Node, pos protocol.Position, logger *log.Lo
 		return cursorLine >= nodeStartLine
 	}
 }
+
+// findNodeAtPositionRecursive は、指定された YAML ノードツリー内で、
+// 指定された行と桁に最も近いノードを見つけます。
+// また、そのノードまでのキーのパスも返します。
+func findNodeAtPositionRecursive(node *yaml.Node, line, char int, currentPath []string, logger *log.Logger) (*yaml.Node, []string) {
+	if node == nil {
+		return nil, nil
+	}
+
+	if !isPositionInsideNode(node, protocol.Position{Line: uint32(line), Character: uint32(char)}, logger) {
+		return nil, nil
+	}
+
+	switch node.Kind {
+	case yaml.DocumentNode:
+		if len(node.Content) > 0 {
+			return findNodeAtPositionRecursive(node.Content[0], line, char, currentPath, logger)
+		}
+	case yaml.MappingNode:
+		for i := 0; i < len(node.Content); i += 2 {
+			keyNode := node.Content[i]
+			valNode := node.Content[i+1]
+
+			if line == keyNode.Line && char >= keyNode.Column {
+				newPath := append(currentPath, keyNode.Value)
+				return keyNode, newPath
+			}
+
+			if isPositionInsideNode(valNode, protocol.Position{Line: uint32(line), Character: uint32(char)}, logger) {
+				if resNode, resPath := findNodeAtPositionRecursive(valNode, line, char, append(currentPath, keyNode.Value), logger); resNode != nil {
+					return resNode, resPath
+				}
+			}
+		}
+		return node, currentPath
+
+	case yaml.SequenceNode:
+		for _, itemNode := range node.Content {
+			if isPositionInsideNode(itemNode, protocol.Position{Line: uint32(line), Character: uint32(char)}, logger) {
+				if resNode, resPath := findNodeAtPositionRecursive(itemNode, line, char, currentPath, logger); resNode != nil {
+					return resNode, resPath
+				}
+			}
+		}
+		return node, currentPath
+
+	case yaml.ScalarNode:
+		return node, currentPath
+
+	case yaml.AliasNode:
+		logger.Printf("Alias node encountered, not handled yet. Path: %v", currentPath)
+		return node, currentPath
+	}
+
+	if node.Kind == yaml.MappingNode || node.Kind == yaml.SequenceNode || node.Kind == yaml.ScalarNode || node.Kind == yaml.AliasNode {
+		return node, currentPath
+	}
+
+	return nil, nil
+}
+
+// findKeyNodeInMapping は、指定されたマッピングノード内で、特定のキー文字列を持つキーノードを探します。
+func findKeyNodeInMapping(mappingNode *yaml.Node, key string) *yaml.Node {
+	if mappingNode == nil || mappingNode.Kind != yaml.MappingNode {
+		// 不適切なノードが来たら、エラー位置特定のフォールバックとしてそのまま返すか、
+		// より適切なデフォルトノード (例えばドキュメントルートやnil) を検討。
+		// ここでは parentYamlNode が渡されることを期待しているので、それを返す。
+		return mappingNode
+	}
+	for i := 0; i < len(mappingNode.Content); i += 2 {
+		keyNode := mappingNode.Content[i]
+		if keyNode.Kind == yaml.ScalarNode && keyNode.Value == key {
+			return keyNode
+		}
+	}
+	// キーが見つからない場合、エラー報告のために親ノード(マッピングノード全体)を返す。
+	// これにより、エラーが「このオブジェクトのどこか」を示すことができる。
+	return mappingNode
+}
+
+// findValueNodeForKey は、指定されたマッピングノード内で、特定のキー文字列を持つ値ノードを探します。
+func findValueNodeForKey(mappingNode *yaml.Node, key string) *yaml.Node {
+	if mappingNode == nil || mappingNode.Kind != yaml.MappingNode {
+		return nil
+	}
+	for i := 0; i < len(mappingNode.Content); i += 2 {
+		keyNode := mappingNode.Content[i]
+		if keyNode.Kind == yaml.ScalarNode && keyNode.Value == key {
+			if i+1 < len(mappingNode.Content) {
+				return mappingNode.Content[i+1]
+			}
+			return nil // キーはあるが値がない (不正なYAMLの可能性)
+		}
+	}
+	return nil // キーが見つからない
+}
