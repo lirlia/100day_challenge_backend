@@ -4,35 +4,48 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"os"
 
-	"github.com/sourcegraph/jsonrpc2"
+	"go.lsp.dev/jsonrpc2"
 
-	"github.com/lirlia/100day_challenge_backend/day39_k8s_language_server/internal/document"    // ドキュメントマネージャー
-	"github.com/lirlia/100day_challenge_backend/day39_k8s_language_server/internal/k8s/schema"  // スキーマローダー
-	kls_lsp "github.com/lirlia/100day_challenge_backend/day39_k8s_language_server/internal/lsp" // LSPハンドラ
+	"github.com/lirlia/100day_challenge_backend/day39_k8s_language_server/internal/document"   // ドキュメントマネージャー
+	"github.com/lirlia/100day_challenge_backend/day39_k8s_language_server/internal/k8s/schema" // スキーマローダー
+	"github.com/lirlia/100day_challenge_backend/day39_k8s_language_server/internal/lsp"        // LSPハンドラ
 )
 
 func main() {
 	// Setup logging to stderr
 	logger := log.New(os.Stderr, "[kls] ", log.LstdFlags|log.Lshortfile)
-	logger.Println("Kubernetes Language Server (KLS) starting...")
+	logger.Println("KLS (Kubernetes Language Server) starting...")
 
 	// Load OpenAPI schemas
 	logger.Println("Loading Kubernetes OpenAPI schemas...")
 	if err := schema.LoadAndParseSchemas(); err != nil {
-		logger.Fatalf("FATAL: Failed to load OpenAPI schemas: %v. Please ensure embed directive in internal/k8s/schema/loader.go is correct and embed package is imported.", err)
+		logger.Fatalf("FATAL: Failed to load OpenAPI schemas: %v.", err)
 	}
 	logger.Println("Kubernetes OpenAPI schemas loaded successfully.")
 
 	docManager := document.NewDocumentManager()
-	serverHandler := kls_lsp.NewHandler(docManager, logger)
 
-	logger.Println("LSP server configured. Listening on stdin/stdout...")
+	logger.Println("LSP server configured. Creating stdio stream and connection...")
 
-	<-jsonrpc2.NewConn(context.Background(), jsonrpc2.NewBufferedStream(stdrwc{}, jsonrpc2.VSCodeObjectCodec{}), serverHandler).DisconnectNotify()
-	logger.Println("LSP server stopped.")
+	stream := jsonrpc2.NewStream(stdrwc{})
+	ctx := context.Background()
+	conn := jsonrpc2.NewConn(stream)
+
+	klsHandler := lsp.NewHandler(conn, docManager, logger)
+	rpcHandler := klsHandler.CreateRPCHandler()
+
+	srv := jsonrpc2.HandlerServer(rpcHandler)
+
+	logger.Println("Starting JSON-RPC server on stdio...")
+	if err := srv.ServeStream(ctx, conn); err != nil &&
+		err != io.EOF && err != context.Canceled {
+		logger.Fatalf("LSP server error: %v", err)
+	}
+	logger.Println("LSP server finished.")
 }
 
 // stdrwc is a simple ReadWriteCloser that wraps os.Stdin and os.Stdout.

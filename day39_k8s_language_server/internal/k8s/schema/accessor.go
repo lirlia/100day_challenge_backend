@@ -19,6 +19,10 @@ func GVKToString(group, version, kind string) string {
 	if group == "" || group == "core" {
 		parts = append(parts, "core")
 	} else {
+		// グループ名の末尾が .k8s.io の場合は除去する
+		if strings.HasSuffix(group, ".k8s.io") {
+			group = strings.TrimSuffix(group, ".k8s.io")
+		}
 		parts = append(parts, strings.Split(group, ".")...)
 	}
 	parts = append(parts, version)

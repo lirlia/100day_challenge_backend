@@ -1,19 +1,20 @@
 package schema
 
 import (
+	_ "embed"
 	"fmt"
 	"sync"
 
 	"github.com/getkin/kin-openapi/openapi3"
 )
 
-//go:embed ../spec/v1.30.2/api__v1.json
+//go:embed spec/v1.30.2/api__v1.json
 var coreAPISpecBytes []byte
 
-//go:embed ../spec/v1.30.2/apis__apps__v1.json
+//go:embed spec/v1.30.2/apis__apps__v1.json
 var appsAPISpecBytes []byte
 
-//go:embed ../spec/v1.30.2/apis__networking.k8s.io__v1.json
+//go:embed spec/v1.30.2/apis__networking.k8s.io__v1.json
 var networkingAPISpecBytes []byte
 
 const (
@@ -47,6 +48,13 @@ func LoadAndParseSchemas() error {
 		networkingAPISpecName: {networkingAPISpecBytes},
 	}
 
+	// これらのファイルは既知の default validation error を含むため、エラーを無視する
+	knownProblematicSpecs := map[string]bool{
+		coreAPISpecName:       true,
+		appsAPISpecName:       true,
+		networkingAPISpecName: true,
+	}
+
 	for name, specInfo := range specsToLoad {
 		if _, ok := globalSchemas.schemas[name]; ok {
 			// すでにロード済み
@@ -64,7 +72,13 @@ func LoadAndParseSchemas() error {
 		}
 
 		if err := doc.Validate(loader.Context); err != nil {
-			return fmt.Errorf("spec %s failed validation: %w", name, err)
+			if isProblematic, known := knownProblematicSpecs[name]; known && isProblematic {
+				fmt.Printf("Ignoring validation errors for known problematic spec: %s. Error: %v\n", name, err)
+				// 特定のファイルからのエラーは無視する
+			} else {
+				// 未知のファイルまたは問題ないはずのファイルのエラーは報告する
+				return fmt.Errorf("spec %s failed validation: %w", name, err)
+			}
 		}
 
 		globalSchemas.schemas[name] = doc

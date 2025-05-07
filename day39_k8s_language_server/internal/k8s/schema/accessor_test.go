@@ -30,7 +30,7 @@ func TestGVKToString(t *testing.T) {
 		{"Deployment", "apps", "v1", "Deployment", "io.k8s.api.apps.v1.Deployment"},
 		{"Service", "", "v1", "Service", "io.k8s.api.core.v1.Service"},
 		{"CoreService", "core", "v1", "Service", "io.k8s.api.core.v1.Service"},
-		{"Ingress", "networking.k8s.io", "v1", "Ingress", "io.k8s.api.networking.k8s.io.v1.Ingress"},
+		{"Ingress", "networking.k8s.io", "v1", "Ingress", "io.k8s.api.networking.v1.Ingress"},
 		{"CustomResource", "custom.example.com", "v1alpha1", "MyCRD", "io.k8s.api.custom.example.com.v1alpha1.MyCRD"},
 	}
 
@@ -66,14 +66,14 @@ func TestGetSchemaRefByGVK(t *testing.T) {
 			name:         "Service",
 			apiVersion:   "v1", // core group
 			kind:         "Service",
-			descContains: "Service is a named abstraction of software service (for example, mysql) consisting of local port (for example 3306) that the proxy listening on redirect traffic to targetPort on Pod selected by selector.",
+			descContains: "Service is a named abstraction of software service (for example, mysql) consisting of local port (for example 3306) that the proxy listens on",
 			expectedType: "object",
 		},
 		{
 			name:         "Ingress",
 			apiVersion:   "networking.k8s.io/v1",
 			kind:         "Ingress",
-			descContains: "Ingress is a collection of rules that allow inbound connections to reach the cluster services.",
+			descContains: "Ingress is a collection of rules that allow inbound connections to reach the endpoints defined by a backend.",
 			expectedType: "object",
 		},
 		{
