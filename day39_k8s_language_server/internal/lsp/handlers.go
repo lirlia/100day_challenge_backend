@@ -68,7 +68,7 @@ func (h *Handler) handleTextDocumentDidOpen(ctx context.Context, params *protoco
 		h.logger.Printf("Error: Could not open or create document for URI: %s", uri)
 		return
 	}
-	h.triggerDiagnostics(uri)
+	h.RunDiagnostics(ctx, uri)
 }
 
 func (h *Handler) handleTextDocumentDidChange(ctx context.Context, params *protocol.DidChangeTextDocumentParams) {
@@ -78,8 +78,6 @@ func (h *Handler) handleTextDocumentDidChange(ctx context.Context, params *proto
 		h.logger.Println("Received DidChange with no content changes.")
 		return
 	}
-	// Assuming full text sync (Options.Change = protocol.TextDocumentSyncKindFull)
-	// The LSP spec says for full sync, ContentChanges will have one item with the full new text.
 	fullText := params.ContentChanges[0].Text
 
 	doc, found := h.docManager.DidChange(string(uri), fullText, int32(params.TextDocument.Version))
@@ -87,28 +85,29 @@ func (h *Handler) handleTextDocumentDidChange(ctx context.Context, params *proto
 		h.logger.Printf("Error: DidChange event for non-existent document URI: %s", uri)
 		return
 	}
-	if doc == nil { // Should not happen if found is true, but defensive check
+	if doc == nil {
 		h.logger.Printf("Error: Document became nil after DidChange for URI: %s", uri)
 		return
 	}
-	h.triggerDiagnostics(uri)
+	h.RunDiagnostics(ctx, uri)
 }
 
 func (h *Handler) handleTextDocumentDidClose(ctx context.Context, params *protocol.DidCloseTextDocumentParams) {
 	uri := params.TextDocument.URI
 	h.logger.Printf("textDocument/didClose: URI=%s", uri)
 	h.docManager.DidClose(string(uri))
-	h.clearDiagnostics(uri)
+	h.clearDiagnostics(ctx, uri)
 }
 
 func (h *Handler) handleTextDocumentDidSave(ctx context.Context, params *protocol.DidSaveTextDocumentParams) {
 	uri := params.TextDocument.URI
 	h.logger.Printf("textDocument/didSave: URI=%s", uri)
-	h.triggerDiagnostics(uri)
+	h.RunDiagnostics(ctx, uri)
 }
 
 // --- Placeholder for Diagnostics ---
 
+/*
 func (h *Handler) triggerDiagnostics(uri protocol.DocumentURI) {
 	h.logger.Printf("Placeholder: Triggering diagnostics for %s", uri)
 	// Example notification send:
@@ -141,3 +140,4 @@ func (h *Handler) clearDiagnostics(uri protocol.DocumentURI) {
 		h.logger.Printf("Cannot clear diagnostics for %s: connection is not set.", uri)
 	}
 }
+*/
