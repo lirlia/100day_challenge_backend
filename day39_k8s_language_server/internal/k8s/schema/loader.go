@@ -18,9 +18,9 @@ var appsAPISpecBytes []byte
 var networkingAPISpecBytes []byte
 
 const (
-	coreAPISpecName       = "api__v1.json"
-	appsAPISpecName       = "apis__apps__v1.json"
-	networkingAPISpecName = "apis__networking.k8s.io__v1.json"
+	CoreAPISpecName       = "api__v1.json"
+	AppsAPISpecName       = "apis__apps__v1.json"
+	NetworkingAPISpecName = "apis__networking.k8s.io__v1.json"
 )
 
 // LoadedSchemas は、ロードおよびパースされたOpenAPIスキーマを保持します。
@@ -43,16 +43,16 @@ func LoadAndParseSchemas() error {
 	specsToLoad := map[string]struct {
 		content []byte
 	}{
-		coreAPISpecName:       {coreAPISpecBytes},
-		appsAPISpecName:       {appsAPISpecBytes},
-		networkingAPISpecName: {networkingAPISpecBytes},
+		CoreAPISpecName:       {coreAPISpecBytes},
+		AppsAPISpecName:       {appsAPISpecBytes},
+		NetworkingAPISpecName: {networkingAPISpecBytes},
 	}
 
 	// これらのファイルは既知の default validation error を含むため、エラーを無視する
 	knownProblematicSpecs := map[string]bool{
-		coreAPISpecName:       true,
-		appsAPISpecName:       true,
-		networkingAPISpecName: true,
+		CoreAPISpecName:       true,
+		AppsAPISpecName:       true,
+		NetworkingAPISpecName: true,
 	}
 
 	for name, specInfo := range specsToLoad {
@@ -73,7 +73,9 @@ func LoadAndParseSchemas() error {
 
 		if err := doc.Validate(loader.Context); err != nil {
 			if isProblematic, known := knownProblematicSpecs[name]; known && isProblematic {
-				fmt.Printf("Ignoring validation errors for known problematic spec: %s. Error: %v\n", name, err)
+				// fmt.Printf("Ignoring validation errors for known problematic spec: %s. Error: %v\n", name, err) // LSP通信を汚染する可能性があるためコメントアウト
+				// 代わりにサーバーのロガーを使用することを検討 (要リファクタリング)
+				// logger.Printf("Ignoring validation errors for known problematic spec: %s. Error: %v", name, err) // 例
 				// 特定のファイルからのエラーは無視する
 			} else {
 				// 未知のファイルまたは問題ないはずのファイルのエラーは報告する

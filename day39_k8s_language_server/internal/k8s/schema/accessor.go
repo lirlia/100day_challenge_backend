@@ -33,7 +33,7 @@ func GVKToString(group, version, kind string) string {
 // GetSchemaRefByGVK は、指定された group, version, kind に基づいて OpenAPI スキーマ定義への参照を取得します。
 // スキーマはロード済みのものから検索されます。
 func GetSchemaRefByGVK(apiVersion, kind string) (*openapi3.SchemaRef, error) {
-	group, version := splitAPIVersion(apiVersion)
+	group, version := SplitAPIVersion(apiVersion)
 	openAPISchemaKey := GVKToString(group, version, kind)
 
 	// Determine which spec file might contain this GVK
@@ -42,11 +42,11 @@ func GetSchemaRefByGVK(apiVersion, kind string) (*openapi3.SchemaRef, error) {
 	var targetSpecName string
 	switch group {
 	case "", "core":
-		targetSpecName = coreAPISpecName
+		targetSpecName = CoreAPISpecName
 	case "apps":
-		targetSpecName = appsAPISpecName
+		targetSpecName = AppsAPISpecName
 	case "networking.k8s.io":
-		targetSpecName = networkingAPISpecName
+		targetSpecName = NetworkingAPISpecName
 	default:
 		// For other groups, we might need to search or have a more dynamic loading mechanism
 		// For now, try searching in all known schemas as a fallback
@@ -101,8 +101,8 @@ func searchInAllSchemas(schemaKey string) (*openapi3.SchemaRef, error) {
 	return nil, fmt.Errorf("schema with key '%s' not found in any loaded OpenAPI spec", schemaKey)
 }
 
-// splitAPIVersion splits apiVersion (e.g., "apps/v1" or "v1") into group and version.
-func splitAPIVersion(apiVersion string) (group, version string) {
+// SplitAPIVersion splits apiVersion (e.g., "apps/v1" or "v1") into group and version.
+func SplitAPIVersion(apiVersion string) (group, version string) {
 	parts := strings.Split(apiVersion, "/")
 	if len(parts) == 1 {
 		return "", parts[0] // core group
