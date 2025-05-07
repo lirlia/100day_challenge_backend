@@ -360,14 +360,39 @@ func validateDataType(ctx context.Context, schema *openapi3.Schema, dataValue in
 			valid = true
 		}
 	case "object":
-		if _, ok := dataValue.(map[string]interface{}); ok {
+		if typedDataValue, ok := dataValue.(map[string]interface{}); ok {
 			valid = true
-			// TODO: object 内部のプロパティを再帰的にバリデーション
+			// object 内部のプロパティを再帰的にバリデーション
+			// yamlKeyNode はこの object を指すキー。実際の object の yaml.Node を見つける必要がある。
+			// var objectYamlNode *yaml.Node // Linterエラーのためコメントアウト (将来的に使用する可能性あり)
+			// yamlKeyNode の兄弟ノード (値ノード) が目的の MappingNode のはず
+			// ただし、yamlKeyNode を直接の親として再帰的に探す方が堅牢かもしれない。
+			// ここでは、docMappingNode (ルートレベルのオブジェクト) から dataKey で子を探し、それが object であるとするアプローチは不十分。
+			// validateK8sStructure はドキュメントルートの構造を検証するため、再利用は難しい。
+			// 新しいヘルパーが必要。
+			// dataValue (map[string]interface{}) と schema.Properties を使って検証する。
+			// エラー位置特定のために、この dataValue に対応する yaml.Node (MappingNode) が必要。
+			// yamlKeyNode は親オブジェクトのフィールドキーを指す。その「値」がこのオブジェクト。
+			// 簡単のため、ここではネストされたオブジェクトの yaml.Node の特定は一旦保留し、
+			// エラーメッセージは親キーを示す。
+
+			nestedDiagnostics := validateObjectProperties(ctx, schema, typedDataValue, yamlKeyNode /* placeholder */, dataKey)
+			diagnostics = append(diagnostics, nestedDiagnostics...)
 		}
 	case "array":
-		if _, ok := dataValue.([]interface{}); ok {
+		if typedDataValue, ok := dataValue.([]interface{}); ok {
 			valid = true
-			// TODO: array の items スキーマに対するバリデーション、minItems, maxItemsなど
+			// array の items スキーマに対するバリデーション、minItems, maxItemsなど
+			if schema.Items != nil && schema.Items.Value != nil {
+				itemSchema := schema.Items.Value
+				for i, itemData := range typedDataValue {
+					// 各アイテムに対応する YAML ノードを見つけるのは難しい。
+					// エラーは配列全体か、インデックスを示す形になる。
+					// 簡単のため、エラー位置は親配列のキーノードとする。
+					itemDiagnostics := validateDataType(ctx, itemSchema, itemData, yamlKeyNode, fmt.Sprintf("%s[%d]", dataKey, i))
+					diagnostics = append(diagnostics, itemDiagnostics...)
+				}
+			}
 		}
 	}
 
@@ -379,6 +404,56 @@ func validateDataType(ctx context.Context, schema *openapi3.Schema, dataValue in
 			Message:  fmt.Sprintf("Invalid type for property '%s'. Expected '%s', got '%s'", dataKey, schemaType, actualType),
 		}
 		diagnostics = append(diagnostics, diag)
+	}
+	return diagnostics
+}
+
+// validateObjectProperties は、オブジェクトのプロパティをスキーマに基づいて検証します。
+// baseDataPath はエラーメッセージ用です (例: "metadata.labels")
+// parentYamlNode は、このオブジェクトが含まれる親の構造の中での、このオブジェクト自体を指す yaml.Node であるべきだが、
+// 現在の実装では、オブジェクトの「キー」を指す yamlNode を渡しているため、位置特定が不正確になる可能性がある。
+func validateObjectProperties(ctx context.Context, objectSchema *openapi3.Schema, data map[string]interface{}, parentYamlNode *yaml.Node, baseDataPath string) []protocol.Diagnostic {
+	var diagnostics []protocol.Diagnostic
+
+	// 1. 必須フィールドのチェック
+	for _, requiredFieldName := range objectSchema.Required {
+		if _, ok := data[requiredFieldName]; !ok {
+			diag := protocol.Diagnostic{
+				Range:    getRangeFromNode(parentYamlNode), // 不正確だが、一旦親を示す
+				Severity: protocol.DiagnosticSeverityError,
+				Source:   "kls-schema-validator",
+				Message:  fmt.Sprintf("Missing required property: '%s' in object '%s'", requiredFieldName, baseDataPath),
+			}
+			diagnostics = append(diagnostics, diag)
+		}
+	}
+
+	// 2. プロパティごとの型チェックとスキーマにないプロパティの警告
+	for dataKey, dataValue := range data {
+		propSchemaRef, propExists := objectSchema.Properties[dataKey]
+		currentDataPath := baseDataPath + "." + dataKey
+
+		// この dataKey に対応する正確な yaml.Node を見つけるのは難しい。
+		// parentYamlNode はオブジェクト全体のキーを指している。
+		// エラー位置は不正確になるが、メッセージでパスを示す。
+		var keyNodeForError *yaml.Node = parentYamlNode // 仮
+
+		if !propExists {
+			diag := protocol.Diagnostic{
+				Range:    getRangeFromNode(keyNodeForError),
+				Severity: protocol.DiagnosticSeverityWarning,
+				Source:   "kls-schema-validator",
+				Message:  fmt.Sprintf("Property '%s' is not defined in schema for object '%s'", dataKey, baseDataPath),
+			}
+			diagnostics = append(diagnostics, diag)
+			continue
+		}
+
+		if propSchemaRef != nil && propSchemaRef.Value != nil {
+			propSchema := propSchemaRef.Value
+			diags := validateDataType(ctx, propSchema, dataValue, keyNodeForError, currentDataPath)
+			diagnostics = append(diagnostics, diags...)
+		}
 	}
 	return diagnostics
 }
