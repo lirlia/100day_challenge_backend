@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/lirlia/100day_challenge_backend/day39_k8s_language_server/internal/k8s/schema"
 	protocol "go.lsp.dev/protocol"
 	"gopkg.in/yaml.v3" // YAML パーサーを追加
 )
@@ -109,36 +110,275 @@ func (h *Handler) validateKubernetesManifest(ctx context.Context, content string
 // (apiVersion と kind が存在するかどうかなど)
 func (h *Handler) validateK8sStructure(docMappingNode *yaml.Node) []protocol.Diagnostic {
 	var diagnostics []protocol.Diagnostic
-	requiredFields := map[string]bool{"apiVersion": false, "kind": false}
+	fields := map[string]struct {
+		found   bool
+		value   string
+		keyNode *yaml.Node // キーノード自体の位置情報を使うため
+		valNode *yaml.Node // 値ノード自体の位置情報を使うため
+	}{
+		"apiVersion": {found: false},
+		"kind":       {found: false},
+	}
 
 	for i := 0; i < len(docMappingNode.Content); i += 2 {
 		keyNode := docMappingNode.Content[i]
-		// valueNode := docMappingNode.Content[i+1] // 必要に応じてvalueもチェック
+		valNode := docMappingNode.Content[i+1]
 
 		if keyNode.Kind == yaml.ScalarNode {
-			if _, ok := requiredFields[keyNode.Value]; ok {
-				requiredFields[keyNode.Value] = true
+			if fieldData, ok := fields[keyNode.Value]; ok {
+				fieldData.found = true
+				if valNode.Kind == yaml.ScalarNode {
+					fieldData.value = valNode.Value
+				}
+				fieldData.keyNode = keyNode
+				fieldData.valNode = valNode
+				fields[keyNode.Value] = fieldData
 			}
 		}
 	}
 
-	for field, found := range requiredFields {
-		if !found {
-			// フィールドが見つからない場合、ドキュメントの開始位置にエラーを出す
-			// (より正確には、MappingNode の開始位置)
-			diagnostic := protocol.Diagnostic{
-				Range: protocol.Range{
-					Start: protocol.Position{Line: uint32(docMappingNode.Line - 1), Character: uint32(docMappingNode.Column - 1)},
-					End:   protocol.Position{Line: uint32(docMappingNode.Line - 1), Character: uint32(docMappingNode.Column - 1 + 5)}, // 適当な長さ
-				},
+	apiVersionPresent := false
+	kindPresent := false
+
+	for fieldName, data := range fields {
+		if !data.found {
+			diagnostics = append(diagnostics, protocol.Diagnostic{
+				Range:    getRangeFromNode(docMappingNode), // ドキュメント全体を対象
 				Severity: protocol.DiagnosticSeverityError,
-				Source:   "kls-structure-validator",
-				Message:  fmt.Sprintf("Missing required field: '%s'", field),
+				Source:   "kls-structure",
+				Message:  fmt.Sprintf("Missing required field: '%s'", fieldName),
+			})
+		} else {
+			if fieldName == "apiVersion" {
+				apiVersionPresent = true
+				if data.value == "" {
+					diagnostics = append(diagnostics, protocol.Diagnostic{
+						Range:    getRangeFromNode(data.valNode), // 値ノードを対象
+						Severity: protocol.DiagnosticSeverityError,
+						Source:   "kls-structure",
+						Message:  "Field 'apiVersion' cannot be empty",
+					})
+				}
 			}
-			diagnostics = append(diagnostics, diagnostic)
+			if fieldName == "kind" {
+				kindPresent = true
+				if data.value == "" {
+					diagnostics = append(diagnostics, protocol.Diagnostic{
+						Range:    getRangeFromNode(data.valNode), // 値ノードを対象
+						Severity: protocol.DiagnosticSeverityError,
+						Source:   "kls-structure",
+						Message:  "Field 'kind' cannot be empty",
+					})
+				}
+			}
 		}
 	}
+
+	// apiVersion と kind が両方存在し、空でなければスキーマ検証に進む
+	if apiVersionPresent && kindPresent && fields["apiVersion"].value != "" && fields["kind"].value != "" {
+		apiVersion := fields["apiVersion"].value
+		kind := fields["kind"].value
+		h.logger.Printf("Found apiVersion: %s, kind: %s. Proceeding to schema validation.", apiVersion, kind)
+
+		// 1. OpenAPI スキーマを取得
+		k8sSchemaRef, err := schema.GetSchemaRefByGVK(apiVersion, kind)
+		if err != nil {
+			h.logger.Printf("Schema not found for GVK %s, %s: %v", apiVersion, kind, err)
+			diagnostics = append(diagnostics, protocol.Diagnostic{
+				Range:    getRangeFromNode(fields["kind"].valNode), // kind の値ノードの位置
+				Severity: protocol.DiagnosticSeverityWarning,       // 見つからない場合は警告レベル
+				Source:   "kls-schema-resolver",
+				Message:  fmt.Sprintf("Schema not found for apiVersion: %s, kind: %s. Validation skipped. Error: %v", apiVersion, kind, err),
+			})
+			return diagnostics // スキーマがなければここで終了
+		}
+		if k8sSchemaRef == nil || k8sSchemaRef.Value == nil {
+			h.logger.Printf("Retrieved nil schema or schema value for GVK %s, %s", apiVersion, kind)
+			diagnostics = append(diagnostics, protocol.Diagnostic{
+				Range:    getRangeFromNode(fields["kind"].valNode),
+				Severity: protocol.DiagnosticSeverityWarning,
+				Source:   "kls-schema-resolver",
+				Message:  fmt.Sprintf("Could not retrieve a valid schema for apiVersion: %s, kind: %s. Validation skipped.", apiVersion, kind),
+			})
+			return diagnostics
+		}
+
+		// 2. YAML ノードを map[string]interface{} に変換
+		dataToValidate, err := yamlNodeToMapInterface(docMappingNode)
+		if err != nil {
+			h.logger.Printf("Error converting YAML node to map for GVK %s, %s: %v", apiVersion, kind, err)
+			diagnostics = append(diagnostics, protocol.Diagnostic{
+				Range:    getRangeFromNode(docMappingNode),
+				Severity: protocol.DiagnosticSeverityError,
+				Source:   "kls-yaml-converter",
+				Message:  fmt.Sprintf("Internal error converting YAML for validation: %v", err),
+			})
+			return diagnostics
+		}
+
+		// 3. スキーマバリデーション実行
+		// kin-openapi/openapi3.Schema.VisitJSON を使うか、Validate() を直接使う。
+		// Validate() は context.Context を要求する。現状、スキーマロード時に context.Background() を使っている。
+		// ここでも同様に context.Background() で良いか、LSP のリクエストコンテキストを使うべきか。
+		// 診断はリクエスト処理の一部なので、LSP のコンテキスト (ctx) を渡すのが適切。
+		// ただし、kin-openapi の Validate メソッドは現在 context を取らない (v0.123.0 時点)。
+		// 代わりに loader.Context を渡す必要があるかもしれない、あるいは VisitJSON を使う。
+		// スキーマ自体はロード済みなので、SchemaRef.Value.Validate(ctx, dataToValidate) のような形になる。
+		// --> 確認したところ、`openapi3.Schema.Validate(context.Context, interface{}) error` は存在しない。
+		// --> `openapi3.SchemaRef.Validate(context.Context, interface{}) error` も存在しない。
+		// --> `openapi3.T.Validate(context.Context) error` はドキュメント全体のバリデーション。
+		// --> 特定のスキーマでデータを検証するには、`kinপূর্বopenapi3filter.ValidateRequestBody` や
+		//     `kin-openapi/openapi3utils.Visit()` を利用するか、手動でやる必要がある。
+		// --> 恐らく、kin-openapi v0.123.0 では `(s *Schema).Visit()` を使用してバリデータ関数を渡すのが一般的。
+		//     もしくは、`jsoninfo.Validate()` (kin-openapi 内部で使われている) のようなものが必要。
+		// --> より簡単なのは、`kin-openapi/openapi3checker.ForSchemaRef(k8sSchemaRef).Check(dataToValidate)` だが、
+		//     これは `openapi3filter.SchemaValidationOption` を返すもので、直接的なエラーを返さない。
+
+		// 簡単な方法として、kin-openapi が OpenAPI ドキュメント自体をロードする際に内部的に行うバリデーションを
+		// 利用することを考える。しかし、ここでは既にロードされたスキーマに対して「データ」を検証したい。
+
+		// `openapi3.SchemaValidationOption` を使ってエラーを取得するアプローチ。
+		// `openapi3filter.NewSchemaChecker()` を使う。
+		// しかし、`SchemaChecker` は HTTP リクエスト/レスポンスの文脈で使われることが多い。
+
+		// ここでは、最も直接的な `SchemaRef.Value.VisitJSON()` を使うことを試みるが、
+		// これはバリデーションエラーを直接返すわけではなく、カスタムビジターが必要になる。
+
+		// 最終手段: `openapi3.NewLoader().Context` を使って、スキーマとデータを関連付けて Validate。これは複雑。
+
+		// kin-openapi の Issues や Example を見ると、個別のデータ片をスキーマに対して検証する
+		// 直接的で簡単な方法は提供されていないように見える。
+		// 一般的には、データをまずJSONにマーシャルし、それを再度アンマーシャルする際にスキーマ情報を使うなど。
+
+		_ = dataToValidate // Linter の unused variable 警告を回避
+
+		// 簡略化のため、ここでは `k8sSchemaRef.Value.VisitJSON(dataToValidate, ...)` のような
+		// カスタムビジターを実装する代わりに、エラー処理のプレースホルダーを置く。
+		// 実際のバリデーションエラーをどう取得し、どのフィールドでエラーが起きたかを特定するのが難しい。
+
+		// TODO: 実際のスキーマバリデーションとエラー報告ロジックを実装する
+		// この部分は複雑なので、一旦プレースホルダーの警告を出す。
+		h.logger.Printf("Schema validation for %s/%s against provided data is not fully implemented yet.", apiVersion, kind)
+		/* diagnostics = append(diagnostics, protocol.Diagnostic{
+			Range:    getRangeFromNode(docMappingNode),
+			Severity: protocol.DiagnosticSeverityHint,
+			Source:   "kls-schema-validator",
+			Message:  fmt.Sprintf("Schema validation for %s/%s is pending implementation.", apiVersion, kind),
+		}) */
+
+	}
+
 	return diagnostics
+}
+
+// yamlNodeToMapInterface は、yaml.Node (MappingNodeであると期待される) を
+// map[string]interface{} に変換します。これはスキーマバリデーションライブラリでよく使われます。
+// 再帰的に呼び出され、ネストされた構造も変換します。
+func yamlNodeToMapInterface(node *yaml.Node) (map[string]interface{}, error) {
+	if node.Kind != yaml.MappingNode {
+		return nil, fmt.Errorf("expected a mapping node, got %v (Line: %d, Col: %d)", node.Kind, node.Line, node.Column)
+	}
+
+	resultMap := make(map[string]interface{})
+
+	for i := 0; i < len(node.Content); i += 2 {
+		keyNode := node.Content[i]
+		valNode := node.Content[i+1]
+
+		if keyNode.Kind != yaml.ScalarNode {
+			// キーは常にスカラーであるべき
+			return nil, fmt.Errorf("mapping key is not a scalar node (Line: %d, Col: %d)", keyNode.Line, keyNode.Column)
+		}
+		key := keyNode.Value
+
+		val, err := convertYamlNodeToInterface(valNode)
+		if err != nil {
+			return nil, fmt.Errorf("error converting value for key '%s': %w", key, err)
+		}
+		resultMap[key] = val
+	}
+
+	return resultMap, nil
+}
+
+// convertYamlNodeToInterface は、任意の yaml.Node を対応する Go の interface{} 値に変換します。
+func convertYamlNodeToInterface(node *yaml.Node) (interface{}, error) {
+	switch node.Kind {
+	case yaml.ScalarNode:
+		// スカラーノードの場合、タグに基づいて型を変換しようと試みる
+		// (例: !!int, !!bool, !!float, !!str)
+		// yaml.Node.Value は常に文字列なので、必要に応じてパースする
+		// 簡単のため、ここでは文字列としてそのまま返すか、
+		// タグに応じた基本的な変換のみを行う。
+		// TODO: より厳密な型変換 (node.Tag を見る)
+		var v interface{}
+		err := node.Decode(&v) // yaml.Node の Decode を使うと型推論してくれる
+		if err != nil {
+			// Decode が失敗した場合でも、文字列としての値は node.Value にある。
+			// フォールバックとして node.Value を使うことを検討できるが、
+			// 型情報が重要な場合はエラーとして扱うべき。
+			// ここではエラーとして扱う。
+			return nil, fmt.Errorf("failed to decode scalar node (Tag: %s, Line: %d, Col: %d): %w", node.Tag, node.Line, node.Column, err)
+		}
+		return v, nil
+	case yaml.MappingNode:
+		// マッピングノードの場合は再帰的に yamlNodeToMapInterface を呼び出す
+		return yamlNodeToMapInterface(node)
+	case yaml.SequenceNode:
+		// シーケンスノードの場合はスライスに変換
+		var slice []interface{}
+		for _, itemNode := range node.Content {
+			itemVal, err := convertYamlNodeToInterface(itemNode)
+			if err != nil {
+				return nil, fmt.Errorf("error converting sequence item: %w", err)
+			}
+			slice = append(slice, itemVal)
+		}
+		return slice, nil
+	case yaml.AliasNode:
+		// エイリアスノードの場合は、参照先のノード (Anchor) を解決して変換
+		// yaml.Node は直接 Anchor を解決する機能を持たないため、
+		// yaml.Unmarshal を使ってドキュメント全体を一度 interface{} にパースするなど、
+		// より高度な処理が必要になる場合がある。
+		// ここでは単純化のため、エイリアスは未サポートとしてエラーにするか、
+		// Alias 自体の Value (通常はアンカー名) を返すことを検討。
+		// 実際には、kin-openapi のバリデーションは map[string]interface{} で行われ、
+		// yaml.Unmarshal で一度汎用 interface{} に変換すればエイリアスは解決される。
+		// しかし、ここでは yaml.Node から直接変換しようとしているため、この問題に直面する。
+		// 簡単のため、Alias はエラーとする。
+		return nil, fmt.Errorf("alias nodes are not directly supported in this conversion (Line: %d, Col: %d)", node.Line, node.Column)
+	default:
+		return nil, fmt.Errorf("unsupported yaml node kind: %v (Line: %d, Col: %d)", node.Kind, node.Line, node.Column)
+	}
+}
+
+// getRangeFromNode は yaml.Node から protocol.Range を生成します。
+// Node が nil の場合や Line/Column が 0 の場合はデフォルトの範囲を返します。
+func getRangeFromNode(node *yaml.Node) protocol.Range {
+	if node == nil || node.Line == 0 {
+		return protocol.Range{
+			Start: protocol.Position{Line: 0, Character: 0},
+			End:   protocol.Position{Line: 0, Character: 1},
+		}
+	}
+	// yaml.Node の Line/Column は1ベースなので、LSP の0ベースに変換
+	startLine := uint32(node.Line - 1)
+	startChar := uint32(node.Column - 1)
+
+	//終了位置は、スカラーノードであれば値の長さを考慮できるが、
+	//より複雑なノードやキーノードの場合は単純ではない。
+	//ここではキーノードの値の長さを仮に終了位置とする (単純なケース)
+	endChar := startChar + uint32(len(node.Value)) // ScalarNode の場合
+	if node.Kind != yaml.ScalarNode || node.Value == "" {
+		endChar = startChar + 1 // スカラーでない、または値が空なら1文字分
+	}
+	// 同じ行の終わりとする
+	endLine := startLine
+
+	return protocol.Range{
+		Start: protocol.Position{Line: startLine, Character: startChar},
+		End:   protocol.Position{Line: endLine, Character: endChar},
+	}
 }
 
 // publishDiagnostics sends the computed diagnostics to the LSP client.
