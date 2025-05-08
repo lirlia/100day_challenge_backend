@@ -24,7 +24,8 @@ try {
 // 初期スキーマ作成関数
 const initializeSchema = () => {
   try {
-    // snapshots テーブルを作成
+    // snapshots テーブルは不要になったためコメントアウト
+    /*
     db.exec(`
       CREATE TABLE IF NOT EXISTS snapshots (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -33,8 +34,9 @@ const initializeSchema = () => {
         disk_state_json TEXT NOT NULL
       );
     `);
-
     console.log('Database schema for snapshots initialized successfully.');
+    */
+    console.log('Database schema initialized (no tables needed for this version).');
 
   } catch (error) {
     console.error('Failed to initialize database schema:', error);

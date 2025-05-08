@@ -12,24 +12,15 @@ import {
   deleteLocalSnapshot,
 } from '../../_lib/cow-simulator';
 
-// APIから取得するスナップショットの型 (DBスキーマに合わせる)
-interface DBSnapshot {
-  id: number; // DBのidはnumber
-  name: string;
-  created_at: string; // DBからは文字列で来る
-  disk_state_json: string;
-}
-
 interface CowSimulatorState {
   disk: VirtualDisk;
   files: FileEntry[];
-  snapshots: Snapshot[]; // ローカル/DBのスナップショットを区別なくここに保持 (idの型に注意)
+  snapshots: Snapshot[]; // ローカルスナップショットのみ
   selectedFileId: string | null;
-  selectedSnapshotId: string | number | null; // DBのIDはnumberなのでunion型に
+  selectedSnapshotId: string | null; // IDはstringのみになる
   fileNameInput: string;
   fileContentInput: string;
   eventLog: string[];
-  isLoadingSnapshots: boolean;
 
   setFileNameInput: (name: string) => void;
   setFileContentInput: (content: string) => void;
@@ -40,14 +31,10 @@ interface CowSimulatorState {
   editFile: () => void;
   deleteFile: (fileId: string) => void;
 
-  takeLocalSnapshot: (name?: string) => void; // ローカルのシミュレーション上にスナップショットを作成
-  saveSnapshotToDB: (snapshot: Snapshot) => Promise<boolean>; // 指定スナップショットをDBに保存 (diskStateJson を適切に作る)
-  loadSnapshotsFromDB: () => Promise<void>;
-  selectSnapshot: (snapshotId: string | number | null) => void;
-  viewSnapshotState: (snapshotId: string | number) => void; // 特定のスナップショット時点のファイル/ディスク状態を再現表示（読み取り専用）
-  deleteSnapshotFromDB: (snapshotId: string | number) => Promise<void>;
-
-  deleteLocalSnapshotAction: (snapshotId: string) => void;
+  takeSnapshot: (name?: string) => void; // 名前変更
+  selectSnapshot: (snapshotId: string | null) => void; // 引数型変更
+  viewSnapshotState: (snapshotId: string) => void; // 引数型変更
+  deleteSnapshot: (snapshotId: string) => void; // 名前変更
 
   resetSimulation: () => void;
 }
@@ -63,7 +50,6 @@ export const useCowStore = create<CowSimulatorState>((set, get) => ({
   fileNameInput: '',
   fileContentInput: 'Hello World!\n',
   eventLog: [],
-  isLoadingSnapshots: false,
 
   setFileNameInput: (name) => set({ fileNameInput: name }),
   setFileContentInput: (content) => set({ fileContentInput: content }),
@@ -165,157 +151,46 @@ export const useCowStore = create<CowSimulatorState>((set, get) => ({
     }
   },
 
-  takeLocalSnapshot: (name?: string) => {
+  takeSnapshot: (name?: string) => { // 名前変更 takeLocalSnapshot -> takeSnapshot
     const { disk, files, addEventLog } = get();
     const result = createSnapshotOnDisk(disk, files, name);
-
-    // 重要: createSnapshotOnDisk は disk のブロック参照カウントを更新するので、
-    // ストアの disk も更新する必要がある。
     set(state => ({
       snapshots: [...state.snapshots, result.newSnapshot].sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
-      disk: result.updatedDisk, // 更新されたディスク状態をセット
-      selectedSnapshotId: result.newSnapshot.id, // 作成したものを選択
+      disk: result.updatedDisk,
+      selectedSnapshotId: result.newSnapshot.id,
     }));
-    addEventLog(`Local snapshot "${result.newSnapshot.name}" created.`);
+    addEventLog(`Snapshot "${result.newSnapshot.name}" created.`);
   },
 
-  saveSnapshotToDB: async (snapshotToSave: Snapshot) => {
-    const { addEventLog } = get();
-    try {
-      // SnapshotオブジェクトからDB保存用のペイロードを作成
-      // diskStateJson には、そのスナップショット時点の files と disk.blocks の一部（メタデータのみでも可）をJSON化して保存
-      // ここでは簡単のため、スナップショットが保持している fileEntries を diskStateとして保存
-      const payload = {
-        name: snapshotToSave.name,
-        diskStateJson: JSON.stringify({
-            files: snapshotToSave.fileEntries,
-            // referencedBlockIds: Array.from(snapshotToSave.referencedBlockIds) // 必要ならブロックIDも
-        }),
-      };
-      const response = await fetch('/api/snapshots', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to save snapshot to DB');
-      }
-      const savedDBEntry = await response.json();
-      addEventLog(`Snapshot "${snapshotToSave.name}" saved to DB (ID: ${savedDBEntry.id}).`);
-      // DB保存成功後、ローカルのsnapshotsリストをDBからのリストで再同期する
-      get().loadSnapshotsFromDB();
-      return true;
-    } catch (error) {
-      console.error('Error saving snapshot to DB:', error);
-      addEventLog(`Error saving snapshot "${snapshotToSave.name}": ${error instanceof Error ? error.message : String(error)}`);
-      return false;
-    }
-  },
-
-  loadSnapshotsFromDB: async () => {
-    const { addEventLog } = get();
-    set({ isLoadingSnapshots: true });
-    try {
-      const response = await fetch('/api/snapshots');
-      if (!response.ok) throw new Error('Failed to fetch snapshots from DB');
-      const dbSnapshots: DBSnapshot[] = await response.json();
-
-      // DBSnapshot をローカルの Snapshot 型に変換
-      // disk_state_json から fileEntries と referencedBlockIds を復元
-      const localSnapshots: Snapshot[] = dbSnapshots.map(dbSnap => {
-        let fileEntries: FileEntry[] = [];
-        let referencedBlockIds = new Set<string>();
-        try {
-            const parsedState = JSON.parse(dbSnap.disk_state_json);
-            fileEntries = parsedState.files || [];
-            // referencedBlockIds は保存していなければ空のまま
-            if (parsedState.referencedBlockIds && Array.isArray(parsedState.referencedBlockIds)) {
-                referencedBlockIds = new Set(parsedState.referencedBlockIds);
-            }
-        } catch (e) {
-            console.error(`Failed to parse disk_state_json for snapshot ${dbSnap.id}`, e);
-        }
-        return {
-            id: String(dbSnap.id), // IDを文字列に統一 (ローカルとDBで型が違うため)
-            name: dbSnap.name,
-            createdAt: new Date(dbSnap.created_at),
-            fileEntries,
-            referencedBlockIds,
-        };
-      });
-
-      set({ snapshots: localSnapshots.sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()), isLoadingSnapshots: false });
-      addEventLog('Snapshots loaded from DB.');
-    } catch (error) {
-      console.error('Error loading snapshots from DB:', error);
-      addEventLog(`Error loading snapshots: ${error instanceof Error ? error.message : String(error)}`);
-      set({ isLoadingSnapshots: false });
-    }
-  },
-
-  selectSnapshot: (snapshotId) => {
+  selectSnapshot: (snapshotId) => { // 引数型変更 number を削除
     set({ selectedSnapshotId: snapshotId });
     if (snapshotId) {
         const snapshot = get().snapshots.find(s => s.id === snapshotId);
         get().addEventLog(`Snapshot "${snapshot?.name || snapshotId}" selected.`);
-        if(snapshot) get().viewSnapshotState(snapshot.id); // 選択したらプレビューも更新
+        if(snapshot) get().viewSnapshotState(snapshot.id);
     }
   },
 
-  viewSnapshotState: (snapshotId_param) => {
+  viewSnapshotState: (snapshotId) => { // 引数型変更 number を削除
     const { snapshots, disk, addEventLog } = get();
-    const snapshotId = String(snapshotId_param); // IDを文字列に統一
     const snapshot = snapshots.find(s => s.id === snapshotId);
     if (!snapshot) {
       addEventLog(`Error: Snapshot with ID "${snapshotId}" not found for viewing.`);
       return;
     }
-    // スナップショット時点のファイルリストを現在のファイルリストとして表示 (読み取り専用のような扱い)
-    // ディスクのブロック状態は、このスナップショットが参照しているブロックをハイライトする等で表現
-    // ここでは、filesをスナップショットのものに置き換え、diskはそのまま（ブロックの色分けで表現）
-    // 本来はディスク状態も完全に再現すべきだが、シミュレーションでは表示上の工夫で代替
     set({
-        files: JSON.parse(JSON.stringify(snapshot.fileEntries)), // ディープコピーして表示用ファイルリストを更新
-        // disk: snapshot.diskState, // もしディスク状態全体を保存していればそれを復元するが、今回はしない
-        selectedFileId: null, // ファイル選択はリセット
+        files: JSON.parse(JSON.stringify(snapshot.fileEntries)),
+        selectedFileId: null,
     });
-    addEventLog(`Viewing state of snapshot "${snapshot.name}". Files updated to snapshot version.`);
-    // TODO: VirtualDiskView で、このスナップショットが参照するブロックを特別にハイライトするロジックが必要
+    addEventLog(`Viewing state of snapshot "${snapshot.name}". Files updated.`);
+    // TODO: VirtualDiskView でブロックハイライト
   },
 
-  deleteSnapshotFromDB: async (snapshotId_param) => {
-    const { addEventLog, snapshots } = get();
-    const snapshotId = String(snapshotId_param);
-    const snapshotToDelete = snapshots.find(s => s.id === snapshotId);
-    if (!snapshotToDelete) {
-        addEventLog(`Error: Snapshot "${snapshotId}" not found in local list for DB deletion.`);
-        return;
-    }
-
-    try {
-      const response = await fetch(`/api/snapshots/${snapshotId}`, {
-        method: 'DELETE',
-      });
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to delete snapshot from DB');
-      }
-      addEventLog(`Snapshot "${snapshotToDelete.name}" (ID: ${snapshotId}) deleted from DB.`);
-      // DBから削除成功後、ローカルのsnapshotsリストも更新（DBから再読込）
-      get().loadSnapshotsFromDB();
-      set({ selectedSnapshotId: null }); // 選択解除
-    } catch (error) {
-      console.error('Error deleting snapshot from DB:', error);
-      addEventLog(`Error deleting snapshot "${snapshotToDelete.name}": ${error instanceof Error ? error.message : String(error)}`);
-    }
-  },
-
-  deleteLocalSnapshotAction: (snapshotId) => {
+  deleteSnapshot: (snapshotId) => { // 名前変更 deleteLocalSnapshotAction -> deleteSnapshot
     const { disk, snapshots, addEventLog, selectedSnapshotId } = get();
     const snapshotToDelete = snapshots.find(s => s.id === snapshotId);
-    if (!snapshotToDelete || !isNaN(Number(snapshotToDelete.id))) { // ローカル未保存か確認
-        addEventLog(`Error: Snapshot "${snapshotId}" is not a deletable local snapshot.`);
+    if (!snapshotToDelete) {
+        addEventLog(`Error: Snapshot "${snapshotId}" not found for deletion.`);
         return;
     }
 
@@ -326,21 +201,20 @@ export const useCowStore = create<CowSimulatorState>((set, get) => ({
         snapshots: result.updatedSnapshots.sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
         selectedSnapshotId: selectedSnapshotId === snapshotId ? null : selectedSnapshotId,
       });
-      addEventLog(`Local snapshot "${snapshotToDelete.name}" deleted.`);
+      addEventLog(`Snapshot "${snapshotToDelete.name}" deleted.`);
     } else {
-      addEventLog(`Error deleting local snapshot "${snapshotToDelete.name}".`);
+      addEventLog(`Error deleting snapshot "${snapshotToDelete.name}".`);
     }
   },
 
   resetSimulation: () => set({
     disk: initializeVirtualDisk(),
     files: [],
-    snapshots: [], // ローカルスナップショットもクリア
+    snapshots: [],
     selectedFileId: null,
     selectedSnapshotId: null,
     fileNameInput: '',
     fileContentInput: 'Hello World!\n',
     eventLog: ['Simulation reset.'],
-    isLoadingSnapshots: false,
   }),
 }));
