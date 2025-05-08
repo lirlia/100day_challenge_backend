@@ -72,14 +72,14 @@ export default function VirtualDiskView() {
   const cols = Math.min(12, Math.max(4, Math.ceil(Math.sqrt(totalBlocks))));
 
   return (
-    <div className="w-full p-1 bg-gray-800 rounded-lg shadow-inner flex gap-3 items-start h-full">
+    <div className="w-full p-4 bg-gray-800 rounded-lg shadow-inner flex gap-3 items-start h-full">
       {/* 左側: 凡例 */}
-      <div className="pt-1 pl-1 flex flex-col space-y-1.5 flex-shrink-0 w-44"> {/* 幅を少し広げる */}
-        <p className="text-sm font-semibold mb-1 border-b border-gray-600 pb-1">凡例:</p>
+      <div className="pt-1 pl-1 flex flex-col space-y-1.5 flex-shrink-0 w-100"> {/* 幅を少し広げる and 凡例のテキストが長くなることを考慮 */}
+        <p className="text-xl font-semibold mb-1 border-b border-gray-600 pb-1">凡例:</p>
         {Object.entries(BLOCK_COLORS).map(([key, { className, label }]) => (
-          <div key={key} className="flex items-center">
-            <span className={`w-3.5 h-3.5 mr-2 rounded-sm flex-shrink-0 ${className.split(' ')[0]} ${key === 'SELECTED_SNAPSHOT_REF' ? 'border-amber-400 border-2' : ''}`}></span>
-            <span className="text-xs leading-tight">{label}</span>
+          <div key={key} className="flex items-center mt-2">
+            <span className={`w-4 h-4 mr-2 rounded-sm flex-shrink-0 ${className.split(' ')[0]} ${key === 'SELECTED_SNAPSHOT_REF' ? 'border-amber-400 border-2' : ''}`}></span>
+            <span className="text-xl leading-tight">{label}</span>
           </div>
         ))}
       </div>
@@ -87,7 +87,7 @@ export default function VirtualDiskView() {
       {/* 右側: グリッドと統計 */}
       <div className="flex-grow flex flex-col items-center min-w-0 h-full justify-center">
         <div
-          className={`grid gap-0.5 aspect-square w-full max-w-xs`} // サイズ調整
+          className={`grid gap-2 aspect-square w-full max-w-[450px]`} // サイズ調整
           style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}
         >
           {disk.blocks.map((block) => {
@@ -102,7 +102,7 @@ export default function VirtualDiskView() {
             );
           })}
         </div>
-        <div className="mt-1 text-center text-xs text-gray-400 flex-shrink-0">
+        <div className="mt-4 text-center text-base text-gray-400 flex-shrink-0">
           総ブロック数: {disk.totalBlocks}, 空きブロック数: {disk.freeBlocks}
         </div>
       </div>
