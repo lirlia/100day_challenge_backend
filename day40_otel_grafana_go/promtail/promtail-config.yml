@@ -1,0 +1,43 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: system
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: varlogs
+          __path__: /var/log/*log
+
+  - job_name: containers
+    static_configs:
+      - labels:
+          job: containerlogs
+          __path__: /var/lib/docker/containers/*/*-json.log
+    pipeline_stages:
+      - docker: {}
+      - match:
+          selector: '{job="containerlogs"}'
+          stages:
+            - json:
+                expressions:
+                  output: log
+                  stream: stream
+            - regex:
+                expression: "^.*trace_id(?:\\\\=\\\\"|\\\":\\\\")(?P<traceID>[0-9a-fA-F]{32})(?:\\\\"|)"
+            - labels:
+                traceID: # Populated by regex with named capture group traceID
+    relabel_configs:
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/(.*)'
+        target_label: 'container'
+      - source_labels: ['__meta_docker_container_log_stream']
+        target_label: 'logstream'
