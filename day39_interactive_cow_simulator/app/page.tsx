@@ -14,7 +14,7 @@ export default function HomePage() {
     <main className="flex min-h-screen flex-col items-center justify-center p-24 bg-gray-900 text-gray-100">
       <div className="text-center">
         <h1 className="text-4xl font-bold mb-8">
-          Day39 - インタラクティブCoWストレージシミュレーター
+          Day39 - Copy-on-Write ストレージシミュレーター
         </h1>
         <p className="text-xl mb-12">
           Copy-on-Write (CoW) の動作原理を視覚的に探求しましょう。

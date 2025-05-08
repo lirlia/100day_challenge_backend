@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useCowStore } from '../store';
 import { Snapshot } from '@/app/_lib/cow-simulator';
+import ConfirmationModal from './ConfirmationModal';
 
 export default function SnapshotControls() {
   const {
@@ -14,6 +15,7 @@ export default function SnapshotControls() {
   } = useCowStore();
 
   const [snapshotNameInput, setSnapshotNameInput] = useState('');
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 
   const handleTakeSnapshot = () => {
     const name = snapshotNameInput.trim() || undefined;
@@ -25,11 +27,15 @@ export default function SnapshotControls() {
 
   const handleDeleteSnapshot = () => {
     if (selectedSnapshot) {
-      if (confirm(`スナップショット「${selectedSnapshot.name}」を本当に削除しますか？この操作は取り消せません。`)) {
-        deleteSnapshot(selectedSnapshot.id);
-      }
+      setIsDeleteModalOpen(true);
     } else {
       alert('削除するスナップショットを選択してください。');
+    }
+  };
+
+  const confirmDeleteSnapshot = () => {
+    if (selectedSnapshot) {
+      deleteSnapshot(selectedSnapshot.id);
     }
   };
 
@@ -94,6 +100,17 @@ export default function SnapshotControls() {
             このスナップショットを削除
           </button>
         </div>
+      )}
+
+      {/* 確認モーダル */}
+      {selectedSnapshot && (
+        <ConfirmationModal
+          isOpen={isDeleteModalOpen}
+          onClose={() => setIsDeleteModalOpen(false)}
+          onConfirm={confirmDeleteSnapshot}
+          title="スナップショット削除の確認"
+          message={`スナップショット「${selectedSnapshot.name}」を本当に削除しますか？\nこの操作は取り消せません。`}
+        />
       )}
     </div>
   );

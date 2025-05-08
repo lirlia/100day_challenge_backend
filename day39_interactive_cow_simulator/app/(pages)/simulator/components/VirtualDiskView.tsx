@@ -13,7 +13,7 @@ const BLOCK_COLORS: Record<string, ColorInfo> = {
   UNUSED: { className: 'bg-gray-600', label: '未使用' },
   NORMAL_FILE: { className: 'bg-sky-500', label: 'ファイル (保護なし)' },
   SNAPSHOT_PROTECTED: { className: 'bg-purple-500', label: 'スナップショット保護 (CoW対象)' },
-  SHARED: { className: 'bg-green-500', label: '共有 (複数参照)' },
+  SHARED: { className: 'bg-green-500', label: 'スナップショット間で共有' },
   SELECTED_SNAPSHOT_REF: { className: 'border-2 border-amber-400', label: '現選択スナップショット参照' },
 };
 
@@ -22,13 +22,22 @@ const getBlockInfo = (
   files: FileEntry[],
   snapshots: Snapshot[],
   selectedSnapshotId: string | number | null
-): { colorClassName: string, additionalClass?: string, title: string } => {
+): { colorClassName: string, additionalClass?: string, title: string, displayText: string } => {
   let title = `ID: ${block.id}\nRefs: ${block.refCount}`;
   if (block.data) title += `\nData: ${block.data.substring(0, 20)}${block.data.length > 20 ? '...' : ''}`;
   if (block.isSnapshotProtected) title += '\nStatus: Snapshot Protected';
 
   let colorKey = 'UNUSED';
   let additionalClass = '';
+  let displayText = '';
+
+  if (block.data !== null) {
+    const owningFile = files.find(f => f.blockIds.includes(block.id));
+    if (owningFile && owningFile.name) {
+      displayText = owningFile.name.charAt(0).toUpperCase();
+      title += `\nFile: ${owningFile.name}`;
+    }
+  }
 
   if (block.data !== null && block.refCount > 0) {
     if (block.refCount > 1) {
@@ -54,7 +63,8 @@ const getBlockInfo = (
   return {
     colorClassName: `${baseColor} ${hoverColorClass}`,
     additionalClass,
-    title
+    title,
+    displayText,
   };
 };
 
@@ -91,13 +101,14 @@ export default function VirtualDiskView() {
           style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}
         >
           {disk.blocks.map((block) => {
-            const { colorClassName, additionalClass, title } = getBlockInfo(block, files, snapshots, selectedSnapshotId);
+            const { colorClassName, additionalClass, title, displayText } = getBlockInfo(block, files, snapshots, selectedSnapshotId);
             return (
               <div
                 key={block.id}
                 title={title}
-                className={`w-full aspect-square rounded-sm flex items-center justify-center text-[0.6rem] text-white transition-colors duration-150 ${colorClassName} ${additionalClass || ''}`}
+                className={`w-full aspect-square rounded-sm flex items-center justify-center text-xs text-white transition-colors duration-150 ${colorClassName} ${additionalClass || ''}`}
               >
+                {displayText}
               </div>
             );
           })}

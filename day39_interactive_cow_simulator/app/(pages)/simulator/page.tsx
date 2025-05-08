@@ -15,7 +15,7 @@ export default function SimulatorPage() {
     <div className="container mx-auto p-2 sm:p-4 flex flex-col h-screen bg-gray-800 text-gray-100 overflow-hidden">
       <header className="mb-2 sm:mb-4 flex-shrink-0">
         <h1 className="text-2xl sm:text-3xl font-bold text-center text-sky-400">
-          Day39 - インタラクティブ CoW ストレージシミュレーター
+          Day39 - Copy-on-Write ストレージシミュレーター
         </h1>
         <div className="flex justify-center mt-1 sm:mt-2">
           <button
