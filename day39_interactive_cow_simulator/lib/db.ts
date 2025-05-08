@@ -24,28 +24,17 @@ try {
 // 初期スキーマ作成関数
 const initializeSchema = () => {
   try {
-    // ここにアプリケーションに必要なテーブル作成クエリを記述
-    // 例:
+    // snapshots テーブルを作成
     db.exec(`
-      CREATE TABLE IF NOT EXISTS users (
+      CREATE TABLE IF NOT EXISTS snapshots (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
-
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS items (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        description TEXT,
-        user_id INTEGER,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(id)
+        disk_state_json TEXT NOT NULL
       );
     `);
 
-    console.log('Database schema initialized successfully.');
+    console.log('Database schema for snapshots initialized successfully.');
 
   } catch (error) {
     console.error('Failed to initialize database schema:', error);
