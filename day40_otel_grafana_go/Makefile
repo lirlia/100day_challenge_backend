@@ -9,10 +9,7 @@ all: run
 # Build all service executables
 build:
 	@echo "Building all services..."
-	@for service_dir in $(SERVICE_DIRS); do \\
-		echo "Building $$service_dir..."; \\
-		(cd $$service_dir && go build -o $$service_dir) || exit 1; \\
-	done
+	@for service_dir in $(SERVICE_DIRS); do echo "Building $$service_dir..."; (cd $$service_dir && go build -o $$service_dir) || exit 1; done
 	@echo "All services built successfully."
 
 # Start all services in the background (kills existing ones first)
