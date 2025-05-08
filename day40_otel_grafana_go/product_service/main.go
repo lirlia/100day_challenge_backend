@@ -19,7 +19,7 @@ const (
 	serviceName    = "product-service"
 	serviceVersion = "0.1.0"
 	environment    = "development"
-	otelEndpoint   = "tempo:4317"
+	otelEndpoint   = "localhost:4317"
 	serverPort     = ":8081"
 )
 

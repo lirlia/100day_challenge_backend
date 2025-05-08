@@ -18,7 +18,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 	oteltrace "go.opentelemetry.io/otel/trace"
 )
 
@@ -26,7 +25,7 @@ const (
 	serviceName    = "gateway-service"
 	serviceVersion = "0.1.0"
 	environment    = "development"
-	otelEndpoint   = "tempo:4317"
+	otelEndpoint   = "localhost:4317"
 	serverPort     = ":8080"
 
 	productServiceURL   = "http://localhost:8081/products"
@@ -145,44 +144,45 @@ func handleExecuteOrder(w http.ResponseWriter, r *http.Request) {
 }
 
 func callService(ctx context.Context, spanName, url string) (string, error) {
-	ctxCall, span := tracer.Start(ctx, spanName, oteltrace.WithAttributes(attribute.String("http.url", url)))
-	defer span.End()
+	// Use the context directly passed from the parent handler
+	ctxCall := ctx
 
+	// The transport will use this context
 	req, err := http.NewRequestWithContext(ctxCall, "GET", url, nil)
 	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
+		// Error handling for request creation itself
 		return "", fmt.Errorf("failed to create request to %s: %w", url, err)
 	}
 
+	// Client-side timeout for the request
 	requestCtx, cancel := context.WithTimeout(ctxCall, 3*time.Second)
 	defer cancel()
 	req = req.WithContext(requestCtx)
 
+	// otelhttp.Transport automatically creates a client span here
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
+		// Error is captured by the automatic span
 		return "", fmt.Errorf("failed to call %s: %w", url, err)
 	}
 	defer resp.Body.Close()
 
-	span.SetAttributes(attribute.Int("http.status_code", resp.StatusCode))
+	// Status code check
 	if resp.StatusCode >= 400 {
 		bodyBytes, _ := io.ReadAll(resp.Body)
 		errMsg := fmt.Sprintf("service %s returned status %d: %s", url, resp.StatusCode, string(bodyBytes))
-		span.RecordError(fmt.Errorf(errMsg))
-		span.SetStatus(codes.Error, errMsg)
+		// The automatic span should record this as an error based on status code
 		return "", fmt.Errorf(errMsg)
 	}
 
+	// Read response body
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
+		// Error reading body
 		return "", fmt.Errorf("failed to read response body from %s: %w", url, err)
 	}
-	span.SetStatus(codes.Ok, "")
+
+	// Success
 	return string(body), nil
 }
 
