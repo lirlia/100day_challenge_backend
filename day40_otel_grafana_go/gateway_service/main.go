@@ -160,6 +160,12 @@ func callService(ctx context.Context, spanName, url string) (string, error) {
 	req = req.WithContext(requestCtx)
 
 	// otelhttp.Transport automatically creates a client span here
+	log.Printf("Gateway Service: Sending request to %s with headers:", url)
+	for name, headers := range req.Header {
+		for _, h := range headers {
+			log.Printf("  %s: %s", name, h)
+		}
+	}
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		// Error is captured by the automatic span

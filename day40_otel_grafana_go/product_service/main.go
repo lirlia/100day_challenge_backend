@@ -84,6 +84,12 @@ func main() {
 }
 
 func handleGetProduct(w http.ResponseWriter, r *http.Request) {
+	log.Printf("Product Service: Received request with headers:")
+	for name, headers := range r.Header {
+		for _, h := range headers {
+			log.Printf("  %s: %s", name, h)
+		}
+	}
 	_, span := tracer.Start(r.Context(), "handleGetProductInternal")
 	defer span.End()
 
