@@ -41,15 +41,47 @@ interface CowSimulatorState {
 
 const MAX_LOG_ENTRIES = 20;
 
+// --- 初期データ生成ヘルパー ---
+const createInitialState = (): Pick<CowSimulatorState, 'disk' | 'files' | 'eventLog'> => {
+    let disk = initializeVirtualDisk();
+    let files: FileEntry[] = [];
+    const eventLog: string[] = ['Simulation initialized.'];
+
+    // サンプルファイル1作成
+    const file1Result = createFileOnDisk(disk, files, 'README.md', '# Hello CoW Simulator!\n');
+    if (file1Result) {
+        disk = file1Result.newDisk;
+        files = file1Result.newFiles;
+        eventLog.unshift(`[Initial] File "${file1Result.newFile.name}" created.`);
+    }
+
+    // サンプルファイル2作成
+    const file2Result = createFileOnDisk(disk, files, 'data.txt', 'Block1 Data\nBlock2 Data\nBlock3 Data\n...'); // 少し長めのデータ
+    if (file2Result) {
+        disk = file2Result.newDisk;
+        files = file2Result.newFiles;
+        eventLog.unshift(`[Initial] File "${file2Result.newFile.name}" created.`);
+    }
+
+    // サンプルファイル3 (空ファイル)
+    const file3Result = createFileOnDisk(disk, files, 'empty.txt', '');
+    if (file3Result) {
+        disk = file3Result.newDisk;
+        files = file3Result.newFiles;
+        eventLog.unshift(`[Initial] File "${file3Result.newFile.name}" created (empty).`);
+    }
+
+    return { disk, files, eventLog: eventLog.slice(0, MAX_LOG_ENTRIES) };
+};
+
 export const useCowStore = create<CowSimulatorState>((set, get) => ({
-  disk: initializeVirtualDisk(),
-  files: [],
+  ...createInitialState(), // 初期状態を生成関数から取得
   snapshots: [],
   selectedFileId: null,
   selectedSnapshotId: null,
   fileNameInput: '',
-  fileContentInput: 'Hello World!\n',
-  eventLog: [],
+  fileContentInput: 'Hello World!\n', // デフォルトの入力内容はそのまま
+  // isLoadingSnapshots は削除済み
 
   setFileNameInput: (name) => set({ fileNameInput: name }),
   setFileContentInput: (content) => set({ fileContentInput: content }),
@@ -208,13 +240,11 @@ export const useCowStore = create<CowSimulatorState>((set, get) => ({
   },
 
   resetSimulation: () => set({
-    disk: initializeVirtualDisk(),
-    files: [],
+    ...createInitialState(), // リセット時も初期状態生成関数を呼ぶ
     snapshots: [],
     selectedFileId: null,
     selectedSnapshotId: null,
     fileNameInput: '',
     fileContentInput: 'Hello World!\n',
-    eventLog: ['Simulation reset.'],
   }),
 }));
