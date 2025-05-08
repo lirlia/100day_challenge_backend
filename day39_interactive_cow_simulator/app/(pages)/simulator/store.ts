@@ -9,6 +9,7 @@ import {
   editFileOnDisk,
   deleteFileFromDisk,
   createSnapshotOnDisk,
+  deleteLocalSnapshot,
 } from '../../_lib/cow-simulator';
 
 // APIから取得するスナップショットの型 (DBスキーマに合わせる)
@@ -45,6 +46,8 @@ interface CowSimulatorState {
   selectSnapshot: (snapshotId: string | number | null) => void;
   viewSnapshotState: (snapshotId: string | number) => void; // 特定のスナップショット時点のファイル/ディスク状態を再現表示（読み取り専用）
   deleteSnapshotFromDB: (snapshotId: string | number) => Promise<void>;
+
+  deleteLocalSnapshotAction: (snapshotId: string) => void;
 
   resetSimulation: () => void;
 }
@@ -305,6 +308,27 @@ export const useCowStore = create<CowSimulatorState>((set, get) => ({
     } catch (error) {
       console.error('Error deleting snapshot from DB:', error);
       addEventLog(`Error deleting snapshot "${snapshotToDelete.name}": ${error instanceof Error ? error.message : String(error)}`);
+    }
+  },
+
+  deleteLocalSnapshotAction: (snapshotId) => {
+    const { disk, snapshots, addEventLog, selectedSnapshotId } = get();
+    const snapshotToDelete = snapshots.find(s => s.id === snapshotId);
+    if (!snapshotToDelete || !isNaN(Number(snapshotToDelete.id))) { // ローカル未保存か確認
+        addEventLog(`Error: Snapshot "${snapshotId}" is not a deletable local snapshot.`);
+        return;
+    }
+
+    const result = deleteLocalSnapshot(disk, snapshots, snapshotId);
+    if (result) {
+      set({
+        disk: result.updatedDisk,
+        snapshots: result.updatedSnapshots.sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
+        selectedSnapshotId: selectedSnapshotId === snapshotId ? null : selectedSnapshotId,
+      });
+      addEventLog(`Local snapshot "${snapshotToDelete.name}" deleted.`);
+    } else {
+      addEventLog(`Error deleting local snapshot "${snapshotToDelete.name}".`);
     }
   },
 

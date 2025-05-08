@@ -390,4 +390,35 @@ export function createSnapshotOnDisk(
   return { newSnapshot, updatedDisk: updatedDiskState };
 }
 
-// TODO: スナップショットからの復元、スナップショット削除時のブロック解放ロジックなど
+/**
+ * ローカルで作成された（DBに未保存の）スナップショットを削除します。
+ * このスナップショットのみが参照していたブロックを解放します。
+ * @returns 更新されたディスク状態とスナップショットリスト、または失敗時はnull。
+ */
+export function deleteLocalSnapshot(
+  currentDisk: VirtualDisk,
+  currentSnapshots: Snapshot[],
+  snapshotIdToDelete: string
+): { updatedDisk: VirtualDisk; updatedSnapshots: Snapshot[] } | null {
+  const snapshotIndex = currentSnapshots.findIndex(s => s.id === snapshotIdToDelete);
+  if (snapshotIndex === -1) {
+    console.warn(`Local snapshot with id "${snapshotIdToDelete}" not found for deletion.`);
+    return null;
+  }
+
+  const snapshotToDelete = currentSnapshots[snapshotIndex];
+  let updatedDisk = { ...currentDisk };
+
+  // このスナップショットが参照していたブロックの参照カウントを減らす
+  // isSnapshotProtected フラグは、他のスナップショットも参照していればそのままのはず
+  // freeBlock内でrefCountが0になったらisSnapshotProtectedもfalseになる
+  snapshotToDelete.referencedBlockIds.forEach(blockId => {
+    updatedDisk = freeBlock(updatedDisk, blockId);
+  });
+
+  const updatedSnapshots = currentSnapshots.filter(s => s.id !== snapshotIdToDelete);
+
+  return { updatedDisk, updatedSnapshots };
+}
+
+// TODO: スナップショットからの復元ロジックなど

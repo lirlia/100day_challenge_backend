@@ -14,6 +14,7 @@ export default function SnapshotControls() {
     loadSnapshotsFromDB,
     selectSnapshot,
     deleteSnapshotFromDB,
+    deleteLocalSnapshotAction,
   } = useCowStore();
 
   const [snapshotNameInput, setSnapshotNameInput] = useState('');
@@ -49,6 +50,16 @@ export default function SnapshotControls() {
       }
     } else {
       alert('DBから削除できるのは、DBに保存済みのスナップショットのみです。');
+    }
+  };
+
+  const handleDeleteLocal = () => {
+    if (selectedSnapshot && isLocalUnsavedSnapshot) {
+      if (confirm(`ローカルスナップショット「${selectedSnapshot.name}」を本当に削除しますか？この操作は取り消せません。`)) {
+        deleteLocalSnapshotAction(String(selectedSnapshot.id));
+      }
+    } else {
+      alert('削除できるのは、ローカルにのみ存在する未保存のスナップショットです。');
     }
   };
 
@@ -116,12 +127,20 @@ export default function SnapshotControls() {
             選択中: {selectedSnapshot.name}
           </h3>
           {isLocalUnsavedSnapshot && (
-            <button
-              onClick={handleSaveToDB}
-              className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-md transition-colors"
-            >
-              このローカルスナップショットをDBに保存
-            </button>
+            <>
+              <button
+                onClick={handleSaveToDB}
+                className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-md transition-colors"
+              >
+                このローカルスナップショットをDBに保存
+              </button>
+              <button
+                onClick={handleDeleteLocal}
+                className="w-full px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white font-semibold rounded-md transition-colors"
+              >
+                このローカルスナップショットを削除 (ローカルのみ)
+              </button>
+            </>
           )}
           {!isLocalUnsavedSnapshot && (
             <button
