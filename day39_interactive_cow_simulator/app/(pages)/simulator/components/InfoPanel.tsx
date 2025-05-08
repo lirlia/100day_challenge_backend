@@ -10,10 +10,11 @@ export default function InfoPanel() {
     snapshots,
     selectedFileId,
     selectedSnapshotId,
+    eventLog,
   } = useCowStore();
 
   const selectedFile = files.find(f => f.id === selectedFileId);
-  const selectedSnapshot = snapshots.find(s => s.id === selectedSnapshotId);
+  const selectedSnapshot = snapshots.find(s => s.id === String(selectedSnapshotId));
 
   const calculateTotalLogicalSize = () => {
     return files.reduce((acc, file) => acc + file.size, 0);
@@ -31,7 +32,7 @@ export default function InfoPanel() {
   const physicalUsage = calculatePhysicalUsage();
 
   return (
-    <div className="p-3 bg-gray-650 rounded-md shadow space-y-3 text-sm">
+    <div className="p-3 bg-gray-600 rounded-md shadow space-y-3 text-sm">
       <div>
         <h3 className="text-md font-semibold mb-1 text-gray-200">ディスク統計</h3>
         {disk ? (
@@ -55,7 +56,6 @@ export default function InfoPanel() {
             <li>ID: {selectedFile.id}</li>
             <li>サイズ: {selectedFile.size} B</li>
             <li>ブロック数: {selectedFile.blockIds.length}</li>
-            <li>使用ブロックID: {selectedFile.blockIds.join(', ') || 'N/A'}</li>
             <li>作成日時: {new Date(selectedFile.createdAt).toLocaleString()}</li>
             <li>更新日時: {new Date(selectedFile.updatedAt).toLocaleString()}</li>
           </ul>
@@ -74,15 +74,18 @@ export default function InfoPanel() {
         </div>
       )}
 
-      {/* TODO: CoWイベントログなどを表示するエリア */}
-      {/* <div>
+      <div>
         <h3 className="text-md font-semibold mb-1 text-pink-300">イベントログ</h3>
-        <div className="max-h-20 overflow-y-auto bg-gray-700 p-1 rounded text-xs">
-          <p>20:15:03 - File 'doc.txt' created. Blocks: block-0, block-1</p>
-          <p>20:15:10 - File 'doc.txt' edited. CoW: block-0 copied to block-2.</p>
-          <p>20:15:15 - Snapshot 'Backup 1' created.</p>
-        </div>
-      </div> */}
+        {eventLog.length === 0 ? (
+          <p className="text-gray-400 italic text-xs">まだイベントはありません。</p>
+        ) : (
+          <div className="max-h-24 overflow-y-auto bg-gray-700 p-1.5 rounded text-xs space-y-1">
+            {eventLog.map((log, index) => (
+              <p key={index} className="whitespace-pre-wrap break-all">{log}</p>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
