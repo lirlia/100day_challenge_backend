@@ -36,8 +36,25 @@ const getBlockInfo = (
   if (block.data !== null) {
     const owningFile = files.find(f => f.blockIds.includes(block.id));
     if (owningFile && owningFile.name) {
-      displayText = block.id.substring(block.id.length - 2);
+      const namePart = owningFile.name.substring(0, 3).toUpperCase();
+      const extensionPart = owningFile.name.includes('.') ? `.${owningFile.name.split('.').pop()?.toLowerCase()}` : '';
+      if (extensionPart && owningFile.name.length <= 6) {
+        displayText = owningFile.name.toUpperCase();
+      } else if (namePart.length < 3 && !extensionPart) {
+        displayText = namePart;
+      } else {
+        displayText = namePart + extensionPart;
+      }
+      if (!displayText && owningFile.name) displayText = owningFile.name.substring(0, 1).toUpperCase();
       title += `\nFile: ${owningFile.name}`;
+    } else if (block.isSnapshotProtected || block.refCount > 1) {
+      // 現在のファイルリストにはないが、スナップショット保護または共有されているブロック
+      displayText = 'SNP';
+      title += '\nStatus: Orphaned or snapshot-only block';
+    }
+    // 上記いずれにも当てはまらないがデータがある場合 (通常は起こりにくい)
+    if (!displayText && block.data) {
+      displayText = 'DAT'; // Data exists, but no clear owner in current view
     }
   }
 
