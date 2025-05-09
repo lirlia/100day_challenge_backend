@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useCowStore } from '../store';
 import { Snapshot } from '@/app/_lib/cow-simulator';
 
@@ -11,6 +11,7 @@ export default function SnapshotControls() {
     takeSnapshot,
     selectSnapshot,
     deleteSnapshot,
+    restoreFromSnapshot,
   } = useCowStore();
 
   const [snapshotNameInput, setSnapshotNameInput] = useState('');
@@ -29,6 +30,15 @@ export default function SnapshotControls() {
     } else {
       alert('削除するスナップショットを選択してください。');
       useCowStore.getState().addEventLog('Error: No snapshot selected for deletion.');
+    }
+  };
+
+  const handleRestoreSnapshot = () => {
+    if (selectedSnapshot) {
+      restoreFromSnapshot(selectedSnapshot.id);
+    } else {
+      alert('復元するスナップショットを選択してください。');
+      useCowStore.getState().addEventLog('Error: No snapshot selected for restoration.');
     }
   };
 
@@ -86,6 +96,12 @@ export default function SnapshotControls() {
           <h3 className="text-lg font-medium mb-1 text-gray-200">
             選択中: {selectedSnapshot.name}
           </h3>
+          <button
+            onClick={handleRestoreSnapshot}
+            className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-md transition-colors mb-2"
+          >
+            この状態に復元
+          </button>
           <button
             onClick={handleDeleteSnapshot}
             className="w-full px-4 py-2 bg-red-700 hover:bg-red-800 text-white font-semibold rounded-md transition-colors"
