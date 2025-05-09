@@ -3,6 +3,7 @@ export interface Block {
   data: string | null; // ファイルデータを簡易的に文字列で表現
   refCount: number; // このブロックを参照しているファイル/スナップショットの数
   isSnapshotProtected?: boolean; // スナップショットによって保護されているか（CoW対象か）
+  originalBlockId?: string; // CoWでコピーされた場合の元のブロックID
 }
 
 export interface FileEntry {
@@ -75,7 +76,7 @@ export function generateUniqueId(): string {
  * 指定されたデータで新しいブロックをディスクに割り当てます。
  * @returns 割り当てられたブロックID、または空きがない場合はnull。
  */
-function allocateBlock(disk: VirtualDisk, dataChunk: string): { newDisk: VirtualDisk, blockId: string } | null {
+function allocateBlock(disk: VirtualDisk, dataChunk: string, originalBlockIdToLink?: string): { newDisk: VirtualDisk, blockId: string } | null {
   const freeBlockIndex = disk.blocks.findIndex(b => b.refCount === 0 && b.data === null);
   if (freeBlockIndex === -1) {
     console.warn('No free blocks available!');
@@ -87,6 +88,9 @@ function allocateBlock(disk: VirtualDisk, dataChunk: string): { newDisk: Virtual
   targetBlock.data = dataChunk;
   targetBlock.refCount = 1; // 新規割り当てなので参照カウントは1
   targetBlock.isSnapshotProtected = false; // 新規作成時は保護されていない
+  if (originalBlockIdToLink) {
+    targetBlock.originalBlockId = originalBlockIdToLink;
+  }
   newBlocks[freeBlockIndex] = targetBlock;
 
   return {
@@ -247,7 +251,7 @@ export function editFileOnDisk(
       // (1) 直接上書き可能なケース: このファイルのみが参照し、スナップショット保護なし
       const blockIndex = updatedDisk.blocks.findIndex(b => b.id === originalBlock.id);
       const newBlocksArr = [...updatedDisk.blocks];
-      newBlocksArr[blockIndex] = { ...originalBlock, data: dataChunk };
+      newBlocksArr[blockIndex] = { ...newBlocksArr[blockIndex], data: dataChunk };
       updatedDisk = { ...updatedDisk, blocks: newBlocksArr };
       newBlockIds.push(originalBlock.id);
       // oldBlockIdsToPotentiallyFree から該当IDを削除（解放対象外になったため）
@@ -257,7 +261,7 @@ export function editFileOnDisk(
     } else {
       // (2) CoWが必要なケース: ブロックが共有されているか、スナップショット保護あり、または新規ブロック
       // (古いブロックの参照カウントは、このループの後でまとめて処理)
-      const allocationResult = allocateBlock(updatedDisk, dataChunk);
+      const allocationResult = allocateBlock(updatedDisk, dataChunk, originalBlock?.id);
       if (!allocationResult) {
         console.error('Failed to allocate block during CoW edit.');
         // TODO: ここで失敗した場合、それまでに割り当てたブロックをロールバックする必要がある

@@ -4,7 +4,7 @@ import { useCowStore } from './store';
 import VirtualDiskView from './components/VirtualDiskView';
 import FileControls from './components/FileControls';
 import SnapshotControls from './components/SnapshotControls';
-import SnapshotTreeView from './components/SnapshotTreeView';
+import EventLogView from './components/EventLogView';
 import InfoPanel from './components/InfoPanel';
 
 export default function SimulatorPage() {
@@ -52,11 +52,11 @@ export default function SimulatorPage() {
             </div>
           </div>
 
-          {/* 下段: スナップショット履歴と情報パネル (2分割) */}
+          {/* 下段: イベントログと情報パネル (2分割) */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4 flex-grow overflow-hidden h-1/2">
             <div className="flex flex-col gap-3 sm:gap-4 overflow-y-auto p-2 sm:p-3 bg-gray-700 rounded-lg shadow-xl scrollbar-thin scrollbar-thumb-gray-500 scrollbar-track-gray-750">
-              <h2 className="text-lg sm:text-xl font-semibold mb-2 border-b border-gray-600 pb-1 text-lime-300 sticky top-0 bg-gray-700 py-1 z-10">スナップショット履歴</h2>
-              <SnapshotTreeView />
+              <h2 className="text-lg sm:text-xl font-semibold mb-2 border-b border-gray-600 pb-1 text-lime-300 sticky top-0 bg-gray-700 py-1 z-10">イベントログ</h2>
+              <EventLogView />
             </div>
             <div className="flex flex-col gap-3 sm:gap-4 overflow-y-auto p-2 sm:p-3 bg-gray-700 rounded-lg shadow-xl scrollbar-thin scrollbar-thumb-gray-500 scrollbar-track-gray-750">
               <h2 className="text-lg sm:text-xl font-semibold mb-2 border-b border-gray-600 pb-1 text-pink-300 sticky top-0 bg-gray-700 py-1 z-10">情報パネル</h2>
