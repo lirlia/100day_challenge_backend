@@ -11,10 +11,11 @@ interface ColorInfo {
 // ホバーエフェクトは凡例には不要なので基本色のみ定義
 const BLOCK_COLORS: Record<string, ColorInfo> = {
   UNUSED: { className: 'bg-gray-600', label: '未使用' },
-  NORMAL_FILE: { className: 'bg-sky-500', label: 'ファイル (保護なし)' },
-  SNAPSHOT_PROTECTED: { className: 'bg-purple-500', label: 'スナップショット保護 (CoW対象)' },
+  NORMAL_FILE: { className: 'bg-sky-500', label: 'ファイル (スナップショット保護なし)' },
+  SNAPSHOT_PROTECTED_ORIGINAL: { className: 'bg-purple-500', label: '保護されたオリジナル (🔒)' },
+  SNAPSHOT_PROTECTED_COPY: { className: 'bg-teal-600', label: '保護されたコピー (CoW)' },
   SHARED: { className: 'bg-green-500', label: 'スナップショット間で共有' },
-  COPIED_BLOCK: { className: 'border-2 border-dashed border-yellow-400', label: 'CoWによるコピー' },
+  COPIED_BLOCK: { className: 'border-2 border-dashed border-yellow-400', label: 'CoWによるコピー (未保護)' },
   SELECTED_SNAPSHOT_REF: { className: 'border-2 border-amber-400', label: '現選択スナップショット参照' },
 };
 
@@ -27,16 +28,21 @@ const getBlockInfo = (
   let title = `ID: ${block.id}\nRefs: ${block.refCount}`;
   if (block.data) title += `\nData: ${block.data.substring(0, 20)}${block.data.length > 20 ? '...' : ''}`;
   if (block.isSnapshotProtected) title += '\nStatus: Snapshot Protected';
-  if (block.originalBlockId) title += `\nOriginal: ${block.originalBlockId} (CoW)`;
+  if (block.originalBlockId) {
+    title += `\nOriginal: ${block.originalBlockId} (CoW)`;
+  } else if (block.isSnapshotProtected) {
+    title += ' (Original data)';
+  }
 
   let colorKey = 'UNUSED';
   let additionalClass = '';
   let displayText = '';
+  let isOriginalProtected = false;
 
   if (block.data !== null) {
     const owningFile = files.find(f => f.blockIds.includes(block.id));
     if (owningFile && owningFile.name) {
-      const namePart = owningFile.name.substring(0, 3).toUpperCase();
+      const namePart = owningFile.name;
       const extensionPart = owningFile.name.includes('.') ? `.${owningFile.name.split('.').pop()?.toLowerCase()}` : '';
       if (extensionPart && owningFile.name.length <= 6) {
         displayText = owningFile.name.toUpperCase();
@@ -47,28 +53,53 @@ const getBlockInfo = (
       }
       if (!displayText && owningFile.name) displayText = owningFile.name.substring(0, 1).toUpperCase();
       title += `\nFile: ${owningFile.name}`;
+
+      if (block.isSnapshotProtected && !block.originalBlockId) {
+        isOriginalProtected = true;
+        displayText += '🔒';
+      }
     } else if (block.isSnapshotProtected || block.refCount > 1) {
-      // 現在のファイルリストにはないが、スナップショット保護または共有されているブロック
-      displayText = 'SNP';
+      let formerFileName: string | null = null;
+      for (const snap of [...snapshots].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())) {
+        if (snap.referencedBlockIds.has(block.id)) {
+          const fileInSnap = snap.fileEntries.find(f => f.blockIds.includes(block.id));
+          if (fileInSnap) {
+            formerFileName = fileInSnap.name;
+            title += `\nOriginal File (in ${snap.name}): ${formerFileName}`;
+            break;
+          }
+        }
+      }
+      if (formerFileName) {
+        displayText = formerFileName + '(Snap)'; // 省略せずに表示
+      } else {
+        displayText = 'SNP';
+      }
+      if (block.isSnapshotProtected && !block.originalBlockId) displayText += '🔒';
       title += '\nStatus: Orphaned or snapshot-only block';
     }
-    // 上記いずれにも当てはまらないがデータがある場合 (通常は起こりにくい)
     if (!displayText && block.data) {
-      displayText = 'DAT'; // Data exists, but no clear owner in current view
+      displayText = 'DAT';
     }
   }
 
   if (block.data !== null && block.refCount > 0) {
-    if (block.refCount > 1) {
+    if (block.refCount > 1 && block.isSnapshotProtected) {
       colorKey = 'SHARED';
     } else if (block.isSnapshotProtected) {
-      colorKey = 'SNAPSHOT_PROTECTED';
+      if (block.originalBlockId) {
+        colorKey = 'SNAPSHOT_PROTECTED_COPY';
+      } else {
+        colorKey = 'SNAPSHOT_PROTECTED_ORIGINAL';
+      }
+    } else if (block.refCount > 1) {
+      colorKey = 'SHARED';
     } else {
       colorKey = 'NORMAL_FILE';
     }
   }
 
-  if (block.originalBlockId) {
+  if (block.originalBlockId && !block.isSnapshotProtected) {
     additionalClass += ` ${BLOCK_COLORS.COPIED_BLOCK.className}`;
   }
 
@@ -132,9 +163,13 @@ export default function VirtualDiskView() {
               <div
                 key={block.id}
                 title={title}
-                className={`w-full aspect-square rounded-sm flex items-center justify-center text-xs font-medium text-white transition-colors duration-150 ${colorClassName} ${additionalClass || ''}`}
+                className={`w-full aspect-square rounded-sm flex items-center justify-center p-0.5
+                           text-white transition-colors duration-150
+                           ${colorClassName} ${additionalClass || ''}`}
               >
-                {displayText}
+                <span className="text-base leading-tight text-center break-words break-all font-medium">
+                  {displayText}
+                </span>
               </div>
             );
           })}
