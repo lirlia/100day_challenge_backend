@@ -1,0 +1,73 @@
+server:
+  http_listen_port: 3200
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+    jaeger:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:14250 # Note: Jaeger gRPC is usually 14250 for collector, 14268 is for agent thrift_http
+        thrift_http:
+          endpoint: 0.0.0.0:14268
+
+ingester:
+  trace_idle_period: 10s
+  max_block_bytes: 1_000_000
+  max_block_duration: 5m
+  # completion_parallelism: 100 # Temporarily commented out due to schema mismatch
+  lifecycler:
+    ring:
+      kvstore:
+        store: memberlist
+      replication_factor: 1
+    final_sleep: 0s
+
+compactor:
+  compaction:
+    compaction_window: 1h
+    max_compaction_objects: 1000000
+    block_retention: 1h
+    compacted_block_retention: 10m
+  # lifecycler: # Temporarily commented out due to schema mismatch
+  #   ring:
+  #     kvstore:
+  #       store: memberlist
+  #     replication_factor: 1
+
+storage:
+  trace:
+    backend: local
+    wal:
+      path: /tmp/tempo/wal
+    local:
+      path: /tmp/tempo/blocks
+    pool:
+      max_workers: 100
+      queue_depth: 10000
+
+metrics_generator:
+  storage:
+    path: /tmp/tempo/generator/wal
+    remote_write:
+      - url: http://prometheus:9090/api/v1/write
+        send_exemplars: true
+  registry:
+    external_labels:
+      source: tempo
+  processor:
+    span_metrics:
+      dimensions:
+        - http.method
+        - http.status_code
+    service_graphs:
+      dimensions:
+        - http.method
+
+overrides:
+  metrics_generator_processors: [service-graphs, span-metrics]

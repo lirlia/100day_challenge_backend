@@ -1,0 +1,95 @@
+services:
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    container_name: prometheus
+    volumes:
+      - ./prometheus:/etc/prometheus
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+      - "--web.enable-lifecycle" # Required for reload
+    ports:
+      - "9090:9090"
+    networks:
+      - grafana-net
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:10.2.0
+    container_name: grafana
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    ports:
+      - "3000:3000"
+    networks:
+      - grafana-net
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+      - loki
+      - tempo
+
+  loki:
+    image: grafana/loki:2.9.1
+    container_name: loki
+    volumes:
+      - loki_data:/loki
+    # command: -config.file=/etc/loki/local-config.yaml # Default config is usually fine for local
+    ports:
+      - "3100:3100"
+    networks:
+      - grafana-net
+    restart: unless-stopped
+
+  promtail:
+    image: grafana/promtail:2.9.1
+    container_name: promtail
+    volumes:
+      - ./promtail:/etc/promtail
+      - /var/log:/var/log # For collecting host logs, if needed
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro # To access Docker container logs
+    command: -config.file=/etc/promtail/promtail-config.yml
+    ports: [] # Ensure ports is a list, even if empty or commented out
+    networks:
+      - grafana-net
+    restart: unless-stopped
+    depends_on:
+      - loki
+
+  tempo:
+    image: grafana/tempo:2.2.0
+    container_name: tempo
+    command: ["-config.file=/etc/tempo.yaml", "-search.enabled=true"]
+    volumes:
+      - ./tempo/tempo.yaml:/etc/tempo.yaml # Tempo configuration
+      - tempo_data:/tmp/tempo
+    ports:
+      - "3200:3200" # Tempo HTTP
+      - "14268:14268" # Jaeger gRPC (actually thrift_http for jaeger collector)
+      - "14250:14250" # Jaeger HTTP Thrift (actually jaeger collector grpc)
+      # OTLP ports
+      - "4317:4317" # OTLP gRPC
+      - "4318:4318" # OTLP HTTP
+    networks:
+      - grafana-net
+    restart: unless-stopped
+    depends_on:
+      - loki # If using Loki for span to logs
+
+volumes:
+  prometheus_data: {}
+  grafana_data: {}
+  loki_data: {}
+  tempo_data: {}
+
+networks:
+  grafana-net:
+    driver: bridge
