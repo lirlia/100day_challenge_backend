@@ -54,8 +54,9 @@ services:
     container_name: promtail
     volumes:
       - ./promtail:/etc/promtail
-      - /var/log:/var/log # For collecting host logs, if needed
+      - /var/log:/var/log # For collecting host OS logs, if needed
       - /var/lib/docker/containers:/var/lib/docker/containers:ro # To access Docker container logs
+      - /tmp:/mnt/go_app_logs:ro # Mount host's /tmp to container's /mnt/go_app_logs (read-only)
     command: -config.file=/etc/promtail/promtail-config.yml
     ports: [] # Ensure ports is a list, even if empty or commented out
     networks:
@@ -67,7 +68,7 @@ services:
   tempo:
     image: grafana/tempo:2.2.0
     container_name: tempo
-    command: ["-config.file=/etc/tempo.yaml", "-search.enabled=true"]
+    command: ["-config.file=/etc/tempo.yaml"]
     volumes:
       - ./tempo/tempo.yaml:/etc/tempo.yaml # Tempo configuration
       - tempo_data:/tmp/tempo

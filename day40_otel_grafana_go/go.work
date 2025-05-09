@@ -3,6 +3,7 @@ go 1.24.2
 use (
 	./gateway_service
 	./internal/pkg/httpclient
+	./internal/pkg/observability
 	./internal/pkg/otel
 	./inventory_service
 	./order_service

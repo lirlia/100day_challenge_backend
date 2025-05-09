@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/lirlia/100day_challenge_backend/day40_otel_grafana_go/internal/pkg/httpclient"
+	"github.com/lirlia/100day_challenge_backend/day40_otel_grafana_go/internal/pkg/observability"
 	"github.com/lirlia/100day_challenge_backend/day40_otel_grafana_go/internal/pkg/otel"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -104,18 +105,22 @@ func main() {
 }
 
 func handleExecuteOrder(w http.ResponseWriter, r *http.Request) {
+	logger := observability.NewLogger("gateway_service")
 	ctx, span := tracer.Start(r.Context(), "handleExecuteOrderInternal")
 	defer span.End()
 
 	scenario := r.URL.Query().Get("scenario")
 	span.SetAttributes(attribute.String("order.scenario", scenario))
-	log.Printf("Executing order with scenario: %s\n", scenario)
+	// log.Printf("Executing order with scenario: %s\n", scenario)
+	logger.InfoContext(ctx, "Executing order", "scenario", scenario)
 
 	var results strings.Builder
 	results.WriteString(fmt.Sprintf("<h2>Order Execution (Scenario: %s)</h2>", scenario))
 
 	productResp, err := callService(ctx, "product-service-call", productServiceURL+"?scenario="+scenario)
 	if err != nil {
+		// results.WriteString(fmt.Sprintf("<p>Error calling Product Service: %v</p>", err))
+		logger.ErrorContext(ctx, "Error calling Product Service", "error", err, "url", productServiceURL+"?scenario="+scenario)
 		results.WriteString(fmt.Sprintf("<p>Error calling Product Service: %v</p>", err))
 		http.Error(w, results.String(), http.StatusInternalServerError)
 		return
@@ -124,6 +129,7 @@ func handleExecuteOrder(w http.ResponseWriter, r *http.Request) {
 
 	inventoryResp, err := callService(ctx, "inventory-service-call", inventoryServiceURL+"?scenario="+scenario)
 	if err != nil {
+		logger.ErrorContext(ctx, "Error calling Inventory Service", "error", err, "url", inventoryServiceURL+"?scenario="+scenario)
 		results.WriteString(fmt.Sprintf("<p>Error calling Inventory Service: %v</p>", err))
 		http.Error(w, results.String(), http.StatusInternalServerError)
 		return
@@ -132,6 +138,7 @@ func handleExecuteOrder(w http.ResponseWriter, r *http.Request) {
 
 	orderResp, err := callService(ctx, "order-service-call", orderServiceURL+"?scenario="+scenario)
 	if err != nil {
+		logger.ErrorContext(ctx, "Error calling Order Service", "error", err, "url", orderServiceURL+"?scenario="+scenario)
 		results.WriteString(fmt.Sprintf("<p>Error calling Order Service: %v</p>", err))
 		http.Error(w, results.String(), http.StatusInternalServerError)
 		return
@@ -139,11 +146,13 @@ func handleExecuteOrder(w http.ResponseWriter, r *http.Request) {
 	results.WriteString(fmt.Sprintf("<p>Order Service: %s</p>", orderResp))
 
 	results.WriteString("<p>Order processed successfully!</p>")
+	logger.InfoContext(ctx, "Order processed successfully", "scenario", scenario)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	fmt.Fprint(w, results.String())
 }
 
 func callService(ctx context.Context, spanName, url string) (string, error) {
+	logger := observability.NewLogger("gateway_service")
 	// Use the context directly passed from the parent handler
 	ctxCall := ctx
 
@@ -160,12 +169,21 @@ func callService(ctx context.Context, spanName, url string) (string, error) {
 	req = req.WithContext(requestCtx)
 
 	// otelhttp.Transport automatically creates a client span here
-	log.Printf("Gateway Service: Sending request to %s with headers:", url)
-	for name, headers := range req.Header {
-		for _, h := range headers {
-			log.Printf("  %s: %s", name, h)
+	// log.Printf("Gateway Service: Sending request to %s with headers:", url)
+	// for name, headers := range req.Header {
+	// 	for _, h := range headers {
+	// 		log.Printf("  %s: %s", name, h)
+	// 	}
+	// }
+	// ログレベルをDebugにし、ヘッダー情報をまとめて出力
+	headersMap := make(map[string]string)
+	for name, values := range req.Header {
+		if len(values) > 0 {
+			headersMap[name] = values[0] // 簡略化のため最初の値のみ
 		}
 	}
+	logger.DebugContext(ctx, "Sending request", "url", url, "headers", headersMap)
+
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		// Error is captured by the automatic span

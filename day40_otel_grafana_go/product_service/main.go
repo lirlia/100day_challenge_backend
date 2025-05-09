@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/lirlia/100day_challenge_backend/day40_otel_grafana_go/internal/pkg/observability"
 	"github.com/lirlia/100day_challenge_backend/day40_otel_grafana_go/internal/pkg/otel"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -84,26 +85,29 @@ func main() {
 }
 
 func handleGetProduct(w http.ResponseWriter, r *http.Request) {
-	log.Printf("Product Service: Received request with headers:")
-	for name, headers := range r.Header {
-		for _, h := range headers {
-			log.Printf("  %s: %s", name, h)
+	logger := observability.NewLogger("product_service")
+	headersMap := make(map[string]string)
+	for name, values := range r.Header {
+		if len(values) > 0 {
+			headersMap[name] = values[0]
 		}
 	}
+	logger.DebugContext(r.Context(), "Received request", "headers", headersMap)
+
 	_, span := tracer.Start(r.Context(), "handleGetProductInternal")
 	defer span.End()
 
 	scenario := r.URL.Query().Get("scenario")
-	log.Printf("%s received request with scenario: %s", serviceName, scenario)
+	logger.InfoContext(r.Context(), "Processing request", "service_name", serviceName, "scenario", scenario)
 
 	if scenario == "product_error" {
-		log.Printf("%s simulating product error scenario", serviceName)
+		logger.WarnContext(r.Context(), "Simulating product error scenario", "service_name", serviceName)
 		http.Error(w, "Simulated product service error", http.StatusInternalServerError)
 		return
 	}
 
 	if scenario == "long_request" {
-		log.Printf("%s simulating long processing for 5 seconds", serviceName)
+		logger.InfoContext(r.Context(), "Simulating long processing", "service_name", serviceName, "duration", "5s")
 		time.Sleep(5 * time.Second)
 	}
 
@@ -116,7 +120,7 @@ func handleGetProduct(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(product); err != nil {
-		log.Printf("Error encoding product to JSON: %v", err)
+		logger.ErrorContext(r.Context(), "Error encoding product to JSON", "error", err, "service_name", serviceName)
 		http.Error(w, "Failed to encode product", http.StatusInternalServerError)
 	}
 }

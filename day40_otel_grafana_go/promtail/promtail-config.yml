@@ -24,20 +24,48 @@ scrape_configs:
           __path__: /var/lib/docker/containers/*/*-json.log
     pipeline_stages:
       - docker: {}
-      - match:
-          selector: '{job="containerlogs"}'
-          stages:
-            - json:
-                expressions:
-                  output: log
-                  stream: stream
-            - regex:
-                expression: "^.*trace_id(?:\\\\=\\\\"|\\\":\\\\")(?P<traceID>[0-9a-fA-F]{32})(?:\\\\"|)"
-            - labels:
-                traceID: # Populated by regex with named capture group traceID
+      - json:
+          expressions:
+            raw_log: log
+            stream: stream
+      - json:
+          source: raw_log
+          expressions:
+            p_trace_id: trace_id
+            p_span_id: span_id
+            p_level: level
+            p_msg: msg
+      - labels:
+          trace_id: p_trace_id
+          span_id: p_span_id
+          level: p_level
     relabel_configs:
-      - source_labels: ['__meta_docker_container_name']
-        regex: '/(.*)'
-        target_label: 'container'
-      - source_labels: ['__meta_docker_container_log_stream']
-        target_label: 'logstream'
+      - source_labels: ["__meta_docker_container_name"]
+        regex: "/(.*)"
+        target_label: "container"
+      - source_labels: ["__meta_docker_container_log_stream"]
+        target_label: "logstream"
+
+  - job_name: go_app_services
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: go_app_logs
+          __path__: /mnt/go_app_logs/go_app_*.log
+    pipeline_stages:
+      - json:
+          expressions:
+            trace_id: trace_id
+            span_id: span_id
+            level: level
+            msg: msg
+            time: time
+            source_file: "source.file"
+            source_line: "source.line"
+            service_name: service_name
+      - labels:
+          trace_id:
+          span_id:
+          level:
+          service: service_name

@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/lirlia/100day_challenge_backend/day40_otel_grafana_go/internal/pkg/observability"
 	"github.com/lirlia/100day_challenge_backend/day40_otel_grafana_go/internal/pkg/otel"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -84,26 +85,29 @@ func main() {
 }
 
 func handleCreateOrder(w http.ResponseWriter, r *http.Request) {
-	log.Printf("Order Service: Received request with headers:")
-	for name, headers := range r.Header {
-		for _, h := range headers {
-			log.Printf("  %s: %s", name, h)
+	logger := observability.NewLogger("order_service")
+	headersMap := make(map[string]string)
+	for name, values := range r.Header {
+		if len(values) > 0 {
+			headersMap[name] = values[0]
 		}
 	}
+	logger.DebugContext(r.Context(), "Received request", "headers", headersMap)
+
 	_, span := tracer.Start(r.Context(), "handleCreateOrderInternal")
 	defer span.End()
 
 	scenario := r.URL.Query().Get("scenario")
-	log.Printf("%s received request with scenario: %s", serviceName, scenario)
+	logger.InfoContext(r.Context(), "Processing request", "service_name", serviceName, "scenario", scenario)
 
 	// Handle scenarios if needed, e.g., simulate DB delay or error
 	if scenario == "long_request" {
-		log.Printf("%s simulating long processing for 1 second", serviceName)
+		logger.InfoContext(r.Context(), "Simulating long processing", "service_name", serviceName, "duration", "1s")
 		time.Sleep(1 * time.Second)
 	}
 
 	if r.Context().Err() != nil {
-		log.Printf("%s context cancelled: %v", serviceName, r.Context().Err())
+		logger.WarnContext(r.Context(), "Context cancelled", "service_name", serviceName, "error", r.Context().Err())
 		return
 	}
 
@@ -116,8 +120,8 @@ func handleCreateOrder(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(order); err != nil {
-		log.Printf("Error encoding order to JSON: %v", err)
-		if r.Context().Err() == nil {
+		logger.ErrorContext(r.Context(), "Error encoding order to JSON", "error", err, "service_name", serviceName)
+		if r.Context().Err() == nil { // Avoid duplicate error if context was already cancelled
 			http.Error(w, "Failed to encode order", http.StatusInternalServerError)
 		}
 	}
