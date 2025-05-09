@@ -2,6 +2,10 @@
 
 このアプリケーションは、主要なブラウザセキュリティ機能（CSP, CORS, HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy, Permissions-Policy）の動作をインタラクティブに学習・体験するためのプレイグラウンドです。
 
+https://github.com/user-attachments/assets/e8d86176-9cec-4ee6-81b1-5b6e4ffce098
+
+[100日チャレンジ day41](https://zenn.dev/gin_nazo/scraps/785b7be81f8eac)
+
 ## アプリケーション概要
 
 ユーザーは各セキュリティ機能のデモページにアクセスし、そこで提示されるUIを通じてHTTPヘッダーの設定値を変更できます。
@@ -31,9 +35,10 @@
 ## 主要機能
 
 -   各セキュリティデモページでの専用UIによるヘッダー設定変更機能。
+    -   特にCSPデモでは、主要ディレクティブの選択とカスタム値入力による柔軟なポリシー生成、及びテストベンチでの詳細な動作予測・確認が可能。
 -   設定変更はAPI経由でCookieに保存され、Next.js Middlewareによってレスポンスヘッダーに適用。
 -   各デモページでの具体的なテストシナリオと、期待される動作の解説。
--   `SecurityHeaderController` コンポーネントによる、現在の適用ヘッダー値（Cookieから取得）の表示と、個別または全設定のクリア機能。
+-   `SecurityHeaderController` コンポーネントによる、現在の適用ヘッダー値（Cookieから取得）の表示、設定UIの表示、個別または全設定のクリア機能。
 
 ## 使用技術スタック
 
@@ -102,12 +107,20 @@
 3.  **セキュリティヘッダー制御APIの実装 (`app/api/set-security-headers/route.ts`)**
 4.  **Next.js Middleware の作成 (`middleware.ts`) でのヘッダー適用**
 5.  **各セキュリティ機能のデモページと設定UIの実装**
-    -   CSPデモページと設定UI、テストエリア
+    -   CSPデモページ:
+        -   ディレクティブ選択UIをチェックボックスとカスタム値入力形式に改善。
+        -   テストベンチを強化（多様なリソーステスト、CSP予測動作表示、予測表示の明確化）。
+        -   CSP概要説明を追加。
     -   CORSデモページと外部APIリクエストテスト
     -   HSTSデモページと設定UI、解説
-    -   X-Content-Type-Optionsデモページと設定UI、MIMEスニッフィングテスト用API及び表示エリア
+    -   X-Content-Type-Optionsデモページ:
+        -   MIMEスニッフィングテスト用APIの文字化け修正。
+        -   `nosniff`無効時のブラウザ挙動に関する説明文を更新。
     -   X-Frame-Optionsデモページと設定UI、iframe埋め込みテストエリア
     -   Referrer-Policyデモページと設定UI、リファラ検査API及び表示エリア
     -   Permissions-Policyデモページと設定UI、権限テストエリア
-6.  **テストと調整 (基本的な動作確認)**
-7.  **ドキュメント最終化 (このREADMEの更新)**
+6.  **共通コンポーネント修正 (`SecurityHeaderController.tsx`)**
+    -   `children` propsが正しくレンダリングされるよう修正。
+    -   `description` propsの型を `ReactNode` に変更。
+7.  **テストと調整 (動作確認、UI調整、Linterエラー修正)**
+8.  **ドキュメント最終化 (このREADMEの更新)**

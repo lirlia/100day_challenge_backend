@@ -55,3 +55,4 @@ LLMで生成したコードを置いています。
 | Day38 | CPU Visualizer | <video src="https://github.com/user-attachments/assets/3a0270f3-348d-44b8-89bd-c5d8c89dee37" > |
 | Day39 | Copy on Write シミュレーター | <video src="https://github.com/user-attachments/assets/cf29cb96-d60c-4975-b065-b8e348e5d91f" > |
 | Day40 | Go Microservices with Otel & Grafana | <video src="https://github.com/user-attachments/assets/7b44ade8-9a0b-49eb-9c64-fb9d79efd445" > |
+| Day41 | Browser Security Playground | <video src="https://github.com/user-attachments/assets/e8d86176-9cec-4ee6-81b1-5b6e4ffce098" > |
