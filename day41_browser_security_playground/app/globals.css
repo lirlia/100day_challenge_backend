@@ -1,0 +1,32 @@
+@import "tailwindcss";
+
+@layer base {
+  html {
+    @apply scroll-smooth;
+  }
+
+  body {
+    @apply bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 antialiased;
+  }
+}
+
+@layer components {
+
+  /* グラスモーフィズム風カードのベーススタイル例 */
+  .glass-card {
+    @apply bg-white/30 dark:bg-gray-700/30 backdrop-blur-lg shadow-xl rounded-xl p-6;
+  }
+
+  /* より強いブラー効果の例 */
+  .strong-glass {
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    @apply shadow-2xl rounded-2xl p-8;
+  }
+}
+
+/* 特定の要素にグラデーション背景を適用する例 */
+.gradient-bg-sky-purple-pink {
+  @apply bg-gradient-to-br from-sky-500 via-purple-500 to-pink-500;
+}
