@@ -15,10 +15,10 @@ build:
 # Start all services in the background (kills existing ones first)
 run: kill build
 	@echo "Starting all services in background..."
-	@for service_dir in $(SERVICE_DIRS); do \\
-		echo "Starting $$service_dir..."; \\
-		(cd $$service_dir && ./$$service_dir &) \\
-		echo "$$service_dir started with PID $$!"; \\
+	@for service_dir in $(SERVICE_DIRS); do \
+		echo "Starting $$service_dir..."; \
+		(cd $$service_dir && ./$$service_dir &) || exit 1; \
+		echo "$$service_dir started."; \
 	done
 	@echo "All services started. Check individual service logs for status."
 	@echo "-----------------------------------------------------"

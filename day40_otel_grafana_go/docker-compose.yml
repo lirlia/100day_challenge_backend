@@ -67,7 +67,7 @@ services:
   tempo:
     image: grafana/tempo:2.2.0
     container_name: tempo
-    command: ["-config.file=/etc/tempo.yaml"]
+    command: ["-config.file=/etc/tempo.yaml", "-search.enabled=true"]
     volumes:
       - ./tempo/tempo.yaml:/etc/tempo.yaml # Tempo configuration
       - tempo_data:/tmp/tempo
