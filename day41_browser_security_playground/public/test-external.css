@@ -1,0 +1,12 @@
+/* public/test-external.css */
+#test-external-css {
+  text-decoration: underline;
+  text-decoration-color: limegreen;
+  font-style: italic;
+  font-weight: bold;
+  padding: 8px;
+  border: 2px dashed orange;
+  background-color: #333; /* 少し暗い背景色 */
+  color: #e0e0e0; /* やや明るいテキスト色 */
+  display: inline-block; /* paddingやborderが正しく表示されるように */
+}

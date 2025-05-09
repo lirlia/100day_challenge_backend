@@ -8,7 +8,7 @@ export async function GET() {
   return new NextResponse(scriptBody, {
     status: 200,
     headers: {
-      'Content-Type': 'text/plain', // 偽のContent-Type
+      'Content-Type': 'text/plain; charset=UTF-8', // 偽のContent-Type
     },
   });
 }

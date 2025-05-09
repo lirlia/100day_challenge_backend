@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { ReactNode } from 'react';
 
 interface SecuritySettings {
   csp?: string;
@@ -14,8 +15,10 @@ interface SecuritySettings {
 interface SecurityHeaderControllerProps {
   featureKey: keyof SecuritySettings | 'all';
   title: string;
-  description?: string;
+  description?: ReactNode;
   children?: React.ReactNode;
+  policyToApply?: string;
+  currentPolicyDisplay?: ReactNode | string;
 }
 
 export default function SecurityHeaderController({
@@ -96,7 +99,7 @@ export default function SecurityHeaderController({
   return (
     <div className="glass-card p-6 my-6 relative">
       <h3 className="text-2xl font-semibold mb-1 text-sky-300">{title}</h3>
-      {description && <p className="text-base mb-4">{description}</p>}
+      {description && <div className="text-base mb-4 text-gray-400">{description}</div>}
 
       {error && <p className="text-base text-red-500 mb-2">Error: {error}</p>}
 
@@ -125,6 +128,9 @@ export default function SecurityHeaderController({
       {featureKey === 'all' && (!settings || Object.keys(settings).length === 0) && !isLoading && (
         <p className="text-base mb-4">現在、設定されているカスタムセキュリティヘッダーはありません。</p>
       )}
+
+      {/* 子要素（CSPビルダーなど）をここにレンダリング */}
+      {children && <div className="my-4">{children}</div>}
 
       <div className="mt-6 flex flex-wrap gap-2 border-t border-gray-700 pt-4">
         {featureKey !== 'all' && (
