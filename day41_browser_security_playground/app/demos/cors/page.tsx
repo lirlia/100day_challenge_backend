@@ -4,77 +4,111 @@ import SecurityHeaderController from '@/app/_components/SecurityHeaderController
 import { useState } from 'react';
 
 export default function CorsDemoPage() {
-  const [apiResponse, setApiResponse] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const externalApiUrl = 'https://jsonplaceholder.typicode.com/todos/1'; // CORSテスト用の外部API
+  const [externalApiResponse, setExternalApiResponse] = useState<string | null>(null);
+  const [isExternalLoading, setIsExternalLoading] = useState(false);
+  const corsErrorApiUrl = 'https://cors-test.appspot.com/test'; // 確実にCORSエラーを返す外部API
 
-  const fetchExternalApi = async () => {
-    setIsLoading(true);
-    setApiResponse(null);
+  const [jsonplaceholderApiResponse, setJsonplaceholderApiResponse] = useState<string | null>(null);
+  const [isJsonplaceholderLoading, setIsJsonplaceholderLoading] = useState(false);
+  const jsonplaceholderApiUrl = 'https://jsonplaceholder.typicode.com/todos/1'; // CORS許可済みの外部API
+
+  const fetchApi = async (
+    url: string,
+    setLoading: React.Dispatch<React.SetStateAction<boolean>>,
+    setResponse: React.Dispatch<React.SetStateAction<string | null>>
+  ) => {
+    setLoading(true);
+    setResponse(null);
     try {
-      // このリクエストは、ブラウザから直接外部APIに送信されるため、
-      // サーバー側のCORS設定（Access-Control-Allow-Originなど）と
-      // ここで設定するCORS関連ヘッダー（もしあれば）の両方の影響を受ける。
-      // ただし、ブラウザが送信するリクエストヘッダーをこちらから細かく制御するのは難しいため、
-      // 主にサーバー側のレスポンスヘッダー（Access-Control-Allow-Originなど）を
-      // プレイグラウンドのMiddlewareでどう設定するかがCORSデモの焦点になる。
-      // Next.js Middleware で Access-Control-Allow-Origin などを動的に設定する例を示す。
-
-      // ここでのfetchはあくまで「ブラウザからのクロスオリジンリクエスト」のシミュレーション
-      const res = await fetch(externalApiUrl);
+      const res = await fetch(url);
+      // res.ok が false でも、CORSエラーの場合は通常 fetch が例外を投げるので、ここは通過しないことが多い
+      // CORSエラー以外（404など）で res.ok が false になる可能性はある
       if (!res.ok) {
-        throw new Error(`API Error: ${res.status} ${res.statusText}. Check console for CORS errors.`);
+        throw new Error(`API Error: ${res.status} ${res.statusText}. (If this is a CORS error, it might be caught below)`);
       }
       const data = await res.json();
-      setApiResponse(JSON.stringify(data, null, 2));
+      setResponse(JSON.stringify(data, null, 2));
     } catch (error: any) {
-      console.error("CORS API fetch error:", error);
-      setApiResponse(`Error: ${error.message}. Check the browser console for CORS policy errors.`);
+      console.error("API fetch error:", error);
+      // CORSエラーの場合、error.message は "Failed to fetch" などになることが多い
+      setResponse(`Error: ${error.message}. Check the browser console for more details (e.g., CORS policy errors).`);
     }
-    setIsLoading(false);
+    setLoading(false);
   };
-
-  // CORS設定自体は、主にAPIレスポンスヘッダー (Access-Control-Allow-Origin など) で行われるため、
-  // このページで設定する項目は限定的かもしれない。
-  // 代わりに、Middlewareで設定されたCORSヘッダーがどう影響するかを見るのが主目的。
-  // ここでは、CORS関連の "リクエスト" ヘッダーを擬似的に設定するUIは作らず、
-  // 「外部APIを叩いてみる」ボタンで、現在のサーバーCORS設定下での動作を確認する。
 
   return (
     <div>
       <SecurityHeaderController
-        featureKey="all" // CORSは複数のヘッダーが関連するため'all'で現在の全般設定を見るか、専用キーを設ける
+        featureKey="all"
         title="Cross-Origin Resource Sharing (CORS) Demo"
-        description="異なるオリジンからのリソースリクエストがどのように処理されるかを確認します。サーバー側のレスポンスヘッダー (例: Access-Control-Allow-Origin) の設定が重要です。この設定は主に middleware.ts で行います。"
+        description="異なるオリジンへのリソースリクエストがブラウザによってどのように扱われるかを確認します。CORSエラーはブラウザのセキュリティ機能であり、サーバーが適切なCORSヘッダーを返さない場合に発生します。"
       />
 
-      <div className="glass-card p-6 my-6">
-        <h4 className="text-xl font-semibold mb-3 text-sky-300">CORS テストエリア</h4>
-        <p className="text-sm text-gray-400 mb-4">
-          以下のボタンをクリックすると、ブラウザから直接外部API (<code>{externalApiUrl}</code>) にリクエストを送信します。
-          成功すればAPIレスポンスが、CORSエラーでブロックされればエラーメッセージが表示されます。
-          Next.jsのMiddleware (<code>middleware.ts</code>) で <code>Access-Control-Allow-Origin</code> などのCORS関連ヘッダーを適切に設定することで、このリクエストの成否を制御できます。
-        </p>
-        <button
-          onClick={fetchExternalApi}
-          disabled={isLoading}
-          className="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-md transition-colors disabled:bg-sky-800"
-        >
-          {isLoading ? 'Fetching...' : '外部APIにリクエスト送信'}
-        </button>
-        {apiResponse && (
-          <div className="mt-4 p-3 bg-gray-700 bg-opacity-50 rounded">
-            <p className="text-sm font-medium text-gray-300 mb-1">API レスポンス:</p>
-            <pre className={`text-xs whitespace-pre-wrap break-all ${apiResponse.startsWith('Error') ? 'text-red-400' : 'text-green-400'}`}>
-              {apiResponse}
-            </pre>
-          </div>
-        )}
-        <div className="mt-4 text-xs text-gray-500">
-          <p>CORSエラーが発生した場合の典型的なコンソールメッセージ:</p>
-          <p><code>Access to fetch at '{externalApiUrl}' from origin 'http://localhost:3001' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource.</code></p>
-          <p>このプレイグラウンドでは、<code>middleware.ts</code> で <code>response.headers.set('Access-Control-Allow-Origin', '*');</code> のような設定を試すことで、このエラーを解消/発生させることができます。(現在はコメントアウトされています)</p>
+      <div className="grid md:grid-cols-2 gap-6 mt-6">
+        {/* テスト1: CORSエラーが発生する外部API */}
+        <div className="glass-card p-6">
+          <h4 className="text-xl font-semibold mb-3 text-sky-300">テスト1: CORSエラーが発生するAPI</h4>
+          <p className="text-base mb-4">
+            以下のボタンは、デフォルトでCORSエラーを返すように設定されている外部API (<code>{corsErrorApiUrl}</code>) にリクエストします。
+            ブラウザのコンソールでCORSエラーメッセージを確認してください。
+          </p>
+          <button
+            onClick={() => fetchApi(corsErrorApiUrl, setIsExternalLoading, setExternalApiResponse)}
+            disabled={isExternalLoading}
+            className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md transition-colors disabled:opacity-70"
+          >
+            {isExternalLoading ? '取得中...' : 'CORSエラーAPIにリクエスト'}
+          </button>
+          {externalApiResponse && (
+            <div className="mt-4 p-3 bg-gray-700 bg-opacity-50 rounded">
+              <p className="text-base font-medium mb-1">レスポンス:</p>
+              <pre className={`text-base whitespace-pre-wrap break-all ${externalApiResponse.startsWith('Error') ? 'text-red-400' : 'text-green-400'}`}>
+                {externalApiResponse}
+              </pre>
+            </div>
+          )}
         </div>
+
+        {/* テスト2: CORSが許可されている外部API (参考) */}
+        <div className="glass-card p-6">
+          <h4 className="text-xl font-semibold mb-3 text-sky-300">テスト2: CORS許可済みAPI (参考)</h4>
+          <p className="text-base mb-4">
+            以下のボタンは、CORSが常に許可されている外部API (<code>{jsonplaceholderApiUrl}</code>) にリクエストします。これは比較のための成功例です。
+          </p>
+          <button
+            onClick={() => fetchApi(jsonplaceholderApiUrl, setIsJsonplaceholderLoading, setJsonplaceholderApiResponse)}
+            disabled={isJsonplaceholderLoading}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors disabled:opacity-70"
+          >
+            {isJsonplaceholderLoading ? '取得中...' : 'CORS許可APIにリクエスト'}
+          </button>
+          {jsonplaceholderApiResponse && (
+            <div className="mt-4 p-3 bg-gray-700 bg-opacity-50 rounded">
+              <p className="text-base font-medium mb-1">レスポンス:</p>
+              <pre className={`text-base whitespace-pre-wrap break-all ${jsonplaceholderApiResponse.startsWith('Error') ? 'text-red-400' : 'text-green-400'}`}>
+                {jsonplaceholderApiResponse}
+              </pre>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-8 p-6 bg-gray-800 rounded-lg shadow-md text-base">
+        <h4 className="text-xl font-semibold mb-3 text-sky-400">CORSエラーについて</h4>
+        <p>CORS (Cross-Origin Resource Sharing) は、ウェブブラウザが異なるオリジン（ドメイン、プロトコル、ポートが異なる場合）のリソースへのリクエストを制限するセキュリティメカニズムです。</p>
+        <p className="mt-2">上記の「CORSエラーAPIにリクエスト」ボタンをクリックすると、ブラウザはおそらく以下のようなエラーをコンソールに出力します（内容はブラウザによって若干異なります）：</p>
+        <pre className="my-2 p-2 bg-gray-700 rounded text-red-400 text-sm">
+          Access to fetch at '{corsErrorApiUrl}' from origin 'http://localhost:3001'
+          has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header
+          is present on the requested resource.
+        </pre>
+        <p className="mt-2">
+          これは、<code>{corsErrorApiUrl}</code> のサーバーが、<code>http://localhost:3001</code> からのアクセスを許可する <code>Access-Control-Allow-Origin</code> ヘッダーをレスポンスに含めていないためです。
+        </p>
+        <p className="mt-2">
+          Next.jsのMiddlewareは、自身のオリジン (<code>http://localhost:3001</code>) へのリクエストやそこからのレスポンスを加工することはできますが、全く異なる外部ドメイン (例: <code>cors-test.appspot.com</code>) のサーバーの挙動を直接変更することはできません。
+          外部APIのCORS問題を解決するには、外部APIのサーバー側で適切なCORSヘッダーを設定する必要があります。
+        </p>
       </div>
     </div>
   );

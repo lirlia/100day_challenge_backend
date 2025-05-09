@@ -96,34 +96,34 @@ export default function SecurityHeaderController({
   return (
     <div className="glass-card p-6 my-6 relative">
       <h3 className="text-2xl font-semibold mb-1 text-sky-300">{title}</h3>
-      {description && <p className="text-sm text-gray-400 mb-4">{description}</p>}
+      {description && <p className="text-base mb-4">{description}</p>}
 
-      {error && <p className="text-sm text-red-500 mb-2">Error: {error}</p>}
+      {error && <p className="text-base text-red-500 mb-2">Error: {error}</p>}
 
       {featureKey !== 'all' && (
         <div className="mb-4 p-3 bg-gray-700 bg-opacity-50 rounded">
-          <p className="text-sm font-medium text-gray-300">現在のHTTPヘッダー ('{featureKey}'):</p>
+          <p className="text-base font-medium">現在のHTTPヘッダー ('{featureKey}'):</p>
           {isLoading && settings === null ? (
-            <p className="text-xs text-sky-400">読み込み中...</p>
+            <p className="text-base text-sky-400">読み込み中...</p>
           ) : currentFeatureValue !== undefined && currentFeatureValue !== null && currentFeatureValue !== '' ? (
-            <pre className="text-xs text-green-400 whitespace-pre-wrap break-all">
+            <pre className="text-base text-green-400 whitespace-pre-wrap break-all">
               {typeof currentFeatureValue === 'object' ? JSON.stringify(currentFeatureValue, null, 2) : String(currentFeatureValue)}
             </pre>
           ) : (
-            <p className="text-xs text-gray-500">現在このヘッダーは設定されていません。</p>
+            <p className="text-base">現在このヘッダーは設定されていません。</p>
           )}
         </div>
       )}
       {featureKey === 'all' && settings && Object.keys(settings).length > 0 && (
         <div className="mb-4 p-3 bg-gray-700 bg-opacity-50 rounded">
-          <p className="text-sm font-medium text-gray-300">現在Cookieに保存されている全設定:</p>
-          <pre className="text-xs text-sky-400 whitespace-pre-wrap break-all">
+          <p className="text-base font-medium">現在Cookieに保存されている全設定:</p>
+          <pre className="text-base text-sky-400 whitespace-pre-wrap break-all">
             {JSON.stringify(settings, null, 2)}
           </pre>
         </div>
       )}
       {featureKey === 'all' && (!settings || Object.keys(settings).length === 0) && !isLoading && (
-        <p className="text-sm text-gray-500 mb-4">現在、設定されているカスタムセキュリティヘッダーはありません。</p>
+        <p className="text-base mb-4">現在、設定されているカスタムセキュリティヘッダーはありません。</p>
       )}
 
       <div className="mt-6 flex flex-wrap gap-2 border-t border-gray-700 pt-4">
@@ -131,7 +131,7 @@ export default function SecurityHeaderController({
           <button
             onClick={clearFeatureSetting}
             disabled={isLoading || (currentFeatureValue === undefined || currentFeatureValue === null)}
-            className="px-4 py-2 text-sm font-medium text-white bg-orange-600 hover:bg-orange-700 rounded-md disabled:opacity-50 disabled:bg-gray-500 transition-colors"
+            className="px-4 py-2 text-base font-medium text-white bg-orange-600 hover:bg-orange-700 rounded-md disabled:opacity-50 disabled:bg-gray-500 transition-colors"
           >
             '{featureKey}' の設定をクリアしてリロード
           </button>
@@ -140,13 +140,13 @@ export default function SecurityHeaderController({
           <button
             onClick={handleClearAllSettings}
             disabled={isLoading || !settings || Object.keys(settings).length === 0}
-            className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-md disabled:opacity-50 disabled:bg-gray-500 transition-colors"
+            className="px-4 py-2 text-base font-medium text-white bg-red-600 hover:bg-red-700 rounded-md disabled:opacity-50 disabled:bg-gray-500 transition-colors"
           >
             全てのカスタムヘッダー設定をクリアしてリロード
           </button>
         )}
       </div>
-      {isLoading && <p className="text-center text-xs text-sky-400 mt-2">処理中...</p>}
+      {isLoading && <p className="text-center text-base text-sky-400 mt-2">処理中...</p>}
     </div>
   );
 }

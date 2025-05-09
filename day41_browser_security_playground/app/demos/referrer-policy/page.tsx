@@ -91,7 +91,7 @@ export default function ReferrerPolicyDemoPage() {
         <h4 className="text-xl font-semibold mb-3 text-sky-300">設定エリア</h4>
         <div className="space-y-4">
           <div>
-            <label htmlFor="referrerPolicySelect" className="block text-sm font-medium text-gray-300 mb-1">
+            <label htmlFor="referrerPolicySelect" className="block text-base font-medium text-gray-300 mb-1">
               Referrer-Policyヘッダーの値を選択:
             </label>
             <select
@@ -115,13 +115,13 @@ export default function ReferrerPolicyDemoPage() {
           >
             {isApplying ? '適用中...' : 'この設定を適用してリロード'}
           </button>
-          {applyError && <p className="text-sm text-red-400 mt-2">エラー: {applyError}</p>}
+          {applyError && <p className="text-base text-red-400 mt-2">エラー: {applyError}</p>}
         </div>
       </div>
 
       <div className="mt-8 p-6 bg-gray-800 rounded-lg shadow-md">
         <h4 className="text-xl font-semibold mb-4 text-sky-400">リファラ検査テスト</h4>
-        <p className="text-sm text-gray-400 mb-2">
+        <p className="text-base text-gray-400 mb-2">
           以下のボタンをクリックすると、このページ (<code>{typeof window !== 'undefined' ? window.location.href : ''}</code>) から
           <code>{REFERRER_INSPECT_PATH}</code> へリクエストを送信し、その際に送信された <code>Referer</code> ヘッダーの内容を表示します。
         </p>
@@ -134,13 +134,13 @@ export default function ReferrerPolicyDemoPage() {
         </button>
         {inspectionResult && (
           <div className="mt-4 p-3 bg-gray-700 bg-opacity-50 rounded">
-            <p className="text-sm font-medium text-gray-300 mb-1">受信した Referer ヘッダー:</p>
-            <pre className={`text-xs whitespace-pre-wrap break-all ${inspectionResult.startsWith('エラー') ? 'text-red-400' : 'text-green-400'}`}>
+            <p className="text-base font-medium text-gray-300 mb-1">受信した Referer ヘッダー:</p>
+            <pre className={`text-base whitespace-pre-wrap break-all ${inspectionResult.startsWith('エラー') ? 'text-red-400' : 'text-green-400'}`}>
               {inspectionResult}
             </pre>
           </div>
         )}
-        <div className="text-xs text-gray-500 mt-3">
+        <div className="text-base text-gray-500 mt-3">
           <p><strong>解説 (主な値):</strong></p>
           <ul className="list-disc list-inside space-y-1">
             <li><strong>no-referrer:</strong> リファラ情報を送信しません。</li>

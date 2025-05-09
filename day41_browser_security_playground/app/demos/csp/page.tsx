@@ -40,7 +40,7 @@ export default function CspDemoPage() {
       >
         <div className="space-y-4 mt-4">
           <div>
-            <label htmlFor="cspInput" className="block text-sm font-medium text-gray-300 mb-1">
+            <label htmlFor="cspInput" className="block text-base font-medium text-gray-300 mb-1">
               CSPヘッダー値:
             </label>
             <textarea
@@ -51,7 +51,7 @@ export default function CspDemoPage() {
               onChange={(e) => setCspValue(e.target.value)}
               placeholder="例: default-src 'self'; script-src 'self' 'unsafe-inline'; img-src *;"
             />
-            <p className="text-xs text-gray-500 mt-1">一般的なディレクティブ: default-src, script-src, style-src, img-src, connect-src, frame-src, media-src, object-src, font-src. 値: 'self', 'none', 'unsafe-inline', 'unsafe-eval', https://example.com, data:, blob: など。</p>
+            <p className="text-base text-gray-500 mt-1">一般的なディレクティブ: default-src, script-src, style-src, img-src, connect-src, frame-src, media-src, object-src, font-src. 値: 'self', 'none', 'unsafe-inline', 'unsafe-eval', https://example.com, data:, blob: など。</p>
           </div>
           <button
             onClick={() => (document.querySelector('#cspInput') as any)?.closest('.glass-card').__SECRET_CONTROLLER_HANDLER('csp', cspValue, 'set')}
@@ -88,14 +88,14 @@ export default function CspDemoPage() {
           <h5 className="text-lg font-medium mb-2 text-gray-300">インラインスクリプト</h5>
           <button
             onClick={attemptInlineScript}
-            className="px-3 py-1 bg-teal-500 hover:bg-teal-600 text-white rounded text-sm mr-2"
+            className="px-3 py-1 bg-teal-500 hover:bg-teal-600 text-white rounded text-base mr-2"
           >
             インラインスクリプト実行試行
           </button>
-          <p id="inline-script-result" className={`text-sm mt-2 ${inlineScriptAllowed ? 'text-green-400' : 'text-red-400'}`}>
+          <p id="inline-script-result" className={`text-base mt-2 ${inlineScriptAllowed ? 'text-green-400' : 'text-red-400'}`}>
             結果待機中...
           </p>
-          <p className="text-xs text-gray-500 mt-1">CSPに `'unsafe-inline'` が script-src または default-src に含まれていない場合、ブロックされます。</p>
+          <p className="text-base text-gray-500 mt-1">CSPに `'unsafe-inline'` が script-src または default-src に含まれていない場合、ブロックされます。</p>
         </div>
 
         <div className="mb-6 p-4 border border-dashed border-gray-600 rounded-md">
@@ -103,7 +103,7 @@ export default function CspDemoPage() {
           {/* CSPで script-src 'self' などになっていると外部ドメインのスクリプトは読み込めない */}
           {/* <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.21/lodash.min.js"></script> */}
           {/* 上記を直接書くとReactの管理外になり、CSP違反のハンドリングも難しい。代わりにimgなどで試すのが一般的 */}
-          <p id="external-script-result" className="text-sm mt-2">
+          <p id="external-script-result" className="text-base mt-2">
             このセクションは、外部ドメインのJavaScriptファイル（例: CDN上のライブラリ）がCSPによって読み込み可能かを示します。
             CSPの `script-src` ディレクティブで許可されたドメインからのスクリプトのみが実行されます。
             （例: `script-src 'self' https://cdnjs.cloudflare.com;`）
@@ -113,22 +113,22 @@ export default function CspDemoPage() {
 
         <div className="mb-6 p-4 border border-dashed border-gray-600 rounded-md">
           <h5 className="text-lg font-medium mb-2 text-gray-300">画像の表示</h5>
-          <p className="text-sm text-gray-400 mb-2">CSPの `img-src` ディレクティブで許可されたソースからの画像のみが表示されます。</p>
+          <p className="text-base text-gray-400 mb-2">CSPの `img-src` ディレクティブで許可されたソースからの画像のみが表示されます。</p>
           <div className="flex flex-wrap gap-4 items-center">
             <div>
-              <p className="text-xs text-gray-500">picsum.photos (外部):</p>
+              <p className="text-base text-gray-500">picsum.photos (外部):</p>
               <img src="https://picsum.photos/id/237/200/100" alt="Picsum Image (External)" className="rounded shadow" />
             </div>
             <div>
-              <p className="text-xs text-gray-500">ローカル (public/next.svg):</p>
+              <p className="text-base text-gray-500">ローカル (public/next.svg):</p>
               <img src="/next.svg" alt="Next.js Logo (Local)" className="rounded shadow bg-white p-1" width="200" height="100" />
             </div>
             <div>
-              <p className="text-xs text-gray-500">Data URI (インライン):</p>
+              <p className="text-base text-gray-500">Data URI (インライン):</p>
               <img src="data:image/gif;base64,R0lGODlhAQABAIAAAAUEBAAAACwAAAAAAQABAAACAkQBADs=" alt="Tiny Transparent GIF (Data URI)" width="200" height="100" className="border" />
             </div>
           </div>
-          <p className="text-xs text-gray-500 mt-2">例: `img-src 'self' https://picsum.photos data:;`</p>
+          <p className="text-base text-gray-500 mt-2">例: `img-src 'self' https://picsum.photos data:;`</p>
         </div>
 
       </div>

@@ -55,7 +55,7 @@ export default function XFrameOptionsDemoPage() {
         <h4 className="text-xl font-semibold mb-3 text-sky-300">設定エリア</h4>
         <div className="space-y-4">
           <div className="space-y-2">
-            <p className="text-sm font-medium text-gray-300">X-Frame-Optionsヘッダーの値を選択:</p>
+            <p className="text-base font-medium text-gray-300">X-Frame-Optionsヘッダーの値を選択:</p>
             {([null, 'DENY', 'SAMEORIGIN'] as XFrameOptionsValue[]).map((option) => (
               <div key={option || 'none'} className="flex items-center">
                 <input
@@ -68,7 +68,7 @@ export default function XFrameOptionsDemoPage() {
                   className="h-4 w-4 text-sky-600 border-gray-300 focus:ring-sky-500 disabled:opacity-70"
                   disabled={isApplying}
                 />
-                <label htmlFor={`xfo-${option || 'none'}`} className="ml-2 block text-sm text-gray-300">
+                <label htmlFor={`xfo-${option || 'none'}`} className="ml-2 block text-base text-gray-300">
                   {option === null ? 'ヘッダーなし (デフォルトまたはCSP frame-ancestors依存)' : option}
                 </label>
               </div>
@@ -81,8 +81,8 @@ export default function XFrameOptionsDemoPage() {
           >
             {isApplying ? '適用中...' : 'この設定を適用してリロード'}
           </button>
-          {applyError && <p className="text-sm text-red-400 mt-2">エラー: {applyError}</p>}
-          <p className="text-xs text-gray-500 mt-1">
+          {applyError && <p className="text-base text-red-400 mt-2">エラー: {applyError}</p>}
+          <p className="text-base mt-1">
             注意: <code>X-Frame-Options</code> は古いヘッダーです。より新しい <code>Content-Security-Policy</code> の <code>frame-ancestors</code> ディレクティブの使用が推奨されます。
             両方が指定された場合、<code>frame-ancestors</code> が優先されることが多いです。
             このデモでは主に <code>X-Frame-Options</code> の動作を確認します。
@@ -92,27 +92,27 @@ export default function XFrameOptionsDemoPage() {
 
       <div className="mt-8 p-6 bg-gray-800 rounded-lg shadow-md">
         <h4 className="text-xl font-semibold mb-4 text-sky-400">iframe埋め込みテスト</h4>
-        <p className="text-sm text-gray-400 mb-2">
+        <p className="text-base mb-2">
           このページ自身 (<code>{iframeSrc || '現在のページ'}</code>) を以下のiframeに埋め込もうとします。
           設定した <code>X-Frame-Options</code> によって、表示がブロックされるか確認してください。
         </p>
         <div className="border border-dashed border-gray-600 rounded-md p-1 bg-gray-700">
+          <div className="text-base my-10 mx-4">
+            <p className="mt-3"><strong>DENY:</strong> iframe内は何も表示されないはずです（ブラウザによってはエラーメッセージ）。</p>
+            <p className="mt-3"><strong>SAMEORIGIN:</strong> このページ自身が同じオリジンなので表示されるはずです。もしこれが別オリジンのページから埋め込まれていたら表示されません。</p>
+            <p className="mt-3"><strong>ヘッダーなし:</strong> 表示されます（CSP `frame-ancestors` が設定されていなければ）。</p>
+            <p className="mt-3">実際の挙動はブラウザのコンソールでも確認してください (例: "Refused to display '...' in a frame because it set 'X-Frame-Options' to 'deny'.")</p>
+          </div>
           {iframeSrc ? (
             <iframe
               src={iframeSrc} // 自分自身を埋め込む
               title="X-Frame-Options Self-Embedding Test"
-              className="w-full h-64 border-0"
+              className="w-full h-100 border-0"
             // sandbox属性はXFOの挙動には直接影響しないが、コンテンツの挙動を制限する
             ></iframe>
           ) : (
-            <p className="text-center text-gray-500 p-4">iframeのソースURLを読み込み中...</p>
+            <p className="text-center p-4">iframeのソースURLを読み込み中...</p>
           )}
-        </div>
-        <div className="text-xs text-gray-500 mt-2">
-          <p><strong>DENY:</strong> iframe内は何も表示されないはずです（ブラウザによってはエラーメッセージ）。</p>
-          <p><strong>SAMEORIGIN:</strong> このページ自身が同じオリジンなので表示されるはずです。もしこれが別オリジンのページから埋め込まれていたら表示されません。</p>
-          <p><strong>ヘッダーなし:</strong> 表示されます（CSP `frame-ancestors` が設定されていなければ）。</p>
-          <p>実際の挙動はブラウザのコンソールでも確認してください (例: "Refused to display '...' in a frame because it set 'X-Frame-Options' to 'deny'.")</p>
         </div>
       </div>
     </div>

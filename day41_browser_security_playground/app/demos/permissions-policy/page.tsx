@@ -93,7 +93,7 @@ export default function PermissionsPolicyDemoPage() {
               placeholder="例: geolocation=(self), camera=()"
               disabled={isApplying}
             />
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-base text-gray-500 mt-1">
               書式例: <code>feature=(origins)</code> または <code>feature=*</code> (全許可), <code>feature=()</code> (全拒否)。<br />
               オリジン指定: <code>self</code>, <code>"https://example.com"</code> など。複数指定はスペース区切り。<br />
               代表的な機能: <code>accelerometer, camera, display-capture, fullscreen, geolocation, gyroscope, magnetometer, microphone, payment, usb</code>など。
@@ -106,7 +106,7 @@ export default function PermissionsPolicyDemoPage() {
           >
             {isApplying ? '適用中...' : 'このポリシーを適用してリロード'}
           </button>
-          {applyError && <p className="text-sm text-red-400 mt-2">エラー: {applyError}</p>}
+          {applyError && <p className="text-base text-red-400 mt-2">エラー: {applyError}</p>}
         </div>
       </div>
 
@@ -118,23 +118,23 @@ export default function PermissionsPolicyDemoPage() {
               <h5 className="text-md font-medium text-gray-300 mb-2">{feature.charAt(0).toUpperCase() + feature.slice(1)} アクセス試行</h5>
               <button
                 onClick={() => checkPermission(feature)}
-                className="px-3 py-1 text-sm bg-teal-500 hover:bg-teal-600 text-white rounded-md transition-colors mr-2"
+                className="px-3 py-1 text-base bg-teal-500 hover:bg-teal-600 text-white rounded-md transition-colors mr-2"
               >
                 {feature}の権限を確認
               </button>
               {permissionResults[feature] && (
-                <span className={`text-sm ${permissionResults[feature]?.includes('許可') ? 'text-green-400' : (permissionResults[feature]?.includes('拒否') ? 'text-red-400' : 'text-yellow-400')}`}>
+                <span className={`text-base ${permissionResults[feature]?.includes('許可') ? 'text-green-400' : (permissionResults[feature]?.includes('拒否') ? 'text-red-400' : 'text-yellow-400')}`}>
                   結果: {permissionResults[feature]}
                 </span>
               )}
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-base text-gray-500 mt-1">
                 Permissions-Policyで <code>{feature}=()</code> となっていれば拒否されるはずです。
                 <code>{feature}=(self)</code> であれば同一オリジンで許可 (プロンプトが出ることも)。
               </p>
             </div>
           ))}
         </div>
-        <p className="text-xs text-gray-500 mt-4">注意: ブラウザの権限設定やユーザーの事前許可/拒否の状態によっても結果は変わります。ポリシーによる強制的な拒否が機能するかを確認してください。</p>
+        <p className="text-base text-gray-500 mt-4">注意: ブラウザの権限設定やユーザーの事前許可/拒否の状態によっても結果は変わります。ポリシーによる強制的な拒否が機能するかを確認してください。</p>
       </div>
     </div>
   );

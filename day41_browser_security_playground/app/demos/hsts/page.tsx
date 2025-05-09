@@ -77,7 +77,7 @@ export default function HstsDemoPage() {
               className="h-4 w-4 text-sky-600 border-gray-300 rounded focus:ring-sky-500 disabled:opacity-70"
               disabled={isApplying}
             />
-            <label htmlFor="hstsEnabled" className="ml-2 block text-sm text-gray-300">
+            <label htmlFor="hstsEnabled" className="ml-2 block text-base text-gray-300">
               HSTSを有効にする (Strict-Transport-Security ヘッダーを出力)
             </label>
           </div>
@@ -85,7 +85,7 @@ export default function HstsDemoPage() {
           {formState.enabled && (
             <>
               <div>
-                <label htmlFor="maxAge" className="block text-sm font-medium text-gray-300">
+                <label htmlFor="maxAge" className="block text-base font-medium text-gray-300">
                   max-age (秒): ブラウザがHSTSを記憶する期間 (デフォルト: 31536000 = 1年)
                 </label>
                 <input
@@ -108,7 +108,7 @@ export default function HstsDemoPage() {
                   className="h-4 w-4 text-sky-600 border-gray-300 rounded focus:ring-sky-500 disabled:opacity-70"
                   disabled={isApplying}
                 />
-                <label htmlFor="includeSubDomains" className="ml-2 block text-sm text-gray-300">
+                <label htmlFor="includeSubDomains" className="ml-2 block text-base text-gray-300">
                   includeSubDomains (サブドメインにも適用)
                 </label>
               </div>
@@ -122,7 +122,7 @@ export default function HstsDemoPage() {
                   className="h-4 w-4 text-sky-600 border-gray-300 rounded focus:ring-sky-500 disabled:opacity-70"
                   disabled={isApplying}
                 />
-                <label htmlFor="preload" className="ml-2 block text-sm text-gray-300">
+                <label htmlFor="preload" className="ml-2 block text-base text-gray-300">
                   preload (HSTSプリロードリストへの登録申請を意図 - 注意して使用)
                 </label>
               </div>
@@ -135,13 +135,13 @@ export default function HstsDemoPage() {
           >
             {isApplying ? '適用中...' : 'このHSTS設定を適用してリロード'}
           </button>
-          {applyError && <p className="text-sm text-red-400 mt-2">エラー: {applyError}</p>}
+          {applyError && <p className="text-base text-red-400 mt-2">エラー: {applyError}</p>}
         </div>
       </div>
 
       <div className="mt-8 p-6 bg-gray-800 rounded-lg shadow-md">
         <h4 className="text-xl font-semibold mb-4 text-sky-400">HSTS 解説</h4>
-        <div className="prose prose-sm prose-invert max-w-none text-gray-300 space-y-3">
+        <div className="prose prose-base prose-invert max-w-none text-gray-300 space-y-3">
           <p>HSTS (HTTP Strict Transport Security) は、ウェブサイトがブラウザに対して「常にHTTPSを使用して接続する」よう指示するセキュリティ機能です。</p>
           <p>一度HSTSヘッダーを受け取ったブラウザは、指定された期間 (max-age)、たとえユーザーがHTTPでアクセスしようとしても自動的にHTTPSに切り替えます。これにより、SSLストリッピング攻撃（中間者がHTTPS接続をHTTPにダウングレードさせる攻撃）などを防ぎます。</p>
           <p><strong>注意点:</strong></p>

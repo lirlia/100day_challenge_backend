@@ -28,7 +28,7 @@ export default function RootLayout({
         <main className="flex-grow container mx-auto p-4 md:p-8">
           {children}
         </main>
-        <footer className="p-4 text-center text-sm text-gray-500 bg-gray-800">
+        <footer className="p-4 text-center text-base text-gray-500 bg-gray-800">
           © 2025 Day 41 Challenge - Browser Security Learning
         </footer>
       </body>

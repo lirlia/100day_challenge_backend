@@ -36,7 +36,7 @@ export default function Home() {
             <Link href={feature.path} key={feature.name} className="block p-0.5 rounded-lg bg-gradient-to-br from-sky-500 via-purple-500 to-pink-500 hover:scale-105 transition-transform duration-200 shadow-lg">
               <div className="h-full bg-gray-800 bg-opacity-80 backdrop-blur-md p-6 rounded-md hover:bg-opacity-70 transition-colors duration-200">
                 <h3 className="text-xl font-semibold mb-2 text-sky-400">{feature.name}</h3>
-                <p className="text-sm text-gray-400">{feature.description}</p>
+                <p className="text-base text-gray-400">{feature.description}</p>
               </div>
             </Link>
           ))}

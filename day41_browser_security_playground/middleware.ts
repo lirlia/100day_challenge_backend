@@ -69,12 +69,31 @@ export async function middleware(request: NextRequest) {
   // response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   // response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
+  /* --- CORS Demo: Local API Control (現在は外部APIでのCORSエラー確認に主眼を置いているためコメントアウト) --- //
+  // 以下のコードブロックを編集して、ローカルAPI (/api/demos/cors-test) へのCORSを制御します。
+  // 現在は、意図的に異なるオリジンからのアクセスのみを許可するように設定されており、
+  // http://localhost:3001 からのアクセスではCORSエラーが発生します。
+  // Access-Control-Allow-Origin の値を '*', または 'http://localhost:3001' に変更するとエラーが解消されます。
+
+  if (request.nextUrl.pathname.startsWith('/api/demos/cors-test')) {
+    console.log('[Middleware] Modifying response headers for /api/demos/cors-test');
+    response.headers.set('Access-Control-Allow-Origin', 'http://some-other-domain.com');
+    response.headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    response.headers.set('Access-Control-Allow-Headers', 'Content-Type, x-custom-allow-cors');
+
+    if (request.method === 'OPTIONS') {
+      return new NextResponse(null, { status: 204, headers: response.headers });
+    }
+    return response; // GET リクエストの場合も変更されたレスポンスを返す
+  }
+  // --- End CORS Demo --- */
+
   return response;
 }
 
 // Middlewareを適用するパスを指定
 export const config = {
   matcher: [
-    '/((?!api|_next/static|_next/image|favicon.ico).*)',
+    '/((?!_next/static|_next/image|favicon.ico).*)',
   ],
 };
