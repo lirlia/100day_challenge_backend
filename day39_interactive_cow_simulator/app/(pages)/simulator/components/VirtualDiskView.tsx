@@ -91,14 +91,14 @@ export default function VirtualDiskView() {
     <div className="w-full p-4 bg-gray-800 rounded-lg shadow-inner flex gap-3 items-start h-full">
       {/* 左側: 凡例 */}
       <div className="pt-1 pl-1 flex flex-col space-y-1.5 flex-shrink-0 w-auto min-w-[200px]">
-        <p className="text-sm font-semibold mb-1 border-b border-gray-600 pb-1">凡例:</p>
+        <p className="text-2xl font-semibold mb-1 border-b border-gray-600 pb-1">凡例:</p>
         {Object.entries(BLOCK_COLORS).map(([key, { className, label }]) => (
-          <div key={key} className="flex items-center mt-1">
+          <div key={key} className="flex items-center mt-4">
             <span
-              className={`w-3 h-3 mr-1.5 rounded-sm flex-shrink-0 ${className.split(' ').find(c => c.startsWith('bg-')) || ''}
+              className={`w-7 h-7 mr-5 rounded-sm flex-shrink-0 ${className.split(' ').find(c => c.startsWith('bg-')) || ''}
                          ${(key === 'SELECTED_SNAPSHOT_REF' || key === 'COPIED_BLOCK') ? className.split(' ').filter(c => c.startsWith('border')).join(' ') : ''}`}>
             </span>
-            <span className="text-xs leading-tight">{label}</span>
+            <span className="text-2xl leading-tight">{label}</span>
           </div>
         ))}
       </div>
