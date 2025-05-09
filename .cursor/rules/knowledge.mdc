@@ -46,5 +46,5 @@ alwaysApply: true
 | 37  | CHIP-8 エミュレーター (Go)       | Go, Ebiten (v2), CHIP-8 コアロジック, CPUサイクル, メモリ/レジスタ/タイマー管理, 画面描画, キー入力 |
 | 38  | CPU ビジュアライザー           | Next.js, TypeScript, Tailwind CSS, CPU動作シミュレーション, 簡易JSパーサー, UI視覚化 |
 | 39  | インタラクティブCoWシミュレータ | Next.js, TypeScript, Zustand, TailwindCSS, Copy-on-Write (CoW) 原理の視覚化, スナップショット管理, イベントログ, 状態復元 |
-| 40  | (skipped)                       |                                                                                       |
+| 40  | Go Microservices with Otel & Grafana | Go, OpenTelemetry (Traces, Metrics, Logs), Grafana Stack (Prometheus, Loki, Tempo, Promtail), Docker Compose, slog, Makefile |
 | 41  | ブラウザセキュリティ・プレイグラウンド | Next.js, TypeScript, TailwindCSS, Middleware, Cookies, 主要HTTPセキュリティヘッダー (CSP, CORS, HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy, Permissions-Policy) のインタラクティブデモ |

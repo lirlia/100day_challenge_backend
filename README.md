@@ -54,3 +54,4 @@ LLMで生成したコードを置いています。
 | Day37 | CHIP-8 Emulator (Go) | <video src="https://github.com/user-attachments/assets/ddb59048-c0df-40c5-bf78-4052726bc875" > |
 | Day38 | CPU Visualizer | <video src="https://github.com/user-attachments/assets/3a0270f3-348d-44b8-89bd-c5d8c89dee37" > |
 | Day39 | Copy on Write シミュレーター | <video src="https://github.com/user-attachments/assets/cf29cb96-d60c-4975-b065-b8e348e5d91f" > |
+| Day40 | Go Microservices with Otel & Grafana | <video src="https://github.com/user-attachments/assets/7b44ade8-9a0b-49eb-9c64-fb9d79efd445" > |
