@@ -73,19 +73,6 @@ export default function InfoPanel() {
           </ul>
         </div>
       )}
-
-      <div>
-        <h3 className="text-md font-semibold mb-1 text-pink-300">イベントログ</h3>
-        {eventLog.length === 0 ? (
-          <p className="text-gray-400 italic text-xs">まだイベントはありません。</p>
-        ) : (
-          <div className="max-h-24 overflow-y-auto bg-gray-700 p-1.5 rounded text-xs space-y-1">
-            {eventLog.map((log, index) => (
-              <p key={index} className="whitespace-pre-wrap break-all">{log}</p>
-            ))}
-          </div>
-        )}
-      </div>
     </div>
   );
 }

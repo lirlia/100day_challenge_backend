@@ -35,7 +35,7 @@ export interface Snapshot {
 
 // --- 初期化ロジック ---
 
-export const DEFAULT_TOTAL_BLOCKS = 25; // 64から25に変更 (5x5 グリッド)
+export const DEFAULT_TOTAL_BLOCKS = 16;
 export const DEFAULT_BLOCK_SIZE_BYTES = 1024; // 1KB
 
 /**

@@ -48,7 +48,7 @@ const createInitialState = (): Pick<CowSimulatorState, 'disk' | 'files' | 'event
     const eventLog: string[] = ['Simulation initialized.'];
 
     // サンプルファイル1作成
-    const file1Result = createFileOnDisk(disk, files, 'README.md', '# Hello CoW Simulator!\n');
+    const file1Result = createFileOnDisk(disk, files, 'a', '# Hello CoW Simulator!\n');
     if (file1Result) {
         disk = file1Result.newDisk;
         files = file1Result.newFiles;
@@ -56,7 +56,7 @@ const createInitialState = (): Pick<CowSimulatorState, 'disk' | 'files' | 'event
     }
 
     // サンプルファイル2作成
-    const file2Result = createFileOnDisk(disk, files, 'data.txt', 'Block1 Data\nBlock2 Data\nBlock3 Data\n...'); // 少し長めのデータ
+    const file2Result = createFileOnDisk(disk, files, 'b', 'Block1 Data\nBlock2 Data\nBlock3 Data\n...'); // 少し長めのデータ
     if (file2Result) {
         disk = file2Result.newDisk;
         files = file2Result.newFiles;
@@ -64,11 +64,11 @@ const createInitialState = (): Pick<CowSimulatorState, 'disk' | 'files' | 'event
     }
 
     // サンプルファイル3 (空ファイル)
-    const file3Result = createFileOnDisk(disk, files, 'empty.txt', '');
+    const file3Result = createFileOnDisk(disk, files, 'c', '');
     if (file3Result) {
         disk = file3Result.newDisk;
         files = file3Result.newFiles;
-        eventLog.unshift(`[Initial] File "${file3Result.newFile.name}" created (empty).`);
+        eventLog.unshift(`[Initial] File "${file3Result.newFile.name}" created.`);
     }
 
     return { disk, files, eventLog: eventLog.slice(0, MAX_LOG_ENTRIES) };
