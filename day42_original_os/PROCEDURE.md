@@ -248,14 +248,144 @@ Day42では、x86-64アーキテクチャ向けのシンプルなOSカーネル�
 
 コミットメッセージ: `day42: feat: Implement basic console output with scalable 8x8 font`
 
+### 3.8. シリアルポート出力の実装
+
+フレームバッファへの出力に加えて、デバッグ情報をより簡単に確認できるようにするため、シリアルポート（COM1）への出力機能を実装しました。QEMUでは、シリアルポート出力をホストOSのターミナルにリダイレクトできます。
+
+1.  **I/Oポートアクセス用ヘルパー関数:**
+    - `outb(port, value)`: 指定されたI/Oポートに1バイトのデータを書き込むインラインアセンブリ関数。
+    - `inb(port)`: 指定されたI/Oポートから1バイトのデータを読み込むインラインアセンブリ関数。
+2.  **シリアルポート定数とレジスタオフセットの定義:**
+    - `SERIAL_COM1_BASE (0x3F8)`: COM1のベースI/Oポートアドレス。
+    - データポート、FIFO制御ポート、ライン制御ポート、モデム制御ポート、ライン状態ポートのオフセットを定義。
+3.  **`init_serial(port)` 関数の実装:**
+    - 指定されたシリアルポートを初期化します。
+    - ボーレートを38400に設定 (115200 / 3)。
+    - データ形式を8ビット、パリティなし、ストップビット1 (8N1) に設定。
+    - FIFOバッファを有効化。
+4.  **シリアル文字送信関数の実装:**
+    - `is_transmit_empty(port)`: 送信バッファが空かどうかをライン状態レジスタで確認します。
+    - `write_serial_char(port, char)`: 送信バッファが空になるのを待ってから、1文字をデータポートに書き込みます。
+    - `print_serial(port, string)`: 文字列を1文字ずつ `write_serial_char` を使って送信します。
+5.  **`_start` 関数での呼び出し:**
+    - カーネルの初期段階（フレームバッファ初期化よりも前）で `init_serial(SERIAL_COM1_BASE)` を呼び出し。
+    - `print_serial` を使って、初期化メッセージやデバッグ情報をシリアルポートに出力。
+6.  **Makefileの変更:**
+    - QEMUの起動オプション (`QEMU_OPTS_BIOS`, `QEMU_OPTS_UEFI`) に `-serial stdio` を追加。これにより、QEMU内のCOM1がホストの標準入出力に接続され、ターミナルでシリアル出力を確認できるようになります。
+7.  **動作確認:** QEMUを起動し、ターミナルに "Serial port initialized!" やその他のデバッグメッセージが表示されることを確認しました。
+
+コミットメッセージ: `day42: feat: Implement serial port output (COM1)`
+
+### 3.9. GDT (Global Descriptor Table) のセットアップ
+
+Limineは既に基本的なGDTを提供してくれますが、OS自身でGDTを管理・設定できるようにするため、独自のGDTをセットアップしました。これにより、将来的にセグメント設定をより細かく制御できるようになります。
+
+1.  **GDT関連ファイルの作成:**
+    - `kernel/gdt.h`: GDTエントリ構造体 (`struct gdt_entry`)、GDTポインタ構造体 (`struct gdt_ptr`)、およびGDT初期化関数の宣言。
+        - `struct gdt_entry` (8バイト): セグメントのベースアドレス、リミット、アクセス権、フラグなどを格納。`__attribute__((packed))` でパディングを無効化。
+        - `struct gdt_ptr` (6バイト): GDTのサイズ (リミット) とベースアドレスを格納。`lgdt` 命令で使われる。`__attribute__((packed))`。
+    - `kernel/gdt.c`: GDT本体の定義と初期化処理の実装。
+2.  **GDTエントリの設定:**
+    - `gdt_set_gate(num, base, limit, access, gran)`: 指定されたインデックスのGDTエントリを初期化するヘルパー関数。
+        - `num`: GDTテーブル内のエントリ番号。
+        - `base`: セグメントの32ビットベースアドレス。
+        - `limit`: セグメントの20ビットリミット。
+        - `access`: アクセス権バイト (P, DPL, S, Type)。
+        - `gran`: グラニュラリティバイト (G, D/B, L, AVL)。
+3.  **GDTの定義と初期化 (`init_gdt_impl`)**:
+    - 静的な `struct gdt_entry gdt[3]` 配列としてGDTを定義。
+    - **NULLディスクリプタ (エントリ0, セレクタ `0x00`):** CPUの要件により、最初のGDTエントリは常に0でなければなりません。
+    - **カーネルコードセグメント (エントリ1, セレクタ `0x08`):**
+        - ベースアドレス `0x0`、リミット `0x0` (Lフラグにより無視される)。
+        - アクセス権 `0x9A` (P=1, DPL=0, S=1, Type=Code, Execute/Read)。
+        - グラニュラリティ `0x20` (L=1 (64-bit code segment), D/B=0, G=0)。
+    - **カーネルデータセグメント (エントリ2, セレクタ `0x10`):**
+        - ベースアドレス `0x0`, リミット `0xFFFFF`。
+        - アクセス権 `0x92` (P=1, DPL=0, S=1, Type=Data, Read/Write)。
+        - グラニュラリティ `0xC0` (G=1 (リミットを4KiB単位), D/B=1 (32-bit segment), L=0)。
+4.  **GDTのロード (`gdt_load_and_flush`)**:
+    - GDTポインタ (`gdt_pointer`) にGDTのベースアドレスとリミットを設定。
+    - インラインアセンブリで `lgdt` 命令を実行して、CPUに新しいGDTの場所を認識させます。
+    - `lgdt` 実行後、セグメントレジスタ (CS, DS, ES, SS, FS, GS) を新しいセグメントセレクタで再ロードして、新しいGDT設定を有効にします。
+        - CSは `lretq` (ロングリターン) を使ったトリックで更新 (`push <new_cs_selector>; push <return_address>; lretq`)。
+        - その他のデータセグメントレジスタは `mov` 命令で直接更新。
+5.  **`_start` 関数での呼び出し:** `init_serial` の後に `init_gdt()` を呼び出します。
+6.  **Makefileの変更:**
+    - `kernel/gdt.c` をコンパイル対象に追加。
+    - `CFLAGS_KERNEL` に `-fPIE` (Position Independent Executable) を追加。
+    - `LDFLAGS_KERNEL` に `-Wl,-Map=$(BUILD_DIR)/kernel.map` を追加してリンカマップファイルを生成。
+7.  **動作確認:** QEMUを起動し、シリアル出力に "GDT initialized and loaded." が表示され、システムがクラッシュしないことを確認。
+
+コミットメッセージ: `day42: feat: Implement basic GDT setup`
+
+### 3.10. IDT (Interrupt Descriptor Table) と例外ハンドラのセットアップ
+
+CPU例外（ゼロ除算、ページフォルトなど）やハードウェア割り込みを処理するためのIDTをセットアップし、基本的な例外ハンドラを実装しました。
+
+1.  **IDT関連ファイルの作成:**
+    - `kernel/idt.h`: IDTエントリ構造体 (`struct idt_entry`)、IDTポインタ構造体 (`struct idt_ptr`)、割り込みハンドラに渡されるレジスタ状態構造体 (`struct registers`)、割り込みハンドラの型定義、および関連関数の宣言。
+        - `struct idt_entry` (16バイト for x86-64): ハンドラオフセット、セグメントセレクタ、IST、タイプ属性などを格納。`__attribute__((packed))`。
+        - `struct idt_ptr` (10バイト): IDTのサイズ (リミット) とベースアドレスを格納。`lidt` 命令で使われる。`__attribute__((packed))`。
+        - `struct registers`: 割り込み発生時にスタックに積まれる汎用レジスタ、割り込み番号、エラーコードなどを保持。
+    - `kernel/idt.c`: IDT本体の定義、IDT初期化処理、汎用割り込みハンドラ (`isr_handler_c`)、および特定の例外ハンドラの実装。
+    - `kernel/isr_stubs.s`: 各割り込みに対応する低レベルのアセンブリスタブの実装。
+2.  **アセンブリ割り込みスタブ (`kernel/isr_stubs.s`):**
+    - `.intel_syntax noprefix` を使用。
+    - 共通のC言語ハンドラ `isr_handler_c` を `.extern` で宣言。
+    - `ISR_NO_ERR_CODE` マクロ: エラーコードをプッシュしない例外 (0-7, 9, 15-19など) 用。スタックにダミーのエラーコード(0)と割り込み番号をプッシュし、`isr_common_stub` にジャンプ。
+    - `ISR_ERR_CODE` マクロ: CPUがエラーコードをプッシュする例外 (8, 10-14, 17) 用。スタックに割り込み番号をプッシュし (エラーコードはCPUがプッシュ済み)、`isr_common_stub` にジャンプ。
+    - `isr_common_stub`:
+        - 汎用レジスタ (rax, rbx, ..., r15) をスタックにプッシュ (CPUが自動保存しないもの)。
+        - スタックポインタ (`rsp`) を `rdi` レジスタに移動 (C呼び出し規約の第一引数)。
+        - `call isr_handler_c` でC言語のハンドラを呼び出す。
+        - レジスタを復元。
+        - スタックから割り込み番号とエラーコードをクリーンアップ (`add rsp, 16`)。
+        - `iretq` で割り込みから復帰。
+    - `isr0` から `isr19` までの最初の20個の例外に対応するスタブを上記マクロを使って定義。
+3.  **IDTエントリの設定 (`kernel/idt.c`):**
+    - `idt_set_gate(num, base, sel, flags, ist)`: 指定された番号のIDTエントリを初期化。
+        - `base`: アセンブリスタブ (`isrX`) のアドレス。
+        - `sel`: コードセグメントセレクタ (GDTのカーネルコードセグメント `0x08`)。
+        - `flags`: タイプ属性 (例: `0x8E` for 64-bit Interrupt Gate, P=1, DPL=0)。
+        - `ist`: Interrupt Stack Table index (今回は0)。
+4.  **汎用Cハンドラ (`isr_handler_c`):**
+    - アセンブリスタブから呼び出され、`struct registers` を引数として受け取る。
+    - シリアルポートに割り込み番号とエラーコードを出力（デバッグ用）。
+    - `interrupt_handlers` 配列をチェックし、対応する割り込み番号にC言語の特定のハンドラが登録されていればそれを呼び出す。
+    - 登録されていなければ、"No specific C handler" メッセージを表示し、`asm volatile ("cli; hlt");` でシステムを停止。
+5.  **特定の例外用Cハンドラ:**
+    - `divide_by_zero_handler` (ISR 0)
+    - `general_protection_fault_handler` (ISR 13)
+    - `page_fault_handler` (ISR 14): CR2レジスタからフォールトアドレスも表示。
+    - これらのハンドラは、それぞれの例外に関するメッセージをシリアルに出力し、最後に `asm volatile ("cli; hlt");` でシステムを停止する。
+6.  **IDTの初期化 (`init_idt`)**:
+    - IDTポインタ (`idt_pointer`) にIDTのベースアドレスとリミットを設定。
+    - `interrupt_handlers` 配列をクリア。
+    - `idt_set_gate` を使って `isr0` から `isr19` までをIDTに登録。
+    - `divide_by_zero_handler` などを `interrupt_handlers` 配列に登録。
+    - インラインアセンブリで `lidt` 命令を実行して、CPUに新しいIDTの場所を認識させる。
+7.  **`_start` 関数での変更:**
+    - `init_gdt` の後に `init_idt()` を呼び出す。
+    - IDTロード後、`asm volatile ("sti");` を実行して割り込みを有効化する。これは非常に重要。
+8.  **Makefileの変更:**
+    - `kernel/idt.c` と `kernel/isr_stubs.s` をコンパイル/アセンブル対象に追加。
+    - アセンブラ (`AS_KERNEL`) とアセンブラフラグ (`ASFLAGS_KERNEL`) を定義。
+    - `.s` ファイルを `.o` ファイルにアセンブルするルールを追加。
+9.  **動作テスト（ゼロ除算例外）:**
+    - `main.c` の `_start` 関数内で、割り込み有効化 (`sti`) の直後に意図的にゼロ除算 (`volatile int z = x / y;` where `y=0`) を行うコードを挿入。
+    - ビルドして実行すると、シリアルコンソールに "Interrupt Received: 0", "EXCEPTION: Divide by Zero" と表示され、システムが停止することを確認。これによりIDTと例外ハンドラが機能していることを検証。
+
+コミットメッセージ: `day42: feat: Implement IDT and basic exception handlers (0-19)`
+
 ## 4. 現状と次のステップ
 
-- **現状:** Limineブートローダーを経由して自作カーネルが起動し、フレームバッファを利用して画面上にスケーリング可能な文字を表示できる状態になりました。
-- **次のステップの案:**
-    - **GDT (Global Descriptor Table) のセットアップ:** プロテクトモード/ロングモードで必須のセグメントディスクリプタを設定します。
-    - **IDT (Interrupt Descriptor Table) のセットアップ:** 割り込みハンドリングの基礎を築きます。まずは例外（例: Division by Zero）のハンドリングから始めることが多いです。
-    - **シリアルポート出力:** QEMUのシリアルポート経由でデバッグメッセージを出力できるようにすると、画面表示よりも手軽にログを確認できます。
-    - **物理メモリ管理 (Physical Memory Manager / PMM):** Limineから受け取ったメモリマップ情報を基に、利用可能な物理メモリ領域を管理する機構を実装します。
-    - **ページング (Paging / 仮想メモリ管理):** 物理メモリをページ単位で管理し、仮想アドレス空間を物理アドレス空間にマッピングする仕組みを有効にします。これによりメモリ保護や効率的なメモリ利用が可能になります。
+これで、Day42の目標であった、Limineブートローダーを用いたx86-64カーネルの起動、フレームバッファへのテキスト表示（スケーリング対応）、シリアルポート出力、GDTのセットアップ、IDTと基本的なCPU例外ハンドラの実装が完了しました。
 
-以上がDay42の作業内容と関連技術の概要です。
+今後の拡張としては、以下のようなものが考えられます。
+- PIC (Programmable Interrupt Controller) の無効化とAPIC (Advanced PIC) の設定。
+- ハードウェア割り込み（タイマー、キーボードなど）の処理。
+- より高度なメモリ管理（ページング、物理メモリマネージャ、仮想メモリマネージャ）。
+- 簡単なスケジューラとプロセス管理。
+- ファイルシステムの実装。
+
+これらはより複雑なOS機能の基盤となります。
