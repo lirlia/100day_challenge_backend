@@ -20,7 +20,7 @@ LIMINE_BIOS_CD_BIN := $(LIMINE_DIR)/limine-bios-cd.bin
 LIMINE_UEFI_CD_BIN := $(LIMINE_DIR)/limine-uefi-cd.bin
 
 # --- Kernel ---
-KERNEL_C_SRCS  := $(SRC_DIR_KERNEL)/main.c $(SRC_DIR_KERNEL)/gdt.c $(SRC_DIR_KERNEL)/idt.c $(SRC_DIR_KERNEL)/pmm.c # Add pmm.c
+KERNEL_C_SRCS  := $(SRC_DIR_KERNEL)/main.c $(SRC_DIR_KERNEL)/gdt.c $(SRC_DIR_KERNEL)/idt.c $(SRC_DIR_KERNEL)/pmm.c $(SRC_DIR_KERNEL)/paging.c # Add paging.c
 KERNEL_S_SRCS  := $(SRC_DIR_KERNEL)/isr_stubs.s # Add assembly source
 KERNEL_HEADERS := $(wildcard $(SRC_DIR_KERNEL)/*.h)
 

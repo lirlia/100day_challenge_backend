@@ -424,6 +424,39 @@ Day43の作業として、カーネルが動的にメモリを確保・解放で
 
 コミットメッセージ: `day43: feat: Implement stack-based Physical Memory Manager (PMM)`
 
+### 3.12. ページング準備: HHDMオフセット取得とページング構造定義
+
+Day42の作業として、将来の4レベルページテーブル生成に向けた最初の準備を行いました。
+
+1.  **HHDMオフセットの取得:**
+    - `kernel/main.c` に `struct limine_hhdm_request` を追加し、LimineからHHDM (Higher Half Direct Map) オフセットを取得しました。
+    - 取得したオフセットはグローバル変数 `hhdm_offset` に格納し、起動時にシリアルコンソールに出力して確認できるようにしました。
+    - HHDMオフセットは、物理アドレスと仮想アドレスを相互に変換する際に重要となります。
+
+2.  **ページング構造体の定義 (`kernel/paging.h`):**
+    - 新しいヘッダーファイル `kernel/paging.h` を作成しました。
+    - ページテーブルエントリ (PTE)、ページディレクトリエントリ (PDE)、ページディレクトリポインタテーブルエントリ (PDPTE)、PML4エントリ (PML4E) の型 (`uint64_t`) を定義しました。
+    - `PAGE_SIZE` (4KiB) や、PTEの各種フラグ (Present, Writable, User, NoExecute など) をマクロで定義しました。
+    - 仮想アドレスから各ページング構造のインデックスを計算するためのマクロ (`PML4_INDEX`, `PDPT_INDEX` など) を定義しました。
+    - `hhdm_offset` の `extern` 宣言と、`init_paging()` 関数のプロトタイプ宣言を追加しました。
+
+3.  **ページング初期化関数の準備 (`kernel/paging.c`):**
+    - 新しいソースファイル `kernel/paging.c` を作成しました。
+    - `init_paging()` 関数の初期実装として、以下の処理を行いました:
+        - PMM (`pmm_alloc_page()`) を使用して、PML4テーブルのための物理ページを1つ確保。
+        - 確保したPML4テーブルの物理アドレスと、HHDMオフセットを用いて計算した仮想アドレスをシリアルコンソールに出力。
+        - PML4テーブル全体を0でクリア。
+    - シリアルデバッグ出力のために `kernel/main.c` で定義されているシリアル関連関数 (`print_serial` 等) と `SERIAL_COM1_BASE` を `extern` 宣言して使用しました。
+
+4.  **関連ファイルの更新:**
+    - `kernel/main.c`:
+        - `#include "paging.h"` を追加。
+        - PMM初期化の後に `init_paging();` の呼び出しを追加。
+    - `Makefile`:
+        - `KERNEL_C_SRCS` に `kernel/paging.c` を追加し、コンパイル対象に含めました。
+
+これにより、ページング機構を本格的に実装するための基本的なデータ構造と初期化処理の骨子が整いました。
+
 ## 4. 現状と次のステップ
 
 これで、Day42およびDay43前半の目標であった、Limineブートローダーを用いたx86-64カーネルの起動、フレームバッファへのテキスト表示（スケーリング対応）、シリアルポート出力、GDTのセットアップ、IDTと基本的なCPU例外ハンドラの実装、そしてスタック方式での物理メモリマネージャ(PMM)の実装が完了しました。

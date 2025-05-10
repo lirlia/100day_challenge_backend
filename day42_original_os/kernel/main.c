@@ -6,6 +6,7 @@
 #include "idt.h"
 #include "pmm.h"
 #include "io.h"
+#include "paging.h"
 
 static volatile LIMINE_BASE_REVISION(1); // Declare the base revision once globally
 
@@ -129,6 +130,15 @@ struct limine_memmap_request memmap_request __attribute__((section(".requests"))
     .revision = 0
 };
 
+// Place the HHDM request in the .requests section.
+struct limine_hhdm_request hhdm_request __attribute__((section(".requests"))) = {
+    .id = LIMINE_HHDM_REQUEST,
+    .revision = 0
+};
+
+// Global variable to store HHDM offset
+static uint64_t hhdm_offset = 0;
+
 // Global variables to keep track of cursor position and text colors
 static int cursor_x = 0;
 static int cursor_y = 0;
@@ -247,6 +257,16 @@ void _start(void) {
     init_serial(SERIAL_COM1_BASE);
     print_serial(SERIAL_COM1_BASE, "Serial port initialized!\n");
 
+    // Get HHDM offset
+    if (hhdm_request.response == NULL) {
+        print_serial(SERIAL_COM1_BASE, "ERROR: No HHDM response from Limine! Halting.\n");
+        for (;;) { asm volatile("cli; hlt"); }
+    }
+    hhdm_offset = hhdm_request.response->offset;
+    print_serial(SERIAL_COM1_BASE, "HHDM offset: 0x");
+    print_serial_hex(SERIAL_COM1_BASE, hhdm_offset);
+    print_serial(SERIAL_COM1_BASE, "\n");
+
     // Initialize GDT
     init_gdt();
     print_serial(SERIAL_COM1_BASE, "GDT initialized and loaded.\n");
@@ -309,6 +329,9 @@ void _start(void) {
     print_serial(SERIAL_COM1_BASE, "PMM initialized. Free pages: ");
     print_serial_utoa(SERIAL_COM1_BASE, pmm_get_free_page_count());
     print_serial(SERIAL_COM1_BASE, "\n");
+
+    // Initialize Paging
+    init_paging();
 
     // PMM Test Allocations & Deallocations
     print_serial(SERIAL_COM1_BASE, "--- PMM Allocation Test ---\n");
