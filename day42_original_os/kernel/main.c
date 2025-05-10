@@ -5,6 +5,8 @@
 #include "gdt.h"
 #include "idt.h"
 
+static volatile LIMINE_BASE_REVISION(1); // Declare the base revision once globally
+
 // 自前の memcpy 関数
 void *memcpy(void *dest, const void *src, size_t n) {
     uint8_t *pdest = (uint8_t *)dest;
@@ -82,11 +84,57 @@ void print_serial(uint16_t port, const char *s) {
     }
 }
 
+// Helper to print unsigned 64-bit int to serial in hex
+static void print_serial_hex(uint16_t port, uint64_t h) {
+    char buf[19]; // "0x" + 16 hex digits + null
+    char *s = &buf[18]; // Start from the end
+    *s = '\0';
+
+    if (h == 0) {
+        *--s = '0';
+    } else {
+        while (h > 0) {
+            uint8_t digit = h % 16;
+            if (digit < 10) {
+                *--s = '0' + digit;
+            } else {
+                *--s = 'A' + (digit - 10);
+            }
+            h /= 16;
+        }
+    }
+    *--s = 'x';
+    *--s = '0';
+    print_serial(port, s);
+}
+
+// Helper to print unsigned 64-bit int to serial in decimal
+static void print_serial_utoa(uint16_t port, uint64_t u) { // Removed char* buf argument, will use local
+    char buf[21]; // buf should be at least 21 bytes for uint64_t
+    char *s = &buf[20]; // Start from the end
+    *s = '\0';
+
+    if (u == 0) {
+        *--s = '0';
+    } else {
+        while (u > 0) {
+            *--s = (u % 10) + '0';
+            u /= 10;
+        }
+    }
+    print_serial(port, s);
+}
+
 // Framebuffer request
 // Place the framebuffer request in the .requests section.
-static volatile LIMINE_BASE_REVISION(1)
 struct limine_framebuffer_request framebuffer_request __attribute__((section(".requests"))) = {
     .id = LIMINE_FRAMEBUFFER_REQUEST,
+    .revision = 0
+};
+
+// Place the memory map request in the .requests section.
+struct limine_memmap_request memmap_request __attribute__((section(".requests"))) = {
+    .id = LIMINE_MEMMAP_REQUEST,
     .revision = 0
 };
 
@@ -219,6 +267,50 @@ void _start(void) {
     // Enable interrupts (VERY IMPORTANT AFTER IDT IS LOADED)
     asm volatile ("sti");
     print_serial(SERIAL_COM1_BASE, "Interrupts enabled (STI).\n");
+
+    print_serial(SERIAL_COM1_BASE, "Attempting to retrieve memory map...\n");
+    if (memmap_request.response == NULL) {
+        print_serial(SERIAL_COM1_BASE, "ERROR: No memory map response from Limine! Halting.\n");
+        // It's critical to halt if we don't get a memory map.
+        for (;;) { asm volatile("cli; hlt"); }
+    }
+    print_serial(SERIAL_COM1_BASE, "Memory map response received.\n");
+    print_serial(SERIAL_COM1_BASE, "Number of memory map entries: ");
+    print_serial_utoa(SERIAL_COM1_BASE, memmap_request.response->entry_count);
+    print_serial(SERIAL_COM1_BASE, "\n");
+
+    for (uint64_t i = 0; i < memmap_request.response->entry_count; i++) {
+        struct limine_memmap_entry *entry = memmap_request.response->entries[i];
+
+        print_serial(SERIAL_COM1_BASE, "Entry ");
+        print_serial_utoa(SERIAL_COM1_BASE, i);
+        print_serial(SERIAL_COM1_BASE, ": Base: ");
+        print_serial_hex(SERIAL_COM1_BASE, entry->base);
+        print_serial(SERIAL_COM1_BASE, ", Length: ");
+        print_serial_hex(SERIAL_COM1_BASE, entry->length);
+        print_serial(SERIAL_COM1_BASE, " (");
+        print_serial_utoa(SERIAL_COM1_BASE, entry->length); // Also print length in decimal for readability
+        print_serial(SERIAL_COM1_BASE, " bytes)");
+        print_serial(SERIAL_COM1_BASE, ", Type: ");
+
+        switch (entry->type) {
+            case LIMINE_MEMMAP_USABLE: print_serial(SERIAL_COM1_BASE, "USABLE"); break;
+            case LIMINE_MEMMAP_RESERVED: print_serial(SERIAL_COM1_BASE, "RESERVED"); break;
+            case LIMINE_MEMMAP_ACPI_RECLAIMABLE: print_serial(SERIAL_COM1_BASE, "ACPI RECLAIMABLE"); break;
+            case LIMINE_MEMMAP_ACPI_NVS: print_serial(SERIAL_COM1_BASE, "ACPI NVS"); break;
+            case LIMINE_MEMMAP_BAD_MEMORY: print_serial(SERIAL_COM1_BASE, "BAD MEMORY"); break;
+            case LIMINE_MEMMAP_BOOTLOADER_RECLAIMABLE: print_serial(SERIAL_COM1_BASE, "BOOTLOADER RECLAIMABLE"); break;
+            case LIMINE_MEMMAP_KERNEL_AND_MODULES: print_serial(SERIAL_COM1_BASE, "KERNEL AND MODULES"); break;
+            case LIMINE_MEMMAP_FRAMEBUFFER: print_serial(SERIAL_COM1_BASE, "FRAMEBUFFER"); break;
+            default:
+                print_serial(SERIAL_COM1_BASE, "UNKNOWN (");
+                print_serial_utoa(SERIAL_COM1_BASE, entry->type);
+                print_serial(SERIAL_COM1_BASE, ")");
+                break;
+        }
+        print_serial(SERIAL_COM1_BASE, "\n");
+    }
+    print_serial(SERIAL_COM1_BASE, "Finished printing memory map.\n");
 
     // Add these lines to trigger a divide-by-zero exception
     print_serial(SERIAL_COM1_BASE, "Attempting to cause a divide by zero exception...\n");
