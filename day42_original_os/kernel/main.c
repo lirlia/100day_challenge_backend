@@ -4,6 +4,7 @@
 #include "font8x8_basic.h"
 #include "gdt.h"
 #include "idt.h"
+#include "pmm.h"
 
 static volatile LIMINE_BASE_REVISION(1); // Declare the base revision once globally
 
@@ -85,7 +86,7 @@ void print_serial(uint16_t port, const char *s) {
 }
 
 // Helper to print unsigned 64-bit int to serial in hex
-static void print_serial_hex(uint16_t port, uint64_t h) {
+void print_serial_hex(uint16_t port, uint64_t h) {
     char buf[19]; // "0x" + 16 hex digits + null
     char *s = &buf[18]; // Start from the end
     *s = '\0';
@@ -109,7 +110,7 @@ static void print_serial_hex(uint16_t port, uint64_t h) {
 }
 
 // Helper to print unsigned 64-bit int to serial in decimal
-static void print_serial_utoa(uint16_t port, uint64_t u) { // Removed char* buf argument, will use local
+void print_serial_utoa(uint16_t port, uint64_t u) {
     char buf[21]; // buf should be at least 21 bytes for uint64_t
     char *s = &buf[20]; // Start from the end
     *s = '\0';
@@ -312,15 +313,39 @@ void _start(void) {
     }
     print_serial(SERIAL_COM1_BASE, "Finished printing memory map.\n");
 
-    // Add these lines to trigger a divide-by-zero exception
-    print_serial(SERIAL_COM1_BASE, "Attempting to cause a divide by zero exception...\n");
-    int x = 5;
-    int y = 0;
-    // The following line will cause a divide-by-zero exception (interrupt 0)
-    // volatile to prevent compiler optimization from removing it.
-    volatile int z = x / y;
-    // This line should not be reached if the handler works correctly and halts.
-    print_serial(SERIAL_COM1_BASE, "This message should NOT appear if exception was handled.\n");
+    // Initialize Physical Memory Manager
+    print_serial(SERIAL_COM1_BASE, "Initializing PMM...\n");
+    init_pmm(memmap_request.response);
+    print_serial(SERIAL_COM1_BASE, "PMM initialized. Free pages: ");
+    print_serial_utoa(SERIAL_COM1_BASE, pmm_get_free_page_count());
+    print_serial(SERIAL_COM1_BASE, "\n");
+
+    // PMM Test Allocations & Deallocations
+    print_serial(SERIAL_COM1_BASE, "--- PMM Allocation Test ---\n");
+    void *p1 = pmm_alloc_page();
+    print_serial(SERIAL_COM1_BASE, "Allocated p1: 0x"); print_serial_hex(SERIAL_COM1_BASE, (uint64_t)p1); print_serial(SERIAL_COM1_BASE, "\n");
+    print_serial(SERIAL_COM1_BASE, "Free pages after p1: "); print_serial_utoa(SERIAL_COM1_BASE, pmm_get_free_page_count()); print_serial(SERIAL_COM1_BASE, "\n");
+
+    void *p2 = pmm_alloc_page();
+    print_serial(SERIAL_COM1_BASE, "Allocated p2: 0x"); print_serial_hex(SERIAL_COM1_BASE, (uint64_t)p2); print_serial(SERIAL_COM1_BASE, "\n");
+    print_serial(SERIAL_COM1_BASE, "Free pages after p2: "); print_serial_utoa(SERIAL_COM1_BASE, pmm_get_free_page_count()); print_serial(SERIAL_COM1_BASE, "\n");
+
+    void *p3 = pmm_alloc_page();
+    print_serial(SERIAL_COM1_BASE, "Allocated p3: 0x"); print_serial_hex(SERIAL_COM1_BASE, (uint64_t)p3); print_serial(SERIAL_COM1_BASE, "\n");
+    print_serial(SERIAL_COM1_BASE, "Free pages after p3: "); print_serial_utoa(SERIAL_COM1_BASE, pmm_get_free_page_count()); print_serial(SERIAL_COM1_BASE, "\n");
+
+    print_serial(SERIAL_COM1_BASE, "Freeing p2...\n");
+    pmm_free_page(p2);
+    print_serial(SERIAL_COM1_BASE, "Free pages after freeing p2: "); print_serial_utoa(SERIAL_COM1_BASE, pmm_get_free_page_count()); print_serial(SERIAL_COM1_BASE, "\n");
+
+    print_serial(SERIAL_COM1_BASE, "Freeing p1...\n");
+    pmm_free_page(p1);
+    print_serial(SERIAL_COM1_BASE, "Free pages after freeing p1: "); print_serial_utoa(SERIAL_COM1_BASE, pmm_get_free_page_count()); print_serial(SERIAL_COM1_BASE, "\n");
+
+    void *p4 = pmm_alloc_page(); // Should get p1 or p2's address if stack works LIFO
+    print_serial(SERIAL_COM1_BASE, "Allocated p4: 0x"); print_serial_hex(SERIAL_COM1_BASE, (uint64_t)p4); print_serial(SERIAL_COM1_BASE, "\n");
+    print_serial(SERIAL_COM1_BASE, "Free pages after p4: "); print_serial_utoa(SERIAL_COM1_BASE, pmm_get_free_page_count()); print_serial(SERIAL_COM1_BASE, "\n");
+    print_serial(SERIAL_COM1_BASE, "--- PMM Allocation Test Done ---\n");
 
     // Ensure we have a framebuffer.
     if (framebuffer_request.response == NULL ||
