@@ -19,14 +19,14 @@ LIMINE_BIOS_CD_BIN := $(LIMINE_DIR)/limine-bios-cd.bin
 LIMINE_UEFI_CD_BIN := $(LIMINE_DIR)/limine-uefi-cd.bin
 
 # --- Kernel ---
-KERNEL_SRC     := $(SRC_DIR_KERNEL)/main.c
-KERNEL_LIMINE_H:= $(SRC_DIR_KERNEL)/limine.h
-KERNEL_OBJ     := $(BUILD_DIR)/kernel.o
+KERNEL_C_SRCS  := $(SRC_DIR_KERNEL)/main.c $(SRC_DIR_KERNEL)/gdt.c # Add gdt.c
+KERNEL_HEADERS := $(wildcard $(SRC_DIR_KERNEL)/*.h)
+KERNEL_OBJS    := $(patsubst $(SRC_DIR_KERNEL)/%.c,$(BUILD_DIR)/%.o,$(KERNEL_C_SRCS))
 KERNEL_ELF     := $(BUILD_DIR)/kernel.elf
 LINKER_SCRIPT  := $(SCRIPTS_DIR)/linker.ld
 
-CFLAGS_KERNEL  := -target $(TARGET_KERNEL) -ffreestanding -nostdlib -Wall -Wextra -g -I$(SRC_DIR_KERNEL) -mno-red-zone
-LDFLAGS_KERNEL := -T $(LINKER_SCRIPT) --target=$(TARGET_KERNEL) -fuse-ld=lld -nostdlib -static -pie -z max-page-size=0x1000
+CFLAGS_KERNEL  := -target $(TARGET_KERNEL) -ffreestanding -nostdlib -Wall -Wextra -g -I$(SRC_DIR_KERNEL) -mno-red-zone -fPIE
+LDFLAGS_KERNEL := -T $(LINKER_SCRIPT) --target=$(TARGET_KERNEL) -fuse-ld=lld -nostdlib -static -pie -z max-page-size=0x1000 -Wl,-Map=$(BUILD_DIR)/kernel.map
 
 # --- Image --- (Limine setup)
 OS_ISO := $(IMAGE_DIR)/os.iso
@@ -58,10 +58,13 @@ $(LIMINE_DEPLOY_TOOL):
 	@echo "Building limine-deploy tool..."
 	$(MAKE) -C $(LIMINE_DIR)
 
-$(KERNEL_ELF): $(KERNEL_SRC) $(KERNEL_LIMINE_H) $(LINKER_SCRIPT)
+# Rule to compile kernel C source files to object files
+$(BUILD_DIR)/%.o: $(SRC_DIR_KERNEL)/%.c $(KERNEL_HEADERS) $(LINKER_SCRIPT) # Added LINKER_SCRIPT dependency for .requests section awareness if any C file uses it.
 	@mkdir -p $(BUILD_DIR)
-	$(CC_KERNEL) $(CFLAGS_KERNEL) -c $(KERNEL_SRC) -o $(KERNEL_OBJ)
-	$(LD_KERNEL) $(LDFLAGS_KERNEL) $(KERNEL_OBJ) -o $@
+	$(CC_KERNEL) $(CFLAGS_KERNEL) -c $< -o $@
+
+$(KERNEL_ELF): $(KERNEL_OBJS)
+	$(LD_KERNEL) $(LDFLAGS_KERNEL) $(KERNEL_OBJS) -o $@
 
 $(OS_ISO): $(KERNEL_ELF) $(LIMINE_CFG_SRC) $(LIMINE_BIOS_CD_BIN) $(LIMINE_UEFI_CD_BIN) $(LIMINE_BOOTLOADER_BIOS_SYS) $(LIMINE_BOOTLOADER_UEFI_EFI) $(LIMINE_DEPLOY_TOOL)
 	@echo "Cleaning up old ISO and staging directory..."
@@ -106,6 +109,7 @@ run-uefi:
 	$(QEMU) $(QEMU_OPTS_COMMON) $(QEMU_OPTS_UEFI) -cdrom $(OS_ISO)
 
 clean:
-	rm -rf $(BUILD_DIR) $(OS_ISO) $(ESP_SOURCE_DIR) $(IMAGE_DIR)/*.cdr
+	rm -rf $(BUILD_DIR) $(OS_ISO) $(ESP_SOURCE_DIR) # Removed $(IMAGE_DIR)/*.cdr as it was too broad
+	rm -f qemu.log qemu_debug.log # Clean QEMU logs
 
 .PHONY: all clean run run-bios run-uefi

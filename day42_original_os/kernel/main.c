@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "font8x8_basic.h"
+#include "gdt.h"
 
 // 自前の memcpy 関数
 void *memcpy(void *dest, const void *src, size_t n) {
@@ -202,21 +203,25 @@ void put_hex(struct limine_framebuffer *fb, uint64_t h) {
 
 // Kernel entry point
 void _start(void) {
-    // for (;;) { __asm__ volatile ("hlt"); } // Removed the initial halt
+    // Initialize serial port COM1 first for early debugging
+    init_serial(SERIAL_COM1_BASE);
+    print_serial(SERIAL_COM1_BASE, "Serial port initialized!\n");
+
+    // Initialize GDT
+    init_gdt();
+    print_serial(SERIAL_COM1_BASE, "GDT initialized and loaded.\n");
 
     // Ensure we have a framebuffer.
     if (framebuffer_request.response == NULL ||
         framebuffer_request.response->framebuffer_count < 1) {
-        // No framebuffer, hang.
+        print_serial(SERIAL_COM1_BASE, "ERROR: No framebuffer found! Halting.\n");
         for (;;) { asm volatile ("hlt"); }
     }
-
-    // Initialize serial port COM1
-    init_serial(SERIAL_COM1_BASE);
-    print_serial(SERIAL_COM1_BASE, "Serial port initialized! Hello from COM1!\n");
+    print_serial(SERIAL_COM1_BASE, "Framebuffer request successful.\n");
 
     // Get the first framebuffer.
     struct limine_framebuffer *framebuffer = framebuffer_request.response->framebuffers[0];
+    print_serial(SERIAL_COM1_BASE, "Got framebuffer pointer.\n");
 
     // Clear screen to the global background color
     clear_screen(framebuffer, bg_color); // bg_color を使用
