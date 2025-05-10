@@ -3,18 +3,18 @@
 ## フェーズ別タスクリスト
 
 ### Phase 1: "Hello, kernel!" が QEMU で起動
-- [ ] UEFI ブートローダ (MikanLoaderPkg または Limine) のセットアップ
-- [ ] カーネルエントリーポイント (C言語) の作成
-- [ ] GDT (Global Descriptor Table) の設定
-- [ ] Long mode への切り替え
-- [ ] QEMU で "Hello, kernel!" の表示確認
+- [x] UEFI ブートローダ (MikanLoaderPkg または Limine) のセットアップ
+- [x] カーネルエントリーポイント (C言語) の作成
+- [x] GDT (Global Descriptor Table) の設定
+- [x] Long mode への切り替え
+- [x] QEMU で "Hello, kernel!" の表示確認
 
 ### Phase 2: VGA/Framebuffer 文字表示 & 例外ハンドラ
-- [ ] UEFI から Framebuffer 情報取得
-- [ ] 簡易的な文字表示関数の実装 (printf ライク)
-- [ ] IDT (Interrupt Descriptor Table) の設定
-- [ ] 例外ハンドラの実装 (例: #DE, #GP)
-- [ ] 構造体定義: `struct FrameBuffer`, `struct IDTR`, `struct InterruptFrame`
+- [x] UEFI から Framebuffer 情報取得
+- [x] 簡易的な文字表示関数の実装 (printf ライク)
+- [x] IDT (Interrupt Descriptor Table) の設定
+- [x] 例外ハンドラの実装 (例: #DE, #GP)
+- [x] 構造体定義: `struct FrameBuffer`, `struct IDTR`, `struct InterruptFrame`
 
 ### Phase 3: 物理メモリ管理 & ページング開始
 - [ ] UEFI Memory Map の解析と利用
@@ -55,4 +55,4 @@
 
 - [x] ホスト環境構築 (クロスツールチェーン、QEMUなど)
 - [x] ビルドスクリプトの整備
-- [ ] デバッグ環境の確立 (GDB/LLDBリモートデバッグ) 
+- [ ] デバッグ環境の確立 (GDB/LLDBリモートデバッグ)
