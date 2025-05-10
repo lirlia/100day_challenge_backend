@@ -1,13 +1,13 @@
 ## 0\. 全体像
 
-| フェーズ | 到達目標                                       | 主要コンポーネント               | 参考章（MikanOS） |
-| :------- | :--------------------------------------------- | :------------------------------- | :---------------- |
-| Phase 1  | “Hello, kernel\!” が QEMU で起動                | UEFI ブートローダ, カーネルの main | Day 01–03         |
-| Phase 2  | VGA/Framebuffer 文字表示 & 例外ハンドラ        | コンソール, IDT, PIC/IO-APIC     | Day 04–07         |
-| Phase 3  | 物理メモリ管理 & ページング開始                | PMM, VMM, PML4 設定              | Day 08–12         |
-| Phase 4  | タイマ割り込み & ラウンドロビン・スケジューラ | PIT/APIC, TSS, context switch    | Day 13–17         |
-| Phase 5  | ELF 形式のユーザプロセス起動                   | Syscall, ユーザ空間, fork/exec   | Day 18–22         |
-| Phase 6  | ミニシェル + echo / ls                         | 仮想ファイルシステム, デバイス層 | Day 23–28         |
+| フェーズ | 到達目標                                       | 主要コンポーネント               |
+| :------- | :--------------------------------------------- | :------------------------------- |
+| Phase 1  | “Hello, kernel\!” が QEMU で起動                | UEFI ブートローダ, カーネルの main |
+| Phase 2  | VGA/Framebuffer 文字表示 & 例外ハンドラ        | コンソール, IDT, PIC/IO-APIC     |
+| Phase 3  | 物理メモリ管理 & ページング開始                | PMM, VMM, PML4 設定              |
+| Phase 4  | タイマ割り込み & ラウンドロビン・スケジューラ | PIT/APIC, TSS, context switch    |
+| Phase 5  | ELF 形式のユーザプロセス起動                   | Syscall, ユーザ空間, fork/exec   |
+| Phase 6  | ミニシェル + echo / ls                         | 仮想ファイルシステム, デバイス層 |
 
 **ゴール**
 Phase 6 までを 8〜12 週で完走すると、質問に挙げられた機能セットが一通りそろいます。
