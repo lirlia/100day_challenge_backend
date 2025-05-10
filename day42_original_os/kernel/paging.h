@@ -2,6 +2,7 @@
 #define KERNEL_PAGING_H
 
 #include <stdint.h>
+#include "limine.h"
 
 #define PAGE_SIZE 0x1000 // 4 KiB
 
@@ -38,6 +39,14 @@ typedef uint64_t pte_t;
 // HHDM offset (defined in main.c, used by paging.c)
 extern uint64_t hhdm_offset;
 
-void init_paging(void);
+// Function to initialize paging
+void init_paging(struct limine_framebuffer_response *fb_response,
+                 struct limine_memmap_response *memmap_response,
+                 uint64_t kernel_stack_phys_base,
+                 uint64_t kernel_stack_size,
+                 uint64_t new_rsp_virt_top) __attribute__((noreturn));
+
+// Function to map a single virtual page to a physical page
+void map_page(uint64_t virt_addr, uint64_t phys_addr, uint64_t flags);
 
 #endif // KERNEL_PAGING_H

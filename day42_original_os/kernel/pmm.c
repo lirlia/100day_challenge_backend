@@ -1,7 +1,9 @@
 #include "pmm.h"
 #include "limine.h"
+#include "io.h"      // For print_serial, print_serial_hex for debugging
 #include <stdint.h>
-#include <stddef.h> // For NULL and size_t
+#include <stddef.h>  // For NULL and size_t
+#include "paging.h" // For PAGE_SIZE (though it might be better to have a common header for such constants)
 
 // External serial printing functions from main.c (for debugging PMM)
 // These should ideally be replaced by a proper kernel logging system later.
@@ -13,146 +15,281 @@ extern void print_serial_utoa(uint16_t port, uint64_t u);
                                       // Let's use a local define for clarity in PMM if not including main.h directly.
 #define PMM_DEBUG_SERIAL_PORT 0x3F8
 
-static pmm_state_t pmm_info;
+// --- DBG Macro Definition (Copied for use in this file) ---
+// Ensure SERIAL_COM1_BASE is accessible, e.g., via io.h or direct define if not already.
+// Assume outb is also accessible, typically from io.h
+static inline void dbg_u64_pmm(const char *s, uint64_t v) { // Renamed to avoid conflict
+    for (const char *p = s; *p; p++) outb(SERIAL_COM1_BASE, *p);
+    for (int i = 60; i >= 0; i -= 4) {
+        char c = "0123456789ABCDEF"[(v >> i) & 0xF];
+        outb(SERIAL_COM1_BASE, c);
+    }
+    outb(SERIAL_COM1_BASE, '\n');
+}
+#define DBG_PMM(x) dbg_u64_pmm(#x " = ", (uint64_t)(x))
+// --- End DBG Macro Definition ---
 
-// Helper to align an address down to the nearest page boundary
-static inline uint64_t page_align_down(uint64_t addr) {
-    return addr & ~(PAGE_SIZE - 1);
+#define PMM_STACK_ENTRIES_PER_PAGE ((PAGE_SIZE / sizeof(uint64_t)) - 1) // Reserve 1 entry for 'next' pointer
+
+struct pmm_stack_page {
+    struct pmm_stack_page *next;
+    uint64_t entries[PMM_STACK_ENTRIES_PER_PAGE];
+};
+
+// --- PMM Globals ---
+// static uint64_t *pmm_stack = NULL;          // Pointer to the bottom of the physical page stack (virtual address) - REPLACED
+static struct pmm_stack_page *pmm_current_stack_head = NULL; // Points to the current (topmost) stack page (virtual address)
+static uint64_t pmm_stack_top = 0;       // Index into entries[] of the pmm_current_stack_head
+// static uint64_t pmm_stack_capacity = 0;  // Total capacity of the stack (number of page addresses it can hold) - REMOVED
+// static uint64_t pmm_stack_page_phys = 0; // Physical address of the page used for the PMM stack - REPLACED by pmm_first_stack_page_phys
+static uint64_t pmm_first_stack_page_phys = 0; // Physical address of the *first* page used for the PMM stack
+static uint64_t total_free_pages = 0;
+// static uint64_t total_usable_pages = 0; // For debugging/verification - Can be re-added if needed
+
+// HHDM offset (defined in main.c via paging.h)
+extern uint64_t hhdm_offset;
+
+// Helper to clear a page - ensure this is available
+// This could be a shared function if defined elsewhere and not static.
+// For now, assume it's available or add a local static version if needed.
+static void clear_page_pmm(void *page_virt) { // Renamed to avoid conflict
+    uint64_t *p = (uint64_t *)page_virt;
+    for (int i = 0; i < PAGE_SIZE / sizeof(uint64_t); i++) {
+        p[i] = 0;
+    }
 }
 
 // Helper to align an address up to the nearest page boundary
-static inline uint64_t page_align_up(uint64_t addr) {
-    return (addr + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+static uint64_t ALIGN_UP_PMM(uint64_t addr, uint64_t align) { // Renamed to avoid conflict
+    return (addr + align - 1) & ~(align - 1);
 }
 
-void init_pmm(struct limine_memmap_response *memmap) {
-    if (memmap == NULL) {
-        print_serial(PMM_DEBUG_SERIAL_PORT, "PMM Error: Memory map response is NULL! Halting.\n");
-        for (;;) { asm volatile("cli; hlt"); }
+// Forward declaration for pmm_get_allocated_stack_page_count
+uint64_t pmm_get_allocated_stack_page_count(void);
+
+// Panic function (simplified for now)
+void panic(const char *message) {
+    print_serial(SERIAL_COM1_BASE, "KERNEL PANIC: ");
+    print_serial(SERIAL_COM1_BASE, message);
+    print_serial(SERIAL_COM1_BASE, "\\n");
+    for (;;) { asm volatile ("cli; hlt"); }
+}
+
+
+// Initialize the Physical Memory Manager
+void init_pmm(struct limine_memmap_response *memmap_resp) {
+    print_serial(SERIAL_COM1_BASE, "PMM: Initializing Physical Memory Manager (Growable Stack)...\n");
+
+    if (memmap_resp == NULL) {
+        panic("Memory map response is NULL in init_pmm.");
+        return;
     }
+    // DBG_PMM(memmap_resp->entry_count); // Optional debug
 
-    print_serial(PMM_DEBUG_SERIAL_PORT, "PMM: Initializing Physical Memory Manager...\n");
-
-    // Pass 1: Calculate total number of usable pages to determine stack size
-    size_t usable_page_count = 0;
-    for (uint64_t i = 0; i < memmap->entry_count; i++) {
-        struct limine_memmap_entry *entry = memmap->entries[i];
-        if (entry->type == LIMINE_MEMMAP_USABLE) {
-            usable_page_count += entry->length / PAGE_SIZE;
-        }
-    }
-
-    if (usable_page_count == 0) {
-        print_serial(PMM_DEBUG_SERIAL_PORT, "PMM Error: No usable memory pages found! Halting.\n");
-        for (;;) { asm volatile("cli; hlt"); }
-    }
-    pmm_info.total_pages_initial = usable_page_count;
-    pmm_info.capacity = usable_page_count; // Stack must be able to hold all usable page addresses
-    size_t pmm_stack_required_bytes = pmm_info.capacity * sizeof(uint64_t);
-
-    print_serial(PMM_DEBUG_SERIAL_PORT, "PMM: Total initial usable pages: ");
-    print_serial_utoa(PMM_DEBUG_SERIAL_PORT, pmm_info.total_pages_initial);
-    print_serial(PMM_DEBUG_SERIAL_PORT, "\nPMM: Required stack size: ");
-    print_serial_utoa(PMM_DEBUG_SERIAL_PORT, pmm_stack_required_bytes);
-    print_serial(PMM_DEBUG_SERIAL_PORT, " bytes\n");
-
-    // Pass 2: Find a large enough USABLE memory region to host our PMM stack
-    uint64_t pmm_stack_phys_addr = 0;
-    for (uint64_t i = 0; i < memmap->entry_count; i++) {
-        struct limine_memmap_entry *entry = memmap->entries[i];
-        if (entry->type == LIMINE_MEMMAP_USABLE && entry->length >= pmm_stack_required_bytes) {
-            // Try to place stack at the beginning of this region, page-aligned UP.
-            uint64_t potential_stack_base = page_align_up(entry->base);
-            if (potential_stack_base >= entry->base && (potential_stack_base + pmm_stack_required_bytes) <= (entry->base + entry->length)) {
-                pmm_stack_phys_addr = potential_stack_base;
-                print_serial(PMM_DEBUG_SERIAL_PORT, "PMM: Found region for PMM stack at 0x");
-                print_serial_hex(PMM_DEBUG_SERIAL_PORT, pmm_stack_phys_addr);
-                print_serial(PMM_DEBUG_SERIAL_PORT, " (length 0x");
-                print_serial_hex(PMM_DEBUG_SERIAL_PORT, pmm_stack_required_bytes);
-                print_serial(PMM_DEBUG_SERIAL_PORT, ")\n");
-                break; // Use the first suitable region found
+    /* --- 1. Find and reserve the *first* safe page for the PMM stack (e.g., 2MiB) --- */
+    for (size_t i = 0; i < memmap_resp->entry_count; i++) {
+        struct limine_memmap_entry *e = memmap_resp->entries[i];
+        if (e->type == LIMINE_MEMMAP_USABLE) {
+            uint64_t potential_stack_start = ALIGN_UP_PMM(0x200000, PAGE_SIZE);
+            if (e->base <= potential_stack_start && (e->base + e->length) >= (potential_stack_start + PAGE_SIZE)) {
+                pmm_first_stack_page_phys = potential_stack_start;
+                print_serial(SERIAL_COM1_BASE, "PMM: Found first safe page for PMM stack at phys: 0x");
+                print_serial_hex(SERIAL_COM1_BASE, pmm_first_stack_page_phys);
+                print_serial(SERIAL_COM1_BASE, "\n");
+                break;
             }
         }
     }
 
-    if (pmm_stack_phys_addr == 0) {
-        print_serial(PMM_DEBUG_SERIAL_PORT, "PMM Error: Could not find suitable memory for PMM stack! Halting.\n");
-        for (;;) { asm volatile("cli; hlt"); }
+    if (pmm_first_stack_page_phys == 0) {
+        panic("Could not find a safe USABLE page (e.g., at 0x200000) for the first PMM stack page.");
     }
 
-    pmm_info.stack_base = (uint64_t *)pmm_stack_phys_addr;
-    pmm_info.stack_ptr = pmm_info.stack_base; // Stack is empty, ptr points to base
-    pmm_info.free_pages = 0;
+    /* --- 2. Initialize the first PMM stack page --- */
+    pmm_current_stack_head = (struct pmm_stack_page *)(pmm_first_stack_page_phys + hhdm_offset);
+    clear_page_pmm(pmm_current_stack_head);
+    pmm_current_stack_head->next = NULL;
+    pmm_stack_top = 0; // Current page is empty
 
-    // Pass 3: Populate the PMM stack with addresses of usable pages
-    // Skip pages that are part of the PMM stack itself.
-    print_serial(PMM_DEBUG_SERIAL_PORT, "PMM: Populating free page stack...\n");
-    for (uint64_t i = 0; i < memmap->entry_count; i++) {
-        struct limine_memmap_entry *entry = memmap->entries[i];
+    print_serial(SERIAL_COM1_BASE, "PMM: First stack page initialized at V:0x"); print_serial_hex(SERIAL_COM1_BASE, (uint64_t)pmm_current_stack_head);
+    print_serial(SERIAL_COM1_BASE, " (P:0x"); print_serial_hex(SERIAL_COM1_BASE, pmm_first_stack_page_phys); print_serial(SERIAL_COM1_BASE, ")\n");
+    print_serial(SERIAL_COM1_BASE, "PMM: Stack entries per page: "); print_serial_utoa(SERIAL_COM1_BASE, PMM_STACK_ENTRIES_PER_PAGE); print_serial(SERIAL_COM1_BASE, "\n");
+
+    /* --- 3. Populate the free page stack (it will grow as needed) --- */
+    print_serial(SERIAL_COM1_BASE, "PMM: Populating free page stack...\n");
+    total_free_pages = 0; // Reset before populating
+
+    // Iterate through memory map entries to find usable memory
+    for (uint64_t i = 0; i < memmap_resp->entry_count; i++) {
+        struct limine_memmap_entry *entry = memmap_resp->entries[i];
         if (entry->type == LIMINE_MEMMAP_USABLE) {
-            uint64_t region_start_addr = page_align_up(entry->base);
-            uint64_t region_end_addr = page_align_down(entry->base + entry->length);
+            // DBG_PMM(entry->base); // Optional
+            // DBG_PMM(entry->length); // Optional
 
-            for (uint64_t page_addr = region_start_addr; page_addr < region_end_addr; page_addr += PAGE_SIZE) {
-                // Check if this page is within the PMM stack's own memory range
-                if (page_addr >= pmm_stack_phys_addr && page_addr < (pmm_stack_phys_addr + pmm_stack_required_bytes)) {
-                    // This page is used by the PMM stack itself, so skip it.
+            uint64_t base = ALIGN_UP_PMM(entry->base, PAGE_SIZE);
+            uint64_t top = (entry->base + entry->length); // Iterate up to, but not exceeding, top
+
+            for (uint64_t p = base; (p + PAGE_SIZE) <= top; p += PAGE_SIZE) {
+                if (p == pmm_first_stack_page_phys) { // Don't add the first stack page itself to be managed initially
+                    print_serial(SERIAL_COM1_BASE, "PMM: Skipping first PMM stack page 0x");
+                    print_serial_hex(SERIAL_COM1_BASE, p);
+                    print_serial(SERIAL_COM1_BASE, " from free list initial population.\n");
                     continue;
                 }
-
-                if ((size_t)(pmm_info.stack_ptr - pmm_info.stack_base) < pmm_info.capacity) {
-                    *pmm_info.stack_ptr = page_addr;
-                    pmm_info.stack_ptr++;
-                    pmm_info.free_pages++;
-                } else {
-                    print_serial(PMM_DEBUG_SERIAL_PORT, "PMM Warning: PMM stack full during init. Should not happen.\n");
-                    // This indicates an issue with capacity calculation or available memory vs. stack space.
-                    break; // Stop adding pages if stack is full
-                }
+                // pmm_free_page will be called, which handles stack growth.
+                // The page p itself might become a new stack page if the current one is full.
+                pmm_free_page((void *)p);
             }
         }
     }
 
-    print_serial(PMM_DEBUG_SERIAL_PORT, "PMM: Initialization complete. Total free pages: ");
-    print_serial_utoa(PMM_DEBUG_SERIAL_PORT, pmm_info.free_pages);
-    print_serial(PMM_DEBUG_SERIAL_PORT, "\n");
+    print_serial(SERIAL_COM1_BASE, "PMM: Initialization complete. Total free pages: ");
+    print_serial_utoa(SERIAL_COM1_BASE, total_free_pages);
+    print_serial(SERIAL_COM1_BASE, "\n");
+    print_serial(SERIAL_COM1_BASE, "PMM: Total stack pages allocated: ");
+    print_serial_utoa(SERIAL_COM1_BASE, pmm_get_allocated_stack_page_count());
+    print_serial(SERIAL_COM1_BASE, "\n");
 }
 
+// Allocate a physical page
 void *pmm_alloc_page(void) {
-    if (pmm_info.free_pages == 0) {
-        // No pages available, or PMM not initialized properly if stack_ptr is at base
-        // print_serial(PMM_DEBUG_SERIAL_PORT, "PMM: pmm_alloc_page: Out of memory!\n");
+    if (pmm_current_stack_head == NULL) {
+        panic("PMM: Alloc called but pmm_current_stack_head is NULL!");
         return NULL;
     }
-    // Stack pointer points to the next free slot; decrement first to get the last item
-    pmm_info.stack_ptr--;
-    uint64_t page_to_alloc = *pmm_info.stack_ptr;
-    pmm_info.free_pages--;
-    return (void *)page_to_alloc;
+
+    if (pmm_stack_top == 0) { // Current stack page is empty
+        struct pmm_stack_page *old_stack_page_virt = pmm_current_stack_head;
+        if (old_stack_page_virt->next == NULL) {
+            print_serial(SERIAL_COM1_BASE, "PMM Error: Out of memory! No more stack pages and current is empty.\n");
+            return NULL;
+        }
+        pmm_current_stack_head = old_stack_page_virt->next;
+        pmm_stack_top = PMM_STACK_ENTRIES_PER_PAGE; // New page is full (top is index of last valid entry + 1 for pop)
+
+        // Optional: Free the physical page of old_stack_page_virt IF it's not the first one.
+        // This is tricky because pmm_free_page might try to allocate a new stack page.
+        // For now, let's not free old stack pages to avoid complexity. They remain "lost" to the PMM.
+        // uint64_t old_stack_page_phys = (uint64_t)old_stack_page_virt - hhdm_offset;
+        // if (old_stack_page_phys != pmm_first_stack_page_phys) {
+        //    print_serial(SERIAL_COM1_BASE, "PMM: Attempting to free old stack page P:0x"); print_serial_hex(SERIAL_COM1_BASE, old_stack_page_phys); print_serial(SERIAL_COM1_BASE, "\n");
+        //    pmm_free_page((void*)old_stack_page_phys); // Risky due to potential recursion / re-allocation
+        // }
+
+        print_serial(SERIAL_COM1_BASE, "PMM: Switched to next stack page at V:0x");
+        print_serial_hex(SERIAL_COM1_BASE, (uint64_t)pmm_current_stack_head);
+        print_serial(SERIAL_COM1_BASE, "\n");
+    }
+
+    // Pop an address from the current stack page
+    // pmm_stack_top is the count of items, so valid indices are 0 to pmm_stack_top-1
+    uint64_t phys_addr = pmm_current_stack_head->entries[--pmm_stack_top];
+    total_free_pages--;
+
+    // DBG_PMM(phys_addr); // Debug allocated page
+    // DBG_PMM(total_free_pages); // Debug free pages count
+
+    return (void *)phys_addr;
 }
 
-void pmm_free_page(void *p) {
-    if (p == NULL) {
-        print_serial(PMM_DEBUG_SERIAL_PORT, "PMM Warning: Attempt to free NULL page.\n");
-        return;
-    }
-    uint64_t page_to_free = (uint64_t)p;
-    if ((page_to_free % PAGE_SIZE) != 0) {
-        print_serial(PMM_DEBUG_SERIAL_PORT, "PMM Warning: Attempt to free non-page-aligned address: 0x");
-        print_serial_hex(PMM_DEBUG_SERIAL_PORT, page_to_free);
-        print_serial(PMM_DEBUG_SERIAL_PORT, "\n");
+// Free a physical page
+void pmm_free_page(void *p_phys) {
+    uint64_t phys_addr = (uint64_t)p_phys;
+
+    if ((phys_addr % PAGE_SIZE) != 0) {
+        print_serial(SERIAL_COM1_BASE, "PMM Error: Attempt to free non-page-aligned address: 0x");
+        print_serial_hex(SERIAL_COM1_BASE, phys_addr);
+        print_serial(SERIAL_COM1_BASE, "\n");
+        // panic("PMM: Attempt to free non-page-aligned address.");
         return;
     }
 
-    if ((size_t)(pmm_info.stack_ptr - pmm_info.stack_base) >= pmm_info.capacity) {
-        print_serial(PMM_DEBUG_SERIAL_PORT, "PMM Error: Stack full on pmm_free_page! Double free or system unstable? Halting.\n");
-        for (;;) { asm volatile("cli; hlt"); } // Critical error
+    if (pmm_current_stack_head == NULL) {
+         // This should only happen if called before init_pmm completes first page setup.
+        panic("PMM: Free called but pmm_current_stack_head is NULL (likely too early)!");
+        return;
     }
-    *pmm_info.stack_ptr = page_to_free;
-    pmm_info.stack_ptr++;
-    pmm_info.free_pages++;
+
+    // Check if the page being freed is already part of the stack chain (excluding the current head if it's the first page)
+    // This is a basic check to prevent obvious corruption. A more robust check would trace the whole list.
+    if (phys_addr != pmm_first_stack_page_phys) { // The first stack page has special handling
+        struct pmm_stack_page *check_ptr = pmm_current_stack_head->next;
+        while(check_ptr) {
+            if (((uint64_t)check_ptr - hhdm_offset) == phys_addr) {
+                print_serial(SERIAL_COM1_BASE, "PMM Warning: Attempt to free a page already in use as a PMM stack page (P:0x");
+                print_serial_hex(SERIAL_COM1_BASE, phys_addr);
+                print_serial(SERIAL_COM1_BASE, "). Skipping free to prevent corruption.\n");
+                return;
+            }
+            check_ptr = check_ptr->next;
+        }
+    }
+
+
+    if (pmm_stack_top >= PMM_STACK_ENTRIES_PER_PAGE) { // Current stack page is full
+        // The page being freed (phys_addr) will become the new stack head.
+        if (phys_addr == pmm_first_stack_page_phys && pmm_current_stack_head == (struct pmm_stack_page *)(pmm_first_stack_page_phys + hhdm_offset)) {
+             // This case should ideally not be hit if pmm_first_stack_page_phys is never added to free list to begin with.
+             // If it is, and the first page is full, we try to make it its own new head - bad.
+            panic("PMM: Critical - Attempting to make the full first stack page its own new head via freeing itself!");
+            return;
+        }
+        // Also, if phys_addr is *any* active stack page, this is problematic.
+        // The check above handles pmm_current_stack_head->next and further, but not pmm_current_stack_head itself if it's not the first page.
+
+        struct pmm_stack_page *new_stack_page_virt = (struct pmm_stack_page *)(phys_addr + hhdm_offset);
+
+        // Log before modifying list structure
+        // print_serial(SERIAL_COM1_BASE, "PMM: Current stack page full. Using freed page P:0x");
+        // print_serial_hex(SERIAL_COM1_BASE, phys_addr);
+        // print_serial(SERIAL_COM1_BASE, " as new stack head at V:0x");
+        // print_serial_hex(SERIAL_COM1_BASE, (uint64_t)new_stack_page_virt);
+        // print_serial(SERIAL_COM1_BASE, "\n");
+
+        clear_page_pmm(new_stack_page_virt);
+        new_stack_page_virt->next = pmm_current_stack_head;
+        pmm_current_stack_head = new_stack_page_virt;
+        pmm_stack_top = 0; // New page is empty, ready for the first entry.
+        // The page phys_addr is now a stack page, so it doesn't increase total_free_pages yet.
+        // total_free_pages will be incremented when phys_addr is added to entries below.
+    }
+
+    // Push the physical address onto the current stack page's entries
+    // pmm_stack_top is the count of items, so next item goes at index pmm_stack_top
+    pmm_current_stack_head->entries[pmm_stack_top++] = phys_addr;
+    total_free_pages++;
+
+    // DBG_PMM(phys_addr); // Debug freed page
+    // DBG_PMM(total_free_pages); // Debug free pages count
 }
 
+// Get the number of free pages
 uint64_t pmm_get_free_page_count(void) {
-    return pmm_info.free_pages;
+    return total_free_pages;
+}
+
+// Returns the number of entries a single stack page can hold (excluding the 'next' pointer)
+uint64_t pmm_get_stack_entries_per_page(void) {
+    return PMM_STACK_ENTRIES_PER_PAGE;
+}
+
+// Returns the current fill level (next free slot index) of the topmost stack page
+uint64_t pmm_get_current_stack_top_idx(void) {
+    return pmm_stack_top;
+}
+
+// Returns the physical address of the *first* PMM stack page used.
+uint64_t pmm_get_first_pmm_stack_phys_addr(void) {
+    return pmm_first_stack_page_phys;
+}
+
+// Helper to count how many stack pages are currently allocated (for debugging)
+uint64_t pmm_get_allocated_stack_page_count(void) {
+    uint64_t count = 0;
+    struct pmm_stack_page *current = pmm_current_stack_head;
+    while (current) {
+        count++;
+        current = current->next;
+    }
+    return count;
 }

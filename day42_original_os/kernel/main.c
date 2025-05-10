@@ -7,6 +7,23 @@
 #include "pmm.h"
 #include "io.h"
 #include "paging.h"
+#include "serial.h"
+
+// Forward declaration for panic from pmm.c (ideally in a common header)
+void panic(const char *message);
+
+// --- DBG Macro Definition ---
+static inline void dbg_u64(const char *s, uint64_t v) {
+    // Simple serial output, assuming SERIAL_COM1_BASE is available and init_serial was called
+    for (const char *p = s; *p; p++) outb(SERIAL_COM1_BASE, *p);
+    for (int i = 60; i >= 0; i -= 4) {
+        char c = "0123456789ABCDEF"[(v >> i) & 0xF];
+        outb(SERIAL_COM1_BASE, c);
+    }
+    outb(SERIAL_COM1_BASE, '\n');
+}
+#define DBG(x) dbg_u64(#x " = ", (uint64_t)(x))
+// --- End DBG Macro Definition ---
 
 static volatile LIMINE_BASE_REVISION(1); // Declare the base revision once globally
 
@@ -58,62 +75,6 @@ void init_serial(uint16_t port) {
 
     // Enable interrupts again (if desired, for now kept off)
     // outb(port + 1, 0x01); // Enable ERBFI (Received Data Available Interrupt)
-}
-
-int is_transmit_empty(uint16_t port) {
-   return inb(SERIAL_LINE_STATUS_PORT(port)) & 0x20; // Check if THR empty
-}
-
-void write_serial_char(uint16_t port, char a) {
-   while (is_transmit_empty(port) == 0); // Wait until THR is empty
-   outb(SERIAL_DATA_PORT(port), a);
-}
-
-void print_serial(uint16_t port, const char *s) {
-    for (int i = 0; s[i] != '\0'; i++) {
-        write_serial_char(port, s[i]);
-    }
-}
-
-// Helper to print unsigned 64-bit int to serial in hex
-void print_serial_hex(uint16_t port, uint64_t h) {
-    char buf[19]; // "0x" + 16 hex digits + null
-    char *s = &buf[18]; // Start from the end
-    *s = '\0';
-
-    if (h == 0) {
-        *--s = '0';
-    } else {
-        while (h > 0) {
-            uint8_t digit = h % 16;
-            if (digit < 10) {
-                *--s = '0' + digit;
-            } else {
-                *--s = 'A' + (digit - 10);
-            }
-            h /= 16;
-        }
-    }
-    *--s = 'x';
-    *--s = '0';
-    print_serial(port, s);
-}
-
-// Helper to print unsigned 64-bit int to serial in decimal
-void print_serial_utoa(uint16_t port, uint64_t u) {
-    char buf[21]; // buf should be at least 21 bytes for uint64_t
-    char *s = &buf[20]; // Start from the end
-    *s = '\0';
-
-    if (u == 0) {
-        *--s = '0';
-    } else {
-        while (u > 0) {
-            *--s = (u % 10) + '0';
-            u /= 10;
-        }
-    }
-    print_serial(port, s);
 }
 
 // Framebuffer request
@@ -256,6 +217,30 @@ void _start(void) {
     init_serial(SERIAL_COM1_BASE);
     print_serial(SERIAL_COM1_BASE, "Serial port initialized!\n");
 
+    // DBG log for framebuffer address from Limine
+    if (framebuffer_request.response != NULL &&
+        framebuffer_request.response->framebuffer_count > 0 &&
+        framebuffer_request.response->framebuffers[0] != NULL) {
+        DBG(framebuffer_request.response->framebuffers[0]->address);
+    } else {
+        print_serial(SERIAL_COM1_BASE, "DBG: Framebuffer not available early.\n");
+    }
+
+    // Log framebuffer physical address EARLY
+    if (LIMINE_BASE_REVISION_SUPPORTED == 0) { // Check if Limine base revision is supported
+        print_serial(SERIAL_COM1_BASE, "Limine base revision not supported!\n");
+    } else if (framebuffer_request.response == NULL) {
+        print_serial(SERIAL_COM1_BASE, "EARLY CHECK: framebuffer_request.response IS NULL\n");
+    } else if (framebuffer_request.response->framebuffer_count < 1) {
+        print_serial(SERIAL_COM1_BASE, "EARLY CHECK: framebuffer_request.response->framebuffer_count IS < 1\n");
+    } else if (framebuffer_request.response->framebuffers[0] == NULL) {
+        print_serial(SERIAL_COM1_BASE, "EARLY CHECK: framebuffer_request.response->framebuffers[0] IS NULL\n");
+    } else {
+        print_serial(SERIAL_COM1_BASE, "EARLY CHECK: FB phys from Limine: 0x");
+        print_serial_hex(SERIAL_COM1_BASE, (uint64_t)framebuffer_request.response->framebuffers[0]->address);
+        print_serial(SERIAL_COM1_BASE, "\n");
+    }
+
     // Get HHDM offset
     if (hhdm_request.response == NULL) {
         print_serial(SERIAL_COM1_BASE, "ERROR: No HHDM response from Limine! Halting.\n");
@@ -273,36 +258,27 @@ void _start(void) {
     // Initialize IDT
     init_idt();
     print_serial(SERIAL_COM1_BASE, "IDT initialized and loaded.\n");
-
-    // Enable interrupts (VERY IMPORTANT AFTER IDT IS LOADED)
     asm volatile ("sti");
     print_serial(SERIAL_COM1_BASE, "Interrupts enabled (STI).\n");
 
     print_serial(SERIAL_COM1_BASE, "Attempting to retrieve memory map...\n");
     if (memmap_request.response == NULL) {
-        print_serial(SERIAL_COM1_BASE, "ERROR: No memory map response from Limine! Halting.\n");
-        // It's critical to halt if we don't get a memory map.
-        for (;;) { asm volatile("cli; hlt"); }
+        print_serial(SERIAL_COM1_BASE, "ERROR: Limine memory map request failed or response is NULL. Halting.\n");
+        for (;;) { asm volatile ("cli; hlt"); }
     }
+    struct limine_memmap_response *memmap_resp = memmap_request.response;
     print_serial(SERIAL_COM1_BASE, "Memory map response received.\n");
     print_serial(SERIAL_COM1_BASE, "Number of memory map entries: ");
-    print_serial_utoa(SERIAL_COM1_BASE, memmap_request.response->entry_count);
+    print_serial_utoa(SERIAL_COM1_BASE, memmap_resp->entry_count);
     print_serial(SERIAL_COM1_BASE, "\n");
 
-    for (uint64_t i = 0; i < memmap_request.response->entry_count; i++) {
-        struct limine_memmap_entry *entry = memmap_request.response->entries[i];
-
-        print_serial(SERIAL_COM1_BASE, "Entry ");
-        print_serial_utoa(SERIAL_COM1_BASE, i);
-        print_serial(SERIAL_COM1_BASE, ": Base: ");
-        print_serial_hex(SERIAL_COM1_BASE, entry->base);
-        print_serial(SERIAL_COM1_BASE, ", Length: ");
-        print_serial_hex(SERIAL_COM1_BASE, entry->length);
-        print_serial(SERIAL_COM1_BASE, " (");
-        print_serial_utoa(SERIAL_COM1_BASE, entry->length); // Also print length in decimal for readability
-        print_serial(SERIAL_COM1_BASE, " bytes)");
-        print_serial(SERIAL_COM1_BASE, ", Type: ");
-
+    // Print memory map entries for debugging
+    for (uint64_t i = 0; i < memmap_resp->entry_count; i++) {
+        struct limine_memmap_entry *entry = memmap_resp->entries[i];
+        print_serial(SERIAL_COM1_BASE, "Entry "); print_serial_utoa(SERIAL_COM1_BASE, i);
+        print_serial(SERIAL_COM1_BASE, ": Base: 0x"); print_serial_hex(SERIAL_COM1_BASE, entry->base);
+        print_serial(SERIAL_COM1_BASE, ", Length: 0x"); print_serial_hex(SERIAL_COM1_BASE, entry->length);
+        print_serial(SERIAL_COM1_BASE, " ("); print_serial_utoa(SERIAL_COM1_BASE, entry->length); print_serial(SERIAL_COM1_BASE, " bytes), Type: ");
         switch (entry->type) {
             case LIMINE_MEMMAP_USABLE: print_serial(SERIAL_COM1_BASE, "USABLE"); break;
             case LIMINE_MEMMAP_RESERVED: print_serial(SERIAL_COM1_BASE, "RESERVED"); break;
@@ -312,148 +288,76 @@ void _start(void) {
             case LIMINE_MEMMAP_BOOTLOADER_RECLAIMABLE: print_serial(SERIAL_COM1_BASE, "BOOTLOADER RECLAIMABLE"); break;
             case LIMINE_MEMMAP_KERNEL_AND_MODULES: print_serial(SERIAL_COM1_BASE, "KERNEL AND MODULES"); break;
             case LIMINE_MEMMAP_FRAMEBUFFER: print_serial(SERIAL_COM1_BASE, "FRAMEBUFFER"); break;
-            default:
-                print_serial(SERIAL_COM1_BASE, "UNKNOWN (");
-                print_serial_utoa(SERIAL_COM1_BASE, entry->type);
-                print_serial(SERIAL_COM1_BASE, ")");
-                break;
+            default: print_serial(SERIAL_COM1_BASE, "UNKNOWN"); break;
         }
         print_serial(SERIAL_COM1_BASE, "\n");
     }
     print_serial(SERIAL_COM1_BASE, "Finished printing memory map.\n");
 
-    // Initialize Physical Memory Manager
+    if (framebuffer_request.response == NULL || framebuffer_request.response->framebuffer_count < 1) {
+        print_serial(SERIAL_COM1_BASE, "ERROR: Limine framebuffer request failed or no framebuffers. Halting.\n");
+        for (;;) { asm volatile ("cli; hlt"); }
+    }
+    struct limine_framebuffer_response *fb_resp = framebuffer_request.response;
+
+    // Initialize Physical Memory Manager (PMM)
+    // This must be called BEFORE paging is initialized if paging itself needs to allocate pages from PMM.
     print_serial(SERIAL_COM1_BASE, "Initializing PMM...\n");
-    init_pmm(memmap_request.response);
+    init_pmm(memmap_resp);
     print_serial(SERIAL_COM1_BASE, "PMM initialized. Free pages: ");
     print_serial_utoa(SERIAL_COM1_BASE, pmm_get_free_page_count());
     print_serial(SERIAL_COM1_BASE, "\n");
 
-    // Initialize Paging
-    init_paging();
+    // Allocate pages for the new kernel stack
+#define KERNEL_STACK_PAGES 4 // Allocate 16KB for the stack
+    uint64_t kernel_stack_phys_bottom = 0;
+    uint64_t kernel_stack_phys_top_page_start_addr = 0; // Physical address of the start of the highest page of the stack
 
-    // PMM Test Allocations & Deallocations
-    print_serial(SERIAL_COM1_BASE, "--- PMM Allocation Test ---\n");
-    void *p1 = pmm_alloc_page();
-    print_serial(SERIAL_COM1_BASE, "Allocated p1: 0x"); print_serial_hex(SERIAL_COM1_BASE, (uint64_t)p1); print_serial(SERIAL_COM1_BASE, "\n");
-    print_serial(SERIAL_COM1_BASE, "Free pages after p1: "); print_serial_utoa(SERIAL_COM1_BASE, pmm_get_free_page_count()); print_serial(SERIAL_COM1_BASE, "\n");
+    print_serial(SERIAL_COM1_BASE, "Allocating kernel stack (");
+    print_serial_utoa(SERIAL_COM1_BASE, KERNEL_STACK_PAGES);
+    print_serial(SERIAL_COM1_BASE, " pages)...\n");
 
-    void *p2 = pmm_alloc_page();
-    print_serial(SERIAL_COM1_BASE, "Allocated p2: 0x"); print_serial_hex(SERIAL_COM1_BASE, (uint64_t)p2); print_serial(SERIAL_COM1_BASE, "\n");
-    print_serial(SERIAL_COM1_BASE, "Free pages after p2: "); print_serial_utoa(SERIAL_COM1_BASE, pmm_get_free_page_count()); print_serial(SERIAL_COM1_BASE, "\n");
-
-    void *p3 = pmm_alloc_page();
-    print_serial(SERIAL_COM1_BASE, "Allocated p3: 0x"); print_serial_hex(SERIAL_COM1_BASE, (uint64_t)p3); print_serial(SERIAL_COM1_BASE, "\n");
-    print_serial(SERIAL_COM1_BASE, "Free pages after p3: "); print_serial_utoa(SERIAL_COM1_BASE, pmm_get_free_page_count()); print_serial(SERIAL_COM1_BASE, "\n");
-
-    print_serial(SERIAL_COM1_BASE, "Freeing p2...\n");
-    pmm_free_page(p2);
-    print_serial(SERIAL_COM1_BASE, "Free pages after freeing p2: "); print_serial_utoa(SERIAL_COM1_BASE, pmm_get_free_page_count()); print_serial(SERIAL_COM1_BASE, "\n");
-
-    print_serial(SERIAL_COM1_BASE, "Freeing p1...\n");
-    pmm_free_page(p1);
-    print_serial(SERIAL_COM1_BASE, "Free pages after freeing p1: "); print_serial_utoa(SERIAL_COM1_BASE, pmm_get_free_page_count()); print_serial(SERIAL_COM1_BASE, "\n");
-
-    void *p4 = pmm_alloc_page(); // Should get p1 or p2's address if stack works LIFO
-    print_serial(SERIAL_COM1_BASE, "Allocated p4: 0x"); print_serial_hex(SERIAL_COM1_BASE, (uint64_t)p4); print_serial(SERIAL_COM1_BASE, "\n");
-    print_serial(SERIAL_COM1_BASE, "Free pages after p4: "); print_serial_utoa(SERIAL_COM1_BASE, pmm_get_free_page_count()); print_serial(SERIAL_COM1_BASE, "\n");
-    print_serial(SERIAL_COM1_BASE, "--- PMM Allocation Test Done ---\n");
-
-    // Ensure we have a framebuffer.
-    if (framebuffer_request.response == NULL ||
-        framebuffer_request.response->framebuffer_count < 1) {
-        print_serial(SERIAL_COM1_BASE, "ERROR: No framebuffer found! Halting.\n");
-        for (;;) { asm volatile ("hlt"); }
+    for (int i = 0; i < KERNEL_STACK_PAGES; i++) {
+        void* page = pmm_alloc_page();
+        if (!page) {
+            panic("Failed to allocate page for kernel stack");
+        }
+        if (i == 0) {
+            kernel_stack_phys_bottom = (uint64_t)page;
+        }
+        if (i == KERNEL_STACK_PAGES - 1) { // This is the highest address page
+            kernel_stack_phys_top_page_start_addr = (uint64_t)page;
+        }
+        // For simplicity, we are assuming PMM gives contiguous pages if we were to build a larger single stack segment.
+        // However, for our purpose, as long as init_paging maps all these KERNEL_STACK_PAGES pages contiguously in virtual memory (or just ensures they are all mapped),
+        // and we set RSP to the top of the highest mapped physical page, it should work.
+        // For this iteration, we will pass the bottom address and total size, assuming init_paging will map this entire range.
     }
-    print_serial(SERIAL_COM1_BASE, "Framebuffer request successful.\n");
 
-    // Get the first framebuffer.
-    struct limine_framebuffer *framebuffer = framebuffer_request.response->framebuffers[0];
-    print_serial(SERIAL_COM1_BASE, "Got framebuffer pointer.\n");
+    uint64_t kernel_stack_size = KERNEL_STACK_PAGES * PAGE_SIZE;
+    print_serial(SERIAL_COM1_BASE, "Kernel stack allocated. Bottom P:0x");
+    print_serial_hex(SERIAL_COM1_BASE, kernel_stack_phys_bottom);
+    print_serial(SERIAL_COM1_BASE, ", Top Page Start P:0x");
+    print_serial_hex(SERIAL_COM1_BASE, kernel_stack_phys_top_page_start_addr);
+    print_serial(SERIAL_COM1_BASE, ", Total Size: 0x");
+    print_serial_hex(SERIAL_COM1_BASE, kernel_stack_size);
+    print_serial(SERIAL_COM1_BASE, "\n");
 
-    // Clear screen to the global background color
-    clear_screen(framebuffer, bg_color); // bg_color を使用
-    cursor_x = 0; // Reset cursor position
-    cursor_y = 0;
+    // Calculate the virtual top of the new kernel stack for RSP
+    // RSP should point to the very top (highest address) of the stack space.
+    // kernel_stack_phys_top_page_start_addr is the start of the highest page.
+    // So, top of stack is (start of highest page + PAGE_SIZE).
+    uint64_t new_rsp_virt_top = (kernel_stack_phys_top_page_start_addr + PAGE_SIZE) + hhdm_offset;
 
-    // Set text color for the first message
-    text_color = 0xFFFFFF; // White
-    put_string(framebuffer, "Hello, Limine Kernel with 8x8 Font!\n");
+    print_serial(SERIAL_COM1_BASE, "Calculated new RSP virtual top: 0x");
+    print_serial_hex(SERIAL_COM1_BASE, new_rsp_virt_top);
+    print_serial(SERIAL_COM1_BASE, "\n");
 
-    text_color = 0xFFFF00; // Yellow for next message
-    put_string(framebuffer, "Framebuffer found!\n");
+    // Initialize Paging System. This function will not return.
+    print_serial(SERIAL_COM1_BASE, "Calling init_paging (will not return)...\n");
+    init_paging(fb_resp, memmap_resp, kernel_stack_phys_bottom, kernel_stack_size, new_rsp_virt_top);
 
-    // Restore default text color for general info
-    text_color = 0xFFFFFF; // White
-
-    put_string(framebuffer, "Screen Resolution: ");
-    char num_buf[32];
-    uint64_t val = framebuffer->width;
-    int k = 0;
-    if (val == 0) num_buf[k++] = '0';
-    else {
-        char temp_buf[32];
-        int tk = 0;
-        while(val > 0) { temp_buf[tk++] = (val % 10) + '0'; val /= 10; }
-        while(tk > 0) num_buf[k++] = temp_buf[--tk];
-    }
-    num_buf[k] = '\0';
-    put_string(framebuffer, num_buf);
-
-    put_string(framebuffer, "x");
-
-    val = framebuffer->height;
-    k = 0;
-    if (val == 0) num_buf[k++] = '0';
-    else {
-        char temp_buf[32];
-        int tk = 0;
-        while(val > 0) { temp_buf[tk++] = (val % 10) + '0'; val /= 10; }
-        while(tk > 0) num_buf[k++] = temp_buf[--tk];
-    }
-    num_buf[k] = '\0';
-    put_string(framebuffer, num_buf);
-    put_string(framebuffer, "\n");
-
-    put_string(framebuffer, "Framebuffer address: ");
-    put_hex(framebuffer, (uint64_t)framebuffer->address);
-    put_string(framebuffer, "\n");
-    put_string(framebuffer, "Pitch: ");
-
-    val = framebuffer->pitch;
-    k = 0;
-    if (val == 0) num_buf[k++] = '0';
-    else {
-        char temp_buf[32];
-        int tk = 0;
-        while(val > 0) { temp_buf[tk++] = (val % 10) + '0'; val /= 10; }
-        while(tk > 0) num_buf[k++] = temp_buf[--tk];
-    }
-    num_buf[k] = '\0';
-    put_string(framebuffer, num_buf);
-
-    put_string(framebuffer, "\nAll lowercase and uppercase letters:\n");
-    for (char c_loop = 'a'; c_loop <= 'z'; c_loop++) { // Renamed c to c_loop to avoid conflict with previous c
-        char temp_str[2] = {c_loop, '\0'};
-        put_string(framebuffer, temp_str);
-    }
-    put_string(framebuffer, "\n");
-    for (char c_loop = 'A'; c_loop <= 'Z'; c_loop++) { // Renamed c to c_loop
-        char temp_str[2] = {c_loop, '\0'};
-        put_string(framebuffer, temp_str);
-    }
-    put_string(framebuffer, "\nNumbers and Symbols:\n");
-    for (char c_loop = '0'; c_loop <= '9'; c_loop++) { // Renamed c to c_loop
-        char temp_str[2] = {c_loop, '\0'};
-        put_string(framebuffer, temp_str);
-    }
-    char symbols[] = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"; // Escaped characters
-    for (size_t idx = 0; symbols[idx] != '\0'; ++idx) { // Renamed i to idx
-        char temp_str[2] = {symbols[idx], '\0'};
-        put_string(framebuffer, temp_str);
-    }
-    put_string(framebuffer, "\nEnd of test characters.\n");
-
-    // Halt the system.
-    for (;;) { __asm__ volatile ("hlt"); }
+    // Control should not reach here because init_paging is noreturn.
+    print_serial(SERIAL_COM1_BASE, "ERROR: init_paging returned! This should not happen.\n");
+    for (;;) { asm volatile ("cli; hlt"); }
 }

@@ -22,11 +22,17 @@ struct idt_ptr {
 
 // Structure to hold CPU registers, passed to interrupt handlers
 struct registers {
+    /* 汎用レジスタを push する順番と同じにする */
     uint64_t r15, r14, r13, r12, r11, r10, r9, r8;
-    uint64_t rbp, rdi, rsi, rdx, rcx, rbx, rax; // Pushed by common stub
-    uint64_t int_no, err_code; // Pushed by specific ISR stub (err_code might not always be present)
-    uint64_t rip, cs, rflags, userrsp, ss; // Pushed by CPU automatically on interrupt
-};
+    uint64_t rbp, rdi, rsi, rdx, rcx, rbx, rax;
+
+    /* ≪ここからはスタブが積む≫ */
+    uint64_t int_no;   // ← 必ず push する
+    uint64_t err_code; // ← CPU が push しない割込みは 0 をダミーで push
+
+    /* CPU 自動 push */
+    uint64_t rip, cs, rflags, userrsp, ss;
+} __attribute__((packed));
 
 // Type for an interrupt handler C function
 typedef void (*interrupt_handler_t)(struct registers* regs);
@@ -35,12 +41,11 @@ typedef void (*interrupt_handler_t)(struct registers* regs);
 void init_idt();
 
 // Function to register an interrupt handler
-void register_interrupt_handler(uint8_t n, interrupt_handler_t handler, uint8_t type);
+// void register_interrupt_handler(uint8_t n, interrupt_handler_t handler, uint8_t type_attr); // Original, type_attr might be for the flags
+void set_idt_entry(uint8_t n, uint64_t handler_address, uint16_t segment_selector, uint8_t flags); // More common way
 
 // External ISR (Interrupt Service Routine) stubs
-// These will be defined in an assembly file (e.g., isr.s or idt_stubs.s)
-// We need one for each interrupt we want to handle.
-// Example for first 32 exceptions:
+// These will be defined in an assembly file (e.g., isr_stubs.s)
 extern void isr0();  // Divide by zero error
 extern void isr1();  // Debug
 extern void isr2();  // NMI
@@ -56,11 +61,14 @@ extern void isr11(); // Segment not present
 extern void isr12(); // Stack segment fault
 extern void isr13(); // General protection fault
 extern void isr14(); // Page fault
-// extern void isr15(); // Reserved
+// extern void isr15(); // Reserved - CPU does not generate this, can be used for spurious int.
 extern void isr16(); // x87 floating point exception
 extern void isr17(); // Alignment check
 extern void isr18(); // Machine check
 extern void isr19(); // SIMD floating point exception
-// ... and so on for other ISRs if needed.
+// Add more ISR stubs as needed up to 255
+
+// No need for separate page_fault_handler_stub extern if isr14() is used.
+// No need for struct idt_entry_options in the header if it's a helper for idt.c
 
 #endif // IDT_H
