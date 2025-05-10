@@ -5,6 +5,7 @@
 #include "gdt.h"
 #include "idt.h"
 #include "pmm.h"
+#include "io.h"
 
 static volatile LIMINE_BASE_REVISION(1); // Declare the base revision once globally
 
@@ -19,17 +20,6 @@ void *memcpy(void *dest, const void *src, size_t n) {
 }
 
 // --- I/O Port Helper Functions ---
-static inline void outb(uint16_t port, uint8_t val) {
-    asm volatile ( "outb %0, %1" : : "a"(val), "Nd"(port) );
-}
-
-static inline uint8_t inb(uint16_t port) {
-    uint8_t ret;
-    asm volatile ( "inb %1, %0"
-                   : "=a"(ret)
-                   : "Nd"(port) );
-    return ret;
-}
 
 // --- Serial Port Configuration ---
 #define SERIAL_COM1_BASE 0x3F8   // COM1 base port
