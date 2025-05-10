@@ -23,7 +23,6 @@ void *memcpy(void *dest, const void *src, size_t n) {
 // --- I/O Port Helper Functions ---
 
 // --- Serial Port Configuration ---
-#define SERIAL_COM1_BASE 0x3F8   // COM1 base port
 
 #define SERIAL_DATA_PORT(base)          (base)
 #define SERIAL_FIFO_COMMAND_PORT(base)  (base + 2)
@@ -137,7 +136,7 @@ struct limine_hhdm_request hhdm_request __attribute__((section(".requests"))) = 
 };
 
 // Global variable to store HHDM offset
-static uint64_t hhdm_offset = 0;
+uint64_t hhdm_offset = 0;
 
 // Global variables to keep track of cursor position and text colors
 static int cursor_x = 0;

@@ -1,12 +1,12 @@
-#ifndef PMM_H
-#define PMM_H
+#ifndef KERNEL_PMM_H
+#define KERNEL_PMM_H
 
 #include <stdint.h>
 #include <stddef.h> // For size_t
 #include "limine.h"  // For struct limine_memmap_response
+#include "paging.h"  // For PAGE_SIZE
 
-#define PAGE_SIZE 4096
-#define PAGE_SHIFT 12 // 2^12 = 4096
+#define PAGE_SHIFT 12 // log2(PAGE_SIZE), assuming PAGE_SIZE is 4096
 
 // Structure to hold PMM state and the free list stack
 // The stack itself will be dynamically placed in memory by init_pmm.

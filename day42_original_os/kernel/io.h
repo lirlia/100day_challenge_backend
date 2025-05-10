@@ -3,6 +3,9 @@
 
 #include <stdint.h>
 
+// Serial Port Base Address
+#define SERIAL_COM1_BASE 0x3F8
+
 static inline void outb(uint16_t port, uint8_t value) {
     asm volatile ("outb %0, %1" : : "a"(value), "Nd"(port));
 }

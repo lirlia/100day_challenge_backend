@@ -5,6 +5,8 @@ SECTIONS
 {
     . = 0xffffffff80000000; /* Base address for higher half kernel */
 
+    _kernel_start = .;
+
     .text : ALIGN(4K)
     {
         *(.text .text.*)
@@ -31,6 +33,8 @@ SECTIONS
         *(.bss .bss.*)
         *(COMMON)
     }
+
+    _kernel_end = .;
 
     /DISCARD/ :
     {
