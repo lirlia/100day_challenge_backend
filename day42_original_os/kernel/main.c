@@ -3,6 +3,7 @@
 #include <stddef.h>
 #include "font8x8_basic.h"
 #include "gdt.h"
+#include "idt.h"
 
 // 自前の memcpy 関数
 void *memcpy(void *dest, const void *src, size_t n) {
@@ -210,6 +211,24 @@ void _start(void) {
     // Initialize GDT
     init_gdt();
     print_serial(SERIAL_COM1_BASE, "GDT initialized and loaded.\n");
+
+    // Initialize IDT
+    init_idt();
+    print_serial(SERIAL_COM1_BASE, "IDT initialized and loaded.\n");
+
+    // Enable interrupts (VERY IMPORTANT AFTER IDT IS LOADED)
+    asm volatile ("sti");
+    print_serial(SERIAL_COM1_BASE, "Interrupts enabled (STI).\n");
+
+    // Add these lines to trigger a divide-by-zero exception
+    print_serial(SERIAL_COM1_BASE, "Attempting to cause a divide by zero exception...\n");
+    int x = 5;
+    int y = 0;
+    // The following line will cause a divide-by-zero exception (interrupt 0)
+    // volatile to prevent compiler optimization from removing it.
+    volatile int z = x / y;
+    // This line should not be reached if the handler works correctly and halts.
+    print_serial(SERIAL_COM1_BASE, "This message should NOT appear if exception was handled.\n");
 
     // Ensure we have a framebuffer.
     if (framebuffer_request.response == NULL ||

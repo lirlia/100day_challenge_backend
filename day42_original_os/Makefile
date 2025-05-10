@@ -3,6 +3,7 @@
 # --- Toolchain --- (Adjust to your environment)
 CC_KERNEL  := clang
 LD_KERNEL  := clang # Use clang as the linker driver
+AS_KERNEL  := clang # Use clang as the assembler driver as well for .s files
 OBJCOPY    := /opt/homebrew/opt/llvm/bin/llvm-objcopy # Full path to llvm-objcopy
 
 # --- Target --- (x86_64)
@@ -19,13 +20,21 @@ LIMINE_BIOS_CD_BIN := $(LIMINE_DIR)/limine-bios-cd.bin
 LIMINE_UEFI_CD_BIN := $(LIMINE_DIR)/limine-uefi-cd.bin
 
 # --- Kernel ---
-KERNEL_C_SRCS  := $(SRC_DIR_KERNEL)/main.c $(SRC_DIR_KERNEL)/gdt.c # Add gdt.c
+KERNEL_C_SRCS  := $(SRC_DIR_KERNEL)/main.c $(SRC_DIR_KERNEL)/gdt.c $(SRC_DIR_KERNEL)/idt.c # Add idt.c
+KERNEL_S_SRCS  := $(SRC_DIR_KERNEL)/isr_stubs.s # Add assembly source
 KERNEL_HEADERS := $(wildcard $(SRC_DIR_KERNEL)/*.h)
-KERNEL_OBJS    := $(patsubst $(SRC_DIR_KERNEL)/%.c,$(BUILD_DIR)/%.o,$(KERNEL_C_SRCS))
+
+KERNEL_C_OBJS    := $(patsubst $(SRC_DIR_KERNEL)/%.c,$(BUILD_DIR)/%.o,$(KERNEL_C_SRCS))
+KERNEL_S_OBJS    := $(patsubst $(SRC_DIR_KERNEL)/%.s,$(BUILD_DIR)/%.o,$(KERNEL_S_SRCS))
+KERNEL_OBJS      := $(KERNEL_C_OBJS) $(KERNEL_S_OBJS)
+
 KERNEL_ELF     := $(BUILD_DIR)/kernel.elf
 LINKER_SCRIPT  := $(SCRIPTS_DIR)/linker.ld
 
 CFLAGS_KERNEL  := -target $(TARGET_KERNEL) -ffreestanding -nostdlib -Wall -Wextra -g -I$(SRC_DIR_KERNEL) -mno-red-zone -fPIE
+# ASFLAGS might be needed if we use a separate assembler like nasm or yasm
+# For clang, it should infer from .s extension or we can use -x assembler
+ASFLAGS_KERNEL := -target $(TARGET_KERNEL) -c # Basic flags for assembling with clang
 LDFLAGS_KERNEL := -T $(LINKER_SCRIPT) --target=$(TARGET_KERNEL) -fuse-ld=lld -nostdlib -static -pie -z max-page-size=0x1000 -Wl,-Map=$(BUILD_DIR)/kernel.map
 
 # --- Image --- (Limine setup)
@@ -59,11 +68,16 @@ $(LIMINE_DEPLOY_TOOL):
 	$(MAKE) -C $(LIMINE_DIR)
 
 # Rule to compile kernel C source files to object files
-$(BUILD_DIR)/%.o: $(SRC_DIR_KERNEL)/%.c $(KERNEL_HEADERS) $(LINKER_SCRIPT) # Added LINKER_SCRIPT dependency for .requests section awareness if any C file uses it.
+$(BUILD_DIR)/%.o: $(SRC_DIR_KERNEL)/%.c $(KERNEL_HEADERS)
 	@mkdir -p $(BUILD_DIR)
 	$(CC_KERNEL) $(CFLAGS_KERNEL) -c $< -o $@
 
-$(KERNEL_ELF): $(KERNEL_OBJS)
+# Rule to assemble kernel S (assembly) source files to object files
+$(BUILD_DIR)/%.o: $(SRC_DIR_KERNEL)/%.s
+	@mkdir -p $(BUILD_DIR)
+	$(AS_KERNEL) $(ASFLAGS_KERNEL) $< -o $@
+
+$(KERNEL_ELF): $(KERNEL_OBJS) $(LINKER_SCRIPT) # Added LINKER_SCRIPT dependency
 	$(LD_KERNEL) $(LDFLAGS_KERNEL) $(KERNEL_OBJS) -o $@
 
 $(OS_ISO): $(KERNEL_ELF) $(LIMINE_CFG_SRC) $(LIMINE_BIOS_CD_BIN) $(LIMINE_UEFI_CD_BIN) $(LIMINE_BOOTLOADER_BIOS_SYS) $(LIMINE_BOOTLOADER_UEFI_EFI) $(LIMINE_DEPLOY_TOOL)
@@ -109,7 +123,7 @@ run-uefi:
 	$(QEMU) $(QEMU_OPTS_COMMON) $(QEMU_OPTS_UEFI) -cdrom $(OS_ISO)
 
 clean:
-	rm -rf $(BUILD_DIR) $(OS_ISO) $(ESP_SOURCE_DIR) # Removed $(IMAGE_DIR)/*.cdr as it was too broad
+	rm -rf $(BUILD_DIR) $(OS_ISO) $(ESP_SOURCE_DIR)
 	rm -f qemu.log qemu_debug.log # Clean QEMU logs
 
 .PHONY: all clean run run-bios run-uefi
