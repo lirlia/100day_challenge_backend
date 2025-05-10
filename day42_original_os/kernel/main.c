@@ -13,6 +13,73 @@ void *memcpy(void *dest, const void *src, size_t n) {
     return dest;
 }
 
+// --- I/O Port Helper Functions ---
+static inline void outb(uint16_t port, uint8_t val) {
+    asm volatile ( "outb %0, %1" : : "a"(val), "Nd"(port) );
+}
+
+static inline uint8_t inb(uint16_t port) {
+    uint8_t ret;
+    asm volatile ( "inb %1, %0"
+                   : "=a"(ret)
+                   : "Nd"(port) );
+    return ret;
+}
+
+// --- Serial Port Configuration ---
+#define SERIAL_COM1_BASE 0x3F8   // COM1 base port
+
+#define SERIAL_DATA_PORT(base)          (base)
+#define SERIAL_FIFO_COMMAND_PORT(base)  (base + 2)
+#define SERIAL_LINE_COMMAND_PORT(base)  (base + 3)
+#define SERIAL_MODEM_COMMAND_PORT(base) (base + 4)
+#define SERIAL_LINE_STATUS_PORT(base)   (base + 5)
+
+// SERIAL_LINE_COMMAND_PORT bits
+#define SERIAL_LINE_ENABLE_DLAB         0x80 // Enable Divisor Latch Access Bit
+
+void init_serial(uint16_t port) {
+    // Disable interrupts
+    outb(port + 1, 0x00);
+
+    // Enable DLAB (set baud rate divisor)
+    outb(SERIAL_LINE_COMMAND_PORT(port), SERIAL_LINE_ENABLE_DLAB);
+
+    // Set divisor to 3 (lo byte) for 38400 baud (115200 / 3 = 38400)
+    outb(SERIAL_DATA_PORT(port), 0x03);
+    // Set divisor to 0 (hi byte)
+    outb(port + 1, 0x00);
+
+    // Disable DLAB and set line control parameters
+    // 8 bits, no parity, one stop bit (8N1)
+    outb(SERIAL_LINE_COMMAND_PORT(port), 0x03);
+
+    // Enable FIFO, clear them, with 14-byte threshold
+    outb(SERIAL_FIFO_COMMAND_PORT(port), 0xC7);
+
+    // Mark data terminal ready, request to send
+    // Out2, RTS, DTR
+    outb(SERIAL_MODEM_COMMAND_PORT(port), 0x0B);
+
+    // Enable interrupts again (if desired, for now kept off)
+    // outb(port + 1, 0x01); // Enable ERBFI (Received Data Available Interrupt)
+}
+
+int is_transmit_empty(uint16_t port) {
+   return inb(SERIAL_LINE_STATUS_PORT(port)) & 0x20; // Check if THR empty
+}
+
+void write_serial_char(uint16_t port, char a) {
+   while (is_transmit_empty(port) == 0); // Wait until THR is empty
+   outb(SERIAL_DATA_PORT(port), a);
+}
+
+void print_serial(uint16_t port, const char *s) {
+    for (int i = 0; s[i] != '\0'; i++) {
+        write_serial_char(port, s[i]);
+    }
+}
+
 // Framebuffer request
 // Place the framebuffer request in the .requests section.
 static volatile LIMINE_BASE_REVISION(1)
@@ -140,9 +207,13 @@ void _start(void) {
     // Ensure we have a framebuffer.
     if (framebuffer_request.response == NULL ||
         framebuffer_request.response->framebuffer_count < 1) {
-        // No framebuffer, halt.
-        for (;;) { __asm__ volatile ("hlt"); }
+        // No framebuffer, hang.
+        for (;;) { asm volatile ("hlt"); }
     }
+
+    // Initialize serial port COM1
+    init_serial(SERIAL_COM1_BASE);
+    print_serial(SERIAL_COM1_BASE, "Serial port initialized! Hello from COM1!\n");
 
     // Get the first framebuffer.
     struct limine_framebuffer *framebuffer = framebuffer_request.response->framebuffers[0];

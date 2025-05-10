@@ -38,6 +38,20 @@ LIMINE_BOOTLOADER_BIOS_SYS := $(LIMINE_DIR)/limine-bios.sys
 LIMINE_CFG_SRC             := $(IMAGE_DIR)/limine.conf
 LIMINE_DEPLOY_TOOL         := $(LIMINE_DIR)/limine
 
+# QEMU options
+# -no-reboot: Exit QEMU instead of rebooting on triple fault
+# -no-shutdown: Keep QEMU window open after guest shutdown (useful for seeing final messages)
+# -d int: Log interrupts to qemu.log (useful for debugging IRQs/exceptions)
+# -D qemu_debug.log: Log other QEMU debug info
+# -monitor stdio: Allow QEMU monitor commands on the console
+# -serial stdio: Redirect COM1 to stdio
+OVMF_CODE := image/OVMF_CODE.fd
+OVMF_VARS := image/OVMF_VARS.fd
+QEMU := qemu-system-x86_64
+QEMU_OPTS_COMMON := -no-reboot -no-shutdown -d int -D qemu_debug.log
+QEMU_OPTS_BIOS := -machine pc -m 256M -serial stdio
+QEMU_OPTS_UEFI := -machine q35 -cpu qemu64 -m 256M -drive if=pflash,format=raw,readonly=on,file=$(OVMF_CODE) -drive if=pflash,format=raw,file=$(OVMF_VARS) -serial stdio
+
 all: $(OS_ISO)
 
 $(LIMINE_DEPLOY_TOOL):
@@ -82,28 +96,14 @@ $(OS_ISO): $(KERNEL_ELF) $(LIMINE_CFG_SRC) $(LIMINE_BIOS_CD_BIN) $(LIMINE_UEFI_C
 
 	@echo "OS ISO with Limine created: $(OS_ISO)"
 
-# QEMU run command (BIOS test first)
-QEMU_OPTS_BIOS := -machine pc -cpu qemu64 -m 512M \
-                  -vga std \
-                  -cdrom $(OS_ISO) \
-                  -serial stdio -no-reboot -no-shutdown -d guest_errors,int
-
-# QEMU run command (UEFI test)
-QEMU_OPTS_UEFI := -machine q35 -cpu qemu64 -m 512M \
-                  -drive if=pflash,format=raw,unit=0,file=$(IMAGE_DIR)/OVMF_CODE.fd,readonly=on \
-                  -drive if=pflash,format=raw,unit=1,file=$(IMAGE_DIR)/OVMF_VARS.fd \
-                  -cdrom $(OS_ISO) \
-                  -serial stdio -no-reboot -no-shutdown -d guest_errors,int
-
+# Default run target
 run: run-bios
 
-run-bios: $(OS_ISO)
-	@echo "Running QEMU in BIOS mode..."
-	qemu-system-x86_64 $(QEMU_OPTS_BIOS)
+run-bios:
+	$(QEMU) $(QEMU_OPTS_COMMON) $(QEMU_OPTS_BIOS) -cdrom $(OS_ISO)
 
-run-uefi: $(OS_ISO)
-	@echo "Running QEMU in UEFI mode..."
-	qemu-system-x86_64 $(QEMU_OPTS_UEFI)
+run-uefi:
+	$(QEMU) $(QEMU_OPTS_COMMON) $(QEMU_OPTS_UEFI) -cdrom $(OS_ISO)
 
 clean:
 	rm -rf $(BUILD_DIR) $(OS_ISO) $(ESP_SOURCE_DIR) $(IMAGE_DIR)/*.cdr
