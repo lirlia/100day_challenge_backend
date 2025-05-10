@@ -17,9 +17,9 @@
 - [x] 構造体定義: `struct FrameBuffer`, `struct IDTR`, `struct InterruptFrame`
 
 ### Phase 3: 物理メモリ管理 & ページング開始
-- [ ] UEFI Memory Map の解析と利用
-- [ ] 物理メモリマネージャ (PMM) の実装 (ビットマップ方式など)
-- [ ] `alloc_page` / `free_page` 関数の実装
+- [x] UEFI Memory Map の解析と利用 (Limine経由で取得しPMMで使用)
+- [x] 物理メモリマネージャ (PMM) の実装 (スタック/フリーリスト方式)
+- [x] `alloc_page` / `free_page` 関数の実装
 - [ ] 4レベルページテーブルの動的生成
 - [ ] カーネルの Higher Half (例: `0xFFFF8000_00000000`) への再配置
 - [ ] CR3 レジスタ切り替えによる仮想メモリ有効化
