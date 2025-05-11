@@ -12,6 +12,8 @@
 // Forward declaration for panic from pmm.c (ideally in a common header)
 void panic(const char *message);
 
+#define KERNEL_STACK_PAGES 4 // Define number of pages for kernel stack
+
 // --- DBG Macro Definition ---
 static inline void dbg_u64(const char *s, uint64_t v) {
     // Simple serial output, assuming SERIAL_COM1_BASE is available and init_serial was called
@@ -211,6 +213,37 @@ void put_hex(struct limine_framebuffer *fb, uint64_t h) {
     put_string(fb, buf);
 }
 
+// Function to be called after paging is initialized and stack is switched.
+// This function will execute in the higher half, using the new page tables.
+void kernel_main_after_paging(struct limine_framebuffer *fb) {
+    // At this point, we are in high-half, on the new stack.
+    // Ensure fb pointer is valid (it should be, as it was mapped by init_paging)
+
+    if (fb == NULL || fb->address == NULL) {
+        print_serial(SERIAL_COM1_BASE, "kernel_main_after_paging: Framebuffer is NULL! Halting.\n");
+        for (;;) { asm volatile("cli; hlt"); }
+    }
+
+    // Re-initialize cursor for the new screen state if necessary, or use existing globals.
+    // For simplicity, let's assume existing globals (cursor_x, cursor_y, etc.) are fine.
+    // Or, reset them here.
+    cursor_x = 0;
+    cursor_y = 0;
+    struct limine_framebuffer *fb_to_pass = fb;
+    // text_color and bg_color should retain their values or be set here.
+
+    clear_screen(fb_to_pass, bg_color); // Clear screen with background color
+    put_string(fb_to_pass, "Hello, kernel from Higher Half!\n");
+    put_string(fb_to_pass, "Paging is active, and we are on the new stack.\n");
+
+    print_serial(SERIAL_COM1_BASE, "kernel_main_after_paging: Displayed message on framebuffer. Halting.\n");
+
+    // Halt the system after displaying the message
+    for (;;) {
+        asm volatile ("cli; hlt");
+    }
+}
+
 // Kernel entry point
 void _start(void) {
     // Initialize serial port COM1 first for early debugging
@@ -298,66 +331,90 @@ void _start(void) {
         print_serial(SERIAL_COM1_BASE, "ERROR: Limine framebuffer request failed or no framebuffers. Halting.\n");
         for (;;) { asm volatile ("cli; hlt"); }
     }
-    struct limine_framebuffer_response *fb_resp = framebuffer_request.response;
+    // struct limine_framebuffer_response *fb_resp = framebuffer_request.response; // Unused variable
 
     // Initialize Physical Memory Manager (PMM)
     // This must be called BEFORE paging is initialized if paging itself needs to allocate pages from PMM.
     print_serial(SERIAL_COM1_BASE, "Initializing PMM...\n");
-    init_pmm(memmap_resp);
+    init_pmm(memmap_resp, hhdm_offset);
     print_serial(SERIAL_COM1_BASE, "PMM initialized. Free pages: ");
     print_serial_utoa(SERIAL_COM1_BASE, pmm_get_free_page_count());
     print_serial(SERIAL_COM1_BASE, "\n");
 
     // Allocate pages for the new kernel stack
-#define KERNEL_STACK_PAGES 4 // Allocate 16KB for the stack
-    uint64_t kernel_stack_phys_bottom = 0;
-    uint64_t kernel_stack_phys_top_page_start_addr = 0; // Physical address of the start of the highest page of the stack
-
     print_serial(SERIAL_COM1_BASE, "Allocating kernel stack (");
     print_serial_utoa(SERIAL_COM1_BASE, KERNEL_STACK_PAGES);
     print_serial(SERIAL_COM1_BASE, " pages)...\n");
 
+    uint64_t stack_phys_bottom = 0;
+    uint64_t stack_size = KERNEL_STACK_PAGES * PAGE_SIZE;
+
     for (int i = 0; i < KERNEL_STACK_PAGES; i++) {
-        void* page = pmm_alloc_page();
-        if (!page) {
-            panic("Failed to allocate page for kernel stack");
+        uint64_t p = (uint64_t)pmm_alloc_page();
+        if (p == 0) {
+            panic("Failed to allocate page for kernel stack!");
         }
         if (i == 0) {
-            kernel_stack_phys_bottom = (uint64_t)page;
+            stack_phys_bottom = p;
         }
-        if (i == KERNEL_STACK_PAGES - 1) { // This is the highest address page
-            kernel_stack_phys_top_page_start_addr = (uint64_t)page;
-        }
-        // For simplicity, we are assuming PMM gives contiguous pages if we were to build a larger single stack segment.
-        // However, for our purpose, as long as init_paging maps all these KERNEL_STACK_PAGES pages contiguously in virtual memory (or just ensures they are all mapped),
-        // and we set RSP to the top of the highest mapped physical page, it should work.
-        // For this iteration, we will pass the bottom address and total size, assuming init_paging will map this entire range.
+        // If KERNEL_STACK_PAGES > 1, subsequent 'p' values are allocated but not directly used
+        // by the init_paging call if it only takes stack_phys_bottom and stack_size,
+        // *unless* paging.c is modified to take an array of pages.
+        // The user's paging.c patch for the stack loop is:
+        // for (off=0; off<size; off+=PAGE_SIZE) { phys = base + off; virt = phys + hhdm; map(virt, phys) }
+        // This implies 'base' must be the start of a PHYSICALLY CONTIGUOUS block.
     }
 
-    uint64_t kernel_stack_size = KERNEL_STACK_PAGES * PAGE_SIZE;
-    print_serial(SERIAL_COM1_BASE, "Kernel stack allocated. Bottom P:0x");
-    print_serial_hex(SERIAL_COM1_BASE, kernel_stack_phys_bottom);
-    print_serial(SERIAL_COM1_BASE, ", Top Page Start P:0x");
-    print_serial_hex(SERIAL_COM1_BASE, kernel_stack_phys_top_page_start_addr);
-    print_serial(SERIAL_COM1_BASE, ", Total Size: 0x");
-    print_serial_hex(SERIAL_COM1_BASE, kernel_stack_size);
+    if (stack_phys_bottom == 0) { // Should be caught by p == 0 check inside loop
+        panic("Kernel stack bottom not set after allocation loop!");
+    }
+
+    print_serial(SERIAL_COM1_BASE, "Kernel stack (conceptually) allocated. Bottom P:0x");
+    print_serial_hex(SERIAL_COM1_BASE, stack_phys_bottom);
+    print_serial(SERIAL_COM1_BASE, ", Size:0x");
+    print_serial_hex(SERIAL_COM1_BASE, stack_size);
     print_serial(SERIAL_COM1_BASE, "\n");
 
-    // Calculate the virtual top of the new kernel stack for RSP
-    // RSP should point to the very top (highest address) of the stack space.
-    // kernel_stack_phys_top_page_start_addr is the start of the highest page.
-    // So, top of stack is (start of highest page + PAGE_SIZE).
-    uint64_t new_rsp_virt_top = (kernel_stack_phys_top_page_start_addr + PAGE_SIZE) + hhdm_offset;
-
+    uint64_t new_rsp_virt_top = stack_phys_bottom + stack_size - 0x10 + hhdm_offset;
     print_serial(SERIAL_COM1_BASE, "Calculated new RSP virtual top: 0x");
     print_serial_hex(SERIAL_COM1_BASE, new_rsp_virt_top);
     print_serial(SERIAL_COM1_BASE, "\n");
 
-    // Initialize Paging System. This function will not return.
-    print_serial(SERIAL_COM1_BASE, "Calling init_paging (will not return)...\n");
-    init_paging(fb_resp, memmap_resp, kernel_stack_phys_bottom, kernel_stack_size, new_rsp_virt_top);
+    struct limine_framebuffer *fb_to_pass = NULL;
+    if (framebuffer_request.response != NULL && framebuffer_request.response->framebuffer_count > 0) {
+        fb_to_pass = framebuffer_request.response->framebuffers[0];
+         if (fb_to_pass != NULL) {
+            print_serial(SERIAL_COM1_BASE, "Framebuffer pointer to pass to init_paging: 0x");
+            print_serial_hex(SERIAL_COM1_BASE, (uint64_t)fb_to_pass);
+            print_serial(SERIAL_COM1_BASE, "\n");
+            if (fb_to_pass->address != NULL) {
+                 print_serial(SERIAL_COM1_BASE, "fb_to_pass->address: 0x");
+                 print_serial_hex(SERIAL_COM1_BASE, (uint64_t)fb_to_pass->address);
+                 print_serial(SERIAL_COM1_BASE, "\n");
+            } else {
+                print_serial(SERIAL_COM1_BASE, "fb_to_pass->address is NULL!\n");
+            }
+        } else {
+             print_serial(SERIAL_COM1_BASE, "fb_to_pass is NULL (framebuffers[0] was NULL)\n");
+        }
+    } else {
+        print_serial(SERIAL_COM1_BASE, "Framebuffer response or count invalid, cannot pass fb to init_paging.\n");
+        // Potentially panic here if fb is critical for kernel_main_after_paging
+    }
 
-    // Control should not reach here because init_paging is noreturn.
-    print_serial(SERIAL_COM1_BASE, "ERROR: init_paging returned! This should not happen.\n");
-    for (;;) { asm volatile ("cli; hlt"); }
+    print_serial(SERIAL_COM1_BASE, "Calling init_paging (will not return)...\n");
+    init_paging(
+        framebuffer_request.response, // Pass the whole response struct
+        memmap_request.response,
+        stack_phys_bottom,
+        stack_size,
+        new_rsp_virt_top,
+        kernel_main_after_paging,
+        fb_to_pass // Pass the specific framebuffer pointer
+    );
+
+    // Should not be reached
+    for (;;) {
+        asm volatile ("cli; hlt");
+    }
 }

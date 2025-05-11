@@ -21,7 +21,7 @@ LIMINE_UEFI_CD_BIN := $(LIMINE_DIR)/limine-uefi-cd.bin
 
 # --- Kernel ---
 KERNEL_C_SRCS  := $(SRC_DIR_KERNEL)/main.c $(SRC_DIR_KERNEL)/gdt.c $(SRC_DIR_KERNEL)/idt.c $(SRC_DIR_KERNEL)/pmm.c $(SRC_DIR_KERNEL)/paging.c $(SRC_DIR_KERNEL)/serial.c # Add serial.c
-KERNEL_S_SRCS  := $(SRC_DIR_KERNEL)/isr_stubs.s # Add assembly source
+KERNEL_S_SRCS  := $(SRC_DIR_KERNEL)/isr_stubs.s $(SRC_DIR_KERNEL)/paging_success_halt.s # Add new assembly file
 KERNEL_HEADERS := $(wildcard $(SRC_DIR_KERNEL)/*.h) $(wildcard $(SRC_DIR_KERNEL)/arch/x86_64/*.h) # Include arch headers too
 
 KERNEL_C_OBJS    := $(patsubst $(SRC_DIR_KERNEL)/%.c,$(BUILD_DIR)/%.o,$(KERNEL_C_SRCS))

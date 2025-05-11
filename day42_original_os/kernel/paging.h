@@ -39,14 +39,22 @@ typedef uint64_t pte_t;
 // HHDM offset (defined in main.c, used by paging.c)
 extern uint64_t hhdm_offset;
 
+// Forward declaration from main.c for the function to call after paging setup
+struct limine_framebuffer; // Forward declare if not already included via other headers
+void kernel_main_after_paging(struct limine_framebuffer *fb);
+
 // Function to initialize paging
 void init_paging(struct limine_framebuffer_response *fb_response,
                  struct limine_memmap_response *memmap_response,
                  uint64_t kernel_stack_phys_base,
                  uint64_t kernel_stack_size,
-                 uint64_t new_rsp_virt_top) __attribute__((noreturn));
+                 uint64_t new_rsp_virt_top,
+                 void (*kernel_entry_after_paging)(struct limine_framebuffer *fb),
+                 struct limine_framebuffer *fb_for_kernel_main) __attribute__((noreturn));
 
 // Function to map a single virtual page to a physical page
-void map_page(uint64_t virt_addr, uint64_t phys_addr, uint64_t flags);
+// virt_addr and phys_addr must be page-aligned
+// The PML4 table virtual address (pml4_virt_param) must be provided.
+void map_page(uint64_t *pml4_virt_param, uint64_t virt_addr, uint64_t phys_addr, uint64_t flags, const char* debug_tag);
 
 #endif // KERNEL_PAGING_H

@@ -2,7 +2,7 @@
 #define KERNEL_PMM_H
 
 #include <stdint.h>
-#include <stddef.h> // For size_t
+#include <stddef.h> // For size_t, NULL
 #include "limine.h"  // For struct limine_memmap_response
 #include "paging.h"  // For PAGE_SIZE
 
@@ -18,7 +18,8 @@ typedef struct {
     size_t total_pages_initial; // Total number of usable pages initially found by PMM from memmap
 } pmm_state_t;
 
-void init_pmm(struct limine_memmap_response *memmap);
+// Function to initialize the physical memory manager
+void init_pmm(struct limine_memmap_response *memmap, uint64_t hhdm_offset);
 void *pmm_alloc_page(void); // Returns a physical address
 void pmm_free_page(void *p);  // p is a physical address
 uint64_t pmm_get_free_page_count(void);

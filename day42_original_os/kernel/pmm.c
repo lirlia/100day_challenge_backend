@@ -3,6 +3,7 @@
 #include "io.h"      // For print_serial, print_serial_hex for debugging
 #include <stdint.h>
 #include <stddef.h>  // For NULL and size_t
+#include <stdbool.h> // For bool, true, false
 #include "paging.h" // For PAGE_SIZE (though it might be better to have a common header for such constants)
 
 // External serial printing functions from main.c (for debugging PMM)
@@ -75,20 +76,28 @@ void panic(const char *message) {
     for (;;) { asm volatile ("cli; hlt"); }
 }
 
+static pmm_state_t pmm_state;
+static bool pmm_initialized = false;
 
-// Initialize the Physical Memory Manager
-void init_pmm(struct limine_memmap_response *memmap_resp) {
+void init_pmm(struct limine_memmap_response *memmap, uint64_t hhdm_offset) {
+    (void)hhdm_offset; // Mark as unused for now, can be used later if PMM needs HHDM knowledge
+
+    if (pmm_initialized) {
+        panic("PMM: init_pmm called more than once!");
+        return;
+    }
+
     print_serial(SERIAL_COM1_BASE, "PMM: Initializing Physical Memory Manager (Growable Stack)...\n");
 
-    if (memmap_resp == NULL) {
+    if (memmap == NULL) {
         panic("Memory map response is NULL in init_pmm.");
         return;
     }
-    // DBG_PMM(memmap_resp->entry_count); // Optional debug
+    // DBG_PMM(memmap->entry_count); // Optional debug
 
     /* --- 1. Find and reserve the *first* safe page for the PMM stack (e.g., 2MiB) --- */
-    for (size_t i = 0; i < memmap_resp->entry_count; i++) {
-        struct limine_memmap_entry *e = memmap_resp->entries[i];
+    for (size_t i = 0; i < memmap->entry_count; i++) {
+        struct limine_memmap_entry *e = memmap->entries[i];
         if (e->type == LIMINE_MEMMAP_USABLE) {
             uint64_t potential_stack_start = ALIGN_UP_PMM(0x200000, PAGE_SIZE);
             if (e->base <= potential_stack_start && (e->base + e->length) >= (potential_stack_start + PAGE_SIZE)) {
@@ -120,8 +129,8 @@ void init_pmm(struct limine_memmap_response *memmap_resp) {
     total_free_pages = 0; // Reset before populating
 
     // Iterate through memory map entries to find usable memory
-    for (uint64_t i = 0; i < memmap_resp->entry_count; i++) {
-        struct limine_memmap_entry *entry = memmap_resp->entries[i];
+    for (uint64_t i = 0; i < memmap->entry_count; i++) {
+        struct limine_memmap_entry *entry = memmap->entries[i];
         if (entry->type == LIMINE_MEMMAP_USABLE) {
             // DBG_PMM(entry->base); // Optional
             // DBG_PMM(entry->length); // Optional
@@ -149,6 +158,8 @@ void init_pmm(struct limine_memmap_response *memmap_resp) {
     print_serial(SERIAL_COM1_BASE, "PMM: Total stack pages allocated: ");
     print_serial_utoa(SERIAL_COM1_BASE, pmm_get_allocated_stack_page_count());
     print_serial(SERIAL_COM1_BASE, "\n");
+
+    pmm_initialized = true;
 }
 
 // Allocate a physical page
