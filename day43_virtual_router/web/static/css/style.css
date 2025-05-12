@@ -1,0 +1,527 @@
+/* 基本スタイル */
+:root {
+  --primary-color: #3498db;
+  --secondary-color: #2ecc71;
+  --danger-color: #e74c3c;
+  --warning-color: #f39c12;
+  --bg-color: #f4f7f9;
+  --text-color: #2c3e50;
+  --border-color: #dce0e3;
+  --header-bg: #34495e;
+  --header-text: #ecf0f1;
+  --footer-bg: #2c3e50;
+  --footer-text: #ecf0f1;
+  --card-bg: #ffffff;
+  --highlight-bg: #f1f8ff;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  line-height: 1.6;
+  color: var(--text-color);
+  background-color: var(--bg-color);
+}
+
+a {
+  color: var(--primary-color);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+/* ヘッダーとナビゲーション */
+header {
+  background-color: var(--header-bg);
+  color: var(--header-text);
+  padding: 10px 0;
+}
+
+.header-container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 20px;
+}
+
+header h1 {
+  font-size: 1.8rem;
+}
+
+header h1 a {
+  color: var(--header-text);
+  text-decoration: none;
+}
+
+.timestamp {
+  font-size: 0.9rem;
+  opacity: 0.8;
+}
+
+nav {
+  background-color: rgba(0, 0, 0, 0.1);
+}
+
+nav ul {
+  display: flex;
+  list-style: none;
+  padding: 0 20px;
+}
+
+nav ul li {
+  position: relative;
+}
+
+nav ul li a {
+  display: block;
+  padding: 10px 15px;
+  color: var(--header-text);
+  text-decoration: none;
+}
+
+nav ul li a:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.dropdown-content {
+  display: none;
+  position: absolute;
+  background-color: var(--header-bg);
+  min-width: 160px;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+  z-index: 1;
+}
+
+.dropdown:hover .dropdown-content {
+  display: block;
+}
+
+.dropdown-content li {
+  width: 100%;
+}
+
+.dropdown-content a {
+  padding: 12px 16px;
+}
+
+/* フッター */
+footer {
+  background-color: var(--footer-bg);
+  color: var(--footer-text);
+  text-align: center;
+  padding: 20px 0;
+  margin-top: 40px;
+}
+
+/* カード・グリッドレイアウト */
+.router-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 20px;
+  margin-bottom: 30px;
+}
+
+.router-card {
+  background-color: var(--card-bg);
+  border-radius: 8px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  padding: 20px;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.router-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+}
+
+.router-card h3 {
+  color: var(--primary-color);
+  margin-bottom: 10px;
+}
+
+.router-id {
+  color: #777;
+  font-size: 0.9rem;
+  margin-bottom: 15px;
+}
+
+.router-info {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 15px;
+}
+
+.interfaces {
+  margin-bottom: 15px;
+}
+
+.interfaces h4 {
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 5px;
+  margin-bottom: 10px;
+}
+
+.interfaces ul {
+  list-style: none;
+}
+
+.interfaces li {
+  padding: 5px 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.if-name {
+  font-weight: bold;
+}
+
+.if-status {
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+}
+
+.if-status.up {
+  background-color: var(--secondary-color);
+  color: white;
+}
+
+.if-status.down {
+  background-color: var(--danger-color);
+  color: white;
+}
+
+.router-actions {
+  text-align: center;
+  margin-top: 15px;
+}
+
+/* テーブル */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 30px;
+  background-color: var(--card-bg);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+thead {
+  background-color: var(--header-bg);
+  color: var(--header-text);
+}
+
+th,
+td {
+  padding: 12px 15px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-color);
+}
+
+tbody tr:hover {
+  background-color: var(--highlight-bg);
+}
+
+.link-status {
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+}
+
+.link-status.up {
+  background-color: var(--secondary-color);
+  color: white;
+}
+
+.link-status.down {
+  background-color: var(--danger-color);
+  color: white;
+}
+
+/* ボタン */
+.btn {
+  display: inline-block;
+  padding: 8px 16px;
+  background-color: var(--primary-color);
+  color: white;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  text-decoration: none;
+  border: none;
+}
+
+.btn:hover {
+  background-color: #2980b9;
+  text-decoration: none;
+}
+
+.btn-small {
+  padding: 4px 10px;
+  font-size: 0.9rem;
+}
+
+.btn-primary {
+  background-color: var(--primary-color);
+}
+
+.btn-success {
+  background-color: var(--secondary-color);
+}
+
+.btn-danger {
+  background-color: var(--danger-color);
+}
+
+.btn-warning {
+  background-color: var(--warning-color);
+}
+
+/* フォーム */
+.form-group {
+  margin-bottom: 15px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: bold;
+}
+
+.form-group input[type="text"],
+.form-group input[type="number"] {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+}
+
+.route-form,
+.ping-form {
+  background-color: var(--card-bg);
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  margin-bottom: 30px;
+}
+
+/* メッセージ */
+.message {
+  padding: 15px;
+  margin-bottom: 20px;
+  border-radius: 4px;
+}
+
+.message.success {
+  background-color: #d4edda;
+  color: #155724;
+  border: 1px solid #c3e6cb;
+}
+
+.message.error {
+  background-color: #f8d7da;
+  color: #721c24;
+  border: 1px solid #f5c6cb;
+}
+
+/* 詳細ページ */
+.router-details {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 20px;
+  margin-bottom: 30px;
+}
+
+.router-info-card {
+  background-color: var(--card-bg);
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.router-interfaces {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+
+.router-statistics {
+  background-color: var(--card-bg);
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.info-item {
+  display: flex;
+  margin-bottom: 10px;
+}
+
+.info-item label {
+  font-weight: bold;
+  margin-right: 10px;
+  min-width: 80px;
+}
+
+.routing-table {
+  margin-bottom: 30px;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  text-align: center;
+}
+
+.stat-item {
+  padding: 15px;
+  background-color: var(--highlight-bg);
+  border-radius: 8px;
+}
+
+.stat-value {
+  font-size: 2rem;
+  font-weight: bold;
+  color: var(--primary-color);
+}
+
+.stat-label {
+  color: #777;
+}
+
+.action-panel {
+  background-color: var(--card-bg);
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  margin-bottom: 30px;
+}
+
+.panel-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 15px;
+}
+
+/* トポロジー */
+.topology-container {
+  text-align: center;
+}
+
+.topology-actions {
+  margin-bottom: 20px;
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+
+.topology-view {
+  background-color: var(--card-bg);
+  border-radius: 8px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  padding: 20px;
+  margin-bottom: 30px;
+  min-height: 500px;
+  position: relative;
+}
+
+#topology-canvas {
+  width: 100%;
+  height: 100%;
+  min-height: 460px;
+}
+
+.topology-legend {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 30px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.legend-color {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  margin-right: 10px;
+}
+
+.router-node {
+  background-color: var(--primary-color);
+}
+
+.link-up {
+  background-color: var(--secondary-color);
+}
+
+.link-down {
+  background-color: var(--danger-color);
+}
+
+/* レスポンシブデザイン */
+@media (max-width: 768px) {
+  .router-details {
+    grid-template-columns: 1fr;
+  }
+
+  .router-info-card,
+  .router-statistics {
+    grid-column: 1;
+  }
+
+  .router-statistics {
+    grid-row: 2;
+  }
+
+  .router-interfaces {
+    grid-row: 3;
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 576px) {
+  nav ul {
+    flex-direction: column;
+  }
+
+  .dropdown-content {
+    position: static;
+    display: none;
+    box-shadow: none;
+  }
+
+  .dropdown:hover .dropdown-content {
+    display: block;
+  }
+
+  .router-info {
+    flex-direction: column;
+  }
+}

@@ -1,0 +1,101 @@
+{
+  "routers": [
+    {
+      "id": "r1",
+      "name": "ルーター1",
+      "rip_enabled": true,
+      "interfaces": [
+        {
+          "name": "eth0",
+          "ip_address": "192.168.1.1",
+          "subnet_mask": "255.255.255.0"
+        },
+        {
+          "name": "eth1",
+          "ip_address": "10.0.0.1",
+          "subnet_mask": "255.255.255.0"
+        }
+      ]
+    },
+    {
+      "id": "r2",
+      "name": "ルーター2",
+      "rip_enabled": true,
+      "interfaces": [
+        {
+          "name": "eth0",
+          "ip_address": "10.0.0.2",
+          "subnet_mask": "255.255.255.0"
+        },
+        {
+          "name": "eth1",
+          "ip_address": "10.0.1.1",
+          "subnet_mask": "255.255.255.0"
+        }
+      ]
+    },
+    {
+      "id": "r3",
+      "name": "ルーター3",
+      "rip_enabled": true,
+      "interfaces": [
+        {
+          "name": "eth0",
+          "ip_address": "10.0.1.2",
+          "subnet_mask": "255.255.255.0"
+        },
+        {
+          "name": "eth1",
+          "ip_address": "192.168.2.1",
+          "subnet_mask": "255.255.255.0"
+        }
+      ]
+    }
+  ],
+  "links": [
+    {
+      "id": "l1",
+      "bandwidth": 1000,
+      "latency": 10,
+      "drop_rate": 0.01,
+      "endpoint1": {
+        "router_id": "r1",
+        "interface_name": "eth1"
+      },
+      "endpoint2": {
+        "router_id": "r2",
+        "interface_name": "eth0"
+      }
+    },
+    {
+      "id": "l2",
+      "bandwidth": 1000,
+      "latency": 10,
+      "drop_rate": 0.01,
+      "endpoint1": {
+        "router_id": "r2",
+        "interface_name": "eth1"
+      },
+      "endpoint2": {
+        "router_id": "r3",
+        "interface_name": "eth0"
+      }
+    }
+  ],
+  "routes": [
+    {
+      "router_id": "r1",
+      "network": "192.168.2.0",
+      "subnet_mask": "255.255.255.0",
+      "next_hop": "10.0.0.2",
+      "metric": 2
+    },
+    {
+      "router_id": "r3",
+      "network": "192.168.1.0",
+      "subnet_mask": "255.255.255.0",
+      "next_hop": "10.0.1.1",
+      "metric": 2
+    }
+  ]
+}
