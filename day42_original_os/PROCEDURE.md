@@ -498,6 +498,62 @@ Day42の作業として、将来の4レベルページテーブル生成に向�
 
 この一連の作業により、ページングが有効化され、カーネルが保護された高位メモリ空間で動作する基盤が整いました。
 
+### 3.14. APIC タイマ割り込みの実装 (xAPIC フォールバック対応)
+
+ページング有効化後、CPUのローカルAPIC (Advanced Programmable Interrupt Controller) を使用して周期的なタイマ割り込みを発生させる機能を実装しました。これは将来のマルチタスクスケジューラなどの時間ベースのイベント処理に不可欠です。
+
+1.  **APIC関連ファイルの作成 (`kernel/apic.h`, `kernel/apic.c`):**
+    *   APICレジスタ (xAPIC MMIO オフセットと x2APIC MSR アドレス) の定義。
+    *   MSR (Model Specific Register) 読み書き用インライン関数 (`rdmsr`, `wrmsr`) を実装 (後に `msr.h` に移動)。
+    *   LAPIC (Local APIC) 初期化関数 (`init_apic`) を実装:
+        *   Limine から SMP (Symmetric Multi-Processing) 情報を取得。
+        *   `IA32_APIC_BASE` MSR を読み取り、x2APIC モードが有効か (ブートローダ/HWが有効にしたか) を確認。
+        *   **x2APIC モードの場合:** MSR ベースで LAPIC を設定。
+        *   **xAPIC モードの場合:** 物理ベースアドレス (`0xFEE00000` 等) を取得し、その物理ページを `init_paging` 内で HHDM にマッピングするように要求。マッピングされた仮想アドレス (`apic_virt_base`) を使って MMIO (Memory-Mapped I/O) で LAPIC レジスタにアクセス。
+        *   Spurious Interrupt Vector Register (SVR) を設定して LAPIC を有効化。
+        *   APICタイマーを初期化: LVT Timer Register を設定し、周期モード (Periodic)、割り込みベクタ 32、分周器を設定。Initial Count Register に初期カウント値を設定してタイマを開始。
+    *   LAPIC EOI (End of Interrupt) 送信関数 (`lapic_send_eoi`) を実装。割り込みハンドラの最後に呼び出す必要がある。
+    *   割り込みハンドラから呼び出されるタイマ処理関数 (`timer_handler`) を実装。グローバルな `tick_counter` をインクリメントし、`lapic_send_eoi()` を呼び出す。
+
+2.  **IDT の更新 (`kernel/idt.c`, `kernel/idt.h`, `kernel/isr_stubs.s`):**
+    *   割り込みベクタ 32 (IRQ 0 に相当) に対応するアセンブリスタブ (`irq0_stub`) と IDT エントリを追加。
+    *   汎用的な IRQ ハンドラ C 関数 (`irq_handler_c`) と、IRQ 0 専用の C ハンドラ (`timer_handler`) を `idt.c` に実装。
+    *   `init_idt` でベクタ 32 に `timer_handler` を登録。
+
+3.  **ページングでの xAPIC MMIO マッピング (`kernel/paging.c`):**
+    *   `init_paging` 関数内で、`init_apic` より先に `IA32_APIC_BASE` MSR をチェック。
+    *   x2APIC が無効な場合、MSR から APIC の物理ベースアドレスを取得し、`map_page` を使ってその物理ページを HHDM 内の仮想アドレス (`apic_virt_base`) にマッピングする処理を追加。ページキャッシュ無効 (`PTE_PCD`, `PTE_PWT`) フラグを設定。
+
+4.  **メイン処理 (`kernel/main.c`):**
+    *   `kernel_main_after_paging` で `init_apic` を呼び出す。
+    *   割り込みを有効化 (`sti`)。
+    *   メインループ内で `tick_counter` の値を画面に表示し、タイマー割り込みによって値がインクリメントされることを確認。
+
+5.  **Makefile の更新:**
+    *   `apic.c` をコンパイル対象に追加。
+    *   QEMU 起動オプションに `-cpu SandyBridge,+x2apic` を追加し、エミュレートする CPU が x2APIC をサポートするように設定 (しかし MSR 読み取りにより最終的に xAPIC モードで動作)。
+
+6.  **デバッグと問題解決:**
+    *   **x2APIC / xAPIC 判定:** 最初は x2APIC を期待していたが、QEMU/Limine の設定により xAPIC モードで起動。`IA32_APIC_BASE` MSR のビットを正しく確認し、MMIO ベースのアドレスを取得・マッピングするロジックを追加して対応。
+    *   **ページフォルト:** xAPIC の MMIO アドレスへのアクセス時にページフォルトが発生。`init_apic` でマッピングするのではなく、`init_paging` で事前にマッピングすることで解決。
+    *   **ビルドエラー:** ヘッダファイルのインクルード不足 (`paging.h` in `apic.h`) や、グローバル変数のスコープ問題 (`kernel_pml4_phys` 等) を修正。
+
+### 3.15. 文字表示の左右反転修正
+
+APIC タイマーのカウント表示を実装した際、画面上の文字が左右反転して表示される問題が発覚しました。
+
+1.  **原因調査:** `put_char` 関数内でビットマップフォントデータを処理する際のビット走査順序に問題があると推測。
+2.  **修正 (`kernel/main.c` の `put_char`):**
+    *   フォントデータの各行 (8ビット) を処理する内部ループ (`cx`) において、ビットマスクの生成方法を変更。
+    *   当初は最上位ビット (MSB) からチェック (`1 << (FONT_DATA_WIDTH - 1 - cx)`) していたが、これを最下位ビット (LSB) からチェック (`1 << cx`) するように修正したところ、文字が正しく表示されるようになった。
+
+```c
+// 修正前 (MSBから)
+// uint32_t pixel_color = (row_bits & (1 << (FONT_DATA_WIDTH - 1 - cx))) ? text_color : bg_color;
+// 修正後 (LSBから)
+uint32_t pixel_color = (row_bits & (1 << cx)) ? text_color : bg_color;
+```
+
 ## 4. 現状と次のステップ
 
 これで、Day42およびDay43前半の目標であった、Limineブートローダーを用いたx86-64カーネルの起動、フレームバッファへのテキスト表示（スケーリング対応）、シリアルポート出力、GDTのセットアップ、IDTと基本的なCPU例外ハンドラの実装、そしてスタック方式での物理メモリマネージャ(PMM)の実装が完了しました。

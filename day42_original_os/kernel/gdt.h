@@ -3,23 +3,27 @@
 
 #include <stdint.h>
 
-// GDT Entry structure (8 bytes)
-struct gdt_entry {
+// Basic GDT Entry Indices (adjust if user entries were planned)
+#define GDT_ENTRY_KERNEL_CODE 1
+#define GDT_ENTRY_KERNEL_DATA 2
+
+// GDT Entry structure (8 bytes, matching earlier definition)
+struct gdt_entry_packed {
     uint16_t limit_low;    // Lower 16 bits of limit
     uint16_t base_low;     // Lower 16 bits of base
-    uint8_t  base_middle;  // Next 8 bits of base
-    uint8_t  access;       // Access flags, determine segment type
-    uint8_t  granularity;  // Granularity (limit_high, flags)
-    uint8_t  base_high;    // Last 8 bits of base
-} __attribute__((packed)); // Ensure structure is packed, no padding
+    uint8_t  base_mid;     // Middle 8 bits of base
+    uint8_t  access;       // Access flags
+    uint8_t  limit_high_flags; // Limit high nibble + granularity flags
+    uint8_t  base_high;    // Upper 8 bits of base
+} __attribute__((packed));
 
 // GDT Pointer structure (for lgdt instruction)
-struct gdt_ptr {
+struct gdt_ptr_packed {
     uint16_t limit;        // Size of GDT - 1
     uint64_t base;         // Address of GDT
 } __attribute__((packed));
 
-// Function to initialize GDT and load it
-void init_gdt();
+// Function prototype for GDT initialization
+void init_gdt(void);
 
 #endif // GDT_H

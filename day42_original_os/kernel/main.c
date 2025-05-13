@@ -1,15 +1,16 @@
-#include "main.h"
-#include <stdint.h>
-#include <stddef.h>
-#include <stdbool.h>
 #include "limine.h"
-#include "gdt.h"
-#include "idt.h"
-#include "pmm.h"
-#include "paging.h"
+#include "main.h"
 #include "serial.h"
+#include "io.h"
+#include "gdt.h"
+#include "paging.h"
+#include "pmm.h"
+#include "idt.h"
 #include "apic.h"
 #include "font.h"
+#include <stddef.h>
+#include <stdint.h>
+#include <stdbool.h>
 
 // --- Limine Requests --- (Keep as static volatile)
 static volatile struct limine_framebuffer_request framebuffer_request = { .id = LIMINE_FRAMEBUFFER_REQUEST, .revision = 0 };
@@ -100,7 +101,7 @@ void kernel_main_after_paging(struct limine_framebuffer *fb_info_virt) {
          print_serial(SERIAL_COM1_BASE, "Error: SMP response unavailable in kernel_main_after_paging! Halting.\n");
          hcf();
     }
-    // init_apic no longer takes pml4_virt or hhdm_offset
+    // init_apic call remains
     init_apic(smp_request.response);
 
     print_serial(SERIAL_COM1_BASE, "Enabling interrupts...\n");
@@ -227,8 +228,9 @@ void put_char(char c, int x_char_pos, int y_char_pos) {
     for (int cy = 0; cy < FONT_DATA_HEIGHT; cy++) { // Loop rows (font data y)
         uint8_t row_bits = glyph[cy]; // Get the bitmap for the current row
         for (int cx = 0; cx < FONT_DATA_WIDTH; cx++) { // Loop columns (font data x)
-            // Determine color based on font bitmap bit (MSB is leftmost)
-            uint32_t pixel_color = (row_bits & (1 << (FONT_DATA_WIDTH - 1 - cx))) ? text_color : bg_color;
+            // Determine color based on font bitmap bit
+            // Corrected logic: Check bits from LSB (0) to MSB (7) as cx increases
+            uint32_t pixel_color = (row_bits & (1 << cx)) ? text_color : bg_color;
 
             // Draw the scaled pixel block
             for (int sy = 0; sy < FONT_SCALE; sy++) { // Scale Y loop

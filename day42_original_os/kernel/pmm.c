@@ -11,6 +11,7 @@
 extern void print_serial(uint16_t port, const char *s);
 extern void print_serial_hex(uint16_t port, uint64_t h);
 extern void print_serial_utoa(uint16_t port, uint64_t u);
+extern void print_serial_dec(uint16_t port, uint64_t u);
 #define KERNEL_COM1 SERIAL_COM1_BASE // Assuming SERIAL_COM1_BASE is defined in main.c or a common header if we include it
                                       // For now, let's hardcode it for PMM debugging if needed or pass port.
                                       // Let's use a local define for clarity in PMM if not including main.h directly.
@@ -68,14 +69,6 @@ static uint64_t ALIGN_UP_PMM(uint64_t addr, uint64_t align) { // Renamed to avoi
 // Forward declaration for pmm_get_allocated_stack_page_count
 uint64_t pmm_get_allocated_stack_page_count(void);
 
-// Panic function (simplified for now)
-void panic(const char *message) {
-    print_serial(SERIAL_COM1_BASE, "KERNEL PANIC: ");
-    print_serial(SERIAL_COM1_BASE, message);
-    print_serial(SERIAL_COM1_BASE, "\\n");
-    for (;;) { asm volatile ("cli; hlt"); }
-}
-
 static pmm_state_t pmm_state;
 static bool pmm_initialized = false;
 
@@ -83,14 +76,12 @@ void init_pmm(struct limine_memmap_response *memmap, uint64_t hhdm_offset) {
     (void)hhdm_offset; // Mark as unused for now, can be used later if PMM needs HHDM knowledge
 
     if (pmm_initialized) {
-        panic("PMM: init_pmm called more than once!");
         return;
     }
 
     print_serial(SERIAL_COM1_BASE, "PMM: Initializing Physical Memory Manager (Growable Stack)...\n");
 
     if (memmap == NULL) {
-        panic("Memory map response is NULL in init_pmm.");
         return;
     }
     // DBG_PMM(memmap->entry_count); // Optional debug
@@ -111,7 +102,7 @@ void init_pmm(struct limine_memmap_response *memmap, uint64_t hhdm_offset) {
     }
 
     if (pmm_first_stack_page_phys == 0) {
-        panic("Could not find a safe USABLE page (e.g., at 0x200000) for the first PMM stack page.");
+        return;
     }
 
     /* --- 2. Initialize the first PMM stack page --- */
@@ -122,7 +113,7 @@ void init_pmm(struct limine_memmap_response *memmap, uint64_t hhdm_offset) {
 
     print_serial(SERIAL_COM1_BASE, "PMM: First stack page initialized at V:0x"); print_serial_hex(SERIAL_COM1_BASE, (uint64_t)pmm_current_stack_head);
     print_serial(SERIAL_COM1_BASE, " (P:0x"); print_serial_hex(SERIAL_COM1_BASE, pmm_first_stack_page_phys); print_serial(SERIAL_COM1_BASE, ")\n");
-    print_serial(SERIAL_COM1_BASE, "PMM: Stack entries per page: "); print_serial_utoa(SERIAL_COM1_BASE, PMM_STACK_ENTRIES_PER_PAGE); print_serial(SERIAL_COM1_BASE, "\n");
+    print_serial(SERIAL_COM1_BASE, "PMM: Stack entries per page: "); print_serial_dec(SERIAL_COM1_BASE, PMM_STACK_ENTRIES_PER_PAGE); print_serial(SERIAL_COM1_BASE, "\n");
 
     /* --- 3. Populate the free page stack (it will grow as needed) --- */
     print_serial(SERIAL_COM1_BASE, "PMM: Populating free page stack...\n");
@@ -153,10 +144,10 @@ void init_pmm(struct limine_memmap_response *memmap, uint64_t hhdm_offset) {
     }
 
     print_serial(SERIAL_COM1_BASE, "PMM: Initialization complete. Total free pages: ");
-    print_serial_utoa(SERIAL_COM1_BASE, total_free_pages);
+    print_serial_dec(SERIAL_COM1_BASE, total_free_pages);
     print_serial(SERIAL_COM1_BASE, "\n");
     print_serial(SERIAL_COM1_BASE, "PMM: Total stack pages allocated: ");
-    print_serial_utoa(SERIAL_COM1_BASE, pmm_get_allocated_stack_page_count());
+    print_serial_dec(SERIAL_COM1_BASE, pmm_get_allocated_stack_page_count());
     print_serial(SERIAL_COM1_BASE, "\n");
 
     pmm_initialized = true;
@@ -165,7 +156,6 @@ void init_pmm(struct limine_memmap_response *memmap, uint64_t hhdm_offset) {
 // Allocate a physical page
 void *pmm_alloc_page(void) {
     if (pmm_current_stack_head == NULL) {
-        panic("PMM: Alloc called but pmm_current_stack_head is NULL!");
         return NULL;
     }
 
@@ -217,7 +207,6 @@ void pmm_free_page(void *p_phys) {
 
     if (pmm_current_stack_head == NULL) {
          // This should only happen if called before init_pmm completes first page setup.
-        panic("PMM: Free called but pmm_current_stack_head is NULL (likely too early)!");
         return;
     }
 
@@ -242,7 +231,6 @@ void pmm_free_page(void *p_phys) {
         if (phys_addr == pmm_first_stack_page_phys && pmm_current_stack_head == (struct pmm_stack_page *)(pmm_first_stack_page_phys + hhdm_offset)) {
              // This case should ideally not be hit if pmm_first_stack_page_phys is never added to free list to begin with.
              // If it is, and the first page is full, we try to make it its own new head - bad.
-            panic("PMM: Critical - Attempting to make the full first stack page its own new head via freeing itself!");
             return;
         }
         // Also, if phys_addr is *any* active stack page, this is problematic.

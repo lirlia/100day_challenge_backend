@@ -5,6 +5,8 @@
 #include "serial.h" // For print_serial_idt and other serial functions
 #include "pmm.h"    // For PMM_HIGHER_HALF_OFFSET, if that's what hhdm_offset refers to. Or include paging.h
 #include "paging.h" // For PAGING_HHDM_OFFSET
+#include "main.h"   // For serial printing
+#include "apic.h"   // For lapic_send_eoi and tick_counter
 
 // For serial printing, temporary
 // Ideally, we should have a proper logging/panic system
@@ -41,6 +43,11 @@ struct idt_ptr idt_ptr_struct; // Renamed from idt_ptr to avoid conflict with ty
 
 // Array of C interrupt handlers, indexed by interrupt number
 static interrupt_handler_t interrupt_handlers[IDT_ENTRIES];
+
+// Array of C interrupt handlers for IRQs (Hardware Interrupts)
+// PIC maps IRQ 0-15 to vectors 32-47 by default.
+// We will use these vectors for APIC as well.
+static irq_t irq_handlers[16]; // Support for IRQ 0-15 (vectors 32-47)
 
 // Helper function to set an IDT entry
 static void idt_set_gate(uint8_t num, uint64_t base, uint16_t sel, uint8_t flags, uint8_t ist) {
@@ -84,13 +91,6 @@ void isr_handler_c(struct registers *regs) {
         // For unhandled interrupts, especially exceptions, it's often best to halt.
         asm volatile ("cli; hlt");
     }
-}
-
-void register_interrupt_handler(uint8_t n, interrupt_handler_t handler, uint8_t type_attr) {
-    interrupt_handlers[n] = handler;
-    // Note: idt_set_gate should be called here or in init_idt after handlers are registered
-    // For now, we will call idt_set_gate from init_idt for the predefined ISR stubs.
-    // This function would be more useful if we were dynamically adding handlers for IRQs later.
 }
 
 // Placeholder C handlers for specific exceptions
@@ -209,6 +209,70 @@ void interrupt_handler_c(struct registers *regs) {
     // print_serial_idt(SERIAL_COM1_BASE_IDT, "IDT Initialized and Loaded.\\n"); // For debugging
 }
 
+// Generic C-level IRQ handler (called from assembly stubs)
+// Hardware interrupts (IRQs) typically do not push an error code.
+void irq_handler_c(struct registers regs) {
+    // IRQ numbers are typically int_no - 32
+    uint8_t irq_num = regs.int_no - 32;
+
+    if (irq_handlers[irq_num] != NULL) {
+        irq_t handler = irq_handlers[irq_num];
+        handler(&regs);
+    } else {
+        // Use correct print functions with port argument
+        print_serial(SERIAL_COM1_BASE_IDT, "Unhandled IRQ received: ");
+        print_serial_dec(SERIAL_COM1_BASE_IDT, irq_num);
+        print_serial(SERIAL_COM1_BASE_IDT, " (vector ");
+        print_serial_dec(SERIAL_COM1_BASE_IDT, regs.int_no);
+        print_serial(SERIAL_COM1_BASE_IDT, ")\n");
+        // It's important to send EOI even for unhandled IRQs if they are from APIC/PIC
+        // to prevent the interrupt line from being stuck.
+        // However, for APIC, EOI is typically sent by the specific handler.
+    }
+
+    // For APIC, EOI must be sent by the handler or here if not handled.
+    // For now, specific handlers will send EOI.
+    // If it was a PIC interrupt that got here unhandled, we might need to send EOI to PIC.
+    // lapic_send_eoi(); // Moved to specific handler
+}
+
+// Timer interrupt handler (IRQ 0, Vector 32)
+static void timer_handler(struct registers* regs) {
+    (void)regs; // Unused
+    tick_counter++;
+    // The tick_counter can be checked in main loop or other parts of kernel
+    // For debugging, we can print a dot or the count itself, but it floods the serial.
+    // if ((tick_counter % 100) == 0) { // Print every 100 ticks (approx 1 sec if 100Hz)
+    //     print_serial_str_int("Tick: ", tick_counter);
+    // }
+    lapic_send_eoi(); // Acknowledge interrupt to Local APIC
+}
+
+// Function to register an ISR handler
+void register_interrupt_handler(uint8_t n, interrupt_handler_t handler) {
+    if (n < 32) { // Only for CPU exceptions ISR0-31
+        interrupt_handlers[n] = handler;
+    } else {
+        // Use correct print functions with port argument
+        print_serial(SERIAL_COM1_BASE_IDT, "Error: Cannot register ISR for vector >= 32. Use register_irq_handler for IRQs.\n Vector: ");
+        print_serial_dec(SERIAL_COM1_BASE_IDT, n);
+        print_serial(SERIAL_COM1_BASE_IDT, "\n");
+    }
+}
+
+// Function to register an IRQ handler
+void register_irq_handler(uint8_t irq, irq_t handler) {
+    if (irq < 16) { // IRQ 0-15
+        irq_handlers[irq] = handler;
+    } else {
+        // Use correct print functions with port argument
+        print_serial(SERIAL_COM1_BASE_IDT, "Error: Invalid IRQ number to register: ");
+        print_serial_dec(SERIAL_COM1_BASE_IDT, irq);
+        print_serial(SERIAL_COM1_BASE_IDT, "\n");
+    }
+}
+
+// Initialize IDT
 void init_idt() {
     // Initialize IDT pointer
     idt_ptr_struct.limit = sizeof(idt) - 1;
@@ -255,6 +319,29 @@ void init_idt() {
 
     // It seems page_fault_c_handler is intended to be called directly from the isr14 stub.
     // Ensure your isr14 stub in isr_stubs.s calls `page_fault_c_handler`.
+
+    // Register IRQ stubs (first 16 are IRQs)
+    // Example for a few. You should add all relevant IRQs from irq_stubs.s
+    // KERNEL_CODE_SELECTOR (0x08) and Interrupt Gate (0x8E)
+    idt_set_gate(32, (uint64_t)irq0, 0x08, 0x8E, 0);   // IRQ 0 (Timer)
+    idt_set_gate(33, (uint64_t)irq1, 0x08, 0x8E, 0);   // IRQ 1 (Keyboard)
+    idt_set_gate(34, (uint64_t)irq2, 0x08, 0x8E, 0);   // IRQ 2 (Cascade)
+    idt_set_gate(35, (uint64_t)irq3, 0x08, 0x8E, 0);   // IRQ 3 (COM2)
+    idt_set_gate(36, (uint64_t)irq4, 0x08, 0x8E, 0);   // IRQ 4 (COM4)
+    idt_set_gate(37, (uint64_t)irq5, 0x08, 0x8E, 0);   // IRQ 5 (LPT2)
+    idt_set_gate(38, (uint64_t)irq6, 0x08, 0x8E, 0);   // IRQ 6 (Floppy Disk)
+    idt_set_gate(39, (uint64_t)irq7, 0x08, 0x8E, 0);   // IRQ 7 (Printer)
+    idt_set_gate(40, (uint64_t)irq8, 0x08, 0x8E, 0);   // IRQ 8 (RTC)
+    idt_set_gate(41, (uint64_t)irq9, 0x08, 0x8E, 0);   // IRQ 9 (0x8E)
+    idt_set_gate(42, (uint64_t)irq10, 0x08, 0x8E, 0);  // IRQ 10 (0x8E)
+    idt_set_gate(43, (uint64_t)irq11, 0x08, 0x8E, 0);  // IRQ 11 (0x8E)
+    idt_set_gate(44, (uint64_t)irq12, 0x08, 0x8E, 0);  // IRQ 12 (0x8E)
+    idt_set_gate(45, (uint64_t)irq13, 0x08, 0x8E, 0);  // IRQ 13 (0x8E)
+    idt_set_gate(46, (uint64_t)irq14, 0x08, 0x8E, 0);  // IRQ 14 (0x8E)
+    idt_set_gate(47, (uint64_t)irq15, 0x08, 0x8E, 0);  // IRQ 15 (0x8E)
+
+    // Register IRQ handlers for specific interrupts where needed
+    register_irq_handler(0, timer_handler); // IRQ 0 (Timer) -> timer_handler
 
     // Load the IDT
     asm volatile("lidt %0" : : "m"(idt_ptr_struct));

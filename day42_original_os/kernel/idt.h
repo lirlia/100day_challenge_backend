@@ -2,6 +2,7 @@
 #define IDT_H
 
 #include <stdint.h>
+#include <stdbool.h>
 
 // IDT Entry structure (16 bytes for x86-64)
 struct idt_entry {
@@ -37,38 +38,56 @@ struct registers {
 // Type for an interrupt handler C function
 typedef void (*interrupt_handler_t)(struct registers* regs);
 
-// Function to initialize IDT and load it
-void init_idt();
+// Interrupt Service Routine (ISR) handler type
+typedef void (*isr_t)(struct registers*);
 
-// Function to register an interrupt handler
-// void register_interrupt_handler(uint8_t n, interrupt_handler_t handler, uint8_t type_attr); // Original, type_attr might be for the flags
-void set_idt_entry(uint8_t n, uint64_t handler_address, uint16_t segment_selector, uint8_t flags); // More common way
+// Interrupt Request (IRQ) handler type (no error code pushed by hardware)
+typedef void (*irq_t)(struct registers*);
 
-// External ISR (Interrupt Service Routine) stubs
-// These will be defined in an assembly file (e.g., isr_stubs.s)
-extern void isr0();  // Divide by zero error
-extern void isr1();  // Debug
-extern void isr2();  // NMI
-extern void isr3();  // Breakpoint
-extern void isr4();  // Overflow
-extern void isr5();  // Bound range exceeded
-extern void isr6();  // Invalid opcode
-extern void isr7();  // Device not available
-extern void isr8();  // Double fault
-extern void isr9();  // Coprocessor segment overrun
-extern void isr10(); // Invalid TSS
-extern void isr11(); // Segment not present
-extern void isr12(); // Stack segment fault
-extern void isr13(); // General protection fault
-extern void isr14(); // Page fault
-// extern void isr15(); // Reserved - CPU does not generate this, can be used for spurious int.
-extern void isr16(); // x87 floating point exception
-extern void isr17(); // Alignment check
-extern void isr18(); // Machine check
-extern void isr19(); // SIMD floating point exception
-// Add more ISR stubs as needed up to 255
+// Function prototypes
+void init_idt(void);
+void register_interrupt_handler(uint8_t n, isr_t handler);
+void register_irq_handler(uint8_t irq, irq_t handler); // New for IRQs
 
-// No need for separate page_fault_handler_stub extern if isr14() is used.
-// No need for struct idt_entry_options in the header if it's a helper for idt.c
+// External assembly stubs (defined in isr_stubs.s)
+// CPU Exceptions (ISRs 0-19)
+extern void isr0();
+extern void isr1();
+extern void isr2();
+extern void isr3();
+extern void isr4();
+extern void isr5();
+extern void isr6();
+extern void isr7();
+extern void isr8();
+extern void isr9();
+extern void isr10();
+extern void isr11();
+extern void isr12();
+extern void isr13();
+extern void isr14();
+extern void isr15();
+extern void isr16();
+extern void isr17();
+extern void isr18();
+extern void isr19();
+
+// Hardware Interrupts (IRQs 0-15, mapped typically to vectors 32-47)
+extern void irq0();  // Timer
+extern void irq1();  // Keyboard (example)
+extern void irq2();  // Second example IRQ
+extern void irq3();
+extern void irq4();
+extern void irq5();
+extern void irq6();
+extern void irq7();
+extern void irq8();
+extern void irq9();
+extern void irq10();
+extern void irq11();
+extern void irq12();
+extern void irq13();
+extern void irq14();
+extern void irq15();
 
 #endif // IDT_H
