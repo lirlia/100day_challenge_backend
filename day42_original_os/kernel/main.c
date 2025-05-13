@@ -210,38 +210,39 @@ void fill_screen(uint32_t color) {
     cursor_y = 0;
 }
 
-void put_pixel_scaled(int x_unscaled, int y_unscaled, uint32_t color) {
-    if (!framebuffer || !framebuffer->address) return;
-
-    for (int sy = 0; sy < FONT_SCALE; sy++) {
-        for (int sx = 0; sx < FONT_SCALE; sx++) {
-            int screen_x = x_unscaled * FONT_SCALE + sx;
-            int screen_y = y_unscaled * FONT_SCALE + sy;
-
-            if (screen_x >= 0 && (uint64_t)screen_x < framebuffer->width &&
-                screen_y >= 0 && (uint64_t)screen_y < framebuffer->height) {
-                // Calculate offset carefully: pitch is in bytes. bpp is bits per pixel.
-                uint64_t fb_offset = (uint64_t)screen_y * framebuffer->pitch + (uint64_t)screen_x * (framebuffer->bpp / 8);
-                // Assuming bpp is 32 or compatible for uint32_t write.
-                *((uint32_t*)((uint8_t*)framebuffer->address + fb_offset)) = color;
-            }
-        }
-    }
-}
-
-// Definition matching main.h declaration: void put_char(char c, int x_char_pos, int y_char_pos);
+// Updated put_char implementation with integrated scaling
 void put_char(char c, int x_char_pos, int y_char_pos) {
     if (!framebuffer || !framebuffer->address) return;
-    if ((uint8_t)c >= 128) c = '?';
+    if ((uint8_t)c >= 128) c = '?'; // Handle out-of-range ASCII
     const uint8_t* glyph = font8x8_basic[(uint8_t)c];
-    int screen_base_x = x_char_pos * EFFECTIVE_FONT_WIDTH;
-    int screen_base_y = y_char_pos * EFFECTIVE_FONT_HEIGHT;
-    for (int cy = 0; cy < FONT_DATA_HEIGHT; cy++) {
-        uint8_t row = glyph[cy];
-        for (int cx = 0; cx < FONT_DATA_WIDTH; cx++) {
-            uint32_t pixel_color = (row & (1 << (FONT_DATA_WIDTH - 1 - cx))) ? text_color : bg_color;
-            // Use put_pixel_scaled which handles scaling
-            put_pixel_scaled(screen_base_x / FONT_SCALE + cx, screen_base_y / FONT_SCALE + cy, pixel_color);
+
+    // Calculate base screen coordinates (top-left corner of the scaled character cell)
+    int base_screen_x = x_char_pos * FONT_DATA_WIDTH * FONT_SCALE;
+    int base_screen_y = y_char_pos * FONT_DATA_HEIGHT * FONT_SCALE;
+
+    uint32_t *fb_ptr = (uint32_t *)framebuffer->address;
+    // Calculate pitch in terms of pixels (uint32_t elements)
+    uint64_t pitch_in_pixels = framebuffer->pitch / (framebuffer->bpp / 8);
+
+    for (int cy = 0; cy < FONT_DATA_HEIGHT; cy++) { // Loop rows (font data y)
+        uint8_t row_bits = glyph[cy]; // Get the bitmap for the current row
+        for (int cx = 0; cx < FONT_DATA_WIDTH; cx++) { // Loop columns (font data x)
+            // Determine color based on font bitmap bit (MSB is leftmost)
+            uint32_t pixel_color = (row_bits & (1 << (FONT_DATA_WIDTH - 1 - cx))) ? text_color : bg_color;
+
+            // Draw the scaled pixel block
+            for (int sy = 0; sy < FONT_SCALE; sy++) { // Scale Y loop
+                for (int sx = 0; sx < FONT_SCALE; sx++) { // Scale X loop
+                    int final_x = base_screen_x + cx * FONT_SCALE + sx;
+                    int final_y = base_screen_y + cy * FONT_SCALE + sy;
+
+                    // Bounds check before writing to framebuffer
+                    if (final_x >= 0 && (uint64_t)final_x < framebuffer->width &&
+                        final_y >= 0 && (uint64_t)final_y < framebuffer->height) {
+                        fb_ptr[final_y * pitch_in_pixels + final_x] = pixel_color;
+                    }
+                }
+            }
         }
     }
 }
