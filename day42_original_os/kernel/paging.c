@@ -6,6 +6,7 @@
 #include "idt.h" // For struct idt_entry and idt_ptr, if needed by debug code
 #include "io.h"  // For print_serial (indirectly, if we add debug prints)
 #include "msr.h" // Added for MSR operations
+#include "apic.h" // Include for IA32_APIC_BASE_MSR
 
 #ifndef ALIGN_UP
 #define ALIGN_UP(addr, align) (((addr) + (align) - 1) & ~((align) - 1))
@@ -52,7 +53,7 @@ extern uint8_t _bss_start[],  _bss_end[];
 // HHDM offset (defined in main.c via paging.h)
 // uint64_t hhdm_offset; // This line is removed as it's extern in paging.h
 
-// Top-level PML4 table (physical address)
+// Top-level PML4 table (physical address) - Make this a file-scope global
 pml4e_t *kernel_pml4_phys = NULL;
 
 // Global PML4 table, page-aligned. (Unused due to dynamic allocation)
@@ -159,6 +160,7 @@ void init_paging(
 ) {
     print_serial(SERIAL_COM1_BASE, "Inside init_paging...\n");
 
+    // Allocate page for the global kernel_pml4_phys
     kernel_pml4_phys = (pml4e_t *)pmm_alloc_page();
     if (!kernel_pml4_phys) {
         print_serial(SERIAL_COM1_BASE, "ERROR: Failed to allocate page for PML4! Halting.\n");
@@ -167,7 +169,11 @@ void init_paging(
     pml4e_t *pml4_virt = (pml4e_t *)((uint64_t)kernel_pml4_phys + hhdm_offset);
     clear_page(pml4_virt);
 
-    print_serial_format("PML4 table allocated at V:0x%llx P:0x%llx\n", (uint64_t)pml4_virt, (uint64_t)kernel_pml4_phys);
+    print_serial(SERIAL_COM1_BASE, "PML4 table allocated at V:0x");
+    print_serial_hex(SERIAL_COM1_BASE, (uint64_t)pml4_virt);
+    print_serial(SERIAL_COM1_BASE, " P:0x");
+    print_serial_hex(SERIAL_COM1_BASE, (uint64_t)kernel_pml4_phys);
+    print_serial(SERIAL_COM1_BASE, "\n");
 
     uint64_t kernel_load_phys_addr = 0;
     if (memmap_resp) {
@@ -183,15 +189,25 @@ void init_paging(
         print_serial(SERIAL_COM1_BASE, "CRITICAL ERROR: Could not find kernel physical load address! Using 0x100000 (DANGEROUS!)\n");
         kernel_load_phys_addr = 0x100000;
     }
-    print_serial_format("Kernel actual load physical address = 0x%llx\n", kernel_load_phys_addr);
+    print_serial(SERIAL_COM1_BASE, "Kernel actual load physical address = 0x");
+    print_serial_hex(SERIAL_COM1_BASE, kernel_load_phys_addr);
+    print_serial(SERIAL_COM1_BASE, "\n");
 
-    print_serial_format("Mapping .text section (VA: 0x%llx - 0x%llx)\n", (uint64_t)_text_start, (uint64_t)_text_end);
+    print_serial(SERIAL_COM1_BASE, "Mapping .text section (VA: 0x");
+    print_serial_hex(SERIAL_COM1_BASE, (uint64_t)_text_start);
+    print_serial(SERIAL_COM1_BASE, " - 0x");
+    print_serial_hex(SERIAL_COM1_BASE, (uint64_t)_text_end);
+    print_serial(SERIAL_COM1_BASE, ")\n");
     for (uint64_t v = ALIGN_DOWN((uint64_t)_text_start, PAGE_SIZE); v < ALIGN_UP((uint64_t)_text_end, PAGE_SIZE); v += PAGE_SIZE) {
         uint64_t p = (v - (uint64_t)_kernel_start) + kernel_load_phys_addr;
         map_page(pml4_virt, v, p, PTE_PRESENT, ".text");
     }
 
-    print_serial_format("Mapping .rodata section (VA: 0x%llx - 0x%llx)\n", (uint64_t)_rodata_start, (uint64_t)_rodata_end);
+    print_serial(SERIAL_COM1_BASE, "Mapping .rodata section (VA: 0x");
+    print_serial_hex(SERIAL_COM1_BASE, (uint64_t)_rodata_start);
+    print_serial(SERIAL_COM1_BASE, " - 0x");
+    print_serial_hex(SERIAL_COM1_BASE, (uint64_t)_rodata_end);
+    print_serial(SERIAL_COM1_BASE, ")\n");
     for (uint64_t v = ALIGN_DOWN((uint64_t)_rodata_start, PAGE_SIZE); v < ALIGN_UP((uint64_t)_rodata_end, PAGE_SIZE); v += PAGE_SIZE) {
         uint64_t p = (v - (uint64_t)_kernel_start) + kernel_load_phys_addr;
         map_page(pml4_virt, v, p, PTE_PRESENT | PTE_NO_EXECUTE, ".rodata");
@@ -199,7 +215,11 @@ void init_paging(
 
     uint64_t data_bss_start_virt = ALIGN_DOWN((uint64_t)_data_start, PAGE_SIZE);
     uint64_t data_bss_end_virt = ALIGN_UP((uint64_t)_bss_end, PAGE_SIZE);
-    print_serial_format("Mapping .data/.bss sections (VA: 0x%llx - 0x%llx)\n", data_bss_start_virt, data_bss_end_virt);
+    print_serial(SERIAL_COM1_BASE, "Mapping .data/.bss sections (VA: 0x");
+    print_serial_hex(SERIAL_COM1_BASE, data_bss_start_virt);
+    print_serial(SERIAL_COM1_BASE, " - 0x");
+    print_serial_hex(SERIAL_COM1_BASE, data_bss_end_virt);
+    print_serial(SERIAL_COM1_BASE, ")\n");
     for (uint64_t v = data_bss_start_virt; v < data_bss_end_virt; v += PAGE_SIZE) {
         uint64_t p = (v - (uint64_t)_kernel_start) + kernel_load_phys_addr;
         map_page(pml4_virt, v, p, PTE_PRESENT | PTE_WRITABLE | PTE_NO_EXECUTE, ".data/.bss");
@@ -214,32 +234,80 @@ void init_paging(
     uint64_t fb_addr_virt_base = (uint64_t)fb->address;
     uint64_t fb_addr_phys_base = fb_addr_virt_base - hhdm_offset;
     uint64_t fb_size = fb->pitch * fb->height;
-    print_serial_format("Mapping framebuffer V:0x%llx P:0x%llx Size:0x%llx\n", fb_addr_virt_base, fb_addr_phys_base, fb_size);
+    print_serial(SERIAL_COM1_BASE, "Mapping framebuffer V:0x");
+    print_serial_hex(SERIAL_COM1_BASE, fb_addr_virt_base);
+    print_serial(SERIAL_COM1_BASE, " P:0x");
+    print_serial_hex(SERIAL_COM1_BASE, fb_addr_phys_base);
+    print_serial(SERIAL_COM1_BASE, " Size:0x");
+    print_serial_hex(SERIAL_COM1_BASE, fb_size);
+    print_serial(SERIAL_COM1_BASE, "\n");
     for (uint64_t offset = 0; offset < fb_size; offset += PAGE_SIZE) {
         map_page(pml4_virt, fb_addr_virt_base + offset, fb_addr_phys_base + offset, PTE_PRESENT | PTE_WRITABLE | PTE_NO_EXECUTE, "Framebuffer");
     }
     print_serial(SERIAL_COM1_BASE, "Framebuffer mapped.\n");
 
-    print_serial_format("Mapping kernel stack P:0x%llx V:0x%llx Size:0x%llx\n", kernel_stack_phys_base, kernel_stack_phys_base + hhdm_offset, kernel_stack_size);
+    print_serial(SERIAL_COM1_BASE, "Mapping kernel stack P:0x");
+    print_serial_hex(SERIAL_COM1_BASE, kernel_stack_phys_base);
+    print_serial(SERIAL_COM1_BASE, " V:0x");
+    print_serial_hex(SERIAL_COM1_BASE, kernel_stack_phys_base + hhdm_offset);
+    print_serial(SERIAL_COM1_BASE, " Size:0x");
+    print_serial_hex(SERIAL_COM1_BASE, kernel_stack_size);
+    print_serial(SERIAL_COM1_BASE, "\n");
     for (uint64_t off = 0; off < kernel_stack_size; off += PAGE_SIZE) {
         uint64_t stack_page_virt = kernel_stack_phys_base + hhdm_offset + off;
         uint64_t stack_page_phys = kernel_stack_phys_base + off;
         map_page(pml4_virt, stack_page_virt, stack_page_phys, PTE_PRESENT | PTE_WRITABLE, "Kernel Stack Page");
-        print_serial_format("  Mapped Stack Page: V=0x%llx -> P=0x%llx\n", stack_page_virt, stack_page_phys);
+        print_serial(SERIAL_COM1_BASE, "  Mapped Stack Page: V=0x");
+        print_serial_hex(SERIAL_COM1_BASE, stack_page_virt);
+        print_serial(SERIAL_COM1_BASE, " -> P=0x");
+        print_serial_hex(SERIAL_COM1_BASE, stack_page_phys);
+        print_serial(SERIAL_COM1_BASE, "\n");
     }
     print_serial(SERIAL_COM1_BASE, "Kernel stack mapped.\n");
+
+    // Map APIC MMIO region (if needed, based on MSR check)
+    uint64_t apic_base_msr = rdmsr(IA32_APIC_BASE_MSR);
+    if (!(apic_base_msr & IA32_APIC_BASE_MSR_X2APIC_ENABLE)) {
+        uint64_t apic_phys_base = apic_base_msr & 0xFFFFF000;
+        if (apic_phys_base != 0) {
+            uint64_t apic_virt_page = apic_phys_base + hhdm_offset;
+            print_serial(SERIAL_COM1_BASE, "Mapping APIC MMIO (xAPIC mode) Phys: 0x");
+            print_serial_hex(SERIAL_COM1_BASE, apic_phys_base);
+            print_serial(SERIAL_COM1_BASE, " to Virt: 0x");
+            print_serial_hex(SERIAL_COM1_BASE, apic_virt_page);
+            print_serial(SERIAL_COM1_BASE, "\n");
+            map_page(pml4_virt, apic_virt_page, apic_phys_base,
+                     PTE_PRESENT | PTE_WRITABLE | PTE_NO_CACHE_DISABLE | PTE_NO_EXECUTE,
+                     "APIC MMIO");
+        } else {
+            print_serial(SERIAL_COM1_BASE, "Warning: APIC physical base is zero, cannot map MMIO.\n");
+            // Continue without mapping, init_apic might panic later if it needs MMIO.
+        }
+    } else {
+        print_serial(SERIAL_COM1_BASE, "x2APIC mode detected, skipping APIC MMIO mapping.\n");
+    }
 
     // map_current_idt(); // Commented out as it needs review for 5-arg map_page
 
     print_serial(SERIAL_COM1_BASE, "All mappings complete. Preparing to load CR3 and switch context.\n");
-    print_serial_format("Kernel PML4 physical address: 0x%llx\n", (uint64_t)kernel_pml4_phys);
-    print_serial_format("New RSP virtual top: 0x%llx\n", new_rsp_virt_top);
-    print_serial_format("Kernel entry after paging (virtual address): 0x%llx\n", (uint64_t)kernel_entry_after_paging_fn);
+    print_serial(SERIAL_COM1_BASE, "Kernel PML4 physical address: 0x");
+    print_serial_hex(SERIAL_COM1_BASE, (uint64_t)kernel_pml4_phys);
+    print_serial(SERIAL_COM1_BASE, "\n");
+    print_serial(SERIAL_COM1_BASE, "New RSP virtual top: 0x");
+    print_serial_hex(SERIAL_COM1_BASE, new_rsp_virt_top);
+    print_serial(SERIAL_COM1_BASE, "\n");
+    print_serial(SERIAL_COM1_BASE, "Kernel entry after paging (virtual address): 0x");
+    print_serial_hex(SERIAL_COM1_BASE, (uint64_t)kernel_entry_after_paging_fn);
+    print_serial(SERIAL_COM1_BASE, "\n");
 
     if (fb_for_kernel_main != NULL) {
-        print_serial_format("Framebuffer for kernel_main_after_paging (virtual address): 0x%llx\n", (uint64_t)fb_for_kernel_main);
+        print_serial(SERIAL_COM1_BASE, "Framebuffer for kernel_main_after_paging (virtual address): 0x");
+        print_serial_hex(SERIAL_COM1_BASE, (uint64_t)fb_for_kernel_main);
+        print_serial(SERIAL_COM1_BASE, "\n");
         if (fb_for_kernel_main->address != NULL) {
-             print_serial_format("Framebuffer actual content address (virtual): 0x%llx\n", (uint64_t)fb_for_kernel_main->address);
+            print_serial(SERIAL_COM1_BASE, "Framebuffer actual content address (virtual): 0x");
+            print_serial_hex(SERIAL_COM1_BASE, (uint64_t)fb_for_kernel_main->address);
+            print_serial(SERIAL_COM1_BASE, "\n");
         } else {
             print_serial(SERIAL_COM1_BASE, "fb_for_kernel_main->address is NULL!\n");
         }
@@ -251,15 +319,21 @@ void init_paging(
     print_serial(SERIAL_COM1_BASE, "Enabling NXE in IA32_EFER...\n");
     const uint32_t IA32_EFER_MSR_ADDR = 0xC0000080;
     uint64_t efer_value = rdmsr(IA32_EFER_MSR_ADDR);
-    print_serial_format("  EFER before set: 0x%llx\n", efer_value);
+    print_serial(SERIAL_COM1_BASE, "  EFER before set: 0x");
+    print_serial_hex(SERIAL_COM1_BASE, efer_value);
+    print_serial(SERIAL_COM1_BASE, "\n");
     efer_value |= (1ULL << 11); // Set NXE bit (bit 11)
     wrmsr(IA32_EFER_MSR_ADDR, efer_value);
     uint64_t efer_after_write = rdmsr(IA32_EFER_MSR_ADDR);
-    print_serial_format("  EFER after set attempt: 0x%llx\n", efer_after_write);
+    print_serial(SERIAL_COM1_BASE, "  EFER after set attempt: 0x");
+    print_serial_hex(SERIAL_COM1_BASE, efer_after_write);
+    print_serial(SERIAL_COM1_BASE, "\n");
     if (efer_after_write & (1ULL << 11)) {
         print_serial(SERIAL_COM1_BASE, "  IA32_EFER.NXE bit is VERIFIED SET.\n");
     } else {
-        print_serial_format("  FAILED to VERIFY IA32_EFER.NXE bit! Current EFER: 0x%llx\n", efer_after_write);
+        print_serial(SERIAL_COM1_BASE, "  FAILED to VERIFY IA32_EFER.NXE bit! Current EFER: 0x");
+        print_serial_hex(SERIAL_COM1_BASE, efer_after_write);
+        print_serial(SERIAL_COM1_BASE, "\n");
     }
     // print_serial(SERIAL_COM1_BASE, "IA32_EFER.NXE should be enabled now.\\n"); // Replaced by verified message
 
@@ -275,23 +349,43 @@ void init_paging(
     uint64_t idt_size = (uint64_t)idt_reg_before_paging.limit + 1; // Limit is inclusive
     uint64_t idt_phys_end = idt_phys_start + idt_size;
 
-    print_serial_format("IDT original VAddr (from sidt before paging): 0x%llx\\n", idt_virt_addr_from_linker);
-    print_serial_format("Calculated IDT physical base: 0x%llx, limit: 0x%x\\n", idt_phys_start, idt_reg_before_paging.limit);
-    print_serial_format("Mapping IDT. Phys: 0x%llx - 0x%llx (size: 0x%llx)\\n", idt_phys_start, idt_phys_end, idt_size);
+    print_serial(SERIAL_COM1_BASE, "IDT original VAddr (from sidt before paging): 0x");
+    print_serial_hex(SERIAL_COM1_BASE, idt_virt_addr_from_linker);
+    print_serial(SERIAL_COM1_BASE, "\n");
+    print_serial(SERIAL_COM1_BASE, "Calculated IDT physical base: 0x");
+    print_serial_hex(SERIAL_COM1_BASE, idt_phys_start);
+    print_serial(SERIAL_COM1_BASE, ", limit: 0x");
+    print_serial_hex(SERIAL_COM1_BASE, idt_reg_before_paging.limit);
+    print_serial(SERIAL_COM1_BASE, "\n");
+    print_serial(SERIAL_COM1_BASE, "Mapping IDT. Phys: 0x");
+    print_serial_hex(SERIAL_COM1_BASE, idt_phys_start);
+    print_serial(SERIAL_COM1_BASE, " - 0x");
+    print_serial_hex(SERIAL_COM1_BASE, idt_phys_end);
+    print_serial(SERIAL_COM1_BASE, " (size: 0x");
+    print_serial_hex(SERIAL_COM1_BASE, idt_size);
+    print_serial(SERIAL_COM1_BASE, ")\n");
 
     for (uint64_t p_addr = ALIGN_DOWN(idt_phys_start, PAGE_SIZE); p_addr < ALIGN_UP(idt_phys_end, PAGE_SIZE); p_addr += PAGE_SIZE) {
         uint64_t v_addr = p_addr + hhdm_offset;
         map_page(pml4_virt, v_addr, p_addr, PTE_PRESENT | PTE_WRITABLE | PTE_NO_EXECUTE, "IDT"); // IDT itself is data, handlers are code
-        print_serial_format("  Mapped IDT Page: V=0x%llx -> P=0x%llx\\n", v_addr, p_addr);
+        print_serial(SERIAL_COM1_BASE, "  Mapped IDT Page: V=0x");
+        print_serial_hex(SERIAL_COM1_BASE, v_addr);
+        print_serial(SERIAL_COM1_BASE, " -> P=");
+        print_serial_hex(SERIAL_COM1_BASE, p_addr);
+        print_serial(SERIAL_COM1_BASE, "\n");
     }
-    print_serial(SERIAL_COM1_BASE, "IDT mapped to HHDM.\\n");
+    print_serial(SERIAL_COM1_BASE, "IDT mapped to HHDM.\n");
 
     // After mapping, we also need to update the IDTR to point to the new VIRTUAL address of the IDT in HHDM.
     struct descriptor_table_register_packed new_idt_reg;
     new_idt_reg.base = idt_phys_start + hhdm_offset; // New virtual base in HHDM
     new_idt_reg.limit = idt_reg_before_paging.limit;
     asm volatile("lidt %0" : : "m"(new_idt_reg));
-    print_serial_format("LIDT called with new HHDM IDT base: 0x%llx, limit: 0x%x\\n", new_idt_reg.base, new_idt_reg.limit);
+    print_serial(SERIAL_COM1_BASE, "LIDT called with new HHDM IDT base: 0x");
+    print_serial_hex(SERIAL_COM1_BASE, new_idt_reg.base);
+    print_serial(SERIAL_COM1_BASE, ", limit: 0x");
+    print_serial_hex(SERIAL_COM1_BASE, new_idt_reg.limit);
+    print_serial(SERIAL_COM1_BASE, "\n");
 
     // Temporarily map the old stack page (where current RSP is) to the new PML4
     // This is to prevent a page fault when an interrupt/exception occurs immediately after loading CR3
@@ -304,14 +398,19 @@ void init_paging(
     uint64_t old_stack_page_phys = (old_rsp_val - hhdm_offset) & ~(PAGE_SIZE - 1);
     uint64_t old_stack_page_virt = old_stack_page_phys + hhdm_offset; // Map it to its existing HHDM virtual address
 
-    print_serial_format("Old RSP: 0x%llx, mapping its page Phys: 0x%llx to Virt: 0x%llx\\n",
-                        old_rsp_val, old_stack_page_phys, old_stack_page_virt);
+    print_serial(SERIAL_COM1_BASE, "Old RSP: 0x");
+    print_serial_hex(SERIAL_COM1_BASE, old_rsp_val);
+    print_serial(SERIAL_COM1_BASE, ", mapping its page Phys: 0x");
+    print_serial_hex(SERIAL_COM1_BASE, old_stack_page_phys);
+    print_serial(SERIAL_COM1_BASE, " to Virt: 0x");
+    print_serial_hex(SERIAL_COM1_BASE, old_stack_page_virt);
+    print_serial(SERIAL_COM1_BASE, "\n");
     map_page(pml4_virt,
              old_stack_page_virt,         // Virtual address (same as current HHDM address)
              old_stack_page_phys,         // Physical address
              PTE_PRESENT | PTE_WRITABLE | PTE_NO_EXECUTE, // Writable, No Execute for stack
              "Limine old stack (temp)");
-    print_serial(SERIAL_COM1_BASE, "Old Limine stack page temporarily mapped.\\n");
+    print_serial(SERIAL_COM1_BASE, "Old Limine stack page temporarily mapped.\n");
 
     // Map the page containing the framebuffer structure (fb_for_kernel_main)
     if (fb_for_kernel_main != NULL) {
@@ -324,16 +423,21 @@ void init_paging(
         uint64_t fb_struct_page_phys = ALIGN_DOWN(fb_struct_phys_addr, PAGE_SIZE);
         uint64_t fb_struct_page_virt = fb_struct_page_phys + hhdm_offset;
 
-        print_serial_format("Mapping FB struct page. Struct V:0x%llx, Page P:0x%llx, Page V:0x%llx\\n",
-                            fb_struct_virt_addr, fb_struct_page_phys, fb_struct_page_virt);
+        print_serial(SERIAL_COM1_BASE, "Mapping FB struct page. Struct V:0x");
+        print_serial_hex(SERIAL_COM1_BASE, fb_struct_virt_addr);
+        print_serial(SERIAL_COM1_BASE, ", Page P:0x");
+        print_serial_hex(SERIAL_COM1_BASE, fb_struct_page_phys);
+        print_serial(SERIAL_COM1_BASE, ", Page V:0x");
+        print_serial_hex(SERIAL_COM1_BASE, fb_struct_page_virt);
+        print_serial(SERIAL_COM1_BASE, "\n");
         map_page(pml4_virt,
                  fb_struct_page_virt,         // Virtual address
                  fb_struct_page_phys,         // Physical address
                  PTE_PRESENT | PTE_WRITABLE | PTE_NO_EXECUTE, // Struct is read/written, not executed
                  "Limine FB struct copy");
-        print_serial(SERIAL_COM1_BASE, "Limine Framebuffer structure page mapped.\\n");
+        print_serial(SERIAL_COM1_BASE, "Limine Framebuffer structure page mapped.\n");
     } else {
-        print_serial(SERIAL_COM1_BASE, "WARNING: fb_for_kernel_main is NULL, not mapping its page.\\n");
+        print_serial(SERIAL_COM1_BASE, "WARNING: fb_for_kernel_main is NULL, not mapping its page.\n");
     }
 
     load_pml4((uint64_t)kernel_pml4_phys);

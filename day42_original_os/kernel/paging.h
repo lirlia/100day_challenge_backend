@@ -17,6 +17,8 @@
 #define PTE_PAT (1ULL << 7)       // Page Attribute Table (PAT) index for 4-level paging PTEs
 #define PTE_GLOBAL (1ULL << 8)
 #define PTE_NO_EXECUTE (1ULL << 63) // No Execute bit
+#define PTE_NO_CACHE_DISABLE (1ULL << 4) // Page Cache Disable (PCD)
+#define PTE_WRITE_THROUGH    (1ULL << 3) // Page Write Through (PWT)
 
 // Macros to get parts of an address
 #define PML4_INDEX(addr) (((addr) >> 39) & 0x1FF)
@@ -38,6 +40,7 @@ typedef uint64_t pte_t;
 
 // HHDM offset (defined in main.c, used by paging.c)
 extern uint64_t hhdm_offset;
+extern pml4e_t *kernel_pml4_phys; // Declare kernel_pml4_phys as extern
 
 // Forward declaration from main.c for the function to call after paging setup
 struct limine_framebuffer; // Forward declare if not already included via other headers

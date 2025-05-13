@@ -1,420 +1,299 @@
-#include "limine.h"
+#include "main.h"
 #include <stdint.h>
 #include <stddef.h>
-#include "font8x8_basic.h"
+#include <stdbool.h>
+#include "limine.h"
 #include "gdt.h"
 #include "idt.h"
 #include "pmm.h"
-#include "io.h"
 #include "paging.h"
 #include "serial.h"
+#include "apic.h"
+#include "font.h"
 
-// Forward declaration for panic from pmm.c (ideally in a common header)
-void panic(const char *message);
+// --- Limine Requests --- (Keep as static volatile)
+static volatile struct limine_framebuffer_request framebuffer_request = { .id = LIMINE_FRAMEBUFFER_REQUEST, .revision = 0 };
+static volatile struct limine_memmap_request memmap_request = { .id = LIMINE_MEMMAP_REQUEST, .revision = 0 };
+static volatile struct limine_hhdm_request hhdm_request = { .id = LIMINE_HHDM_REQUEST, .revision = 0 };
+static volatile struct limine_kernel_address_request kernel_addr_request = { .id = LIMINE_KERNEL_ADDRESS_REQUEST, .revision = 0 };
+static volatile struct limine_smp_request smp_request = { .id = LIMINE_SMP_REQUEST, .revision = 0 };
 
-#define KERNEL_STACK_PAGES 4 // Define number of pages for kernel stack
-
-// --- DBG Macro Definition ---
-static inline void dbg_u64(const char *s, uint64_t v) {
-    // Simple serial output, assuming SERIAL_COM1_BASE is available and init_serial was called
-    for (const char *p = s; *p; p++) outb(SERIAL_COM1_BASE, *p);
-    for (int i = 60; i >= 0; i -= 4) {
-        char c = "0123456789ABCDEF"[(v >> i) & 0xF];
-        outb(SERIAL_COM1_BASE, c);
-    }
-    outb(SERIAL_COM1_BASE, '\n');
-}
-#define DBG(x) dbg_u64(#x " = ", (uint64_t)(x))
-// --- End DBG Macro Definition ---
-
-static volatile LIMINE_BASE_REVISION(1); // Declare the base revision once globally
-
-// 自前の memcpy 関数
-void *memcpy(void *dest, const void *src, size_t n) {
-    uint8_t *pdest = (uint8_t *)dest;
-    const uint8_t *psrc = (const uint8_t *)src;
-    for (size_t i = 0; i < n; i++) {
-        pdest[i] = psrc[i];
-    }
-    return dest;
-}
-
-// --- I/O Port Helper Functions ---
-
-// --- Serial Port Configuration ---
-
-#define SERIAL_DATA_PORT(base)          (base)
-#define SERIAL_FIFO_COMMAND_PORT(base)  (base + 2)
-#define SERIAL_LINE_COMMAND_PORT(base)  (base + 3)
-#define SERIAL_MODEM_COMMAND_PORT(base) (base + 4)
-#define SERIAL_LINE_STATUS_PORT(base)   (base + 5)
-
-// SERIAL_LINE_COMMAND_PORT bits
-#define SERIAL_LINE_ENABLE_DLAB         0x80 // Enable Divisor Latch Access Bit
-
-void init_serial(uint16_t port) {
-    // Disable interrupts
-    outb(port + 1, 0x00);
-
-    // Enable DLAB (set baud rate divisor)
-    outb(SERIAL_LINE_COMMAND_PORT(port), SERIAL_LINE_ENABLE_DLAB);
-
-    // Set divisor to 3 (lo byte) for 38400 baud (115200 / 3 = 38400)
-    outb(SERIAL_DATA_PORT(port), 0x03);
-    // Set divisor to 0 (hi byte)
-    outb(port + 1, 0x00);
-
-    // Disable DLAB and set line control parameters
-    // 8 bits, no parity, one stop bit (8N1)
-    outb(SERIAL_LINE_COMMAND_PORT(port), 0x03);
-
-    // Enable FIFO, clear them, with 14-byte threshold
-    outb(SERIAL_FIFO_COMMAND_PORT(port), 0xC7);
-
-    // Mark data terminal ready, request to send
-    // Out2, RTS, DTR
-    outb(SERIAL_MODEM_COMMAND_PORT(port), 0x0B);
-
-    // Enable interrupts again (if desired, for now kept off)
-    // outb(port + 1, 0x01); // Enable ERBFI (Received Data Available Interrupt)
-}
-
-// Framebuffer request
-// Place the framebuffer request in the .requests section.
-struct limine_framebuffer_request framebuffer_request __attribute__((section(".requests"))) = {
-    .id = LIMINE_FRAMEBUFFER_REQUEST,
-    .revision = 0
-};
-
-// Place the memory map request in the .requests section.
-struct limine_memmap_request memmap_request __attribute__((section(".requests"))) = {
-    .id = LIMINE_MEMMAP_REQUEST,
-    .revision = 0
-};
-
-// Place the HHDM request in the .requests section.
-struct limine_hhdm_request hhdm_request __attribute__((section(".requests"))) = {
-    .id = LIMINE_HHDM_REQUEST,
-    .revision = 0
-};
-
-// Global variable to store HHDM offset
+// --- Global variables (Defined here, declared extern in main.h) ---
+struct limine_framebuffer *framebuffer = NULL;
 uint64_t hhdm_offset = 0;
 
-// Global variables to keep track of cursor position and text colors
-static int cursor_x = 0;
-static int cursor_y = 0;
-static uint32_t text_color = 0xFFFFFF; // White
-static uint32_t bg_color = 0x0000FF;   // Blue (to match Limine's default background)
-// static const int FONT_WIDTH = 8; // 元の定義はコメントアウトまたは削除
-// static const int FONT_HEIGHT = 8;
+// Drawing state (Non-static, definitions match extern in main.h)
+int cursor_x = 0;
+int cursor_y = 0;
+int FONT_SCALE = 1;
+uint32_t text_color = 0xFFFFFF;
+uint32_t bg_color = 0x000000;
 
-static int FONT_SCALE = 2; // ★ 文字の拡大率 (1なら等倍、2なら2倍)
-static int FONT_DATA_WIDTH = 8;    // フォントデータの実際の幅
-static int FONT_DATA_HEIGHT = 8;   // フォントデータの実際の高さ
-#define EFFECTIVE_FONT_WIDTH (FONT_DATA_WIDTH * FONT_SCALE)
-#define EFFECTIVE_FONT_HEIGHT (FONT_DATA_HEIGHT * FONT_SCALE)
+// Define KERNEL_STACK_PAGES once at the top level
+#define KERNEL_STACK_PAGES 16
 
-// Function to clear the screen
-void clear_screen(struct limine_framebuffer *fb, uint32_t color) {
-    for (uint64_t y = 0; y < fb->height; y++) {
-        for (uint64_t x = 0; x < fb->width; x++) {
-            ((uint32_t*)fb->address)[y * (fb->pitch / 4) + x] = color;
+// Kernel entry point
+void _start(void) {
+    struct kernel_addr kernel_addresses; // Local struct is fine
+
+    // Honor Limine requests (accessing static volatiles is okay)
+    if (framebuffer_request.response == NULL || framebuffer_request.response->framebuffer_count < 1) { hcf(); }
+    framebuffer = framebuffer_request.response->framebuffers[0];
+    if (memmap_request.response == NULL) { hcf(); }
+    if (hhdm_request.response == NULL) { hcf(); }
+    hhdm_offset = hhdm_request.response->offset;
+    if (kernel_addr_request.response == NULL) { hcf(); }
+    kernel_addresses.physical_base = kernel_addr_request.response->physical_base;
+    kernel_addresses.virtual_base = kernel_addr_request.response->virtual_base;
+    if (smp_request.response == NULL) { hcf(); }
+
+    // Initialize serial
+    if (init_serial(SERIAL_COM1_BASE) != 0) { /* Handle error? */ }
+    print_serial(SERIAL_COM1_BASE, "Serial port initialized.\n");
+
+    // Print Limine info (using helpers that call correct print_serial)
+    print_serial_str_hex(SERIAL_COM1_BASE, "HHDM Offset: ", hhdm_offset);
+    // ... other print calls ...
+    print_serial_str_int(SERIAL_COM1_BASE, "SMP CPU Count: ", smp_request.response->cpu_count);
+    // ... other print calls ...
+
+    // Initialize GDT, IDT, PMM
+    init_gdt();
+    init_idt();
+    init_pmm(memmap_request.response, hhdm_offset);
+    print_serial(SERIAL_COM1_BASE, "PMM Initialized. Free pages: ");
+    print_serial_dec(SERIAL_COM1_BASE, pmm_get_free_page_count());
+    print_serial(SERIAL_COM1_BASE, "\n");
+
+    // --- Allocate Kernel Stack ---
+    uint64_t stack_phys_bottom = 0;
+    uint64_t stack_size = KERNEL_STACK_PAGES * PAGE_SIZE;
+    print_serial_str_int(SERIAL_COM1_BASE, "Allocating kernel stack (pages): ", KERNEL_STACK_PAGES);
+    stack_phys_bottom = (uint64_t)pmm_alloc_page();
+    if (stack_phys_bottom == 0) { panic("Failed to allocate page for kernel stack!"); }
+    print_serial_str_hex(SERIAL_COM1_BASE, "Kernel stack allocated. Bottom Phys Addr: ", stack_phys_bottom);
+    uint64_t new_rsp_virt_top = (stack_phys_bottom + stack_size - 8) + hhdm_offset;
+    print_serial_str_hex(SERIAL_COM1_BASE, "Calculated initial RSP (virtual top): ", new_rsp_virt_top);
+    struct limine_framebuffer *fb_for_kernel_main = framebuffer;
+
+    print_serial(SERIAL_COM1_BASE, "Calling init_paging...\n");
+
+    // Call init_paging with correct arguments
+    init_paging(
+        framebuffer_request.response,
+        memmap_request.response,
+        stack_phys_bottom,
+        stack_size,
+        new_rsp_virt_top,
+        kernel_main_after_paging, // Function pointer
+        fb_for_kernel_main
+    );
+    hcf(); // Should not return
+}
+
+// This is the correct definition called after paging
+void kernel_main_after_paging(struct limine_framebuffer *fb_info_virt) {
+    framebuffer = fb_info_virt; // Use virtual address
+
+    // Access static volatile smp_request
+    if (smp_request.response == NULL) {
+         print_serial(SERIAL_COM1_BASE, "Error: SMP response unavailable in kernel_main_after_paging! Halting.\n");
+         hcf();
+    }
+    // init_apic no longer takes pml4_virt or hhdm_offset
+    init_apic(smp_request.response);
+
+    print_serial(SERIAL_COM1_BASE, "Enabling interrupts...\n");
+    asm volatile ("sti");
+
+    fill_screen(0x333333);
+    text_color = 0xFFFFFF;
+    bg_color = 0x333333;
+    FONT_SCALE = 2;
+    cursor_x = 0;
+    cursor_y = 0;
+
+    // Use drawing functions (which now use globals)
+    put_string("Hello, kernel from Higher Half!\n");
+    put_string("Paging and APIC Timer Initialized.\n");
+    put_string("Tick count: ");
+    uint64_t last_tick = 0;
+
+    while (1) {
+        uint64_t current_tick = tick_counter;
+        if (current_tick != last_tick) {
+            int saved_x = cursor_x; int saved_y = cursor_y;
+            cursor_y = EFFECTIVE_FONT_HEIGHT * 2;
+            cursor_x = EFFECTIVE_FONT_WIDTH * 12;
+            put_string("          "); // Overwrite
+            cursor_y = EFFECTIVE_FONT_HEIGHT * 2;
+            cursor_x = EFFECTIVE_FONT_WIDTH * 12;
+            put_hex(current_tick);
+            cursor_x = saved_x; cursor_y = saved_y;
+            last_tick = current_tick;
         }
+        asm volatile ("hlt");
     }
 }
 
-// Function to put a character on screen using the new font rendering logic
-void put_char(struct limine_framebuffer *fb, char c, int x_pos, int y_pos, uint32_t fg, uint32_t bg) {
-    if (fb == NULL || fb->address == NULL) {
+// --- Utility Functions ---
+// (Keep implementations)
+void hcf(void) { /* ... */ }
+void *memcpy(void *dest, const void *src, size_t n) { return dest; }
+void *memset(void *s, int c, size_t n) { return s; }
+
+void uint64_to_dec_str(uint64_t value, char *buffer) {
+    if (buffer == NULL) return;
+    if (value == 0) {
+        buffer[0] = '0';
+        buffer[1] = '\0';
         return;
     }
-    if ((unsigned char)c >= 128) { // Ignore characters outside ASCII range
+    char temp[21]; // Max 20 digits for uint64_t + null terminator
+    int i = 0;
+    while (value > 0) {
+        temp[i++] = (value % 10) + '0';
+        value /= 10;
+    }
+    int j = 0;
+    while (i > 0) {
+        buffer[j++] = temp[--i];
+    }
+    buffer[j] = '\0';
+}
+
+void uint64_to_hex_str(uint64_t value, char *buffer) {
+    const char *hex_chars = "0123456789ABCDEF";
+    if (buffer == NULL) return;
+    if (value == 0) {
+        buffer[0] = '0';
+        buffer[1] = '\0';
         return;
     }
+    char temp[17]; // Max 16 hex digits + null terminator
+    int i = 0;
+    while (value > 0) {
+        temp[i++] = hex_chars[value % 16];
+        value /= 16;
+    }
+    int j = 0;
+    while (i > 0) {
+        buffer[j++] = temp[--i];
+    }
+    buffer[j] = '\0';
+}
 
-    const uint8_t *glyph = font8x8_basic[(unsigned char)c];
+// NEW panic function implementation
+void panic(const char *message) {
+    print_serial(SERIAL_COM1_BASE, "KERNEL PANIC: ");
+    print_serial(SERIAL_COM1_BASE, message);
+    print_serial(SERIAL_COM1_BASE, "\nSystem Halted.\n");
+    hcf(); // Halt the system
+}
 
-    for (int y = 0; y < FONT_DATA_HEIGHT; y++) { // フォントデータの行 (0-7)
-        for (int x = 0; x < FONT_DATA_WIDTH; x++) { // フォントデータの列 (0-7)
-            // スケーリングして描画 (背景色も同様に)
-            uint32_t current_pixel_color = ((glyph[y] >> x) & 1) ? fg : bg;
-            for (int sy = 0; sy < FONT_SCALE; sy++) {
-                for (int sx = 0; sx < FONT_SCALE; sx++) {
-                    int screen_x = x_pos + (x * FONT_SCALE) + sx;
-                    int screen_y = y_pos + (y * FONT_SCALE) + sy;
-                    if (screen_y >= 0 && screen_y < (int)fb->height && screen_x >=0 && screen_x < (int)fb->width) {
-                        ((uint32_t*)fb->address)[screen_y * (fb->pitch / 4) + screen_x] = current_pixel_color;
-                    }
-                }
+// --- Framebuffer Drawing Functions (Definitions) ---
+// Definitions MUST match declarations in main.h (no fb argument)
+void fill_screen(uint32_t color) {
+    if (!framebuffer || !framebuffer->address) return;
+    // Assuming bpp is 32, framebuffer->address is uint32_t aligned.
+    // Pitch is in bytes. Width and height are in pixels.
+    uint32_t *fb_ptr = (uint32_t *)framebuffer->address;
+    uint64_t pitch_in_pixels = framebuffer->pitch / (framebuffer->bpp / 8);
+
+    for (uint64_t y = 0; y < framebuffer->height; y++) {
+        for (uint64_t x = 0; x < framebuffer->width; x++) {
+            fb_ptr[y * pitch_in_pixels + x] = color;
+        }
+    }
+    // Reset cursor after filling
+    cursor_x = 0;
+    cursor_y = 0;
+}
+
+void put_pixel_scaled(int x_unscaled, int y_unscaled, uint32_t color) {
+    if (!framebuffer || !framebuffer->address) return;
+
+    for (int sy = 0; sy < FONT_SCALE; sy++) {
+        for (int sx = 0; sx < FONT_SCALE; sx++) {
+            int screen_x = x_unscaled * FONT_SCALE + sx;
+            int screen_y = y_unscaled * FONT_SCALE + sy;
+
+            if (screen_x >= 0 && (uint64_t)screen_x < framebuffer->width &&
+                screen_y >= 0 && (uint64_t)screen_y < framebuffer->height) {
+                // Calculate offset carefully: pitch is in bytes. bpp is bits per pixel.
+                uint64_t fb_offset = (uint64_t)screen_y * framebuffer->pitch + (uint64_t)screen_x * (framebuffer->bpp / 8);
+                // Assuming bpp is 32 or compatible for uint32_t write.
+                *((uint32_t*)((uint8_t*)framebuffer->address + fb_offset)) = color;
             }
         }
     }
 }
 
-// Function to print a string on screen, managing cursor position
-void put_string(struct limine_framebuffer *fb, const char *str) {
-    if (fb == NULL || fb->address == NULL) {
-        return;
+// Definition matching main.h declaration: void put_char(char c, int x_char_pos, int y_char_pos);
+void put_char(char c, int x_char_pos, int y_char_pos) {
+    if (!framebuffer || !framebuffer->address) return;
+    if ((uint8_t)c >= 128) c = '?';
+    const uint8_t* glyph = font8x8_basic[(uint8_t)c];
+    int screen_base_x = x_char_pos * EFFECTIVE_FONT_WIDTH;
+    int screen_base_y = y_char_pos * EFFECTIVE_FONT_HEIGHT;
+    for (int cy = 0; cy < FONT_DATA_HEIGHT; cy++) {
+        uint8_t row = glyph[cy];
+        for (int cx = 0; cx < FONT_DATA_WIDTH; cx++) {
+            uint32_t pixel_color = (row & (1 << (FONT_DATA_WIDTH - 1 - cx))) ? text_color : bg_color;
+            // Use put_pixel_scaled which handles scaling
+            put_pixel_scaled(screen_base_x / FONT_SCALE + cx, screen_base_y / FONT_SCALE + cy, pixel_color);
+        }
     }
-    for (size_t i = 0; str[i] != '\0'; i++) {
-        if (str[i] == '\n') {
+}
+
+// Definition matching main.h declaration: void put_string(const char *str);
+void put_string(const char *str) {
+    if (!framebuffer || !framebuffer->address) return;
+    for (int i = 0; str[i] != '\0'; i++) {
+        char c = str[i];
+        if (c == '\n') {
             cursor_x = 0;
             cursor_y += EFFECTIVE_FONT_HEIGHT;
-        } else if (str[i] == '\r') {
+        } else if (c == '\r') {
             cursor_x = 0;
         } else {
-            // Handle line wrapping
-            if (cursor_x + EFFECTIVE_FONT_WIDTH > (int)fb->width) {
+            if (cursor_x + EFFECTIVE_FONT_WIDTH > (int)framebuffer->width) {
                 cursor_x = 0;
                 cursor_y += EFFECTIVE_FONT_HEIGHT;
             }
-            // Simple scroll logic
-            if (cursor_y + EFFECTIVE_FONT_HEIGHT > (int)fb->height) {
-                clear_screen(fb, bg_color);
+            if (cursor_y + EFFECTIVE_FONT_HEIGHT > (int)framebuffer->height) {
+                fill_screen(bg_color);
                 cursor_x = 0;
                 cursor_y = 0;
             }
-            put_char(fb, str[i], cursor_x, cursor_y, text_color, bg_color);
+            // Pass character grid coordinates
+            put_char(c, cursor_x / EFFECTIVE_FONT_WIDTH, cursor_y / EFFECTIVE_FONT_HEIGHT);
             cursor_x += EFFECTIVE_FONT_WIDTH;
         }
     }
 }
 
-// Function to convert a hexadecimal number to a string for display
-void put_hex(struct limine_framebuffer *fb, uint64_t h) {
-    char buf[17]; // "0x" + 16 hex digits + null
-    buf[0] = '0';
-    buf[1] = 'x';
-    int i = 15 + 2; // start from the end for digits
-    buf[i--] = '\0';
-    if (h == 0) {
-        buf[i--] = '0';
-    } else {
-        while (h > 0) {
-            uint8_t digit = h % 16;
-            if (digit < 10) {
-                buf[i--] = '0' + digit;
-            } else {
-                buf[i--] = 'A' + (digit - 10);
-            }
-            h /= 16;
-        }
-    }
-    // Move valid hex digits to the start of the buffer after "0x"
-    int j = 2;
-    while(++i < 15 + 2) { // ++i to skip to the first valid digit
-        if (buf[i] != '\0') { // Check if it's part of the number
-            buf[j++] = buf[i];
-        }
-    }
-    buf[j] = '\0'; // Null terminate the potentially shorter string
-
-    put_string(fb, buf);
+// Definition matching main.h declaration: void put_hex(uint64_t value);
+void put_hex(uint64_t value) {
+    char hex_str[17];
+    uint64_to_hex_str(value, hex_str);
+    put_string("0x");
+    put_string(hex_str);
 }
 
-// Function to be called after paging is initialized and stack is switched.
-// This function will execute in the higher half, using the new page tables.
-void kernel_main_after_paging(struct limine_framebuffer *fb) {
-    // At this point, we are in high-half, on the new stack.
-    // Ensure fb pointer is valid (it should be, as it was mapped by init_paging)
-
-    if (fb == NULL || fb->address == NULL) {
-        print_serial(SERIAL_COM1_BASE, "kernel_main_after_paging: Framebuffer is NULL! Halting.\n");
-        for (;;) { asm volatile("cli; hlt"); }
-    }
-
-    // Re-initialize cursor for the new screen state if necessary, or use existing globals.
-    // For simplicity, let's assume existing globals (cursor_x, cursor_y, etc.) are fine.
-    // Or, reset them here.
-    cursor_x = 0;
-    cursor_y = 0;
-    struct limine_framebuffer *fb_to_pass = fb;
-    // text_color and bg_color should retain their values or be set here.
-
-    clear_screen(fb_to_pass, bg_color); // Clear screen with background color
-    put_string(fb_to_pass, "Hello, kernel from Higher Half!\n");
-    put_string(fb_to_pass, "Paging is active, and we are on the new stack.\n");
-
-    print_serial(SERIAL_COM1_BASE, "kernel_main_after_paging: Displayed message on framebuffer. Halting.\n");
-
-    // Halt the system after displaying the message
-    for (;;) {
-        asm volatile ("cli; hlt");
-    }
+// --- Serial Port Helper Functions ---
+// (Implementations - assuming print_serial, uint64_to_hex/dec exist)
+void print_serial_str_hex(uint16_t port, const char* str, uint64_t value) {
+    print_serial(port, str);
+    char hex_str[17];
+    uint64_to_hex_str(value, hex_str);
+    print_serial(port, hex_str);
+    print_serial(port, "\n");
 }
-
-// Kernel entry point
-void _start(void) {
-    // Initialize serial port COM1 first for early debugging
-    init_serial(SERIAL_COM1_BASE);
-    print_serial(SERIAL_COM1_BASE, "Serial port initialized!\n");
-
-    // DBG log for framebuffer address from Limine
-    if (framebuffer_request.response != NULL &&
-        framebuffer_request.response->framebuffer_count > 0 &&
-        framebuffer_request.response->framebuffers[0] != NULL) {
-        DBG(framebuffer_request.response->framebuffers[0]->address);
-    } else {
-        print_serial(SERIAL_COM1_BASE, "DBG: Framebuffer not available early.\n");
-    }
-
-    // Log framebuffer physical address EARLY
-    if (LIMINE_BASE_REVISION_SUPPORTED == 0) { // Check if Limine base revision is supported
-        print_serial(SERIAL_COM1_BASE, "Limine base revision not supported!\n");
-    } else if (framebuffer_request.response == NULL) {
-        print_serial(SERIAL_COM1_BASE, "EARLY CHECK: framebuffer_request.response IS NULL\n");
-    } else if (framebuffer_request.response->framebuffer_count < 1) {
-        print_serial(SERIAL_COM1_BASE, "EARLY CHECK: framebuffer_request.response->framebuffer_count IS < 1\n");
-    } else if (framebuffer_request.response->framebuffers[0] == NULL) {
-        print_serial(SERIAL_COM1_BASE, "EARLY CHECK: framebuffer_request.response->framebuffers[0] IS NULL\n");
-    } else {
-        print_serial(SERIAL_COM1_BASE, "EARLY CHECK: FB phys from Limine: 0x");
-        print_serial_hex(SERIAL_COM1_BASE, (uint64_t)framebuffer_request.response->framebuffers[0]->address);
-        print_serial(SERIAL_COM1_BASE, "\n");
-    }
-
-    // Get HHDM offset
-    if (hhdm_request.response == NULL) {
-        print_serial(SERIAL_COM1_BASE, "ERROR: No HHDM response from Limine! Halting.\n");
-        for (;;) { asm volatile("cli; hlt"); }
-    }
-    hhdm_offset = hhdm_request.response->offset;
-    print_serial(SERIAL_COM1_BASE, "HHDM offset: 0x");
-    print_serial_hex(SERIAL_COM1_BASE, hhdm_offset);
-    print_serial(SERIAL_COM1_BASE, "\n");
-
-    // Initialize GDT
-    init_gdt();
-    print_serial(SERIAL_COM1_BASE, "GDT initialized and loaded.\n");
-
-    // Initialize IDT
-    init_idt();
-    print_serial(SERIAL_COM1_BASE, "IDT initialized and loaded.\n");
-    asm volatile ("sti");
-    print_serial(SERIAL_COM1_BASE, "Interrupts enabled (STI).\n");
-
-    print_serial(SERIAL_COM1_BASE, "Attempting to retrieve memory map...\n");
-    if (memmap_request.response == NULL) {
-        print_serial(SERIAL_COM1_BASE, "ERROR: Limine memory map request failed or response is NULL. Halting.\n");
-        for (;;) { asm volatile ("cli; hlt"); }
-    }
-    struct limine_memmap_response *memmap_resp = memmap_request.response;
-    print_serial(SERIAL_COM1_BASE, "Memory map response received.\n");
-    print_serial(SERIAL_COM1_BASE, "Number of memory map entries: ");
-    print_serial_utoa(SERIAL_COM1_BASE, memmap_resp->entry_count);
-    print_serial(SERIAL_COM1_BASE, "\n");
-
-    // Print memory map entries for debugging
-    for (uint64_t i = 0; i < memmap_resp->entry_count; i++) {
-        struct limine_memmap_entry *entry = memmap_resp->entries[i];
-        print_serial(SERIAL_COM1_BASE, "Entry "); print_serial_utoa(SERIAL_COM1_BASE, i);
-        print_serial(SERIAL_COM1_BASE, ": Base: 0x"); print_serial_hex(SERIAL_COM1_BASE, entry->base);
-        print_serial(SERIAL_COM1_BASE, ", Length: 0x"); print_serial_hex(SERIAL_COM1_BASE, entry->length);
-        print_serial(SERIAL_COM1_BASE, " ("); print_serial_utoa(SERIAL_COM1_BASE, entry->length); print_serial(SERIAL_COM1_BASE, " bytes), Type: ");
-        switch (entry->type) {
-            case LIMINE_MEMMAP_USABLE: print_serial(SERIAL_COM1_BASE, "USABLE"); break;
-            case LIMINE_MEMMAP_RESERVED: print_serial(SERIAL_COM1_BASE, "RESERVED"); break;
-            case LIMINE_MEMMAP_ACPI_RECLAIMABLE: print_serial(SERIAL_COM1_BASE, "ACPI RECLAIMABLE"); break;
-            case LIMINE_MEMMAP_ACPI_NVS: print_serial(SERIAL_COM1_BASE, "ACPI NVS"); break;
-            case LIMINE_MEMMAP_BAD_MEMORY: print_serial(SERIAL_COM1_BASE, "BAD MEMORY"); break;
-            case LIMINE_MEMMAP_BOOTLOADER_RECLAIMABLE: print_serial(SERIAL_COM1_BASE, "BOOTLOADER RECLAIMABLE"); break;
-            case LIMINE_MEMMAP_KERNEL_AND_MODULES: print_serial(SERIAL_COM1_BASE, "KERNEL AND MODULES"); break;
-            case LIMINE_MEMMAP_FRAMEBUFFER: print_serial(SERIAL_COM1_BASE, "FRAMEBUFFER"); break;
-            default: print_serial(SERIAL_COM1_BASE, "UNKNOWN"); break;
-        }
-        print_serial(SERIAL_COM1_BASE, "\n");
-    }
-    print_serial(SERIAL_COM1_BASE, "Finished printing memory map.\n");
-
-    if (framebuffer_request.response == NULL || framebuffer_request.response->framebuffer_count < 1) {
-        print_serial(SERIAL_COM1_BASE, "ERROR: Limine framebuffer request failed or no framebuffers. Halting.\n");
-        for (;;) { asm volatile ("cli; hlt"); }
-    }
-    // struct limine_framebuffer_response *fb_resp = framebuffer_request.response; // Unused variable
-
-    // Initialize Physical Memory Manager (PMM)
-    // This must be called BEFORE paging is initialized if paging itself needs to allocate pages from PMM.
-    print_serial(SERIAL_COM1_BASE, "Initializing PMM...\n");
-    init_pmm(memmap_resp, hhdm_offset);
-    print_serial(SERIAL_COM1_BASE, "PMM initialized. Free pages: ");
-    print_serial_utoa(SERIAL_COM1_BASE, pmm_get_free_page_count());
-    print_serial(SERIAL_COM1_BASE, "\n");
-
-    // Allocate pages for the new kernel stack
-    print_serial(SERIAL_COM1_BASE, "Allocating kernel stack (");
-    print_serial_utoa(SERIAL_COM1_BASE, KERNEL_STACK_PAGES);
-    print_serial(SERIAL_COM1_BASE, " pages)...\n");
-
-    uint64_t stack_phys_bottom = 0;
-    uint64_t stack_size = KERNEL_STACK_PAGES * PAGE_SIZE;
-
-    for (int i = 0; i < KERNEL_STACK_PAGES; i++) {
-        uint64_t p = (uint64_t)pmm_alloc_page();
-        if (p == 0) {
-            panic("Failed to allocate page for kernel stack!");
-        }
-        if (i == 0) {
-            stack_phys_bottom = p;
-        }
-        // If KERNEL_STACK_PAGES > 1, subsequent 'p' values are allocated but not directly used
-        // by the init_paging call if it only takes stack_phys_bottom and stack_size,
-        // *unless* paging.c is modified to take an array of pages.
-        // The user's paging.c patch for the stack loop is:
-        // for (off=0; off<size; off+=PAGE_SIZE) { phys = base + off; virt = phys + hhdm; map(virt, phys) }
-        // This implies 'base' must be the start of a PHYSICALLY CONTIGUOUS block.
-    }
-
-    if (stack_phys_bottom == 0) { // Should be caught by p == 0 check inside loop
-        panic("Kernel stack bottom not set after allocation loop!");
-    }
-
-    print_serial(SERIAL_COM1_BASE, "Kernel stack (conceptually) allocated. Bottom P:0x");
-    print_serial_hex(SERIAL_COM1_BASE, stack_phys_bottom);
-    print_serial(SERIAL_COM1_BASE, ", Size:0x");
-    print_serial_hex(SERIAL_COM1_BASE, stack_size);
-    print_serial(SERIAL_COM1_BASE, "\n");
-
-    uint64_t new_rsp_virt_top = stack_phys_bottom + stack_size - 0x10 + hhdm_offset;
-    print_serial(SERIAL_COM1_BASE, "Calculated new RSP virtual top: 0x");
-    print_serial_hex(SERIAL_COM1_BASE, new_rsp_virt_top);
-    print_serial(SERIAL_COM1_BASE, "\n");
-
-    struct limine_framebuffer *fb_to_pass = NULL;
-    if (framebuffer_request.response != NULL && framebuffer_request.response->framebuffer_count > 0) {
-        fb_to_pass = framebuffer_request.response->framebuffers[0];
-         if (fb_to_pass != NULL) {
-            print_serial(SERIAL_COM1_BASE, "Framebuffer pointer to pass to init_paging: 0x");
-            print_serial_hex(SERIAL_COM1_BASE, (uint64_t)fb_to_pass);
-            print_serial(SERIAL_COM1_BASE, "\n");
-            if (fb_to_pass->address != NULL) {
-                 print_serial(SERIAL_COM1_BASE, "fb_to_pass->address: 0x");
-                 print_serial_hex(SERIAL_COM1_BASE, (uint64_t)fb_to_pass->address);
-                 print_serial(SERIAL_COM1_BASE, "\n");
-            } else {
-                print_serial(SERIAL_COM1_BASE, "fb_to_pass->address is NULL!\n");
-            }
-        } else {
-             print_serial(SERIAL_COM1_BASE, "fb_to_pass is NULL (framebuffers[0] was NULL)\n");
-        }
-    } else {
-        print_serial(SERIAL_COM1_BASE, "Framebuffer response or count invalid, cannot pass fb to init_paging.\n");
-        // Potentially panic here if fb is critical for kernel_main_after_paging
-    }
-
-    print_serial(SERIAL_COM1_BASE, "Calling init_paging (will not return)...\n");
-    init_paging(
-        framebuffer_request.response, // Pass the whole response struct
-        memmap_request.response,
-        stack_phys_bottom,
-        stack_size,
-        new_rsp_virt_top,
-        kernel_main_after_paging,
-        fb_to_pass // Pass the specific framebuffer pointer
-    );
-
-    // Should not be reached
-    for (;;) {
-        asm volatile ("cli; hlt");
-    }
+void print_serial_str_int(uint16_t port, const char* str, uint64_t value) {
+    print_serial(port, str);
+    char int_str[21];
+    uint64_to_dec_str(value, int_str);
+    print_serial(port, int_str);
+    print_serial(port, "\n");
 }
