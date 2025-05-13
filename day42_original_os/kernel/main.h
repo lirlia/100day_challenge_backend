@@ -44,7 +44,7 @@ void *memcpy(void *dest, const void *src, size_t n);
 void *memset(void *s, int c, size_t n);
 void uint64_to_dec_str(uint64_t value, char *buffer);
 void uint64_to_hex_str(uint64_t value, char *buffer);
-void panic(const char *message);
+void panic(const char *message) __attribute__((noreturn));
 
 // Framebuffer drawing functions from main.c (or font.c if moved)
 void fill_screen(uint32_t color);

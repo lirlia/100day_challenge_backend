@@ -33,6 +33,8 @@ uint32_t bg_color = 0x000000;
 // Define KERNEL_STACK_PAGES once at the top level
 #define KERNEL_STACK_PAGES 16
 
+extern uint64_t kernel_stack_top_phys; // Re-add TSS related extern
+
 // Kernel entry point
 void _start(void) {
     struct kernel_addr kernel_addresses; // Local struct is fine
@@ -95,6 +97,10 @@ void _start(void) {
 // This is the correct definition called after paging
 void kernel_main_after_paging(struct limine_framebuffer *fb_info_virt) {
     framebuffer = fb_info_virt; // Use virtual address
+
+    // Re-add TSS RSP0 setting code
+    uint64_t kernel_stack_top_virt = KERNEL_STACK_VIRT_TOP;
+    tss_set_rsp0(kernel_stack_top_virt);
 
     // Access static volatile smp_request
     if (smp_request.response == NULL) {

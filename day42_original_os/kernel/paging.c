@@ -56,9 +56,8 @@ extern uint8_t _bss_start[],  _bss_end[];
 // Top-level PML4 table (physical address) - Make this a file-scope global
 pml4e_t *kernel_pml4_phys = NULL;
 
-// Kernel stack top physical address (used to set TSS.RSP0)
-// Initialize to 0, will be set in init_paging
-// uint64_t kernel_stack_top_phys = 0; // Removed TSS related global
+// Kernel stack top physical address (used to set TSS.RSP0) - Re-added
+uint64_t kernel_stack_top_phys = 0;
 
 // Global PML4 table, page-aligned. (Unused due to dynamic allocation)
 // __attribute__((aligned(PAGE_SIZE)))
