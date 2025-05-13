@@ -41,4 +41,22 @@ typedef struct task {
     // - exit_code
 } task_t;
 
+#define MAX_TASKS 16 // Maximum number of tasks the queue can hold
+
+// Task Queue (simple ring buffer)
+typedef struct {
+    task_t* tasks[MAX_TASKS];
+    int head;
+    int tail;
+    int count;
+    // Add lock/semaphore if preemption is introduced before ISR-off sections are used for queue manipulation
+} task_queue_t;
+
+// Task queue operations
+void init_task_queue(task_queue_t *queue);
+int enqueue_task(task_queue_t *queue, task_t *task);
+task_t* dequeue_task(task_queue_t *queue);
+int is_task_queue_empty(task_queue_t *queue);
+int is_task_queue_full(task_queue_t *queue);
+
 #endif // KERNEL_TASK_H
