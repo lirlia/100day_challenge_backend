@@ -1,0 +1,87 @@
+{{define "content"}}
+<div class="container topology-container">
+  <h2>ネットワークトポロジー</h2>
+
+  <div class="topology-actions">
+    <button id="zoom-in" class="btn-small">拡大</button>
+    <button id="zoom-out" class="btn-small">縮小</button>
+    <button id="reset-view" class="btn-small">リセット</button>
+  </div>
+
+  <div class="topology-view">
+    <div id="topology-canvas"></div>
+  </div>
+
+  <div class="topology-legend">
+    <h3>凡例</h3>
+    <div class="legend-item">
+      <div class="legend-color router-node"></div>
+      <div class="legend-label">ルーター</div>
+    </div>
+    <div class="legend-item">
+      <div class="legend-color link-up"></div>
+      <div class="legend-label">リンク稼働中</div>
+    </div>
+    <div class="legend-item">
+      <div class="legend-color link-down"></div>
+      <div class="legend-label">リンク停止中</div>
+    </div>
+  </div>
+
+  <div class="topology-info">
+    <h3>トポロジー情報</h3>
+    <div class="info-item">
+      <label>ルーター数:</label>
+      <span>{{len .Routers}}</span>
+    </div>
+    <div class="info-item">
+      <label>リンク数:</label>
+      <span>{{len .Links}}</span>
+    </div>
+  </div>
+
+  <script>
+    // トポロジーデータをJavaScriptオブジェクトに渡す
+    const topologyData = {
+      routers: [],
+      links: []
+    };
+
+    // ルーターデータを追加
+    { {range $id, $router := .Routers } }
+    topologyData.routers.push({
+      id: "{{$id}}",
+      name: "{{$router.Name}}",
+      interfaces: []
+    });
+
+    // このルーターのインターフェースを追加
+    { {range $ifName, $iface := $router.Interfaces } }
+    topologyData.routers[topologyData.routers.length - 1].interfaces.push({
+      name: "{{$ifName}}",
+      ip: "{{$iface.IPAddress}}",
+      isUp: {{ if $iface.IsUp }}true{{ else}}false{{ end }}
+    });
+    { { end } }
+    { { end } }
+
+    // リンクデータを追加
+    { {range $id, $link := .Links } }
+    topologyData.links.push({
+      id: "{{$id}}",
+      isUp: {{ if $link.IsUp }}true{{ else}}false{{ end }},
+      endpoint1: {
+      routerId: "{{$link.Endpoint1.RouterID}}",
+      interfaceName: "{{$link.Endpoint1.InterfaceName}}"
+    },
+      endpoint2: {
+      routerId: "{{$link.Endpoint2.RouterID}}",
+      interfaceName: "{{$link.Endpoint2.InterfaceName}}"
+    }
+    });
+    { { end } }
+
+    // ページロード時にトポロジーを描画するためのコードは app.js に記述
+  </script>
+</div>
+{{end}}

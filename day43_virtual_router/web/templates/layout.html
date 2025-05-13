@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{.Title}} | 仮想ルーターシミュレーター</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <script src="/static/js/app.js" defer></script>
+</head>
+
+<body>
+  <header>
+    <div class="header-container">
+      <h1><a href="/">仮想ルーターシミュレーター</a></h1>
+      <div class="timestamp">現在時刻: {{.TimeStamp}}</div>
+    </div>
+    <nav>
+      <ul>
+        <li><a href="/">ホーム</a></li>
+        <li><a href="/topology">トポロジー</a></li>
+        <li class="dropdown">
+          <a href="#">ルーター</a>
+          <ul class="dropdown-content">
+            {{range $id, $router := .Routers}}
+            <li><a href="/router/{{$id}}">{{$router.Name}} ({{$id}})</a></li>
+            {{end}}
+          </ul>
+        </li>
+      </ul>
+    </nav>
+  </header>
+
+  <main>
+    {{if .Message}}
+    <div class="message {{if eq .MessageType " error"}}error{{else}}success{{end}}">
+      {{.Message}}
+    </div>
+    {{end}}
+
+    {{template "content" .}}
+  </main>
+
+  <footer>
+    <div class="footer-container">
+      <p>Day43 バーチャルルーターシミュレーター &copy; 2024</p>
+    </div>
+  </footer>
+</body>
+
+</html>
