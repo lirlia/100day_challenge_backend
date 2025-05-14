@@ -62,4 +62,34 @@
         *   [ ] `kernel/main.c` (`kernel_main_after_paging` 内): `ready_queue` から最初のタスクを `dequeue_task` で取得し `current_task` に設定。このタスクの `tss_set_rsp0(current_task->kernel_stack_top)` を呼び出し。もし `current_task->context.cr3` が現在のCR3と異なれば `load_cr3()` を呼び出す（通常カーネルタスクでは同じはず）。
         *   [ ] `kernel/apic.c` (`timer_handler` 内のコンテキスト保存・復元部分):
             *   [ ] コンテキスト保存時: `current_task` (つまり `old_task`) が `NULL` でなく、`old_task->has_run_once == true` の場合のみ、スタック上のレジスタ情報 (`regs` が指す領域と、それ以降の `iretq` フレーム) を `old_task->context` へコピー。`old_task->context.cr3` も `get_current_cr3()` で更新。初回(`has_run_once == false`)の場合は、`create_task` で設定された初期コンテキストが使われるように保存処理をスキップし、`old_task->has_run_once = true` に設定する。
-            *   [ ] コンテキスト復元時: `schedule()` によって `current_task`
+            *   [ ] コンテキスト復元時: `schedule()` によって `current_task` (つまり `new_task`) が更新された後、`new_task` が `NULL` でなく、(`old_task != new_task` または `!new_task->has_run_once`) の場合に、`new_task->context` からスタック上の対応する位置へレジスタ情報と `iretq` フレームをコピー。`new_task->context.cr3` が現在のCR3と異なれば `load_cr3()`。復元時に `new_task->has_run_once = true` に設定。
+        *   [ ] `kernel/main.c` (`kernel_main_after_paging` 内): `init_apic` 呼び出しの後、`asm volatile ("sti");` で割り込みを有効化し、無限 `hlt` ループに入り、最初のタイマー割り込みによるタスクスイッチを待つ。
+    *   [ ] **Sub-Task 2.3: 動作検証とデバッグ**
+        *   [ ] `make clean && make && make run-bios` でビルドと実行。
+        *   [ ] QEMU のシリアルコンソールで、各ダミータスクが出力する異なる文字が交互に表示されることを確認。
+        *   [ ] 問題が発生した場合、シリアルデバッグ出力を頼りに、コンテキスト構造体の内容、スタックポインタの操作、`has_run_once` フラグの遷移、`create_task` での初期コンテキスト設定、`timer_handler` でのスタックからの読み書きオフセットなどを中心にデバッグ。
+
+### Phase 5: ELF 形式のユーザプロセス起動
+- [ ] ELF64 ローダーの実装
+- [ ] `.text`, `.data` セクションのユーザー空間へのマッピング
+- [ ] システムコールインターフェースの実装 (例: `int 0x80`)
+- [ ] 基本的なシステムコール (`sys_write`, `sys_exit` など) の実装
+- [ ] `init` プロセスの作成
+- [ ] `fork` と `exec` (または同等の機能) の実装 (`init` から `/bin/sh` 起動目標)
+
+### Phase 6: ミニシェル + echo / ls
+- [ ] ミニシェルの実装
+    - [ ] `readline()` (入力取得)
+    - [ ] `parse()` (コマンド解析)
+    - [ ] `exec()` (コマンド実行)
+- [ ] 仮想ファイルシステム (VFS) 層の設計と実装
+- [ ] RAMFS (RAMベースのファイルシステム) の実装とルートマウント
+- [ ] デバイスファイルの実装 (例: `/dev/console`, `/proc/meminfo`)
+- [ ] `ls` コマンドの実装 (RAMFS のディレクトリエントリ列挙)
+- [ ] `echo` コマンドの実装 (`write(1, ...)` を使用)
+
+## その他
+
+- [x] ホスト環境構築 (クロスツールチェーン、QEMUなど)
+- [x] ビルドスクリプトの整備
+- [ ] デバッグ環境の確立 (GDB/LLDBリモートデバッグ)
