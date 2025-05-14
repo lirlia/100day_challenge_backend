@@ -64,6 +64,9 @@ typedef struct task {
     full_context_t context;       // MODIFIED: Stores the full context for task switching.
 
     uint64_t kernel_stack_top;    // Top of the kernel stack for this task (TSS.RSP0)
+    uint64_t kernel_stack_bottom; // Bottom of the kernel stack for this task
+    char name[32];                // Task name
+    int has_run_once;             // Flag to check if the task has run at least once (0 = false, 1 = true)
 
     struct task *next;            // Pointer to the next task in the ready queue
     struct task *prev;            // Pointer to the previous task in the ready queue
@@ -101,5 +104,13 @@ int is_task_queue_full(task_queue_t *queue);
 
 // Scheduler function
 void schedule(void);
+
+// Task entry point function type
+typedef void (*task_entry_point_t)(void);
+
+// Create a new task
+// pml4_phys_addr is the physical address of the PML4 table for the new task's address space.
+// For kernel tasks, this will typically be the kernel's PML4.
+task_t *create_task(const char *name, task_entry_point_t entry_point, uint64_t pml4_phys_addr);
 
 #endif // KERNEL_TASK_H
