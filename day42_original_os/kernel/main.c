@@ -95,6 +95,33 @@ void _start(void) {
     hcf(); // Should not return
 }
 
+// --- Dummy Task Functions ---
+void dummy_task_a_main(void) {
+    uint64_t counter = 0;
+    while (1) {
+        if ((counter % 10000000) == 0) { // Adjust frequency as needed
+            print_serial(SERIAL_COM1_BASE, "A");
+        }
+        counter++;
+        // Small delay to prevent spamming and allow observation
+        for (volatile int i = 0; i < 1000; ++i) { asm volatile ("nop"); }
+        // asm volatile ("hlt"); // Using hlt might stop the task if interrupts are not yet fully handled by scheduler for tasks
+    }
+}
+
+void dummy_task_b_main(void) {
+    uint64_t counter = 0;
+    while (1) {
+        if ((counter % 10000000) == 0) { // Adjust frequency as needed
+            print_serial(SERIAL_COM1_BASE, "B");
+        }
+        counter++;
+        // Small delay to prevent spamming and allow observation
+        for (volatile int i = 0; i < 1000; ++i) { asm volatile ("nop"); }
+        // asm volatile ("hlt");
+    }
+}
+
 // This is the correct definition called after paging
 void kernel_main_after_paging(struct limine_framebuffer *fb_info_virt) {
     framebuffer = fb_info_virt; // Use virtual address
