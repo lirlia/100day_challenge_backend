@@ -103,7 +103,7 @@ void _start(void) {
 void dummy_task_a_main(void) {
     uint64_t counter = 0;
     while (1) {
-        if ((counter % 10000000) == 0) { // Adjust frequency as needed
+        if ((counter % 500000) == 0) { // Adjust frequency as needed
             print_serial(SERIAL_COM1_BASE, "A");
         }
         counter++;
@@ -116,7 +116,7 @@ void dummy_task_a_main(void) {
 void dummy_task_b_main(void) {
     uint64_t counter = 0;
     while (1) {
-        if ((counter % 10000000) == 0) { // Adjust frequency as needed
+        if ((counter % 500000) == 0) { // Adjust frequency as needed
             print_serial(SERIAL_COM1_BASE, "B");
         }
         counter++;
@@ -247,12 +247,42 @@ void kernel_main_after_paging(struct limine_framebuffer *fb_info, uint64_t new_r
     }
     print_serial(SERIAL_COM1_BASE, "--- Dummy Task Creation and Enqueueing Complete ---\n\n");
 
-    print_serial(SERIAL_COM1_BASE, "Enabling interrupts and halting CPU (waiting for scheduler via timer).\n");
-    asm volatile ("sti");
-    while(1) { // Loop hlt to allow scheduler to pick up tasks
-        asm volatile ("hlt");
+    print_serial(SERIAL_COM1_BASE, "Setting up initial task for execution...\n");
+    if (is_task_queue_empty(&ready_queue)) {
+        panic("Ready queue is empty after task creation! Cannot start scheduler.");
     }
-    // Unreachable if scheduler works
+
+    current_task = dequeue_task(&ready_queue);
+    if (current_task == NULL) {
+        panic("Failed to dequeue initial task!");
+    }
+
+    print_serial_str(SERIAL_COM1_BASE, "Dequeued initial task: ");
+    print_serial_str(SERIAL_COM1_BASE, current_task->name);
+    print_serial_str_hex(SERIAL_COM1_BASE, "\n  PID: ", current_task->pid);
+    print_serial_str_hex(SERIAL_COM1_BASE, "  Kernel Stack Top (for RSP0): ", current_task->kernel_stack_top);
+    print_serial_str_hex(SERIAL_COM1_BASE, "  Initial RIP: ", current_task->context.rip);
+    print_serial_str_hex(SERIAL_COM1_BASE, "  Initial RSP: ", current_task->context.rsp_user);
+    print_serial_str_hex(SERIAL_COM1_BASE, "  Initial RFLAGS: ", current_task->context.rflags);
+    print_serial_str_hex(SERIAL_COM1_BASE, "  Initial CR3 (phys): ", current_task->context.cr3);
+
+
+    tss_set_rsp0(current_task->kernel_stack_top);
+    print_serial_str_hex(SERIAL_COM1_BASE, "TSS.RSP0 set for current_task: ", current_task->kernel_stack_top);
+
+    // For the very first task, its CR3 should already be the active kernel CR3.
+    // If we were switching to a task with a *different* address space, we'd do:
+    // if (get_current_cr3() != current_task->context.cr3) { // get_current_cr3() needs to be implemented
+    //     load_cr3(current_task->context.cr3);
+    //     print_serial_str_hex(SERIAL_COM1_BASE, "Loaded new CR3 for task: ", current_task->context.cr3);
+    // }
+
+
+    print_serial(SERIAL_COM1_BASE, "\nEnabling interrupts and halting CPU (waiting for scheduler via timer to start first task).\n");
+    asm volatile ("sti"); // Enable interrupts
+    while(1) {
+        asm volatile ("hlt"); // Halt CPU until next interrupt (first timer interrupt will trigger schedule)
+    }
 }
 
 // --- Utility Functions ---
