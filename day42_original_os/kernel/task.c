@@ -163,23 +163,51 @@ void schedule(void) {
 
 task_t *create_task(const char *name, task_entry_point_t entry_point, uint64_t pml4_phys_addr) {
     // 1. Allocate memory for the task_t structure itself
-    task_t *task = (task_t *)pmm_alloc_page(); // Using a full page for PCB for simplicity, could be optimized
-    if (!task) {
-        print_serial(SERIAL_COM1_BASE, "create_task: Failed to allocate memory for PCB\n");
+    uint64_t task_struct_phys = (uint64_t)pmm_alloc_page();
+    if (!task_struct_phys) {
+        print_serial(SERIAL_COM1_BASE, "create_task: Failed to allocate physical page for PCB\n");
         return NULL;
     }
+    uint64_t task_struct_virt = task_struct_phys + hhdm_offset;
+
+    // Map the PCB page into the current address space (kernel PML4)
+    extern pml4e_t *kernel_pml4_virt; // Ensure it's known
+    print_serial(SERIAL_COM1_BASE, "create_task: Calling map_page for PCB.\n");
+    print_serial_str_hex(SERIAL_COM1_BASE, "  kernel_pml4_virt: ", (uint64_t)kernel_pml4_virt);
+    print_serial_str_hex(SERIAL_COM1_BASE, "  task_struct_virt (to map): ", task_struct_virt);
+    print_serial_str_hex(SERIAL_COM1_BASE, "  task_struct_phys (to map): ", task_struct_phys);
+    map_page(kernel_pml4_virt, task_struct_virt, task_struct_phys, PTE_PRESENT | PTE_WRITABLE | PTE_NO_EXECUTE, "Task PCB");
+
+    print_serial(SERIAL_COM1_BASE, "create_task: PCB page allocated and mapped. Phys: 0x");
+    print_serial_hex(SERIAL_COM1_BASE, task_struct_phys);
+    print_serial(SERIAL_COM1_BASE, ", Virt: 0x");
+    print_serial_hex(SERIAL_COM1_BASE, task_struct_virt);
+    write_serial_char(SERIAL_COM1_BASE, '\n');
+
+    // Log the size of task_t
+    char size_str[21];
+    uint64_to_dec_str(sizeof(task_t), size_str);
+    print_serial(SERIAL_COM1_BASE, "create_task: sizeof(task_t) = ");
+    print_serial(SERIAL_COM1_BASE, size_str);
+    print_serial(SERIAL_COM1_BASE, " bytes\n");
+
+    task_t *task = (task_t *)task_struct_virt;
+
     // Zero out the task_t structure
-    // NOTE: A proper memset would be better, but for now, critical fields are set manually.
-    // A simple loop-based memset:
-    uint8_t* task_ptr_byte = (uint8_t*)task;
-    for(size_t i = 0; i < sizeof(task_t); ++i) {
-        task_ptr_byte[i] = 0;
-    }
+    print_serial(SERIAL_COM1_BASE, "create_task: About to memset task_t structure at virt: 0x");
+    print_serial_hex(SERIAL_COM1_BASE, (uint64_t)task);
+    print_serial(SERIAL_COM1_BASE, " for PAGE_SIZE bytes\n");
+    memset((void*)task, 0, PAGE_SIZE); // Zero out the entire page for the task struct
+    print_serial(SERIAL_COM1_BASE, "create_task: memset task_t structure completed.\n");
 
-
-    // 2. Initialize PCB fields
+    // Initialize the task_t structure
+    print_serial(SERIAL_COM1_BASE, "create_task: About to access task->pid\n");
     task->pid = next_pid++;
+    print_serial(SERIAL_COM1_BASE, "create_task: task->pid accessed and set.\n");
+
+    if (name) {
     strncpy_local(task->name, name, sizeof(task->name));
+    }
     task->state = TASK_STATE_READY;
     task->has_run_once = 0; // false
 

@@ -1,6 +1,7 @@
 #include "paging.h"
 #include "pmm.h"
 #include "serial.h"
+#include "main.h" // Added to include uint64_to_dec_str prototype
 #include <stddef.h>
 #include <stdint.h>
 #include "idt.h" // For struct idt_entry and idt_ptr, if needed by debug code
@@ -55,6 +56,7 @@ extern uint8_t _bss_start[],  _bss_end[];
 
 // Top-level PML4 table (physical address) - Make this a file-scope global
 pml4e_t *kernel_pml4_phys = NULL;
+pml4e_t *kernel_pml4_virt = NULL; // Define kernel_pml4_virt
 
 // Kernel stack top physical address (used to set TSS.RSP0) - Re-added
 uint64_t kernel_stack_top_phys = 0;
@@ -91,6 +93,15 @@ static inline void load_pml4(uint64_t pml4_addr) {
 
 // Function to map a physical page to a virtual page
 void map_page(uint64_t *pml4_virt_param, uint64_t virt_addr, uint64_t phys_addr, uint64_t flags, const char* debug_tag) {
+    print_serial(SERIAL_COM1_BASE, "map_page called. Tag: ");
+    if (debug_tag) print_serial(SERIAL_COM1_BASE, debug_tag);
+    else print_serial(SERIAL_COM1_BASE, "(null)");
+    print_serial(SERIAL_COM1_BASE, "\n");
+    print_serial_str_hex(SERIAL_COM1_BASE, "  pml4_virt_param (used as base): ", (uint64_t)pml4_virt_param);
+    print_serial_str_hex(SERIAL_COM1_BASE, "  virt_addr (to map): ", virt_addr);
+    print_serial_str_hex(SERIAL_COM1_BASE, "  phys_addr (to map): ", phys_addr);
+    print_serial_str_hex(SERIAL_COM1_BASE, "  flags: ", flags);
+
     (void)debug_tag; // Suppress unused parameter warning for now if not used extensively
 
     if ((virt_addr % PAGE_SIZE != 0) || (phys_addr % PAGE_SIZE != 0)) {
@@ -99,12 +110,14 @@ void map_page(uint64_t *pml4_virt_param, uint64_t virt_addr, uint64_t phys_addr,
     }
 
     uint64_t pml4_idx = PML4_INDEX(virt_addr);
-    uint64_t pdpt_idx = PDPT_INDEX(virt_addr);
-    uint64_t pd_idx = PD_INDEX(virt_addr);
-    uint64_t pt_idx = PT_INDEX(virt_addr);
+
+    print_serial_str_hex(SERIAL_COM1_BASE, "map_page: PML4 Entry for ", virt_addr);
+    print_serial_str_int(SERIAL_COM1_BASE, " (Index ", pml4_idx);
+    print_serial_str_hex(SERIAL_COM1_BASE, ") Value: ", pml4_virt_param[pml4_idx]);
 
     pdpte_t *pdpt_virt;
     if (!(pml4_virt_param[pml4_idx] & PTE_PRESENT)) {
+        print_serial(SERIAL_COM1_BASE, "map_page: PML4E not present. Allocating new PDPT.\n");
         uint64_t pdpt_phys = (uint64_t)pmm_alloc_page();
         if (!pdpt_phys) {
             print_serial(SERIAL_COM1_BASE, "CRITICAL PMM alloc failed for PDPT in map_page! Halting.\n");
@@ -112,40 +125,101 @@ void map_page(uint64_t *pml4_virt_param, uint64_t virt_addr, uint64_t phys_addr,
         }
         pdpt_virt = (pdpte_t *)(pdpt_phys + hhdm_offset);
         clear_page(pdpt_virt);
-        pml4_virt_param[pml4_idx] = pdpt_phys | PTE_PRESENT | PTE_WRITABLE;
+        pml4_virt_param[pml4_idx] = pdpt_phys | PTE_PRESENT | PTE_WRITABLE | PTE_USER;
+        print_serial_str_hex(SERIAL_COM1_BASE, "map_page: Allocated PDPT at phys: ", pdpt_phys);
+        print_serial_str_hex(SERIAL_COM1_BASE, ", Virt: ", (uint64_t)pdpt_virt);
     } else {
+        print_serial(SERIAL_COM1_BASE, "map_page: PML4E present. Using existing PDPT.\n");
         pdpt_virt = (pdpte_t *)((pml4_virt_param[pml4_idx] & PTE_ADDR_MASK) + hhdm_offset);
     }
+    print_serial_str_hex(SERIAL_COM1_BASE, "map_page: PDPT Phys from PML4E: ", (pml4_virt_param[pml4_idx] & PTE_ADDR_MASK));
+    print_serial_str_hex(SERIAL_COM1_BASE, ", Virt (pdpt_virt): ", (uint64_t)pdpt_virt);
+
+    uint64_t pdpt_idx = PDPT_INDEX(virt_addr);
+    print_serial_str_hex(SERIAL_COM1_BASE, "map_page: PDPT Entry for ", virt_addr);
+    print_serial_str_int(SERIAL_COM1_BASE, " (Index ", pdpt_idx);
+    print_serial_str_hex(SERIAL_COM1_BASE, ") Value: ", pdpt_virt[pdpt_idx]);
 
     pde_t *pd_virt;
     if (!(pdpt_virt[pdpt_idx] & PTE_PRESENT)) {
+        print_serial(SERIAL_COM1_BASE, "map_page: PDPTE not present. Allocating new PD.\n");
         uint64_t pd_phys = (uint64_t)pmm_alloc_page();
         if (!pd_phys) {
-            print_serial(SERIAL_COM1_BASE, "CRITICAL PMM alloc failed for PD in map_page! Halting.\n");
-            for(;;) asm volatile("cli; hlt");
+            print_serial(SERIAL_COM1_BASE, "map_page: Failed to allocate page for PD!\n");
+            hcf();
         }
+        memset((void *)(pd_phys + hhdm_offset), 0, PAGE_SIZE);
+        pdpt_virt[pdpt_idx] = pd_phys | PTE_PRESENT | PTE_WRITABLE | PTE_USER;
         pd_virt = (pde_t *)(pd_phys + hhdm_offset);
-        clear_page(pd_virt);
-        pdpt_virt[pdpt_idx] = pd_phys | PTE_PRESENT | PTE_WRITABLE;
+        print_serial_str_hex(SERIAL_COM1_BASE, "map_page: Allocated Page Directory at phys: ", pd_phys);
+        print_serial_str_hex(SERIAL_COM1_BASE, ", Virt: ", (uint64_t)pd_virt);
     } else {
+        print_serial(SERIAL_COM1_BASE, "map_page: PDPTE present. Using existing PD.\n");
         pd_virt = (pde_t *)((pdpt_virt[pdpt_idx] & PTE_ADDR_MASK) + hhdm_offset);
     }
+    print_serial_str_hex(SERIAL_COM1_BASE, "map_page: PD Phys from PDPTE: ", (pdpt_virt[pdpt_idx] & PTE_ADDR_MASK));
+    print_serial_str_hex(SERIAL_COM1_BASE, ", Virt (pd_virt): ", (uint64_t)pd_virt);
+
+    uint64_t pd_idx = PD_INDEX(virt_addr);
+    print_serial_str_hex(SERIAL_COM1_BASE, "map_page: PD Entry for ", virt_addr);
+    print_serial_str_int(SERIAL_COM1_BASE, " (Index ", pd_idx);
+    print_serial_str_hex(SERIAL_COM1_BASE, ") Value: ", pd_virt[pd_idx]);
 
     pte_t *pt_virt;
     if (!(pd_virt[pd_idx] & PTE_PRESENT)) {
+        print_serial(SERIAL_COM1_BASE, "map_page: PDE not present. Allocating new PT.\n");
         uint64_t pt_phys = (uint64_t)pmm_alloc_page();
         if (!pt_phys) {
-            print_serial(SERIAL_COM1_BASE, "CRITICAL PMM alloc failed for PT in map_page! Halting.\n");
-            for(;;) asm volatile("cli; hlt");
+            print_serial(SERIAL_COM1_BASE, "map_page: Failed to allocate page for PT!\n");
+            hcf();
         }
+        memset((void *)(pt_phys + hhdm_offset), 0, PAGE_SIZE);
+        pd_virt[pd_idx] = pt_phys | PTE_PRESENT | PTE_WRITABLE | PTE_USER;
         pt_virt = (pte_t *)(pt_phys + hhdm_offset);
-        clear_page(pt_virt);
-        pd_virt[pd_idx] = pt_phys | PTE_PRESENT | PTE_WRITABLE;
+        print_serial_str_hex(SERIAL_COM1_BASE, "map_page: Allocated Page Table at phys: ", pt_phys);
+        print_serial_str_hex(SERIAL_COM1_BASE, ", Virt: ", (uint64_t)pt_virt);
     } else {
+        print_serial(SERIAL_COM1_BASE, "map_page: PDE present. Using existing PT.\n");
         pt_virt = (pte_t *)((pd_virt[pd_idx] & PTE_ADDR_MASK) + hhdm_offset);
     }
+    print_serial_str_hex(SERIAL_COM1_BASE, "map_page: PT Phys from PDE: ", (pd_virt[pd_idx] & PTE_ADDR_MASK));
+    print_serial_str_hex(SERIAL_COM1_BASE, ", Virt (pt_virt): ", (uint64_t)pt_virt);
 
-    pt_virt[pt_idx] = phys_addr | flags;
+    uint64_t pt_idx = PT_INDEX(virt_addr);
+    print_serial_str_hex(SERIAL_COM1_BASE, "map_page: PT Entry for ", virt_addr);
+    print_serial_str_int(SERIAL_COM1_BASE, " (Index ", pt_idx);
+    if(pt_virt) {
+        print_serial_str_hex(SERIAL_COM1_BASE, ") Current value: ", pt_virt[pt_idx]);
+    } else {
+        print_serial(SERIAL_COM1_BASE, ") Current value: pt_virt is NULL!\n");
+    }
+
+    uint64_t old_pt_entry_value = 0;
+    if(pt_virt) {
+        old_pt_entry_value = pt_virt[pt_idx];
+        pt_virt[pt_idx] = (phys_addr & PTE_ADDR_MASK) | flags;
+    } else {
+        print_serial(SERIAL_COM1_BASE, "map_page: pt_virt is NULL, cannot set PT entry! Halting.\n");
+        hcf();
+    }
+
+    print_serial(SERIAL_COM1_BASE, "map_page: Mapping 0x");
+    print_serial_hex(SERIAL_COM1_BASE, virt_addr);
+    print_serial(SERIAL_COM1_BASE, " to 0x");
+    print_serial_hex(SERIAL_COM1_BASE, phys_addr);
+    print_serial(SERIAL_COM1_BASE, " with flags 0x");
+    print_serial_hex(SERIAL_COM1_BASE, flags);
+    print_serial(SERIAL_COM1_BASE, ". PT Entry old value: 0x");
+    print_serial_hex(SERIAL_COM1_BASE, old_pt_entry_value);
+    print_serial(SERIAL_COM1_BASE, ", New value: 0x");
+    print_serial_hex(SERIAL_COM1_BASE, pt_virt[pt_idx]);
+    print_serial(SERIAL_COM1_BASE, "\n");
+
+    // Flush TLB entry for the modified virtual address
+    // For simplicity, we can reload CR3 to flush the entire TLB.
+    // Alternatively, invlpg instruction can be used for a single page.
+    asm volatile ("mov %%cr3, %%rax; mov %%rax, %%cr3" ::: "rax", "memory");
+    print_serial(SERIAL_COM1_BASE, "map_page: CR3 reloaded to flush TLB.\n");
 }
 
 // Unmap a page (optional, good for later use)
@@ -158,8 +232,8 @@ void init_paging(
     uint64_t kernel_stack_phys_base,
     uint64_t kernel_stack_size,
     uint64_t new_rsp_virt_top,
-    void (*kernel_entry_after_paging_fn)(struct limine_framebuffer *),
-    struct limine_framebuffer *fb_for_kernel_main // Specific framebuffer to pass
+    void (*kernel_entry_after_paging_fn)(struct limine_framebuffer *, uint64_t),
+    struct limine_framebuffer *fb_for_kernel_main
 ) {
     print_serial(SERIAL_COM1_BASE, "Inside init_paging...\n");
 
@@ -273,15 +347,13 @@ void init_paging(
     if (!(apic_base_msr & IA32_APIC_BASE_MSR_X2APIC_ENABLE)) {
         uint64_t apic_phys_base = apic_base_msr & 0xFFFFF000;
         if (apic_phys_base != 0) {
-            uint64_t apic_virt_page = apic_phys_base + hhdm_offset;
+            uint64_t apic_virt_base = apic_phys_base + hhdm_offset;
             print_serial(SERIAL_COM1_BASE, "Mapping APIC MMIO (xAPIC mode) Phys: 0x");
             print_serial_hex(SERIAL_COM1_BASE, apic_phys_base);
             print_serial(SERIAL_COM1_BASE, " to Virt: 0x");
-            print_serial_hex(SERIAL_COM1_BASE, apic_virt_page);
+            print_serial_hex(SERIAL_COM1_BASE, apic_virt_base);
             print_serial(SERIAL_COM1_BASE, "\n");
-            map_page(pml4_virt, apic_virt_page, apic_phys_base,
-                     PTE_PRESENT | PTE_WRITABLE | PTE_NO_CACHE_DISABLE | PTE_NO_EXECUTE,
-                     "APIC MMIO");
+            map_page(pml4_virt, apic_virt_base, apic_phys_base, PTE_PRESENT | PTE_WRITABLE | PTE_NO_EXECUTE | PTE_NO_CACHE_DISABLE, "APIC MMIO");
         } else {
             print_serial(SERIAL_COM1_BASE, "Warning: APIC physical base is zero, cannot map MMIO.\n");
             // Continue without mapping, init_apic might panic later if it needs MMIO.
@@ -290,7 +362,28 @@ void init_paging(
         print_serial(SERIAL_COM1_BASE, "x2APIC mode detected, skipping APIC MMIO mapping.\n");
     }
 
-    // map_current_idt(); // Commented out as it needs review for 5-arg map_page
+    // Map PMM internal stack pages to HHDM
+    // This needs pmm_info to be populated by init_pmm, which usually runs before init_paging.
+    // However, pmm_info is global. We need to ensure init_pmm was called.
+    // Assuming init_pmm has run and pmm_info is valid.
+    if (pmm_info.stack_phys_base != 0 && pmm_info.pmm_stack_size_pages > 0) {
+        print_serial(SERIAL_COM1_BASE, "Mapping PMM internal stack. PhysBase: 0x");
+        print_serial_hex(SERIAL_COM1_BASE, pmm_info.stack_phys_base);
+        print_serial(SERIAL_COM1_BASE, ", NumPages: ");
+        char num_pages_str[21]; // Buffer for decimal string
+        uint64_to_dec_str(pmm_info.pmm_stack_size_pages, num_pages_str);
+        print_serial(SERIAL_COM1_BASE, num_pages_str);
+        print_serial(SERIAL_COM1_BASE, "\n");
+
+        for (uint64_t i = 0; i < pmm_info.pmm_stack_size_pages; i++) {
+            uint64_t phys_addr = pmm_info.stack_phys_base + (i * PAGE_SIZE);
+            uint64_t virt_addr = phys_addr + hhdm_offset;
+            map_page(pml4_virt, virt_addr, phys_addr, PTE_PRESENT | PTE_WRITABLE | PTE_NO_EXECUTE, "PMM Stack");
+        }
+        print_serial(SERIAL_COM1_BASE, "PMM internal stack mapped to HHDM.\n");
+    } else {
+        print_serial(SERIAL_COM1_BASE, "PMM internal stack mapping skipped (base or size is zero).\n");
+    }
 
     print_serial(SERIAL_COM1_BASE, "All mappings complete. Preparing to load CR3 and switch context.\n");
     print_serial(SERIAL_COM1_BASE, "Kernel PML4 physical address: 0x");
@@ -443,25 +536,53 @@ void init_paging(
         print_serial(SERIAL_COM1_BASE, "WARNING: fb_for_kernel_main is NULL, not mapping its page.\n");
     }
 
-    load_pml4((uint64_t)kernel_pml4_phys);
+    // Call the higher-half kernel entry point
+    print_serial(SERIAL_COM1_BASE, "Preparing to jump to kernel_entry_after_paging_fn at V:0x");
+    print_serial_hex(SERIAL_COM1_BASE, (uint64_t)kernel_entry_after_paging_fn);
+    print_serial(SERIAL_COM1_BASE, " with new RSP V:0x");
+    print_serial_hex(SERIAL_COM1_BASE, new_rsp_virt_top);
+    print_serial(SERIAL_COM1_BASE, "\n");
 
-    __asm__ volatile (
-        "jmp 1f\n"
-        "1:\n"
-        : : : "memory", "cc"
-    );
+    // The assembly stub will perform the jump to kernel_entry_after_paging_fn
+    // Ensure the arguments are correctly passed if the stub handles them, or they are passed via registers.
+    // Here, we assume kernel_entry_after_paging_fn matches the type passed to the stub or used by it.
+    // The last part of init_paging, after enabling MSRs and loading CR3, is usually an assembly jump.
+    // Let's ensure the C part of init_paging is consistent.
+    // The actual call to kernel_entry_after_paging_fn is done via assembly (switch_to_higher_half)
 
-    __asm__ volatile ("mov %0, %%rsp" :: "r"(new_rsp_virt_top) : "memory");
+    // If this C function is supposed to directly call it (which is not typical after CR3 load without asm), it would be:
+    // kernel_entry_after_paging_fn(fb_for_kernel_main, new_rsp_virt_top);
+    // However, the __attribute__((noreturn)) implies this function itself doesn't return, usually because
+    // it transfers control via an assembly routine that sets up the new stack and jumps.
 
-    print_serial(SERIAL_COM1_BASE, ">> After CR3, JMP, and RSP switch - paging fully active\n");
+    // For the specific call to switch_to_higher_half, the arguments need to match what it expects.
+    // switch_to_higher_half(new_pml4_phys, new_rsp_virt_top, kernel_entry_after_paging_fn, fb_for_kernel_main_phys_for_stub);
+    // Let's find the call to switch_to_higher_half or equivalent.
+    // It seems the final jump logic is in an assembly file `paging_success_halt.s` or similar
+    // and is called with `switch_to_kernel_higher_half_and_run`.
 
-    if (kernel_entry_after_paging_fn != NULL) {
-        void (*kernel_main_func)(struct limine_framebuffer *) =
-            (void (*)(struct limine_framebuffer *))kernel_entry_after_paging_fn;
-        kernel_main_func(fb_for_kernel_main);
-    } else {
-        print_serial(SERIAL_COM1_BASE, "ERROR: kernel_entry_after_paging_fn is NULL! Halting.\n");
-    }
+    // Let's search for the actual call to `kernel_entry_after_paging_fn` or the stub.
+    // The previous diff showed a call to `switch_to_kernel_higher_half_and_run`.
+    // This C function `init_paging` prepares everything and then calls that assembly function.
+
+    // The C variable `kernel_entry_after_paging_fn` is passed to that assembly function.
+    // So, the type of `kernel_entry_after_paging_fn` in this C function's signature must match
+    // what `kernel_main_after_paging` (the actual function) expects.
+    // And the assembly stub must correctly forward arguments or set up the stack for that C function.
+
+    // The actual invocation is likely via an assembly stub, so the C definition just needs to be correct.
+    // The line that uses this function pointer directly is:
+    // (within an assembly block or passed to an assembly function)
+    // Example: void (*kernel_main_func)(struct limine_framebuffer *, uint64_t) =
+    // (void (*)(struct limine_framebuffer *, uint64_t))kernel_entry_after_paging_fn;
+    // This cast would be correct if kernel_entry_after_paging_fn is of the correct type.
+
+    // Check the assembly call to `switch_to_kernel_higher_half_and_run`
+    // The arguments are: physical PML4, virtual new RSP, virtual entry point, virtual framebuffer pointer.
+    // So kernel_entry_after_paging_fn (virtual entry point) needs to be correct.
+
+    // Final call to assembly function that does the switch
+    switch_to_kernel_higher_half_and_run((uint64_t)kernel_pml4_phys, new_rsp_virt_top, kernel_entry_after_paging_fn, fb_for_kernel_main);
 
     for (;;) {
         asm volatile ("cli; hlt");

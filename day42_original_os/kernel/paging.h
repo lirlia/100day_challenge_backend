@@ -1,5 +1,5 @@
-#ifndef KERNEL_PAGING_H
-#define KERNEL_PAGING_H
+#ifndef PAGING_H
+#define PAGING_H
 
 #include <stdint.h>
 #include "limine.h"
@@ -41,11 +41,12 @@ typedef uint64_t pte_t;
 // HHDM offset (defined in main.c, used by paging.c)
 extern uint64_t hhdm_offset;
 extern pml4e_t *kernel_pml4_phys; // Declare kernel_pml4_phys as extern
+extern pml4e_t *kernel_pml4_virt; // Add extern for kernel_pml4_virt
 extern uint64_t kernel_stack_top_phys; // Re-add extern declaration for stack top physical address
 
 // Forward declaration from main.c for the function to call after paging setup
 struct limine_framebuffer; // Forward declare if not already included via other headers
-void kernel_main_after_paging(struct limine_framebuffer *fb);
+void kernel_main_after_paging(struct limine_framebuffer *fb, uint64_t new_rsp);
 
 // Function to initialize paging
 void init_paging(struct limine_framebuffer_response *fb_response,
@@ -53,7 +54,7 @@ void init_paging(struct limine_framebuffer_response *fb_response,
                  uint64_t kernel_stack_phys_base,
                  uint64_t kernel_stack_size,
                  uint64_t new_rsp_virt_top,
-                 void (*kernel_entry_after_paging)(struct limine_framebuffer *fb),
+                 void (*kernel_entry_after_paging_fn)(struct limine_framebuffer *fb, uint64_t new_rsp),
                  struct limine_framebuffer *fb_for_kernel_main) __attribute__((noreturn));
 
 // Function to map a single virtual page to a physical page
@@ -80,4 +81,12 @@ static inline void load_cr3(uint64_t cr3_val) {
     asm volatile("mov %0, %%cr3" :: "r"(cr3_val) : "memory");
 }
 
-#endif // KERNEL_PAGING_H
+// Assembly function to switch to higher half and run the kernel
+extern void switch_to_kernel_higher_half_and_run(
+    uint64_t pml4_phys,
+    uint64_t new_rsp_virt,
+    void (*kernel_entry_virt)(struct limine_framebuffer *, uint64_t),
+    struct limine_framebuffer *fb_virt
+) __attribute__((noreturn));
+
+#endif // PAGING_H

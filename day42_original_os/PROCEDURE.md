@@ -835,6 +835,42 @@ uint32_t pixel_color = (row_bits & (1 << cx)) ? text_color : bg_color;
 
 これらの修正により、ビルド時のコンパイラ警告が解消され、コードがよりクリーンになりました。修正後もQEMU上でOSが正常に起動し動作することを確認しました。
 
+### 3.8. ページングの完成
+
+1.  **ページングの完成:**
+    - ページングの実装が完了したので、カーネルのメモリ管理が完全に機能するようになりました。
+
+### 3.9. PMMスタックページのマッピング検証と高位カーネルへのジャンプの修正
+
+1.  **背景**:
+    *   以前のステップで、`init_paging` 関数内でページング設定を完了した後、高位カーネル空間でカーネルコードを継続実行するために `switch_to_kernel_higher_half_and_run` というアセンブリ関数を呼び出す予定でした。
+    *   しかし、このアセンブリ関数が正しくリンクされていなかったり、Makefile上のパスが誤っていたりする問題があり、一時的に `paging_success_halt()` というC関数を呼び出して処理を停止していました。
+    *   また、この状態では `kernel_main_after_paging` 関数（高位カーネルで実行されるメイン処理）が呼び出されないため、PMMが管理するスタック領域（物理アドレス `0x200000` 付近）がHHDM経由で正しくマッピングされ、アクセス可能かの検証ができていませんでした。
+
+2.  **実施した修正と検証**:
+    *   **シンボル解決とMakefile修正**:
+        *   `switch_to_kernel_higher_half_and_run` シンボルが `kernel/paging_success_halt.s` に存在することを確認しました。
+        *   `Makefile` の `KERNEL_S_SRCS` 変数が、実際のファイル構成 (`kernel/paging_success_halt.s` など) と一致するように修正しました。以前は `kernel/arch/x86_64/context_switch.s` のような存在しないパスを参照していました。
+    *   **Cコードの修正**:
+        *   `kernel/paging.c` の `init_paging` 関数の末尾で、一時的に呼び出していた `paging_success_halt()` を削除し、`switch_to_kernel_higher_half_and_run()` の呼び出しを有効化しました。
+        *   `kernel/paging.h` から `paging_success_halt` の `extern` 宣言を削除しました。
+        *   `kernel/paging.h` の `switch_to_kernel_higher_half_and_run` 関数のプロトタイプ宣言に `__attribute__((noreturn))` を追加し、引数名をアセンブリ側と整合させました。
+    *   **PMMスタックマッピングの検証コード追加**:
+        *   `kernel/main.c` の `kernel_main_after_paging` 関数内に、PMMスタックの先頭物理ページ (`0x200000`) に対応するHHDM上の仮想アドレス (`0xFFFF800000200000`) に対して、特定の値を書き込み、その後読み出して一致するかを確認するテストコードを挿入しました。成功・失敗のログもシリアルに出力するようにしました。
+    *   **ビルドと実行確認**:
+        *   `make clean && make && make run-bios` を実行。
+        *   QEMUのシリアルログを確認し、以下の点を検証しました。
+            *   `switch_to_kernel_higher_half_and_run` が呼び出され、新しいPML4がロードされたログ。
+            *   `kernel_main_after_paging called.` のログが出力されること。
+            *   PMMスタックページへの書き込み・読み出しテストが成功し、`PMM stack page test PASSED!` のログが出力されること。
+            *   以前 `kernel_main` で実装されていた画面の色が周期的に変わる処理が、`kernel_main_after_paging` 内でも同様に動作し、シリアルログおよびQEMU画面で確認できること。
+
+3.  **結果**:
+    *   上記の修正と検証により、ビルドが成功し、QEMU上でOSが起動しました。
+    *   シリアルログから、高位カーネルへのジャンプが成功し、`kernel_main_after_paging` が意図通り実行されていることが確認できました。
+    *   PMMスタックページへのアクセスも成功し、物理メモリ `0x200000` がHHDM (`0xFFFF800000200000`) に正しくマッピングされていることが検証できました。
+    *   画面表示も復活し、周期的に色が変化するようになりました。
+
 ## 4. 現状と次のステップ
 
 これで、Day42およびDay43前半の目標であった、Limineブートローダーを用いたx86-64カーネルの起動、フレームバッファへのテキスト表示（スケーリング対応）、シリアルポート出力、GDTのセットアップ、IDTと基本的なCPU例外ハンドラの実装、そしてスタック方式での物理メモリマネージャ(PMM)の実装が完了しました。

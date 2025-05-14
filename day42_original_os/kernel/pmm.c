@@ -31,6 +31,9 @@ static inline void dbg_u64_pmm(const char *s, uint64_t v) { // Renamed to avoid 
 #define DBG_PMM(x) dbg_u64_pmm(#x " = ", (uint64_t)(x))
 // --- End DBG Macro Definition ---
 
+// Global PMM state variable
+pmm_state_t pmm_info; // Define pmm_info
+
 #define PMM_STACK_ENTRIES_PER_PAGE ((PAGE_SIZE / sizeof(uint64_t)) - 1) // Reserve 1 entry for 'next' pointer
 
 struct pmm_stack_page {
@@ -71,9 +74,7 @@ uint64_t pmm_get_allocated_stack_page_count(void);
 
 static bool pmm_initialized = false;
 
-void init_pmm(struct limine_memmap_response *memmap, uint64_t hhdm_offset) {
-    (void)hhdm_offset; // Mark as unused for now, can be used later if PMM needs HHDM knowledge
-
+void init_pmm(struct limine_memmap_response *memmap) {
     if (pmm_initialized) {
         return;
     }
@@ -148,6 +149,11 @@ void init_pmm(struct limine_memmap_response *memmap, uint64_t hhdm_offset) {
     print_serial(SERIAL_COM1_BASE, "PMM: Total stack pages allocated: ");
     print_serial_dec(SERIAL_COM1_BASE, pmm_get_allocated_stack_page_count());
     print_serial(SERIAL_COM1_BASE, "\n");
+
+    pmm_info.stack_phys_base = pmm_first_stack_page_phys;
+    pmm_info.stack_base = (uint64_t *)((uint64_t)pmm_first_stack_page_phys + hhdm_offset);
+    pmm_info.free_pages = total_free_pages;
+    pmm_info.pmm_stack_size_pages = pmm_get_allocated_stack_page_count();
 
     pmm_initialized = true;
 }
