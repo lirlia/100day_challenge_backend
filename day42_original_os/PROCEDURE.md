@@ -749,6 +749,42 @@ uint32_t pixel_color = (row_bits & (1 << cx)) ? text_color : bg_color;
 
 この変更により、スケジューラが新しいタスクに切り替える準備として、TSS内の重要なポインタを更新するロジックが組み込まれました。
 
+### 3.22. コンテキストスイッチの実装 (スタック書き換え)
+
+タイマー割り込みハンドラ (`timer_handler` in `kernel/apic.c`) 内で、実際のコンテキストスイッチ処理の中核部分を実装しました。これは、割り込み発生時のスタックフレームを直接操作し、`iretq` 命令が新しいタスクのコンテキストで実行を再開するように仕向けるものです。
+
+1.  **`full_context_t` 構造体の定義 (`kernel/task.h`):**
+    *   タスクの完全な状態を保存するための新しい構造体 `full_context_t` を定義しました。これには以下のものが含まれます:
+        *   汎用レジスタ (r15-rax): `idt.h` の `struct registers` のGPR部分とメモリレイアウトが一致するように定義。
+        *   割り込み番号 (`int_no`) とエラーコード (`err_code`)。
+        *   `iretq` が復帰に必要なスタックフレーム (`rip`, `cs`, `rflags`, `rsp_user`, `ss_user`)。
+        *   ページテーブルベースレジスタ (`cr3`)。
+    *   `task_t` 構造体内の `context` メンバーの型を、以前の `struct registers` からこの新しい `full_context_t` に変更しました。
+
+2.  **CR3操作ヘルパー関数の追加 (`kernel/paging.h`):**
+    *   現在のCR3レジスタの値を取得するインライン関数 `static inline uint64_t get_current_cr3(void)` を追加しました。
+    *   指定された値をCR3レジスタにロードするインライン関数 `static inline void load_cr3(uint64_t cr3_val)` を追加しました。
+
+3.  **`memcpy` のローカル実装 (`kernel/apic.c`):**
+    *   標準ライブラリ (`<string.h>`) への依存を避けるため、`kernel/apic.c` 内に `static inline void* local_memcpy(...)` を実装し、これを使用するように変更しました。
+
+4.  **`timer_handler` 関数の大幅な変更 (`kernel/apic.c`):**
+    *   `regs` パラメータは、割り込みスタック上のGPR群の開始位置 (具体的には `r15` のアドレス) を指すと仮定します。
+    *   **コンテキスト保存 (実行中のタスク `old_task` が存在する場合):**
+        *   `old_task->context` (型: `full_context_t`) に現在のタスクの完全な状態を保存します。
+            *   GPR群: `local_memcpy` を使用して、スタック上の `regs` が指す領域から `old_task->context` のGPRフィールド群へコピーします (サイズは `sizeof(struct registers)`)。
+            *   `int_no`, `err_code`, `rip`, `cs`, `rflags`, `rsp_user`, `ss_user`: スタック上の `regs` ポインタからの相対オフセット (負のオフセット) を用いて値を読み出し、`old_task->context` の対応するフィールドに保存します。
+            *   `cr3`: `get_current_cr3()` を呼び出して現在のCR3値を保存します。
+    *   **スケジューラ呼び出し:** `schedule()` を呼び出し、グローバル変数 `current_task` を次の実行タスクに更新させます。
+    *   **コンテキスト復元 (タスクスイッチが発生し、新しい `current_task` が存在する場合):**
+        *   `old_task` と `current_task` が異なり、かつ `current_task` が `NULL` でない場合、新しいタスクのコンテキストを現在の割り込みスタックフレームに書き戻します。
+            *   GPR群: `current_task->context` のGPRフィールド群から、スタック上の `regs` が指す領域へ `local_memcpy` を使用してコピーします。
+            *   `int_no`, `err_code`, `rip`, `cs`, `rflags`, `rsp_user`, `ss_user`: `current_task->context` の対応するフィールドから値を読み出し、スタック上の `regs` ポインタからの相対オフセット位置に書き戻します。
+            *   `cr3`: 新しいタスクの `cr3` 値が現在のCR3と異なる場合、`load_cr3()` を呼び出してCR3レジスタを更新します。
+    *   `lapic_send_eoi()` を呼び出した後、`timer_handler` は通常通りリターンします。アセンブリスタブは、書き換えられたスタックフレームに基づいてレジスタを復元し `iretq` を実行するため、制御が新しいタスク（または同じタスクの更新された状態）に渡ります。
+
+この実装により、C言語のコード内で、アセンブリレベルの `iretq` 命令が利用するスタック情報を操作することで、プリエンプティブなコンテキストスイッチの核心部分が機能するようになりました。まだダミータスクが存在しないため実際のスイッチは観測されませんが、論理的な準備は整いました。
+
 ## 4. 現状と次のステップ
 
 これで、Day42およびDay43前半の目標であった、Limineブートローダーを用いたx86-64カーネルの起動、フレームバッファへのテキスト表示（スケーリング対応）、シリアルポート出力、GDTのセットアップ、IDTと基本的なCPU例外ハンドラの実装、そしてスタック方式での物理メモリマネージャ(PMM)の実装が完了しました。

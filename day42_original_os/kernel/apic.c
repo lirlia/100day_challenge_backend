@@ -1,11 +1,22 @@
 #include "apic.h"
 #include "main.h" // For print_serial etc.
 #include "serial.h"
-#include "paging.h" // For map_page and PTE flags
+#include "paging.h" // For map_page and PTE flags, get_current_cr3() and load_cr3()
 #include "pmm.h"    // For PAGE_SIZE (redundant if paging.h included)
 #include "msr.h"
 #include <stdbool.h>
-#include "task.h" // For current_task and task_t
+#include "task.h" // For current_task and task_t, schedule(), full_context_t
+#include "idt.h"    // For struct registers (GPR part)
+
+// Static inline memcpy to avoid dependency on standard library or other modules
+static inline void* local_memcpy(void *dest, const void *src, size_t n) {
+    uint8_t *pdest = (uint8_t *)dest;
+    const uint8_t *psrc = (const uint8_t *)src;
+    for (size_t i = 0; i < n; i++) {
+        pdest[i] = psrc[i];
+    }
+    return dest;
+}
 
 // Global state
 volatile uint64_t tick_counter = 0;
@@ -51,12 +62,55 @@ inline void wrmsr(uint32_t msr, uint64_t value) {
 void timer_handler(struct registers *regs) {
     tick_counter++;
 
-    // Save current task's context
-    if (current_task != NULL) {
-        current_task->context = *regs; // Copy the register state
+    task_t *old_task = current_task;
+    full_context_t* old_ctx_ptr = NULL;
+
+    if (old_task != NULL) {
+        old_ctx_ptr = &old_task->context;
+        // Save GPRs from stack (pointed to by regs) to old_task->context.GPRs
+        local_memcpy(&old_ctx_ptr->r15, regs, sizeof(struct registers)); // USE local_memcpy
+
+        // Save iretq frame and int_no/err_code from stack to old_task->context
+        // These are located at negative offsets from 'regs' pointer
+        uint64_t* p_int_no = ((uint64_t*)regs - 1); // p_int_no[0] is int_no
+        old_ctx_ptr->int_no   = p_int_no[0];
+        old_ctx_ptr->err_code = p_int_no[-1];
+        old_ctx_ptr->rip      = p_int_no[-2];
+        old_ctx_ptr->cs       = p_int_no[-3];
+        old_ctx_ptr->rflags   = p_int_no[-4];
+        old_ctx_ptr->rsp_user = p_int_no[-5];
+        old_ctx_ptr->ss_user  = p_int_no[-6];
+        old_ctx_ptr->cr3      = get_current_cr3(); // Save current CR3
     }
 
-    schedule(); // CALL schedule() HERE
+    schedule(); // This will update the global 'current_task' variable
+
+    if (old_task != current_task && current_task != NULL) {
+        // Context switch is needed to the new current_task
+        full_context_t* new_ctx_ptr = &current_task->context;
+
+        // Restore GPRs from new_task->context to the stack
+        local_memcpy(regs, &new_ctx_ptr->r15, sizeof(struct registers)); // USE local_memcpy
+
+        // Restore iretq frame and int_no/err_code from new_task->context to the stack
+        uint64_t* p_int_no = ((uint64_t*)regs - 1);
+        p_int_no[0]   = new_ctx_ptr->int_no;
+        p_int_no[-1]  = new_ctx_ptr->err_code;
+        p_int_no[-2]  = new_ctx_ptr->rip;
+        p_int_no[-3]  = new_ctx_ptr->cs;
+        p_int_no[-4]  = new_ctx_ptr->rflags;
+        p_int_no[-5]  = new_ctx_ptr->rsp_user;
+        p_int_no[-6]  = new_ctx_ptr->ss_user;
+
+        // If CR3 needs to be changed for the new task, load it.
+        if (new_ctx_ptr->cr3 != get_current_cr3()) {
+            load_cr3(new_ctx_ptr->cr3);
+        }
+        // Note: TSS.RSP0 was already set by schedule() for current_task->kernel_stack_top
+    }
+    // If old_task == current_task, or current_task is NULL, no context switch happens here.
+    // The original registers (potentially GPRs saved to old_task->context but not switched from)
+    // will be popped by the assembly stub, and iretq will resume the interrupted task or spin.
 
     lapic_send_eoi();
 }

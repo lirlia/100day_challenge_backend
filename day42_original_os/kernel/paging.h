@@ -67,4 +67,17 @@ void map_page(uint64_t *pml4_virt_param, uint64_t virt_addr, uint64_t phys_addr,
 #define KERNEL_STACK_VIRT_BOTTOM 0xFFFF800000000000 // Example, adjust as needed
 #define KERNEL_STACK_VIRT_TOP    (KERNEL_STACK_VIRT_BOTTOM + KERNEL_STACK_SIZE)
 
+void map_phys_to_virt_range(uint64_t v_addr_start, uint64_t p_addr_start, uint64_t size, uint64_t flags);
+
+// Inline functions to get/set CR3
+static inline uint64_t get_current_cr3(void) {
+    uint64_t cr3_val;
+    asm volatile("mov %%cr3, %0" : "=r"(cr3_val));
+    return cr3_val;
+}
+
+static inline void load_cr3(uint64_t cr3_val) {
+    asm volatile("mov %0, %%cr3" :: "r"(cr3_val) : "memory");
+}
+
 #endif // KERNEL_PAGING_H
