@@ -725,6 +725,30 @@ uint32_t pixel_color = (row_bits & (1 << cx)) ? text_color : bg_color;
 
 この実装により、タイマー割り込みごとにスケジューリングロジックが呼び出され、タスクをキューイングし、キューから次のタスク（現在は存在しないため常にNULL）を選択しようとする基本的な枠組みが動作するようになりました。QEMUでの実行時、シリアルコンソールに定期的に "Schedule: No task to run, current_task is NULL." と表示されることで、この機能が期待通りに動作していることが確認できました。
 
+### 3.21. スケジューラ準備: 次タスクの基本設定 (TSS RSP0)
+
+`schedule()` 関数内で、新しく実行されるタスク (`next_task`) が選択された後、そのタスクがカーネルモードで動作するための基本的な準備として、TSS (Task State Segment) の `RSP0` フィールドを更新する処理を追加しました。
+
+1.  **`gdt.h` のインクルード:**
+    *   `kernel/task.c` の先頭に `#include "gdt.h"` を追加し、`tss_set_rsp0` 関数を利用可能にしました。
+
+2.  **`tss_set_rsp0` の呼び出し (`kernel/task.c` の `schedule` 関数内):
+    *   `next_task` が `NULL` でない場合に、`current_task` (これが `next_task` に更新された後) の `kernel_stack_top` メンバーの値を `tss_set_rsp0` 関数に渡して呼び出します。
+    ```c
+    // In schedule(), after current_task = next_task;
+    if (current_task != NULL) { // (current_task is now the next_task)
+        current_task->state = TASK_STATE_RUNNING;
+        tss_set_rsp0(current_task->kernel_stack_top);
+        // Future: load_cr3 if tasks have different address spaces
+    }
+    ```
+    *   `kernel_stack_top` は、各タスクがカーネルモードで実行される際に使用するスタックの最上位アドレスを指します。
+    *   `RSP0` は、ユーザーモードからカーネルモードへ移行する際 (例えば割り込みやシステムコール発生時) にCPUが自動的に参照し、カーネルスタックポインタ (`RSP`) として設定する値です。これをタスクごとに正しく設定することで、各タスクが自身のカーネルスタックを安全に使用できるようになります。
+    *   現時点ではまだダミータスクが存在しないため、このコードパスは通りませんが、将来のタスクスイッチングに不可欠な準備です。
+    *   また、将来的にタスクごとに異なるページテーブルを持つ場合には、ここで `CR3` レジスタを更新する処理も必要になるため、そのためのコメントも追加しました。
+
+この変更により、スケジューラが新しいタスクに切り替える準備として、TSS内の重要なポインタを更新するロジックが組み込まれました。
+
 ## 4. 現状と次のステップ
 
 これで、Day42およびDay43前半の目標であった、Limineブートローダーを用いたx86-64カーネルの起動、フレームバッファへのテキスト表示（スケーリング対応）、シリアルポート出力、GDTのセットアップ、IDTと基本的なCPU例外ハンドラの実装、そしてスタック方式での物理メモリマネージャ(PMM)の実装が完了しました。

@@ -1,6 +1,7 @@
 #include "task.h"
 #include "serial.h" // For debug prints
 #include "main.h"   // For print_serial, print_serial_hex etc.
+#include "gdt.h"    // ADD THIS LINE for tss_set_rsp0
 #include <stddef.h> // For NULL
 
 // Global ready queue (example)
@@ -112,10 +113,19 @@ void schedule(void) {
     if (next_task != NULL) {
         current_task = next_task;
         current_task->state = TASK_STATE_RUNNING;
-        // TODO: Restore context of current_task (including CR3 and RSP0 for TSS)
-        // tss_set_rsp0(current_task->kernel_stack_top);
-        // load_cr3(current_task->cr3); // Assuming cr3 is stored appropriately
-        // ... jump to iretq with current_task->context ...
+
+        // Restore essential context for the new task before iretq
+        // For now, only RSP0 is critical for kernel->kernel switches if stacks differ,
+        // or for future user->kernel transitions.
+        tss_set_rsp0(current_task->kernel_stack_top);
+
+        // Future: load_cr3 if tasks have different address spaces
+        // if (current_task->pml4_phys != 0 && get_current_cr3() != current_task->pml4_phys) {
+        //     load_cr3(current_task->pml4_phys);
+        // }
+
+        // The actual loading of registers (RIP, RSP, GPRs etc.) from current_task->context
+        // will be handled by the assembly stub that called schedule() via iretq.
     } else if (prev_task != NULL && prev_task->state != TASK_STATE_TERMINATED) {
         // No other task to run, continue with the previous task if it wasn't re-queued and isn't terminated.
         // This can happen if the ready queue was empty or re-queue failed.
