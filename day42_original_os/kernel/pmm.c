@@ -56,7 +56,7 @@ extern uint64_t hhdm_offset;
 // For now, assume it's available or add a local static version if needed.
 static void clear_page_pmm(void *page_virt) { // Renamed to avoid conflict
     uint64_t *p = (uint64_t *)page_virt;
-    for (int i = 0; i < PAGE_SIZE / sizeof(uint64_t); i++) {
+    for (size_t i = 0; i < PAGE_SIZE / sizeof(uint64_t); i++) {
         p[i] = 0;
     }
 }
@@ -69,7 +69,6 @@ static uint64_t ALIGN_UP_PMM(uint64_t addr, uint64_t align) { // Renamed to avoi
 // Forward declaration for pmm_get_allocated_stack_page_count
 uint64_t pmm_get_allocated_stack_page_count(void);
 
-static pmm_state_t pmm_state;
 static bool pmm_initialized = false;
 
 void init_pmm(struct limine_memmap_response *memmap, uint64_t hhdm_offset) {

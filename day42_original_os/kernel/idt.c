@@ -95,6 +95,7 @@ void isr_handler_c(struct registers *regs) {
 
 // Placeholder C handlers for specific exceptions
 static void divide_by_zero_handler(struct registers* regs) {
+    (void)regs; // Suppress unused parameter warning
     print_serial_idt(SERIAL_COM1_BASE_IDT, "EXCEPTION: Divide by Zero\n");
     asm volatile ("cli; hlt");
 }
@@ -121,6 +122,7 @@ static void general_protection_fault_handler(struct registers* regs) {
 // The assembly stub for ISR 14 is expected to push the error code and then call this handler,
 // passing a pointer to the stack where registers (including error code) are saved.
 void page_fault_c_handler(struct registers *regs) { // err_code is now part of struct registers
+    (void)regs; // Suppress unused parameter warning
     // Temporarily disable all serial output to isolate the issue
     /*
     uint64_t faulting_address;

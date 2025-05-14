@@ -38,7 +38,7 @@ extern uint64_t kernel_stack_top_phys; // Re-add TSS related extern
 
 // Kernel entry point
 void _start(void) {
-    struct kernel_addr kernel_addresses; // Local struct is fine
+    // struct kernel_addr kernel_addresses; // Local struct is fine // <- REMOVE THIS LINE
 
     // Honor Limine requests (accessing static volatiles is okay)
     if (framebuffer_request.response == NULL || framebuffer_request.response->framebuffer_count < 1) { hcf(); }
@@ -47,8 +47,8 @@ void _start(void) {
     if (hhdm_request.response == NULL) { hcf(); }
     hhdm_offset = hhdm_request.response->offset;
     if (kernel_addr_request.response == NULL) { hcf(); }
-    kernel_addresses.physical_base = kernel_addr_request.response->physical_base;
-    kernel_addresses.virtual_base = kernel_addr_request.response->virtual_base;
+    // kernel_addresses.physical_base = kernel_addr_request.response->physical_base; // <- REMOVE THIS LINE
+    // kernel_addresses.virtual_base = kernel_addr_request.response->virtual_base;   // <- REMOVE THIS LINE
     if (smp_request.response == NULL) { hcf(); }
 
     // Initialize serial
@@ -150,8 +150,16 @@ void kernel_main_after_paging(struct limine_framebuffer *fb_info_virt) {
 // --- Utility Functions ---
 // (Keep implementations)
 void hcf(void) { /* ... */ }
-void *memcpy(void *dest, const void *src, size_t n) { return dest; }
-void *memset(void *s, int c, size_t n) { return s; }
+void *memcpy(void *dest, const void *src, size_t n) {
+    (void)src; // Suppress unused parameter warning
+    (void)n;   // Suppress unused parameter warning
+    return dest;
+}
+void *memset(void *s, int c, size_t n) {
+    (void)c; // Suppress unused parameter warning
+    (void)n; // Suppress unused parameter warning
+    return s;
+}
 
 void uint64_to_dec_str(uint64_t value, char *buffer) {
     if (buffer == NULL) return;
@@ -200,6 +208,10 @@ void panic(const char *message) {
     print_serial(SERIAL_COM1_BASE, message);
     print_serial(SERIAL_COM1_BASE, "\nSystem Halted.\n");
     hcf(); // Halt the system
+    // Ensure panic never returns
+    for(;;) {
+        asm volatile ("cli; hlt");
+    }
 }
 
 // --- Framebuffer Drawing Functions (Definitions) ---
