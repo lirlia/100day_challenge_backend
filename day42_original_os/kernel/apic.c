@@ -56,8 +56,7 @@ void timer_handler(struct registers *regs) {
         current_task->context = *regs; // Copy the register state
     }
 
-    // TODO: Implement schedule() call here
-    // schedule();
+    schedule(); // CALL schedule() HERE
 
     lapic_send_eoi();
 }

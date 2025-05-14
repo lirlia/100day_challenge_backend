@@ -8,6 +8,7 @@
 #include "idt.h"
 #include "apic.h"
 #include "font.h"
+#include "task.h"
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -97,6 +98,9 @@ void _start(void) {
 // This is the correct definition called after paging
 void kernel_main_after_paging(struct limine_framebuffer *fb_info_virt) {
     framebuffer = fb_info_virt; // Use virtual address
+
+    // Initialize ready queue
+    init_task_queue(&ready_queue);
 
     // Re-add TSS RSP0 setting code
     uint64_t kernel_stack_top_virt = KERNEL_STACK_VIRT_TOP;

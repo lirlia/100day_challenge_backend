@@ -52,6 +52,7 @@ typedef struct task_queue {
 } task_queue_t;
 
 extern task_t *current_task;
+extern task_queue_t ready_queue;
 
 // Task queue operations
 void init_task_queue(task_queue_t *queue);
@@ -59,5 +60,8 @@ int enqueue_task(task_queue_t *queue, task_t *task);
 task_t* dequeue_task(task_queue_t *queue);
 int is_task_queue_empty(task_queue_t *queue);
 int is_task_queue_full(task_queue_t *queue);
+
+// Scheduler function
+void schedule(void);
 
 #endif // KERNEL_TASK_H

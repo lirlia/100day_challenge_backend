@@ -7,6 +7,7 @@
 // static task_queue_t ready_queue;
 
 task_t *current_task = NULL; // ADD THIS LINE
+task_queue_t ready_queue; // ADD THIS LINE
 
 void init_task_queue(task_queue_t *queue) {
     if (!queue) return;
@@ -79,3 +80,59 @@ int is_task_queue_full(task_queue_t *queue) {
 // void add_to_ready_queue(task_t* task) {
 //     enqueue_task(&ready_queue, task);
 // }
+
+void schedule(void) {
+    // Temporarily disable interrupts during critical scheduler operations
+    // This is a very basic approach; a more robust solution would involve specific lock types
+    asm volatile ("cli");
+
+    task_t *prev_task = current_task;
+    task_t *next_task = NULL;
+
+    // If there was a running task, set its state to READY and add it back to the queue
+    if (prev_task != NULL) {
+        if (prev_task->state == TASK_STATE_RUNNING) { // Only re-queue if it was running
+            prev_task->state = TASK_STATE_READY;
+            if (enqueue_task(&ready_queue, prev_task) != 0) {
+                // Failed to enqueue, potentially because queue is full.
+                // Handle this error appropriately, e.g. log, panic, or special handling.
+                // For now, we might lose the task or it remains current_task if next_task is NULL.
+                print_serial(SERIAL_COM1_BASE, "Schedule: Failed to re-enqueue task PID: ");
+                print_serial_hex(SERIAL_COM1_BASE, prev_task->pid);
+                write_serial_char(SERIAL_COM1_BASE, '\n');
+            }
+        }
+        // If prev_task was not RUNNING (e.g. WAITING, TERMINATED), it shouldn't be auto-re-queued here.
+        // It should have been moved to a different list or handled by another mechanism.
+    }
+
+    // Dequeue the next task
+    next_task = dequeue_task(&ready_queue);
+
+    if (next_task != NULL) {
+        current_task = next_task;
+        current_task->state = TASK_STATE_RUNNING;
+        // TODO: Restore context of current_task (including CR3 and RSP0 for TSS)
+        // tss_set_rsp0(current_task->kernel_stack_top);
+        // load_cr3(current_task->cr3); // Assuming cr3 is stored appropriately
+        // ... jump to iretq with current_task->context ...
+    } else if (prev_task != NULL && prev_task->state != TASK_STATE_TERMINATED) {
+        // No other task to run, continue with the previous task if it wasn't re-queued and isn't terminated.
+        // This can happen if the ready queue was empty or re-queue failed.
+        current_task = prev_task;
+        if(current_task->state != TASK_STATE_RUNNING) current_task->state = TASK_STATE_RUNNING; // Ensure it's marked running
+    } else {
+        // No task to run and no previous task to continue (or it was terminated/successfully re-queued)
+        // This is where an idle task would run.
+        // For now, current_task might become NULL or remain the prev_task if re-queue failed.
+        current_task = NULL; // Explicitly set to NULL if no task is available
+        print_serial(SERIAL_COM1_BASE, "Schedule: No task to run, current_task is NULL.\n");
+        // TODO: Implement idle task or proper halt mechanism when no tasks are ready.
+        // For now, we might just re-enable interrupts and let the system hlt in the timer handler loop,
+        // or if current_task is NULL, the context switch part will be skipped.
+    }
+
+    // Re-enable interrupts before returning or switching context
+    // The actual context switch (iretq) will happen after schedule() returns, in the assembly stub.
+    asm volatile ("sti");
+}
