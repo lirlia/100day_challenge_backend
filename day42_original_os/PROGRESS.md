@@ -59,7 +59,7 @@
         *   [x] `kernel/paging.c` の `init_paging` 末尾で `switch_to_kernel_higher_half_and_run` の呼び出しをコメントアウトし、`paging_success_halt()` を呼び出すようにする（ビルド通過のための一時的措置）。
         *   [x] init_paging がPMMの最初のスタックページ (物理アドレス `0x200000`) をHHDMに正しくマッピングしていることを確認 (kernel_main_after_paging でのR/Wテスト成功)
     *   [ ] **Sub-Task 2.1.5 : ダミータスクの生成とエンキューのためのPMM安定化**
-        *   [ ] **Sub-Task 2.1.5.1: PMM `init_pmm` 内スタックポインタ整合性検証**
+        *   [x] **Sub-Task 2.1.5.1: PMM `init_pmm` 内スタックポインタ整合性検証**
             *   目的: `init_pmm`完了時に`pmm_stack_top`と`pmm_current_stack_head`がPMMスタックの正しい状態を指すことを確認。
             *   作業: `init_pmm`の`pmm_free_page`呼び出し前後で主要変数のログを追加。特にスタックページ追加時の分岐を詳細化。QEMUで実行しログ分析。
             *   期待: `init_pmm`完了時、`pmm_stack_top`が最後のスタックページの空き状況を、`pmm_current_stack_head`がそのページを正しく指す。
