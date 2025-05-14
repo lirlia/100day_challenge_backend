@@ -52,25 +52,29 @@
         *   [X] 次タスクの選択 (`dequeue_task`) と `current_task` 更新
         *   [X] 次タスクのRSP0設定 (`tss_set_rsp0`)
         *   [X] コンテキスト復元の準備 (スタック書き換え)
-    *   [x] **Sub-Task 2.1: ダミータスクの定義と生成**
-        *   [x] `task.h`: `task_t` にタスク名 (`name`)、カーネルスタックの底 (`kernel_stack_bottom`)、初回実行フラグ (`has_run_once`) を追加。タスクエントリーポイントの型 `task_entry_point_t` と `create_task` 関数のプロトタイプを定義。
-        *   [x] `kernel/main.c`: 2つのダミータスク処理関数 (例: `dummy_task_a_main`, `dummy_task_b_main`) を定義。それぞれ異なる文字をシリアルポートに無限ループで出力。
-        *   [x] `kernel/task.c`: `create_task` 関数を実装。
-            *   [x] PIDの割り当て、PCB (`task_t`) の初期化 (PID, 名前、初期状態 `TASK_STATE_READY`, `has_run_once = false`)。
-            *   [x] カーネルスタックの割り当て (PMM を使用、例: 1ページ) と `kernel_stack_top`/`kernel_stack_bottom` の設定。
-            *   [x] 初期コンテキスト (`full_context_t`) の設定: `rip` にタスク関数エントリポイント、`rsp_user` にカーネルスタックトップ、`cs` (カーネルコードセグメント)、`ss` (カーネルデータセグメント)、`rflags` (割り込み有効 `0x202`)、`cr3` (引数で渡されたPML4アドレス)。タイマー割り込みで `iretq` するために `int_no = 32`, `err_code = 0` も設定。
-        *   [x] **Sub-Task 2.1.4 (変更): PMMスタックページのマッピング検証とビルド修正**
-            *   [x] `kernel/pmm.c` で `pmm_info` の実体を定義する。
-            *   [x] `kernel/main.c` で `serial_putc_direct` を `write_serial_char` に置き換える。
-            *   [x] `kernel/paging.h` に `paging_success_halt` の `extern` 宣言を追加する。
-            *   [x] `kernel/paging.c` の `init_paging` 末尾で `switch_to_kernel_higher_half_and_run` の呼び出しをコメントアウトし、`paging_success_halt()` を呼び出すようにする（ビルド通過のための一時的措置）。
-            *   [x] init_paging がPMMの最初のスタックページ (物理アドレス `0x200000`) をHHDMに正しくマッピングしていることを確認 (kernel_main_after_paging でのR/Wテスト成功)
-        *   [ ] **Sub-Task 2.1.5 (新規): ダミータスクの生成とエンキュー (再挑戦)**
-            *   [x] PMMのページング関連の問題が解決した後、`kernel/main.c` (`kernel_main_after_paging` 内) で `init_task_queue(&ready_queue)` を呼び出す。
-            *   [x] `create_task` を呼び出してダミータスクを2つ生成する。
-            *   [x] 生成したタスクを `ready_queue` に `enqueue_task` で追加する。
-            *   [ ] QEMUで動作確認し、ページフォールトが発生しないこと、タスクがキューに追加されるデバッグログが出力されることを確認する。
-            *   [x] `kernel_main_after_paging` のコメントアウトされている `sti` と `hlt` を有効にし、タイマー割り込みとスケジューラが動作することで、以前のカウントアップ表示またはタスクスイッチによる何らかの動作が画面/シリアルで確認できるようにする。
+    *   [x] **Sub-Task 2.1.4 (変更): PMMスタックページのマッピング検証とビルド修正**
+        *   [x] `kernel/pmm.c` で `pmm_info` の実体を定義する。
+        *   [x] `kernel/main.c` で `serial_putc_direct` を `write_serial_char` に置き換える。
+        *   [x] `kernel/paging.h` に `paging_success_halt` の `extern` 宣言を追加する。
+        *   [x] `kernel/paging.c` の `init_paging` 末尾で `switch_to_kernel_higher_half_and_run` の呼び出しをコメントアウトし、`paging_success_halt()` を呼び出すようにする（ビルド通過のための一時的措置）。
+        *   [x] init_paging がPMMの最初のスタックページ (物理アドレス `0x200000`) をHHDMに正しくマッピングしていることを確認 (kernel_main_after_paging でのR/Wテスト成功)
+    *   [ ] **Sub-Task 2.1.5 : ダミータスクの生成とエンキューのためのPMM安定化**
+        *   [ ] **Sub-Task 2.1.5.1: PMM `init_pmm` 内スタックポインタ整合性検証**
+            *   目的: `init_pmm`完了時に`pmm_stack_top`と`pmm_current_stack_head`がPMMスタックの正しい状態を指すことを確認。
+            *   作業: `init_pmm`の`pmm_free_page`呼び出し前後で主要変数のログを追加。特にスタックページ追加時の分岐を詳細化。QEMUで実行しログ分析。
+            *   期待: `init_pmm`完了時、`pmm_stack_top`が最後のスタックページの空き状況を、`pmm_current_stack_head`がそのページを正しく指す。
+        *   [ ] **Sub-Task 2.1.5.2: PMM `pmm_alloc_page` スタックページ切り替え検証**
+            *   目的: `pmm_alloc_page`でスタックページが空になった際の次ページへの切り替えと`pmm_stack_top`リセットを検証。
+            *   作業: `pmm_alloc_page`の`pmm_stack_top == 0`分岐内の主要変数ログを追加。QEMUで実行しログ分析（特に2回目の呼出し）。
+            *   期待: 2回目の`pmm_alloc_page`で`pmm_current_stack_head`が更新され、`pmm_stack_top`が`PMM_STACK_ENTRIES_PER_PAGE`に設定される。エラーなし。
+        *   [ ] **Sub-Task 2.1.5.3: (PMM修正後) ダミータスク生成とエンキュー最終確認**
+            *   目的: PMM安定化後、ページフォールトなくタスク生成・エンキューログが出力されることを確認。
+            *   作業: 上記修正後、`kernel/main.c`のタスク生成処理を実行。QEMUでページフォールトなく関連ログ出力確認。
+            *   期待: 当初のSub-Task 2.1.5目標達成。
+        *   [ ] **Sub-Task 2.1.5.4: タイマー割り込みとスケジューラ基本動作確認**
+            *   目的: `sti`と`hlt`を有効化し、タイマー割り込みによるスケジューラの基本動作を確認。
+            *   作業: `kernel_main_after_paging`の`sti`と`hlt`を有効化。
+            *   期待: カウントアップ表示またはタスクスイッチを示唆する動作が確認できる。
     *   [ ] **Sub-Task 2.2: 初期タスクの起動準備とコンテキストスイッチロジックの調整**
         *   [ ] `kernel/main.c` (`kernel_main_after_paging` 内): `ready_queue` から最初のタスクを `dequeue_task` で取得し `current_task` に設定。このタスクの `tss_set_rsp0(current_task->kernel_stack_top)` を呼び出し。もし `current_task->context.cr3` が現在のCR3と異なれば `load_cr3()` を呼び出す（通常カーネルタスクでは同じはず）。
         *   [ ] `kernel/apic.c` (`timer_handler` 内のコンテキスト保存・復元部分):
