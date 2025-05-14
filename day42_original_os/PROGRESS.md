@@ -57,7 +57,15 @@
             *   [x] PIDの割り当て、PCB (`task_t`) の初期化 (PID, 名前、初期状態 `TASK_STATE_READY`, `has_run_once = false`)。
             *   [x] カーネルスタックの割り当て (PMM を使用、例: 1ページ) と `kernel_stack_top`/`kernel_stack_bottom` の設定。
             *   [x] 初期コンテキスト (`full_context_t`) の設定: `rip` にタスク関数エントリポイント、`rsp_user` にカーネルスタックトップ、`cs` (カーネルコードセグメント)、`ss` (カーネルデータセグメント)、`rflags` (割り込み有効 `0x202`)、`cr3` (引数で渡されたPML4アドレス)。タイマー割り込みで `iretq` するために `int_no = 32`, `err_code = 0` も設定。
-        *   [ ] `kernel/main.c` (`kernel_main_after_paging` 内): `init_task_queue(&ready_queue)` を呼び出し。その後、上記 `create_task` を呼び出してダミータスクを2つ生成し、`ready_queue` に `enqueue_task` で追加。
+        *   [ ] **Sub-Task 2.1.4 (変更): PMMスタックページのマッピング検証と修正**
+            *   [ ] `init_paging` がPMMの最初のスタックページ (物理アドレス `0x200000`) をHHDMに正しくマッピングしているか確認する。
+            *   [ ] マッピングされていない場合、`init_paging` を修正してマッピング処理を追加する。
+            *   [ ] デバッグ出力を利用して、`pmm_alloc_page` がページフォールトなく呼び出せることを確認する（`create_task` の呼び出しは一時的にコメントアウトするか、1回だけ呼び出してPMMの動作のみを確認する）。
+        *   [ ] **Sub-Task 2.1.5 (新規): ダミータスクの生成とエンキュー (再挑戦)**
+            *   [ ] PMMのページング関連の問題が解決した後、`kernel/main.c` (`kernel_main_after_paging` 内) で `init_task_queue(&ready_queue)` を呼び出す。
+            *   [ ] `create_task` を呼び出してダミータスクを2つ生成する。
+            *   [ ] 生成したタスクを `ready_queue` に `enqueue_task` で追加する。
+            *   [ ] QEMUで動作確認し、ページフォールトが発生しないこと、タスクがキューに追加されるデバッグログが出力されることを確認する。
     *   [ ] **Sub-Task 2.2: 初期タスクの起動準備とコンテキストスイッチロジックの調整**
         *   [ ] `kernel/main.c` (`kernel_main_after_paging` 内): `ready_queue` から最初のタスクを `dequeue_task` で取得し `current_task` に設定。このタスクの `tss_set_rsp0(current_task->kernel_stack_top)` を呼び出し。もし `current_task->context.cr3` が現在のCR3と異なれば `load_cr3()` を呼び出す（通常カーネルタスクでは同じはず）。
         *   [ ] `kernel/apic.c` (`timer_handler` 内のコンテキスト保存・復元部分):
