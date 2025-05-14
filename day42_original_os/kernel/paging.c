@@ -97,10 +97,10 @@ void map_page(uint64_t *pml4_virt_param, uint64_t virt_addr, uint64_t phys_addr,
     if (debug_tag) print_serial(SERIAL_COM1_BASE, debug_tag);
     else print_serial(SERIAL_COM1_BASE, "(null)");
     print_serial(SERIAL_COM1_BASE, "\n");
-    print_serial_str_hex(SERIAL_COM1_BASE, "  pml4_virt_param (used as base): ", (uint64_t)pml4_virt_param);
-    print_serial_str_hex(SERIAL_COM1_BASE, "  virt_addr (to map): ", virt_addr);
-    print_serial_str_hex(SERIAL_COM1_BASE, "  phys_addr (to map): ", phys_addr);
-    print_serial_str_hex(SERIAL_COM1_BASE, "  flags: ", flags);
+    // print_serial_str_hex(SERIAL_COM1_BASE, "  pml4_virt_param (used as base): ", (uint64_t)pml4_virt_param);
+    // print_serial_str_hex(SERIAL_COM1_BASE, "  virt_addr (to map): ", virt_addr);
+    // print_serial_str_hex(SERIAL_COM1_BASE, "  phys_addr (to map): ", phys_addr);
+    // print_serial_str_hex(SERIAL_COM1_BASE, "  flags: ", flags);
 
     (void)debug_tag; // Suppress unused parameter warning for now if not used extensively
 
@@ -111,13 +111,13 @@ void map_page(uint64_t *pml4_virt_param, uint64_t virt_addr, uint64_t phys_addr,
 
     uint64_t pml4_idx = PML4_INDEX(virt_addr);
 
-    print_serial_str_hex(SERIAL_COM1_BASE, "map_page: PML4 Entry for ", virt_addr);
-    print_serial_str_int(SERIAL_COM1_BASE, " (Index ", pml4_idx);
-    print_serial_str_hex(SERIAL_COM1_BASE, ") Value: ", pml4_virt_param[pml4_idx]);
+    // print_serial_str_hex(SERIAL_COM1_BASE, "map_page: PML4 Entry for ", virt_addr);
+    // print_serial_str_int(SERIAL_COM1_BASE, " (Index ", pml4_idx);
+    // print_serial_str_hex(SERIAL_COM1_BASE, ") Value: ", pml4_virt_param[pml4_idx]);
 
     pdpte_t *pdpt_virt;
     if (!(pml4_virt_param[pml4_idx] & PTE_PRESENT)) {
-        print_serial(SERIAL_COM1_BASE, "map_page: PML4E not present. Allocating new PDPT.\n");
+        // print_serial(SERIAL_COM1_BASE, "map_page: PML4E not present. Allocating new PDPT.\n");
         uint64_t pdpt_phys = (uint64_t)pmm_alloc_page();
         if (!pdpt_phys) {
             print_serial(SERIAL_COM1_BASE, "CRITICAL PMM alloc failed for PDPT in map_page! Halting.\n");
@@ -126,23 +126,23 @@ void map_page(uint64_t *pml4_virt_param, uint64_t virt_addr, uint64_t phys_addr,
         pdpt_virt = (pdpte_t *)(pdpt_phys + hhdm_offset);
         clear_page(pdpt_virt);
         pml4_virt_param[pml4_idx] = pdpt_phys | PTE_PRESENT | PTE_WRITABLE | PTE_USER;
-        print_serial_str_hex(SERIAL_COM1_BASE, "map_page: Allocated PDPT at phys: ", pdpt_phys);
-        print_serial_str_hex(SERIAL_COM1_BASE, ", Virt: ", (uint64_t)pdpt_virt);
+        // print_serial_str_hex(SERIAL_COM1_BASE, "map_page: Allocated PDPT at phys: ", pdpt_phys);
+        // print_serial_str_hex(SERIAL_COM1_BASE, ", Virt: ", (uint64_t)pdpt_virt);
     } else {
-        print_serial(SERIAL_COM1_BASE, "map_page: PML4E present. Using existing PDPT.\n");
+        // print_serial(SERIAL_COM1_BASE, "map_page: PML4E present. Using existing PDPT.\n");
         pdpt_virt = (pdpte_t *)((pml4_virt_param[pml4_idx] & PTE_ADDR_MASK) + hhdm_offset);
     }
-    print_serial_str_hex(SERIAL_COM1_BASE, "map_page: PDPT Phys from PML4E: ", (pml4_virt_param[pml4_idx] & PTE_ADDR_MASK));
-    print_serial_str_hex(SERIAL_COM1_BASE, ", Virt (pdpt_virt): ", (uint64_t)pdpt_virt);
+    // print_serial_str_hex(SERIAL_COM1_BASE, "map_page: PDPT Phys from PML4E: ", (pml4_virt_param[pml4_idx] & PTE_ADDR_MASK));
+    // print_serial_str_hex(SERIAL_COM1_BASE, ", Virt (pdpt_virt): ", (uint64_t)pdpt_virt);
 
     uint64_t pdpt_idx = PDPT_INDEX(virt_addr);
-    print_serial_str_hex(SERIAL_COM1_BASE, "map_page: PDPT Entry for ", virt_addr);
-    print_serial_str_int(SERIAL_COM1_BASE, " (Index ", pdpt_idx);
-    print_serial_str_hex(SERIAL_COM1_BASE, ") Value: ", pdpt_virt[pdpt_idx]);
+    // print_serial_str_hex(SERIAL_COM1_BASE, "map_page: PDPT Entry for ", virt_addr);
+    // print_serial_str_int(SERIAL_COM1_BASE, " (Index ", pdpt_idx);
+    // print_serial_str_hex(SERIAL_COM1_BASE, ") Value: ", pdpt_virt[pdpt_idx]);
 
     pde_t *pd_virt;
     if (!(pdpt_virt[pdpt_idx] & PTE_PRESENT)) {
-        print_serial(SERIAL_COM1_BASE, "map_page: PDPTE not present. Allocating new PD.\n");
+        // print_serial(SERIAL_COM1_BASE, "map_page: PDPTE not present. Allocating new PD.\n");
         uint64_t pd_phys = (uint64_t)pmm_alloc_page();
         if (!pd_phys) {
             print_serial(SERIAL_COM1_BASE, "map_page: Failed to allocate page for PD!\n");
@@ -151,23 +151,23 @@ void map_page(uint64_t *pml4_virt_param, uint64_t virt_addr, uint64_t phys_addr,
         memset((void *)(pd_phys + hhdm_offset), 0, PAGE_SIZE);
         pdpt_virt[pdpt_idx] = pd_phys | PTE_PRESENT | PTE_WRITABLE | PTE_USER;
         pd_virt = (pde_t *)(pd_phys + hhdm_offset);
-        print_serial_str_hex(SERIAL_COM1_BASE, "map_page: Allocated Page Directory at phys: ", pd_phys);
-        print_serial_str_hex(SERIAL_COM1_BASE, ", Virt: ", (uint64_t)pd_virt);
+        // print_serial_str_hex(SERIAL_COM1_BASE, "map_page: Allocated Page Directory at phys: ", pd_phys);
+        // print_serial_str_hex(SERIAL_COM1_BASE, ", Virt: ", (uint64_t)pd_virt);
     } else {
-        print_serial(SERIAL_COM1_BASE, "map_page: PDPTE present. Using existing PD.\n");
+        // print_serial(SERIAL_COM1_BASE, "map_page: PDPTE present. Using existing PD.\n");
         pd_virt = (pde_t *)((pdpt_virt[pdpt_idx] & PTE_ADDR_MASK) + hhdm_offset);
     }
-    print_serial_str_hex(SERIAL_COM1_BASE, "map_page: PD Phys from PDPTE: ", (pdpt_virt[pdpt_idx] & PTE_ADDR_MASK));
-    print_serial_str_hex(SERIAL_COM1_BASE, ", Virt (pd_virt): ", (uint64_t)pd_virt);
+    // print_serial_str_hex(SERIAL_COM1_BASE, "map_page: PD Phys from PDPTE: ", (pdpt_virt[pdpt_idx] & PTE_ADDR_MASK));
+    // print_serial_str_hex(SERIAL_COM1_BASE, ", Virt (pd_virt): ", (uint64_t)pd_virt);
 
     uint64_t pd_idx = PD_INDEX(virt_addr);
-    print_serial_str_hex(SERIAL_COM1_BASE, "map_page: PD Entry for ", virt_addr);
-    print_serial_str_int(SERIAL_COM1_BASE, " (Index ", pd_idx);
-    print_serial_str_hex(SERIAL_COM1_BASE, ") Value: ", pd_virt[pd_idx]);
+    // print_serial_str_hex(SERIAL_COM1_BASE, "map_page: PD Entry for ", virt_addr);
+    // print_serial_str_int(SERIAL_COM1_BASE, " (Index ", pd_idx);
+    // print_serial_str_hex(SERIAL_COM1_BASE, ") Value: ", pd_virt[pd_idx]);
 
     pte_t *pt_virt;
     if (!(pd_virt[pd_idx] & PTE_PRESENT)) {
-        print_serial(SERIAL_COM1_BASE, "map_page: PDE not present. Allocating new PT.\n");
+        // print_serial(SERIAL_COM1_BASE, "map_page: PDE not present. Allocating new PT.\n");
         uint64_t pt_phys = (uint64_t)pmm_alloc_page();
         if (!pt_phys) {
             print_serial(SERIAL_COM1_BASE, "map_page: Failed to allocate page for PT!\n");
@@ -176,23 +176,23 @@ void map_page(uint64_t *pml4_virt_param, uint64_t virt_addr, uint64_t phys_addr,
         memset((void *)(pt_phys + hhdm_offset), 0, PAGE_SIZE);
         pd_virt[pd_idx] = pt_phys | PTE_PRESENT | PTE_WRITABLE | PTE_USER;
         pt_virt = (pte_t *)(pt_phys + hhdm_offset);
-        print_serial_str_hex(SERIAL_COM1_BASE, "map_page: Allocated Page Table at phys: ", pt_phys);
-        print_serial_str_hex(SERIAL_COM1_BASE, ", Virt: ", (uint64_t)pt_virt);
+        // print_serial_str_hex(SERIAL_COM1_BASE, "map_page: Allocated Page Table at phys: ", pt_phys);
+        // print_serial_str_hex(SERIAL_COM1_BASE, ", Virt: ", (uint64_t)pt_virt);
     } else {
-        print_serial(SERIAL_COM1_BASE, "map_page: PDE present. Using existing PT.\n");
+        // print_serial(SERIAL_COM1_BASE, "map_page: PDE present. Using existing PT.\n");
         pt_virt = (pte_t *)((pd_virt[pd_idx] & PTE_ADDR_MASK) + hhdm_offset);
     }
-    print_serial_str_hex(SERIAL_COM1_BASE, "map_page: PT Phys from PDE: ", (pd_virt[pd_idx] & PTE_ADDR_MASK));
-    print_serial_str_hex(SERIAL_COM1_BASE, ", Virt (pt_virt): ", (uint64_t)pt_virt);
+    // print_serial_str_hex(SERIAL_COM1_BASE, "map_page: PT Phys from PDE: ", (pd_virt[pd_idx] & PTE_ADDR_MASK));
+    // print_serial_str_hex(SERIAL_COM1_BASE, ", Virt (pt_virt): ", (uint64_t)pt_virt);
 
     uint64_t pt_idx = PT_INDEX(virt_addr);
-    print_serial_str_hex(SERIAL_COM1_BASE, "map_page: PT Entry for ", virt_addr);
-    print_serial_str_int(SERIAL_COM1_BASE, " (Index ", pt_idx);
-    if(pt_virt) {
-        print_serial_str_hex(SERIAL_COM1_BASE, ") Current value: ", pt_virt[pt_idx]);
-    } else {
-        print_serial(SERIAL_COM1_BASE, ") Current value: pt_virt is NULL!\n");
-    }
+    // print_serial_str_hex(SERIAL_COM1_BASE, "map_page: PT Entry for ", virt_addr);
+    // print_serial_str_int(SERIAL_COM1_BASE, " (Index ", pt_idx);
+    // if(pt_virt) {
+    //     print_serial_str_hex(SERIAL_COM1_BASE, ") Current value: ", pt_virt[pt_idx]);
+    // } else {
+    //     print_serial(SERIAL_COM1_BASE, ") Current value: pt_virt is NULL!\n");
+    // }
 
     uint64_t old_pt_entry_value = 0;
     if(pt_virt) {
@@ -203,17 +203,17 @@ void map_page(uint64_t *pml4_virt_param, uint64_t virt_addr, uint64_t phys_addr,
         hcf();
     }
 
-    print_serial(SERIAL_COM1_BASE, "map_page: Mapping 0x");
-    print_serial_hex(SERIAL_COM1_BASE, virt_addr);
-    print_serial(SERIAL_COM1_BASE, " to 0x");
-    print_serial_hex(SERIAL_COM1_BASE, phys_addr);
-    print_serial(SERIAL_COM1_BASE, " with flags 0x");
-    print_serial_hex(SERIAL_COM1_BASE, flags);
-    print_serial(SERIAL_COM1_BASE, ". PT Entry old value: 0x");
-    print_serial_hex(SERIAL_COM1_BASE, old_pt_entry_value);
-    print_serial(SERIAL_COM1_BASE, ", New value: 0x");
-    print_serial_hex(SERIAL_COM1_BASE, pt_virt[pt_idx]);
-    print_serial(SERIAL_COM1_BASE, "\n");
+    // print_serial(SERIAL_COM1_BASE, "map_page: Mapping 0x");
+    // print_serial_hex(SERIAL_COM1_BASE, virt_addr);
+    // print_serial(SERIAL_COM1_BASE, " to 0x");
+    // print_serial_hex(SERIAL_COM1_BASE, phys_addr);
+    // print_serial(SERIAL_COM1_BASE, " with flags 0x");
+    // print_serial_hex(SERIAL_COM1_BASE, flags);
+    // print_serial(SERIAL_COM1_BASE, ". PT Entry old value: 0x");
+    // print_serial_hex(SERIAL_COM1_BASE, old_pt_entry_value);
+    // print_serial(SERIAL_COM1_BASE, ", New value: 0x");
+    // print_serial_hex(SERIAL_COM1_BASE, pt_virt[pt_idx]);
+    // print_serial(SERIAL_COM1_BASE, "\n");
 
     // Flush TLB entry for the modified virtual address
     // For simplicity, we can reload CR3 to flush the entire TLB.
