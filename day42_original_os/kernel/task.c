@@ -6,6 +6,8 @@
 // Global ready queue (example)
 // static task_queue_t ready_queue;
 
+task_t *current_task = NULL; // ADD THIS LINE
+
 void init_task_queue(task_queue_t *queue) {
     if (!queue) return;
     queue->head = 0;

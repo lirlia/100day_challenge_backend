@@ -5,6 +5,7 @@
 #include "pmm.h"    // For PAGE_SIZE (redundant if paging.h included)
 #include "msr.h"
 #include <stdbool.h>
+#include "task.h" // For current_task and task_t
 
 // Global state
 volatile uint64_t tick_counter = 0;
@@ -45,6 +46,21 @@ inline void wrmsr(uint32_t msr, uint64_t value) {
     );
 }
 */
+
+// Called by the common IRQ handler
+void timer_handler(struct registers *regs) {
+    tick_counter++;
+
+    // Save current task's context
+    if (current_task != NULL) {
+        current_task->context = *regs; // Copy the register state
+    }
+
+    // TODO: Implement schedule() call here
+    // schedule();
+
+    lapic_send_eoi();
+}
 
 void init_apic(struct limine_smp_response *smp_info) {
     if (smp_info == NULL || smp_info->cpu_count == 0) {

@@ -44,13 +44,14 @@ typedef struct task {
 #define MAX_TASKS 16 // Maximum number of tasks the queue can hold
 
 // Task Queue (simple ring buffer)
-typedef struct {
+typedef struct task_queue {
     task_t* tasks[MAX_TASKS];
     int head;
     int tail;
     int count;
-    // Add lock/semaphore if preemption is introduced before ISR-off sections are used for queue manipulation
 } task_queue_t;
+
+extern task_t *current_task;
 
 // Task queue operations
 void init_task_queue(task_queue_t *queue);
