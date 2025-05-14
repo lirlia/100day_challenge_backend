@@ -50,10 +50,14 @@
         *   [X] 次タスクの選択 (`dequeue_task`) と `current_task` 更新
         *   [X] 次タスクのRSP0設定 (`tss_set_rsp0`)
         *   [X] コンテキスト復元の準備 (スタック書き換え)
-    *   [ ] **Sub-Task 2.1: ダミータスクの定義と生成**
+    *   [x] **Sub-Task 2.1: ダミータスクの定義と生成**
         *   [x] `task.h`: `task_t` にタスク名 (`name`)、カーネルスタックの底 (`kernel_stack_bottom`)、初回実行フラグ (`has_run_once`) を追加。タスクエントリーポイントの型 `task_entry_point_t` と `create_task` 関数のプロトタイプを定義。
         *   [x] `kernel/main.c`: 2つのダミータスク処理関数 (例: `dummy_task_a_main`, `dummy_task_b_main`) を定義。それぞれ異なる文字をシリアルポートに無限ループで出力。
-        *   [ ] `kernel/task.c`: `create_task` 関数を実装。
+        *   [x] `kernel/task.c`: `create_task` 関数を実装。
+            *   [x] PIDの割り当て、PCB (`task_t`) の初期化 (PID, 名前、初期状態 `TASK_STATE_READY`, `has_run_once = false`)。
+            *   [x] カーネルスタックの割り当て (PMM を使用、例: 1ページ) と `kernel_stack_top`/`kernel_stack_bottom` の設定。
+            *   [x] 初期コンテキスト (`full_context_t`) の設定: `rip` にタスク関数エントリポイント、`rsp_user` にカーネルスタックトップ、`cs` (カーネルコードセグメント)、`ss` (カーネルデータセグメント)、`rflags` (割り込み有効 `0x202`)、`cr3` (引数で渡されたPML4アドレス)。タイマー割り込みで `iretq` するために `int_no = 32`, `err_code = 0` も設定。
+        *   [ ] `kernel/main.c` (`kernel_main_after_paging` 内): `init_task_queue(&ready_queue)` を呼び出し。その後、上記 `create_task` を呼び出してダミータスクを2つ生成し、`ready_queue` に `enqueue_task` で追加。
     *   [ ] **Sub-Task 2.2: 初期タスクの起動準備とコンテキストスイッチロジックの調整**
         *   [ ] `kernel/main.c` (`kernel_main_after_paging` 内): `ready_queue` から最初のタスクを `dequeue_task` で取得し `current_task` に設定。このタスクの `tss_set_rsp0(current_task->kernel_stack_top)` を呼び出し。もし `current_task->context.cr3` が現在のCR3と異なれば `load_cr3()` を呼び出す（通常カーネルタスクでは同じはず）。
         *   [ ] `kernel/apic.c` (`timer_handler` 内のコンテキスト保存・復元部分):

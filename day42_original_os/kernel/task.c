@@ -3,12 +3,26 @@
 #include "main.h"   // For print_serial, print_serial_hex etc.
 #include "gdt.h"    // ADD THIS LINE for tss_set_rsp0
 #include <stddef.h> // For NULL
+#include "pmm.h"    // For pmm_alloc_page
+#include "paging.h" // For hhdm_offset, PAGE_SIZE
 
 // Global ready queue (example)
 // static task_queue_t ready_queue;
 
 task_t *current_task = NULL; // ADD THIS LINE
 task_queue_t ready_queue; // ADD THIS LINE
+static uint64_t next_pid = 1; // For assigning PIDs
+
+#define KERNEL_TASK_STACK_PAGES 1 // Number of pages for a task's kernel stack
+
+// Simple string copy, ensure null termination
+static void strncpy_local(char *dest, const char *src, size_t n) {
+    size_t i;
+    for (i = 0; i < n - 1 && src[i] != '\0'; i++) {
+        dest[i] = src[i];
+    }
+    dest[i] = '\0';
+}
 
 void init_task_queue(task_queue_t *queue) {
     if (!queue) return;
@@ -145,4 +159,84 @@ void schedule(void) {
     // Re-enable interrupts before returning or switching context
     // The actual context switch (iretq) will happen after schedule() returns, in the assembly stub.
     asm volatile ("sti");
+}
+
+task_t *create_task(const char *name, task_entry_point_t entry_point, uint64_t pml4_phys_addr) {
+    // 1. Allocate memory for the task_t structure itself
+    task_t *task = (task_t *)pmm_alloc_page(); // Using a full page for PCB for simplicity, could be optimized
+    if (!task) {
+        print_serial(SERIAL_COM1_BASE, "create_task: Failed to allocate memory for PCB\n");
+        return NULL;
+    }
+    // Zero out the task_t structure
+    // NOTE: A proper memset would be better, but for now, critical fields are set manually.
+    // A simple loop-based memset:
+    uint8_t* task_ptr_byte = (uint8_t*)task;
+    for(size_t i = 0; i < sizeof(task_t); ++i) {
+        task_ptr_byte[i] = 0;
+    }
+
+
+    // 2. Initialize PCB fields
+    task->pid = next_pid++;
+    strncpy_local(task->name, name, sizeof(task->name));
+    task->state = TASK_STATE_READY;
+    task->has_run_once = 0; // false
+
+    // 3. Allocate kernel stack
+    uint64_t stack_phys_bottom = 0;
+    for (int i = 0; i < KERNEL_TASK_STACK_PAGES; ++i) { // Allocate contiguous pages if KERNEL_TASK_STACK_PAGES > 1
+        uint64_t page = (uint64_t)pmm_alloc_page();
+        if (!page) {
+            print_serial(SERIAL_COM1_BASE, "create_task: Failed to allocate kernel stack page for PID: ");
+            print_serial_hex(SERIAL_COM1_BASE, task->pid);
+            write_serial_char(SERIAL_COM1_BASE, '\n');
+            pmm_free_page(task); // Free the PCB page
+            return NULL;
+        }
+        if (i == 0) {
+            stack_phys_bottom = page;
+        }
+        // For KERNEL_TASK_STACK_PAGES > 1, ensure pages are contiguous or handle non-contiguous.
+        // For KERNEL_TASK_STACK_PAGES = 1, this loop runs once.
+    }
+
+    task->kernel_stack_bottom = stack_phys_bottom + hhdm_offset; // Virtual address of the bottom
+    // Stack grows downwards, so top is bottom + size. RSP0 points to the very top.
+    task->kernel_stack_top = task->kernel_stack_bottom + (KERNEL_TASK_STACK_PAGES * PAGE_SIZE);
+
+    // 4. Initialize context (full_context_t)
+    // Zero out the context first
+    uint8_t* ctx_ptr_byte = (uint8_t*)&(task->context);
+    for(size_t i = 0; i < sizeof(full_context_t); ++i) {
+        ctx_ptr_byte[i] = 0;
+    }
+
+    task->context.rip = (uint64_t)entry_point;
+    task->context.cs = 0x08; // Kernel Code Segment selector
+    task->context.rflags = 0x202; // Interrupts enabled
+    task->context.rsp_user = task->kernel_stack_top; // Initial stack pointer for the task (kernel mode)
+    task->context.ss = 0x10; // Kernel Data Segment selector
+    // task->context.ss_user should be 0 or a user data selector if switching to user mode
+    task->context.cr3 = pml4_phys_addr;
+
+    // These are set as if the task was interrupted by timer (vector 32)
+    // This allows the first context switch *into* this task to use the same iretq logic
+    task->context.int_no = 32; // Timer interrupt vector
+    task->context.err_code = 0; // No error code for timer
+
+    // Initialize other GPRs to 0 (done by the memset-like loop above)
+    // task->context.r15 = 0; ... task->context.rax = 0; etc.
+
+    print_serial(SERIAL_COM1_BASE, "Task created: ");
+    print_serial(SERIAL_COM1_BASE, task->name);
+    print_serial(SERIAL_COM1_BASE, " (PID: ");
+    print_serial_hex(SERIAL_COM1_BASE, task->pid);
+    print_serial(SERIAL_COM1_BASE, "), Stack VTop: ");
+    print_serial_hex(SERIAL_COM1_BASE, task->kernel_stack_top);
+    print_serial(SERIAL_COM1_BASE, ", RIP: ");
+    print_serial_hex(SERIAL_COM1_BASE, task->context.rip);
+    write_serial_char(SERIAL_COM1_BASE, '\n');
+
+    return task;
 }

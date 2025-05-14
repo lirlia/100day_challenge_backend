@@ -50,6 +50,7 @@ typedef struct full_context {
     uint64_t cs;
     uint64_t rflags;
     uint64_t rsp_user; // User-mode RSP (if privilege change occurred)
+    uint64_t ss;       // Stack Segment selector for the new context (usually kernel data segment for kernel tasks)
     uint64_t ss_user;  // User-mode SS (if privilege change occurred)
 
     // CR3 register (page table base).
