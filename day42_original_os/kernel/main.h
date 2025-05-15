@@ -104,4 +104,8 @@ static inline uint64_t get_rsp(void) {
     return rsp;
 }
 
+// Add these prototypes
+void uint64_to_hex_str(uint64_t value, char *str);
+void uint64_to_dec_str(uint64_t value, char *str);
+
 #endif // KERNEL_MAIN_H

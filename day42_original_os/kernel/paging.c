@@ -117,13 +117,14 @@ void map_page(uint64_t *pml4_virt_param, uint64_t virt_addr, uint64_t phys_addr,
 
     pdpte_t *pdpt_virt;
     if (!(pml4_virt_param[pml4_idx] & PTE_PRESENT)) {
-        // print_serial(SERIAL_COM1_BASE, "map_page: PML4E not present. Allocating new PDPT.\n");
+        // print_serial(SERIAL_COM1_BASE, "map_page: PML4E not present. Allocating new PDPT.\\\\n");
         uint64_t pdpt_phys = (uint64_t)pmm_alloc_page();
         if (!pdpt_phys) {
-            print_serial(SERIAL_COM1_BASE, "CRITICAL PMM alloc failed for PDPT in map_page! Halting.\n");
+            print_serial_format("CRITICAL PMM alloc failed for PDPT in map_page (Tag: %s)! VA=0x%lx PA=0x%lx Halting.\\\\n", debug_tag ? debug_tag : "N/A", virt_addr, phys_addr);
             for(;;) asm volatile("cli; hlt");
         }
         pdpt_virt = (pdpte_t *)(pdpt_phys + hhdm_offset);
+        print_serial_format("MAP_PAGE_DBG: Clearing PDPT for PML4_IDX %u (Tag: %s). PDPT_PHYS=0x%lx, PDPT_VIRT=0x%lx\\\\n", pml4_idx, debug_tag ? debug_tag : "N/A", pdpt_phys, (uint64_t)pdpt_virt);
         clear_page(pdpt_virt);
         pml4_virt_param[pml4_idx] = pdpt_phys | PTE_PRESENT | PTE_WRITABLE | PTE_USER;
         // print_serial_str_hex(SERIAL_COM1_BASE, "map_page: Allocated PDPT at phys: ", pdpt_phys);
@@ -142,15 +143,17 @@ void map_page(uint64_t *pml4_virt_param, uint64_t virt_addr, uint64_t phys_addr,
 
     pde_t *pd_virt;
     if (!(pdpt_virt[pdpt_idx] & PTE_PRESENT)) {
-        // print_serial(SERIAL_COM1_BASE, "map_page: PDPTE not present. Allocating new PD.\n");
+        // print_serial(SERIAL_COM1_BASE, "map_page: PDPTE not present. Allocating new PD.\\\\n");
         uint64_t pd_phys = (uint64_t)pmm_alloc_page();
         if (!pd_phys) {
-            print_serial(SERIAL_COM1_BASE, "map_page: Failed to allocate page for PD!\n");
+            print_serial_format("CRITICAL PMM alloc failed for PD in map_page (Tag: %s)! VA=0x%lx PA=0x%lx Halting.\\\\n", debug_tag ? debug_tag : "N/A", virt_addr, phys_addr);
             hcf();
         }
-        memset((void *)(pd_phys + hhdm_offset), 0, PAGE_SIZE);
-        pdpt_virt[pdpt_idx] = pd_phys | PTE_PRESENT | PTE_WRITABLE | PTE_USER;
         pd_virt = (pde_t *)(pd_phys + hhdm_offset);
+        print_serial_format("MAP_PAGE_DBG: Clearing PD for PDPT_IDX %u (Tag: %s). PD_PHYS=0x%lx, PD_VIRT=0x%lx\\\\n", pdpt_idx, debug_tag ? debug_tag : "N/A", pd_phys, (uint64_t)pd_virt);
+        memset((void *)(pd_virt), 0, PAGE_SIZE);
+        pdpt_virt[pdpt_idx] = pd_phys | PTE_PRESENT | PTE_WRITABLE | PTE_USER;
+        // pd_virt = (pde_t *)(pd_phys + hhdm_offset);
         // print_serial_str_hex(SERIAL_COM1_BASE, "map_page: Allocated Page Directory at phys: ", pd_phys);
         // print_serial_str_hex(SERIAL_COM1_BASE, ", Virt: ", (uint64_t)pd_virt);
     } else {
@@ -167,15 +170,17 @@ void map_page(uint64_t *pml4_virt_param, uint64_t virt_addr, uint64_t phys_addr,
 
     pte_t *pt_virt;
     if (!(pd_virt[pd_idx] & PTE_PRESENT)) {
-        // print_serial(SERIAL_COM1_BASE, "map_page: PDE not present. Allocating new PT.\n");
+        // print_serial(SERIAL_COM1_BASE, "map_page: PDE not present. Allocating new PT.\\\\n");
         uint64_t pt_phys = (uint64_t)pmm_alloc_page();
         if (!pt_phys) {
-            print_serial(SERIAL_COM1_BASE, "map_page: Failed to allocate page for PT!\n");
+            print_serial_format("CRITICAL PMM alloc failed for PT in map_page (Tag: %s)! VA=0x%lx PA=0x%lx Halting.\\\\n", debug_tag ? debug_tag : "N/A", virt_addr, phys_addr);
             hcf();
         }
-        memset((void *)(pt_phys + hhdm_offset), 0, PAGE_SIZE);
-        pd_virt[pd_idx] = pt_phys | PTE_PRESENT | PTE_WRITABLE | PTE_USER;
         pt_virt = (pte_t *)(pt_phys + hhdm_offset);
+        print_serial_format("MAP_PAGE_DBG: Clearing PT for PD_IDX %u (Tag: %s). PT_PHYS=0x%lx, PT_VIRT=0x%lx\\\\n", pd_idx, debug_tag ? debug_tag : "N/A", pt_phys, (uint64_t)pt_virt);
+        memset((void *)(pt_virt), 0, PAGE_SIZE);
+        pd_virt[pd_idx] = pt_phys | PTE_PRESENT | PTE_WRITABLE | PTE_USER;
+        // pt_virt = (pte_t *)(pt_phys + hhdm_offset);
         // print_serial_str_hex(SERIAL_COM1_BASE, "map_page: Allocated Page Table at phys: ", pt_phys);
         // print_serial_str_hex(SERIAL_COM1_BASE, ", Virt: ", (uint64_t)pt_virt);
     } else {
@@ -240,14 +245,15 @@ void init_paging(
     // Allocate page for the global kernel_pml4_phys
     kernel_pml4_phys = (pml4e_t *)pmm_alloc_page();
     if (!kernel_pml4_phys) {
-        print_serial(SERIAL_COM1_BASE, "ERROR: Failed to allocate page for PML4! Halting.\n");
+        print_serial_format("ERROR: Failed to allocate page for PML4! Halting.\\\\n");
         for (;;) { asm volatile("cli; hlt"); }
     }
-    pml4e_t *pml4_virt = (pml4e_t *)((uint64_t)kernel_pml4_phys + hhdm_offset);
-    clear_page(pml4_virt);
+    kernel_pml4_virt = (pml4e_t *)((uint64_t)kernel_pml4_phys + hhdm_offset);
+    print_serial_format("INIT_PAGING_DBG: Clearing initial PML4. PHYS=0x%lx, VIRT=0x%lx\\\\n", (uint64_t)kernel_pml4_phys, (uint64_t)kernel_pml4_virt);
+    clear_page(kernel_pml4_virt);
 
     print_serial(SERIAL_COM1_BASE, "PML4 table allocated at V:0x");
-    print_serial_hex(SERIAL_COM1_BASE, (uint64_t)pml4_virt);
+    print_serial_hex(SERIAL_COM1_BASE, (uint64_t)kernel_pml4_virt);
     print_serial(SERIAL_COM1_BASE, " P:0x");
     print_serial_hex(SERIAL_COM1_BASE, (uint64_t)kernel_pml4_phys);
     print_serial(SERIAL_COM1_BASE, "\n");
@@ -277,7 +283,7 @@ void init_paging(
     print_serial(SERIAL_COM1_BASE, ")\n");
     for (uint64_t v = ALIGN_DOWN((uint64_t)_text_start, PAGE_SIZE); v < ALIGN_UP((uint64_t)_text_end, PAGE_SIZE); v += PAGE_SIZE) {
         uint64_t p = (v - (uint64_t)_kernel_start) + kernel_load_phys_addr;
-        map_page(pml4_virt, v, p, PTE_PRESENT, ".text");
+        map_page(kernel_pml4_virt, v, p, PTE_PRESENT, ".text");
     }
 
     print_serial(SERIAL_COM1_BASE, "Mapping .rodata section (VA: 0x");
@@ -287,7 +293,7 @@ void init_paging(
     print_serial(SERIAL_COM1_BASE, ")\n");
     for (uint64_t v = ALIGN_DOWN((uint64_t)_rodata_start, PAGE_SIZE); v < ALIGN_UP((uint64_t)_rodata_end, PAGE_SIZE); v += PAGE_SIZE) {
         uint64_t p = (v - (uint64_t)_kernel_start) + kernel_load_phys_addr;
-        map_page(pml4_virt, v, p, PTE_PRESENT | PTE_NO_EXECUTE, ".rodata");
+        map_page(kernel_pml4_virt, v, p, PTE_PRESENT | PTE_NO_EXECUTE, ".rodata");
     }
 
     uint64_t data_bss_start_virt = ALIGN_DOWN((uint64_t)_data_start, PAGE_SIZE);
@@ -299,7 +305,7 @@ void init_paging(
     print_serial(SERIAL_COM1_BASE, ")\n");
     for (uint64_t v = data_bss_start_virt; v < data_bss_end_virt; v += PAGE_SIZE) {
         uint64_t p = (v - (uint64_t)_kernel_start) + kernel_load_phys_addr;
-        map_page(pml4_virt, v, p, PTE_PRESENT | PTE_WRITABLE | PTE_NO_EXECUTE, ".data/.bss");
+        map_page(kernel_pml4_virt, v, p, PTE_PRESENT | PTE_WRITABLE | PTE_NO_EXECUTE, ".data/.bss");
     }
     print_serial(SERIAL_COM1_BASE, "Kernel sections mapped.\n");
 
@@ -319,7 +325,7 @@ void init_paging(
     print_serial_hex(SERIAL_COM1_BASE, fb_size);
     print_serial(SERIAL_COM1_BASE, "\n");
     for (uint64_t offset = 0; offset < fb_size; offset += PAGE_SIZE) {
-        map_page(pml4_virt, fb_addr_virt_base + offset, fb_addr_phys_base + offset, PTE_PRESENT | PTE_WRITABLE | PTE_NO_EXECUTE, "Framebuffer");
+        map_page(kernel_pml4_virt, fb_addr_virt_base + offset, fb_addr_phys_base + offset, PTE_PRESENT | PTE_WRITABLE | PTE_NO_EXECUTE, "Framebuffer");
     }
     print_serial(SERIAL_COM1_BASE, "Framebuffer mapped.\n");
 
@@ -333,7 +339,7 @@ void init_paging(
     for (uint64_t off = 0; off < kernel_stack_size; off += PAGE_SIZE) {
         uint64_t stack_page_virt = kernel_stack_phys_base + hhdm_offset + off;
         uint64_t stack_page_phys = kernel_stack_phys_base + off;
-        map_page(pml4_virt, stack_page_virt, stack_page_phys, PTE_PRESENT | PTE_WRITABLE, "Kernel Stack Page");
+        map_page(kernel_pml4_virt, stack_page_virt, stack_page_phys, PTE_PRESENT | PTE_WRITABLE, "Kernel Stack Page");
         print_serial(SERIAL_COM1_BASE, "  Mapped Stack Page: V=0x");
         print_serial_hex(SERIAL_COM1_BASE, stack_page_virt);
         print_serial(SERIAL_COM1_BASE, " -> P=0x");
@@ -353,7 +359,7 @@ void init_paging(
             print_serial(SERIAL_COM1_BASE, " to Virt: 0x");
             print_serial_hex(SERIAL_COM1_BASE, apic_virt_base);
             print_serial(SERIAL_COM1_BASE, "\n");
-            map_page(pml4_virt, apic_virt_base, apic_phys_base, PTE_PRESENT | PTE_WRITABLE | PTE_NO_EXECUTE | PTE_NO_CACHE_DISABLE, "APIC MMIO");
+            map_page(kernel_pml4_virt, apic_virt_base, apic_phys_base, PTE_PRESENT | PTE_WRITABLE | PTE_NO_EXECUTE | PTE_NO_CACHE_DISABLE, "APIC MMIO");
         } else {
             print_serial(SERIAL_COM1_BASE, "Warning: APIC physical base is zero, cannot map MMIO.\n");
             // Continue without mapping, init_apic might panic later if it needs MMIO.
@@ -378,7 +384,7 @@ void init_paging(
         for (uint64_t i = 0; i < pmm_info.pmm_stack_size_pages; i++) {
             uint64_t phys_addr = pmm_info.stack_phys_base + (i * PAGE_SIZE);
             uint64_t virt_addr = phys_addr + hhdm_offset;
-            map_page(pml4_virt, virt_addr, phys_addr, PTE_PRESENT | PTE_WRITABLE | PTE_NO_EXECUTE, "PMM Stack");
+            map_page(kernel_pml4_virt, virt_addr, phys_addr, PTE_PRESENT | PTE_WRITABLE | PTE_NO_EXECUTE, "PMM Stack");
         }
         print_serial(SERIAL_COM1_BASE, "PMM internal stack mapped to HHDM.\n");
     } else {
@@ -463,7 +469,7 @@ void init_paging(
 
     for (uint64_t p_addr = ALIGN_DOWN(idt_phys_start, PAGE_SIZE); p_addr < ALIGN_UP(idt_phys_end, PAGE_SIZE); p_addr += PAGE_SIZE) {
         uint64_t v_addr = p_addr + hhdm_offset;
-        map_page(pml4_virt, v_addr, p_addr, PTE_PRESENT | PTE_WRITABLE | PTE_NO_EXECUTE, "IDT"); // IDT itself is data, handlers are code
+        map_page(kernel_pml4_virt, v_addr, p_addr, PTE_PRESENT | PTE_WRITABLE | PTE_NO_EXECUTE, "IDT"); // IDT itself is data, handlers are code
         print_serial(SERIAL_COM1_BASE, "  Mapped IDT Page: V=0x");
         print_serial_hex(SERIAL_COM1_BASE, v_addr);
         print_serial(SERIAL_COM1_BASE, " -> P=");
@@ -501,7 +507,7 @@ void init_paging(
     print_serial(SERIAL_COM1_BASE, " to Virt: 0x");
     print_serial_hex(SERIAL_COM1_BASE, old_stack_page_virt);
     print_serial(SERIAL_COM1_BASE, "\n");
-    map_page(pml4_virt,
+    map_page(kernel_pml4_virt,
              old_stack_page_virt,         // Virtual address (same as current HHDM address)
              old_stack_page_phys,         // Physical address
              PTE_PRESENT | PTE_WRITABLE | PTE_NO_EXECUTE, // Writable, No Execute for stack
@@ -526,7 +532,7 @@ void init_paging(
         print_serial(SERIAL_COM1_BASE, ", Page V:0x");
         print_serial_hex(SERIAL_COM1_BASE, fb_struct_page_virt);
         print_serial(SERIAL_COM1_BASE, "\n");
-        map_page(pml4_virt,
+        map_page(kernel_pml4_virt,
                  fb_struct_page_virt,         // Virtual address
                  fb_struct_page_phys,         // Physical address
                  PTE_PRESENT | PTE_WRITABLE | PTE_NO_EXECUTE, // Struct is read/written, not executed

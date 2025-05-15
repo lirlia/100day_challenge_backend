@@ -909,6 +909,12 @@ uint32_t pixel_color = (row_bits & (1 << cx)) ? text_color : bg_color;
     - `init_pmm` 完了時点で、`pmm_info.total_free_pages` と `pmm_info.allocated_stack_pages` が期待される値（テスト環境ではそれぞれ `65178`ページ、`128`ページ）を示しており、`pmm_current_stack_head` が最後に確保されたPMMスタックページを、`pmm_stack_top` がそのページ内の次の空きスロットを指していると推測される。
     - この結果から、`init_pmm` におけるPMMスタックの初期化と連結処理は正しく機能していると判断できる。
 
+- [x] **Sub-Task 2.1.5.1 (旧): `print_serial_format` の実装と主要箇所へのデバッグログ追加** (PROGRESS.md では 2.1.5.1 としていたが、PROCEDUREではPMMのタスクに内包)
+    - `serial.c` に `print_serial_format` を実装 (可変長引数、主要なフォーマット指定子 `%s`, `%d`, `%x`, `%p`, `%%` のサポート)。
+    - `paging.c` の `init_paging`, `map_page` の主要ステップに `print_serial_format` を用いたデバッグログを挿入。
+    - `main.c` の数値変換ヘルパー (`uint64_to_hex_str`, `uint64_to_dec_str`) を `static` でなくグローバルにする (必要に応じて `main.h` にプロトタイプ追加)。
+    - ビルドしてQEMUでシリアル出力を確認。
+
 ##### Sub-Task 2.1.5.2: PMM `pmm_alloc_page` スタックページ切り替え検証
 
 - **目的**: `pmm_alloc_page` がPMMスタックページを使い切った際に、前のPMMスタックページに正しく切り替わるか（スタックの縮小処理）を検証する。

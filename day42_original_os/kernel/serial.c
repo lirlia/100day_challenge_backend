@@ -57,4 +57,79 @@ void print_serial_dec(uint16_t port, uint64_t value) {
     print_serial(port, dec_str);
 }
 
-// TODO: Implement print_serial_format if needed (requires vsnprintf or similar)
+// Implemented print_serial_format
+void print_serial_format(const char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+
+    char ch;
+    while ((ch = *fmt++)) {
+        if (ch != '%') {
+            write_serial_char(SERIAL_COM1_BASE, ch);
+            continue;
+        }
+
+        ch = *fmt++;
+        // Support for %l modifier (e.g. %lx, %lu)
+        bool is_long = false;
+        if (ch == 'l') {
+            is_long = true;
+            ch = *fmt++;
+        }
+
+        switch (ch) {
+            case 's': {
+                const char *s_val = va_arg(args, const char *);
+                if (s_val == NULL) {
+                    print_serial(SERIAL_COM1_BASE, "(null)");
+                } else {
+                    print_serial(SERIAL_COM1_BASE, s_val);
+                }
+                break;
+            }
+            case 'c': {
+                char c_val = (char)va_arg(args, int); // char is promoted to int
+                write_serial_char(SERIAL_COM1_BASE, c_val);
+                break;
+            }
+            case 'x':
+            case 'X':
+            case 'p': {
+                uint64_t val_hex;
+                if (is_long) {
+                    val_hex = va_arg(args, uint64_t);
+                } else {
+                    // Non-long %x, %X, %p might be int or unsigned int.
+                    // For simplicity and kernel debug, assume they might still pass larger types if not careful.
+                    // Safest is to expect uint32_t if not long, then promote to uint64_t for printing.
+                    // However, va_arg needs exact type. Let's assume uint32_t for non-long hex.
+                    val_hex = (uint64_t)va_arg(args, uint32_t);
+                }
+                print_serial_hex(SERIAL_COM1_BASE, val_hex);
+                break;
+            }
+            case 'u':
+            case 'd': // Treat %d as %u for simplicity for now
+            case 'i': // Treat %i as %u for simplicity for now
+            {
+                uint64_t val_dec;
+                if (is_long) {
+                    val_dec = va_arg(args, uint64_t);
+                } else {
+                    // Similar to hex, assume uint32_t for non-long decimal.
+                    val_dec = (uint64_t)va_arg(args, uint32_t);
+                }
+                print_serial_dec(SERIAL_COM1_BASE, val_dec);
+                break;
+            }
+            case '%':
+                write_serial_char(SERIAL_COM1_BASE, '%');
+                break;
+            default:
+                write_serial_char(SERIAL_COM1_BASE, '%');
+                write_serial_char(SERIAL_COM1_BASE, ch);
+                break;
+        }
+    }
+    va_end(args);
+}
