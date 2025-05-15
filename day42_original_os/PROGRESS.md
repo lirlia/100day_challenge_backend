@@ -52,22 +52,15 @@
         *   [X] 次タスクの選択 (`dequeue_task`) と `current_task` 更新
         *   [X] 次タスクのRSP0設定 (`tss_set_rsp0`)
         *   [X] コンテキスト復元の準備 (スタック書き換え)
-    *   [x] **Sub-Task 2.1.4 (変更): PMMスタックページのマッピング検証とビルド修正**
-        *   [x] `kernel/pmm.c` で `pmm_info` の実体を定義する。
-        *   [x] `kernel/main.c` で `serial_putc_direct` を `write_serial_char` に置き換える。
-        *   [x] `kernel/paging.h` に `paging_success_halt` の `extern` 宣言を追加する。
-        *   [x] `kernel/paging.c` の `init_paging` 末尾で `switch_to_kernel_higher_half_and_run` の呼び出しをコメントアウトし、`paging_success_halt()` を呼び出すようにする（ビルド通過のための一時的措置）。
-        *   [x] init_paging がPMMの最初のスタックページ (物理アドレス `0x200000`) をHHDMに正しくマッピングしていることを確認 (kernel_main_after_paging でのR/Wテスト成功)
-    *   [ ] **Sub-Task 2.1.5 : ダミータスクの生成とエンキューのためのPMM安定化**
-        *   [x] **Sub-Task 2.1.5.1: `print_serial_format` の実装と主要箇所へのデバッグログ追加** (PROGRESS.mdではこちらを優先タスクとしていた)
-        *   [ ] **Sub-Task 2.1.5.1.1: (旧2.1.5.1) PMM `init_pmm` 内スタックポインタ整合性検証** (PROGRESS.md上でのタスク名変更と細分化)
-            *   目的: `init_pmm`完了時に`pmm_stack_top`と`pmm_current_stack_head`がPMMスタックの正しい状態を指すことを確認。
-            *   作業: `init_pmm`の`pmm_free_page`呼び出し前後で主要変数のログを追加。特にスタックページ追加時の分岐を詳細化。QEMUで実行しログ分析。
-            *   期待: `init_pmm`完了時、`pmm_stack_top`が最後のスタックページの空き状況を、`pmm_current_stack_head`がそのページを正しく指す。
-        *   [x] **Sub-Task 2.1.5.2: PMM の自己マッピング安定化**
-            *   目的: `map_page` がページテーブル構造を確保し、それをHHDMにマッピングする際に、そのHHDMアドレスへのアクセス（例: `clear_page`）が安全に行えることを保証する。
-            *   検証: QEMUで実行し、追加したログを確認する。
-            *   期待: ページフォルトが発生せず、PMMが正常に動作する。
+    *   [x] **Sub-Task 2.1.5.1: `print_serial_format` の実装と主要箇所へのデバッグログ追加** (PROGRESS.mdではこちらを優先タスクとしていた)
+    *   [x] **Sub-Task 2.1.5.1.1: (旧2.1.5.1) PMM `init_pmm` 内スタックポインタ整合性検証** (PROGRESS.md上でのタスク名変更と細分化)
+        *   目的: `init_pmm`完了時に`pmm_stack_top`と`pmm_current_stack_head`がPMMスタックの正しい状態を指すことを確認。
+        *   作業: `init_pmm`の`pmm_free_page`呼び出し前後で主要変数のログを追加。特にスタックページ追加時の分岐を詳細化。QEMUで実行しログ分析。
+        *   期待: `init_pmm`完了時、`pmm_stack_top`が最後のスタックページの空き状況を、`pmm_current_stack_head`がそのページを正しく指す。
+    *   [ ] **Sub-Task 2.1.5.2: PMM の自己マッピング安定化**
+        *   目的: `map_page` がページテーブル構造を確保し、それをHHDMにマッピングする際に、そのHHDMアドレスへのアクセス（例: `clear_page`）が安全に行えることを保証する。
+        *   検証: QEMUで実行し、追加したログを確認する。
+        *   期待: ページフォルトが発生せず、PMMが正常に動作する。
         *   [ ] **Sub-Task 2.1.5.3: PMM `pmm_alloc_page` スタック枯渇時の旧スタックページへの切り替えロジック検証**
             *   目的: スタックが空になった際、正しく以前のスタックページ (`previous_stack_page_phys`) を特定し、`pmm_info` の関連変数が適切に更新されることを確認する。
             *   作業: 関連するログを強化し、`kernel/main.c`のPMMスタックテスト（多数確保）などで動作確認。
