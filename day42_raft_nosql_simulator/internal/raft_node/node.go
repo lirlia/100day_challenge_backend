@@ -8,21 +8,25 @@ import (
 	"path/filepath"
 	"time"
 
+	"day42_raft_nosql_simulator_local_test/internal/server"
+	"day42_raft_nosql_simulator_local_test/internal/store"
+
 	"github.com/hashicorp/raft"
 	raftboltdb "github.com/hashicorp/raft-boltdb"
-	"github.com/lirlia/100day_challenge_backend/day42_raft_nosql_simulator/internal/store"
 )
 
 // Config はRaftノードの設定です。
 // この構造体は、各Raftノードを初期化するために必要なすべてのパラメータを保持します。
 // NodeID: クラスタ内で各ノードを一意に識別するためのID。
 // Addr: Raftノードがリッスンするネットワークアドレス (例: "127.0.0.1:7000")。
+// HttpApiAddr: HTTP APIサーバー用のアドレス (例: "127.0.0.1:8080")
 // DataDir: Raftログ、スナップショット、BoltDBファイルなどを保存するディレクトリ。
 // IsLeader: このノードが初期状態でリーダーとして起動するかどうか（通常はfalseで、リーダー選出に任せる）。
 // BootstrapCluster: 新しいクラスタをブートストラップするかどうか。最初のノードのみtrueに設定。
 type Config struct {
 	NodeID           raft.ServerID
 	Addr             raft.ServerAddress // Raft通信用のアドレス
+	HttpApiAddr      string             // HTTP APIサーバー用のアドレス (例: "127.0.0.1:8080")
 	DataDir          string
 	BootstrapCluster bool
 }
@@ -45,6 +49,7 @@ type Node struct {
 	transport     raft.Transport        // Raftノード間通信用のトランスポート
 	boltStore     *raftboltdb.BoltStore // LogStoreとStableStoreを兼ねるBoltDBストア
 	snapshotStore raft.SnapshotStore
+	httpApiServer *server.APIServer // HTTP APIサーバーの参照 (server は internal/server のパッケージ名と仮定)
 }
 
 // GetConfig はノードの設定を返します。
@@ -125,6 +130,15 @@ func NewNode(cfg Config, transport raft.Transport) (*Node, error) { // fsm引数
 	}
 	n.raft = r
 
+	// HTTP APIサーバーの初期化と起動
+	if cfg.HttpApiAddr != "" { // コメントアウトを解除
+		n.httpApiServer = server.NewAPIServer(n, cfg.HttpApiAddr)
+		n.httpApiServer.Start()
+		log.Printf("Node %s: HTTP API server configured on %s", cfg.NodeID, cfg.HttpApiAddr)
+	} else {
+		log.Printf("Node %s: HTTP API server not configured (HttpApiAddr is empty)", cfg.NodeID)
+	}
+
 	if cfg.BootstrapCluster {
 		configuration := raft.Configuration{
 			Servers: []raft.Server{
@@ -163,6 +177,13 @@ func (n *Node) Shutdown() error {
 	if n.boltStore != nil { // boltStoreをクローズ
 		if err := n.boltStore.Close(); err != nil {
 			fmt.Fprintf(os.Stderr, "Error closing bolt store for node %s: %v\n", n.config.NodeID, err)
+		}
+	}
+
+	// HTTP APIサーバーをシャットダウン
+	if n.httpApiServer != nil { // コメントアウトを解除
+		if err := n.httpApiServer.Shutdown(5 * time.Second); err != nil {
+			fmt.Fprintf(os.Stderr, "Error shutting down HTTP API server for node %s: %v\n", n.config.NodeID, err)
 		}
 	}
 
@@ -255,6 +276,17 @@ func (n *Node) GetTableMetadata(tableName string) (*store.TableMetadata, bool) {
 // これもローカルリードです。
 func (n *Node) ListTables() map[string]store.TableMetadata {
 	return n.fsm.ListTables() // FSMにメソッドを追加する必要がある
+}
+
+// ListTablesFromFSM はFSMに存在するすべてのテーブル名のリストを返します。
+// これは RaftNodeProxy インターフェースのために必要です。
+func (n *Node) ListTablesFromFSM() []string {
+	tablesMap := n.fsm.ListTables()
+	tableNames := make([]string, 0, len(tablesMap))
+	for name := range tablesMap {
+		tableNames = append(tableNames, name)
+	}
+	return tableNames
 }
 
 // IsLeader はこのノードが現在Raftクラスタのリーダーであるかどうかを確認します。

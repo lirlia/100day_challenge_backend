@@ -46,24 +46,24 @@
 
 ## フェーズ3: CLIインターフェースと書き込み/読み取りパス (コア機能)
 - [X] CLIフレームワーク (`spf13/cobra`) を用いた基本的なCLI構造の作成 (`cmd/cli/main.go`, `cmd/cli/root.go`, `cmd/cli/table.go`, `cmd/cli/item.go`)
-- [X] `create-table` コマンドのスタブ実装 (`--table-name <name> --partition-key <pk_name> [--sort-key <sk_name>]`)
-- [X] `put-item` コマンドのスタブ実装 (`--table-name <name> --item-data '<json_object_string>'`)
-- [X] `get-item` コマンドのスタブ実装 (`--table-name <name> --partition-key <value> [--sort-key <value>]`)
-- [X] `--target-addr <node_addr>` グローバルオプションの実装
-- [ ] **HTTP API 実装 (`internal/server/http_api.go` など)**
-    - [ ] `/create-table` エンドポイント (リーダーノードで `ProposeCreateTable` 呼び出し)
-    - [ ] `/put-item` エンドポイント (リーダーノードで `ProposePutItem` 呼び出し)
-    - [ ] `/get-item` エンドポイント (指定ノードのローカルKVStoreから読み出し)
-    - [ ] リクエスト転送ロジック (非リーダーが書き込みリクエストを受け取った場合にリーダーへ転送)
-- [ ] **CLIクライアントロジック実装 (`internal/client/client.go` など)**
-    - [ ] 指定された `targetNodeAddr` のHTTP APIを呼び出す処理
-    - [ ] `create-table` コマンドからクライアント経由でAPI呼び出し
-    - [ ] `put-item` コマンドからクライアント経由でAPI呼び出し
-    - [ ] `get-item` コマンドからクライアント経由でAPI呼び出し
-    - [ ] **テスト (CLI経由でのE2Eテスト)**
-    - [ ] `create-table` コマンドでテーブルがRaftクラスタに作成されること
-    - [ ] `put-item` コマンドでアイテムがRaftクラスタに保存されること
-    - [ ] `get-item` コマンドでアイテムがRaftクラスタから取得できること
+- [X] `create-table` コマンドのスタブ実装 (`--table-name <name> --partition-key <pk_name> [--sort-key <sk_name>:<pk_type>]`)
+- [X] `put-item` コマンドのスタブ実装 (`--table-name <name> --item '<json_object_string>'`)
+- [X] `get-item` コマンドのスタブ実装 (`--table-name <name> --key '<json_object_string_for_key>'`)
+- [X] `delete-item` と `query-items` コマンドのスタブ実装 (item.go)
+- [X] `--target-addr` グローバル永続フラグの実装 (root.go)
+- [ ] **RaftノードへのHTTP APIエンドポイントの実装 (`internal/server/http_api.go`)**
+    - [X] `/create-table` (POST)
+    - [X] `/put-item` (POST)
+    - [X] `/get-item` (POST)
+    - [X] `/delete-item` (POST)
+    - [X] `/query-items` (POST)
+    - [X] `/status` (GET)
+    - [X] リーダーシップチェックとフォロワーへのエラー応答 (Misdirected Request)
+    - [X] `raft_node.Node` にHTTPサーバー起動・停止処理の組み込み
+    - [X] 循環参照の解消 (RaftNodeProxyインターフェース導入)
+- [ ] **CLIからHTTP APIを呼び出すクライアントロジックの実装 (`internal/client/client.go`)**
+    - [ ] テーブル作成リクエスト
+    - [ ] アイテムPutリクエスト
 - [ ] コミット: `day42: step 3/7 CLI command stubs and initial structure`
 
 ## フェーズ4: その他のテーブル・アイテム操作
