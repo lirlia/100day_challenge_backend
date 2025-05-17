@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	// raft.ServerID と raft.ServerAddress のため
@@ -48,6 +49,7 @@ func NewAPIServer(addr string, nodeProxy RaftNodeProxy) *APIServer {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/create-table", srv.handleCreateTable)
 	mux.HandleFunc("/delete-table", srv.handleDeleteTable)
+	mux.HandleFunc("/tables/", srv.handleDeleteTableREST)
 	mux.HandleFunc("/put-item", srv.handlePutItem)
 	mux.HandleFunc("/get-item", srv.handleGetItem)
 	mux.HandleFunc("/delete-item", srv.handleDeleteItem)
@@ -333,6 +335,45 @@ func (s *APIServer) handleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.respondWithJSON(w, http.StatusOK, status)
+}
+
+// 追加: DELETE /tables/{tableName} 用RESTエンドポイント
+func (s *APIServer) handleDeleteTableREST(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, "Only DELETE method is allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// パスからテーブル名を抽出
+	pathPrefix := "/tables/"
+	if !strings.HasPrefix(r.URL.Path, pathPrefix) || len(r.URL.Path) <= len(pathPrefix) {
+		s.respondWithError(w, http.StatusBadRequest, "Missing table name in URL", "")
+		return
+	}
+	tableName := r.URL.Path[len(pathPrefix):]
+	if tableName == "" {
+		s.respondWithError(w, http.StatusBadRequest, "Table name cannot be empty", "")
+		return
+	}
+
+	if !s.nodeProxy.IsLeader() {
+		leaderAddr, leaderID := s.nodeProxy.LeaderWithID()
+		errMsg := fmt.Sprintf("Not a leader. Please send request to leader %s (%s)", leaderID, leaderAddr)
+		log.Printf("[WARN] [APIServer] [%s] handleDeleteTableREST: %s", s.nodeProxy.NodeID(), errMsg)
+		s.respondWithError(w, http.StatusMisdirectedRequest, errMsg, "Request must be sent to the leader node.")
+		return
+	}
+
+	fsmResponse, err := s.nodeProxy.ProposeDeleteTable(tableName, 10*time.Second)
+	if err != nil {
+		s.respondWithError(w, http.StatusInternalServerError, "Failed to propose DeleteTable command", err.Error())
+		return
+	}
+
+	s.respondWithJSON(w, http.StatusOK, APISuccessResponse{
+		Message:     fmt.Sprintf("DeleteTable API call successful for table %s", tableName),
+		FSMResponse: fsmResponse,
+	})
 }
 
 // --- Helper functions for responding ---
