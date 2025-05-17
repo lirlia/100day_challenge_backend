@@ -39,6 +39,7 @@ type Config struct {
 type Node struct {
 	raft          *raft.Raft
 	fsm           *store.FSM
+	kvStore       *store.KVStore // KVStoreへの参照を追加
 	config        Config
 	transport     raft.Transport        // Raftノード間通信用のトランスポート
 	boltStore     *raftboltdb.BoltStore // LogStoreとStableStoreを兼ねるBoltDBストア
@@ -59,9 +60,18 @@ func (n *Node) Addr() raft.ServerAddress {
 // 初期化には、Raftの設定、FSMの準備、トランスポート層のセットアップ、
 // ログストア、安定ストア、スナップショットストアの準備が含まれます。
 // 成功すると初期化されたNodeへのポインタを返します。エラーが発生した場合はエラーを返します。
-func NewNode(cfg Config, fsm *store.FSM, transport raft.Transport) (*Node, error) {
+func NewNode(cfg Config, transport raft.Transport) (*Node, error) { // fsm引数を削除
+	kvStoreBasePath := filepath.Join(cfg.DataDir, "kvstore")
+	kv, err := store.NewKVStore(kvStoreBasePath, string(cfg.NodeID))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create KVStore: %w", err)
+	}
+
+	fsm := store.NewFSM(kvStoreBasePath, kv, string(cfg.NodeID)) // KVStoreをFSMに渡す
+
 	n := &Node{
 		fsm:       fsm,
+		kvStore:   kv, // NodeにもKVStoreを保持
 		config:    cfg,
 		transport: transport,
 	}
@@ -151,6 +161,84 @@ func (n *Node) Shutdown() error {
 // このFutureを使って、コマンドがコミットされたか、エラーが発生したかを確認できます。
 func (n *Node) Apply(cmd []byte, timeout time.Duration) raft.ApplyFuture {
 	return n.raft.Apply(cmd, timeout)
+}
+
+// ProposeCreateTable はテーブル作成コマンドをRaftクラスタに提案します。
+// このメソッドはリーダーノードで実行されることを想定しています。
+// 結果整合性のため、非リーダーで呼び出された場合はリーダーに転送するロジックが別途必要になります。
+func (n *Node) ProposeCreateTable(tableName, partitionKeyName, sortKeyName string, timeout time.Duration) (interface{}, error) {
+	if !n.IsLeader() {
+		// リーダーでない場合は、リーダーにリクエストを転送するかエラーを返す。
+		// ここでは単純にエラーを返す。CLI側でリダイレクトを試みることも可能。
+		leaderID := n.LeaderID()
+		leaderAddr := n.LeaderAddr()
+		log.Printf("Node %s is not a leader. Current leader is %s (%s). Cannot propose CreateTable.", n.NodeID(), leaderID, leaderAddr)
+		return nil, fmt.Errorf("not a leader, current leader is %s (%s)", leaderID, leaderAddr)
+	}
+
+	payload := store.CreateTableCommandPayload{
+		TableName:        tableName,
+		PartitionKeyName: partitionKeyName,
+		SortKeyName:      sortKeyName,
+	}
+	cmdBytes, err := store.EncodeCommand(store.CreateTableCommandType, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode CreateTable command: %w", err)
+	}
+
+	future := n.Apply(cmdBytes, timeout)
+	if err := future.Error(); err != nil {
+		return nil, fmt.Errorf("failed to apply CreateTable command: %w", err)
+	}
+
+	// future.Response() は FSM の Apply メソッドの戻り値
+	// エラーがあれば FSM の Apply がエラーを返したことになる
+	response := future.Response()
+	if errResp, ok := response.(error); ok {
+		return nil, fmt.Errorf("fsm apply error for CreateTable: %w", errResp)
+	}
+	return response, nil
+}
+
+// ProposeDeleteTable はテーブル削除コマンドをRaftクラスタに提案します。
+func (n *Node) ProposeDeleteTable(tableName string, timeout time.Duration) (interface{}, error) {
+	if !n.IsLeader() {
+		leaderID := n.LeaderID()
+		leaderAddr := n.LeaderAddr()
+		log.Printf("Node %s is not a leader. Current leader is %s (%s). Cannot propose DeleteTable.", n.NodeID(), leaderID, leaderAddr)
+		return nil, fmt.Errorf("not a leader, current leader is %s (%s)", leaderID, leaderAddr)
+	}
+
+	payload := store.DeleteTableCommandPayload{
+		TableName: tableName,
+	}
+	cmdBytes, err := store.EncodeCommand(store.DeleteTableCommandType, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode DeleteTable command: %w", err)
+	}
+
+	future := n.Apply(cmdBytes, timeout)
+	if err := future.Error(); err != nil {
+		return nil, fmt.Errorf("failed to apply DeleteTable command: %w", err)
+	}
+
+	response := future.Response()
+	if errResp, ok := response.(error); ok {
+		return nil, fmt.Errorf("fsm apply error for DeleteTable: %w", errResp)
+	}
+	return response, nil
+}
+
+// GetTableMetadata は指定されたテーブルのメタデータをFSMから取得します。
+// これはローカルリードであり、Raftの合意を必要としません。
+func (n *Node) GetTableMetadata(tableName string) (*store.TableMetadata, bool) {
+	return n.fsm.GetTableMetadata(tableName) // FSMにメソッドを追加する必要がある
+}
+
+// ListTables はFSMに存在するすべてのテーブル名とメタデータのリストを取得します。
+// これもローカルリードです。
+func (n *Node) ListTables() map[string]store.TableMetadata {
+	return n.fsm.ListTables() // FSMにメソッドを追加する必要がある
 }
 
 // IsLeader はこのノードが現在Raftクラスタのリーダーであるかどうかを確認します。

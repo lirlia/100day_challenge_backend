@@ -11,7 +11,6 @@ import (
 
 	"github.com/hashicorp/raft"
 	"github.com/lirlia/100day_challenge_backend/day42_raft_nosql_simulator/internal/raft_node"
-	"github.com/lirlia/100day_challenge_backend/day42_raft_nosql_simulator/internal/store"
 )
 
 const (
@@ -43,7 +42,7 @@ func main() {
 	// TCPTransport の方がシミュレーションとしては現実に近い。
 	// 今回は、TCPTransportを使用します。
 
-	fsm := store.NewFSM() // 全ノードで共有FSMインスタンス (内容はRaft経由で同期される)
+	// fsm := store.NewFSM() // 全ノードで共有FSMインスタンス (内容はRaft経由で同期される) <- この行を削除し、Node内で個別に作成
 
 	var raftServers []raft.Server
 	for i := 0; i < numNodes; i++ {
@@ -70,7 +69,8 @@ func main() {
 			BootstrapCluster: i == 0, // 最初のノードのみクラスタをブートストラップ
 		}
 
-		n, err := raft_node.NewNode(cfg, fsm, transport) // transportを渡す
+		// n, err := raft_node.NewNode(cfg, fsm, transport) // transportを渡す <- fsm引数を削除
+		n, err := raft_node.NewNode(cfg, transport)
 		if err != nil {
 			log.Fatalf("Failed to create node %s: %v", nodeID, err)
 		}

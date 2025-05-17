@@ -4,14 +4,16 @@
 - [x] プロジェクトディレクトリ作成 (`day42_raft_nosql_simulator`) と `template` からのコピー (完了)
 - [x] `package.json` の `name` を `day42_raft_nosql_simulator` に更新 (完了)
 - [x] Goモジュールの初期化 (`go mod init github.com/lirlia/100day_challenge_backend/day42_raft_nosql_simulator`) (完了)
-- [x] 必要なGoライブラリのインストール (`hashicorp/raft`, `github.com/hashicorp/raft-boltdb`, `github.com/spf13/cobra`, `github.com/peterh/liner` または類似のCLI入力ライブラリ) (完了)
+- [x] 必要なGoライブラリのインストール (`hashicorp/raft`, `github.com/hashicorp/raft-boltdb`, `github.com/spf13/cobra`, `github.com/peterh/liner`, `github.com/stretchr/testify`) (完了)
 - [x] `README.md` にプロジェクト概要とビルド/実行方法を記述 (初期版) (完了)
 - [x] `PROGRESS.md` に作業工程を記載 (このファイル) (完了)
 - [x] 基本的なRaftノード構造の定義 (`internal/raft_node/node.go`) (完了)
 - [x] 単一Raftノードの起動と停止処理の実装 (複数ノード起動の中で確認) (完了)
-- [x] 複数Raftノード (3ノード想定) をgoroutineで起動し、TCPトランスポートでクラスタを形成する処理の実装 (完了)
+- [x] 複数Raftノード (3ノード想定) をTCPトランスポートでクラスタを形成する処理の実装 (完了)
 - [x] リーダー選出の確認 (ログ出力などで) (完了)
-- [ ] コミット: `day42: step 1/7 Raft cluster foundation setup`
+- [x] テスト作成: クラスタ起動、リーダー選出、シャットダウン (`internal/raft_node/node_test.go`) (完了)
+- [ ] テスト実施 (`go test ./internal/raft_node/...`) と確認
+- [ ] コミット: `day42: step 1/7 Raft cluster foundation setup and initial tests`
 
 ## フェーズ2: データストアとFSM (Finite State Machine)
 - [ ] アイテムのデータ構造定義 (`internal/store/types.go` または `pkg/types/types.go`) - パーティションキー、ソートキー、データ本体、最終更新タイムスタンプ
@@ -73,3 +75,38 @@
 - [ ] 簡単な動作デモシナリオを `README.md` に記載
 - [ ] `.cursor/rules/knowledge.mdc` の更新
 - [ ] コミット: `day42: step 7/7 Documentation and finalization`
+
+## フェーズ 2: テーブル管理とキーバリュー操作のためのFSMロジック実装
+
+- [X] **コマンド構造体定義 (`internal/store/commands.go`)**
+    - [X] `CreateTableCommand`, `DeleteTableCommand`, `PutItemCommand`, `DeleteItemCommand` 構造体定義
+    - [X] コマンドのJSONシリアライズ/デシリアライズヘルパー関数実装
+- [X] **FSM実装 (`internal/store/fsm.go`)**
+    - [X] `TableMetadata` 構造体定義と `FSM` へのテーブルメタデータマップ追加
+    - [X] `Apply` メソッドでの `CreateTableCommand`, `DeleteTableCommand` 処理実装
+    - [X] `Snapshot` / `Restore` メソッドでのテーブルメタデータ永続化・復元実装
+    - [X] `GetTableMetadata`, `ListTables` リード専用メソッド実装
+    - [ ] `Apply` メソッドでの `PutItemCommand`, `DeleteItemCommand` 処理実装 (アイテム操作)
+- [X] **ローカルデータストア実装 (`internal/store/kv_store.go`)**
+    - [X] `KVStore` 構造体定義と初期化 (ベースディレクトリ管理)
+    - [X] `EnsureTableDir`, `RemoveTableDir` (テーブルディレクトリ操作) 実装
+    - [ ] `PutItem`: アイテムをJSONファイルとして保存 (LWW考慮)
+    - [ ] `GetItem`: アイテムをJSONファイルから読み込み
+    - [ ] `DeleteItem`: アイTEMのJSONファイルを削除
+    - [ ] `QueryItems`: パーティションキーに基づいたアイテムスキャンとフィルタリング
+- [X] **Raftノード拡張 (`internal/raft_node/node.go`)**
+    - [X] `NewNode` で `KVStore` と `FSM` を正しく初期化・連携
+    - [X] `ProposeCreateTable`, `ProposeDeleteTable` 実装
+    - [ ] `ProposePutItem`, `ProposeDeleteItem` 実装
+    - [ ] ローカルリード用 `GetItem`, `QueryItems` メソッド実装 (KVStoreを直接呼び出し)
+- [X] **単体テスト**
+    - [X] `commands_test.go`: コマンド (デ)シリアライズテスト
+    - [X] `fsm_test.go`: FSMのテーブル操作、アイテム操作、スナップショット/リストアのテスト
+    - [X] `kv_store_test.go`: KVStoreのディレクトリ操作、アイテムCRUD操作、クエリ操作のテスト
+- [ ] **統合テスト (`main.go` または別テストファイル)**
+    - [ ] クラスタ経由でのテーブル作成・削除・一覧取得のテスト
+    - [ ] クラスタ経由でのアイテムPut・Get・Delete・Queryのテスト
+    - [ ] リーダー障害時のスナップショットからの復旧テスト (発展)
+- [ ] **PROGRESS.md 更新とコミット**
+
+## フェーズ 3: CLIコマンドの実装 (Cobra)
