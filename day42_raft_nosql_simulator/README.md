@@ -80,7 +80,7 @@ CLIから操作を行う際は、`--target-addr` フラグでこれらのいず�
 
 **テーブル作成**
 ```bash
-./day42_raft_nosql_simulator create-table --target-addr localhost:8100 --table-name Music --partition-key Artist --sort-key SongTitle
+./day42_raft_nosql_simulator create-table --target-addr localhost:8100 --table-name Music --partition-key-name Artist --sort-key-name SongTitle
 ```
 
 **アイテム登録**
@@ -127,7 +127,7 @@ ITEM_DATA2='{
 
 **テーブル削除**
 ```bash
-./day42_raft_nosql_simulator delete-table --target-addr localhost:8100 Music
+./day42_raft_nosql_simulator delete-table --target-addr localhost:8100 --table-name Music
 ```
 
 **ノードステータス確認**
@@ -142,7 +142,7 @@ ITEM_DATA2='{
 1.  **サーバー起動**: ターミナル1で `make server` を実行。
 2.  **テーブル作成**: ターミナル2で `Music` テーブルを作成。
     ```bash
-    ./day42_raft_nosql_simulator create-table --target-addr localhost:8100 --table-name Music --partition-key Artist --sort-key SongTitle
+    ./day42_raft_nosql_simulator create-table --target-addr localhost:8100 --table-name Music --partition-key-name Artist --sort-key-name SongTitle
     ```
 3.  **アイテム登録**: 2つのアイテムを登録。
     ```bash
@@ -170,6 +170,6 @@ ITEM_DATA2='{
     ```
 8.  **テーブル削除**: `Music` テーブルを削除。
     ```bash
-    ./day42_raft_nosql_simulator delete-table --target-addr localhost:8100 Music
+    ./day42_raft_nosql_simulator delete-table --target-addr localhost:8100 --table-name Music
     ```
 9.  **サーバー停止**: ターミナル1で `Ctrl+C`

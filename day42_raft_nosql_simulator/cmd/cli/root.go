@@ -75,6 +75,9 @@ func init() {
 	rootCmd.AddCommand(deleteItemCmd)
 	rootCmd.AddCommand(queryItemsCmd)
 
+	// status.go のコマンドを追加
+	rootCmd.AddCommand(statusCmd)
+
 	// ここに他のコマンド (table, itemなど) を追加していく
 	// rootCmd.AddCommand(tableCmd)
 	// rootCmd.AddCommand(itemCmd)
