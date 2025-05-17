@@ -4,8 +4,11 @@ import (
 	"fmt"
 	"log"
 
+	// "time"
+
+	"day42_raft_nosql_simulator_local_test/internal/client" // client パッケージをインポート
+
 	"github.com/spf13/cobra"
-	// "github.com/lirlia/100day_challenge_backend/day42_raft_nosql_simulator/internal/client" // clientパッケージを後で作成・使用
 )
 
 var (
@@ -13,6 +16,7 @@ var (
 	tableNameCreate        string
 	partitionKeyNameCreate string
 	sortKeyNameCreate      string
+	// targetNodeAddr         string // root.goのグローバル永続フラグを使用するため削除
 )
 
 var createTableCmd = &cobra.Command{
@@ -27,23 +31,24 @@ var createTableCmd = &cobra.Command{
 		if partitionKeyNameCreate == "" {
 			log.Fatalf("Error: partition-key is required")
 		}
-
-		// TODO: targetNodeAddr を使ってクライアントを作成し、リクエストを送信する
-		// client, err := client.NewClient(targetNodeAddr) // targetNodeAddr は root.go で定義されたグローバル変数
-		// if err != nil {
-		// 	 log.Fatalf("Failed to create client: %v", err)
-		// }
-		// defer client.Close()
-
-		// resp, err := client.CreateTable(tableNameCreate, partitionKeyNameCreate, sortKeyNameCreate, 5*time.Second)
-		// if err != nil {
-		// 	 log.Fatalf("Failed to create table %s: %v", tableNameCreate, err)
+		// if targetNodeAddr == "" {
+		// 	log.Fatalf("Error: --target-addr is required")
 		// }
 
-		// log.Printf("Table %s created successfully. Response: %v", tableNameCreate, resp)
-		log.Printf("CLI: create-table called with TableName: %s, PK: %s, SK: %s (target: %s)", tableNameCreate, partitionKeyNameCreate, sortKeyNameCreate, targetNodeAddr)
-		log.Println("TODO: Implement actual client call to Raft node")
-		fmt.Printf("Simulating: Table '%s' created with PK '%s' and SK '%s'. (Target: %s)\n", tableNameCreate, partitionKeyNameCreate, sortKeyNameCreate, targetNodeAddr)
+		apiClient := client.NewAPIClient(targetNodeAddr)
+
+		log.Printf("Sending CreateTable request to %s for table '%s' (PK: %s, SK: %s)...",
+			targetNodeAddr, tableNameCreate, partitionKeyNameCreate, sortKeyNameCreate)
+
+		resp, err := apiClient.CreateTable(tableNameCreate, partitionKeyNameCreate, sortKeyNameCreate)
+		if err != nil {
+			log.Fatalf("CreateTable API call failed: %v", err)
+		}
+
+		fmt.Printf("CreateTable API call successful.\nMessage: %s\n", resp.Message)
+		if resp.FSMResponse != nil {
+			fmt.Printf("FSM Response: %v\n", resp.FSMResponse)
+		}
 	},
 }
 
@@ -52,8 +57,10 @@ func init() {
 	createTableCmd.Flags().StringVarP(&tableNameCreate, "table-name", "t", "", "Name of the table to create (required)")
 	createTableCmd.Flags().StringVarP(&partitionKeyNameCreate, "partition-key", "p", "", "Name of the partition key (required)")
 	createTableCmd.Flags().StringVarP(&sortKeyNameCreate, "sort-key", "s", "", "Name of the sort key (optional)")
+	// createTableCmd.Flags().StringVarP(&targetNodeAddr, "target-addr", "a", "", "Address of the Raft node (required)") // root.go で定義済みのため削除
 
 	// ルートコマンドにtableコマンドを追加する (tableCmd があればそれに追加)
+	// 通常はroot.goのinit()で tableCmd を rootCmd.AddCommand(tableCmd) のように追加し、
 	// 現時点では直接rootCmdに追加するが、将来的には tableCmd のような中間コマンドを設ける
 	// var tableCmd = &cobra.Command{Use: "table", Short: "Manage tables"}
 	// tableCmd.AddCommand(createTableCmd)

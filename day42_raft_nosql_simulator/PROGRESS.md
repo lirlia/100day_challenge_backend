@@ -51,7 +51,7 @@
 - [X] `get-item` コマンドのスタブ実装 (`--table-name <name> --key '<json_object_string_for_key>'`)
 - [X] `delete-item` と `query-items` コマンドのスタブ実装 (item.go)
 - [X] `--target-addr` グローバル永続フラグの実装 (root.go)
-- [ ] **RaftノードへのHTTP APIエンドポイントの実装 (`internal/server/http_api.go`)**
+- [X] **RaftノードへのHTTP APIエンドポイントの実装 (`internal/server/http_api.go`)**
     - [X] `/create-table` (POST)
     - [X] `/put-item` (POST)
     - [X] `/get-item` (POST)
@@ -61,9 +61,14 @@
     - [X] リーダーシップチェックとフォロワーへのエラー応答 (Misdirected Request)
     - [X] `raft_node.Node` にHTTPサーバー起動・停止処理の組み込み
     - [X] 循環参照の解消 (RaftNodeProxyインターフェース導入)
-- [ ] **CLIからHTTP APIを呼び出すクライアントロジックの実装 (`internal/client/client.go`)**
-    - [ ] テーブル作成リクエスト
-    - [ ] アイテムPutリクエスト
+- [X] **CLIからHTTP APIを呼び出すクライアントロジックの実装 (`internal/client/client.go`)**
+    - [X] テーブル作成リクエスト
+    - [X] アイテムPutリクエスト
+    - [X] アイテムGetリクエスト
+    - [X] アイテムDeleteリクエスト
+    - [X] アイテムQueryリクエスト
+    - [X] ステータス取得リクエスト
+    - [X] `cmd/cli/table.go`, `cmd/cli/item.go` からクライアントを利用
 - [ ] コミット: `day42: step 3/7 CLI command stubs and initial structure`
 
 ## フェーズ4: その他のテーブル・アイテム操作
