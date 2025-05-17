@@ -123,7 +123,7 @@ func (c *APIClient) Status() (*APISuccessResponse, error) {
 
 	if httpResp.StatusCode != http.StatusOK {
 		var errResp APIErrorResponse
-		if json.Unmarshal(bodyBytes, &errResp) == nil && errResp.Error != "" {
+		if unmarshalErr := json.Unmarshal(bodyBytes, &errResp); unmarshalErr == nil && errResp.Error != "" {
 			return nil, fmt.Errorf("Status API call failed: status %d, error: %s, message: %s", httpResp.StatusCode, errResp.Error, errResp.Message)
 		}
 		return nil, fmt.Errorf("Status API call failed: status %d, body: %s", httpResp.StatusCode, string(bodyBytes))
@@ -262,15 +262,19 @@ func (c *APIClient) makeRequestRecursive(method, path string, body interface{}, 
 
 	if resp.StatusCode >= 400 { // エラーレスポンス
 		var errResp APIErrorResponse
-		json.Unmarshal(respBody, &errResp) // エラーは無視して、errResp.Errorが空なら次のフォールバック
+		// まずAPIErrorResponseとしてパースを試みる
+		if unmarshalErr := json.Unmarshal(respBody, &errResp); unmarshalErr != nil {
+			// パースに失敗したら、ボディ全体をエラーメッセージとして返す
+			return fmt.Errorf("API error (status %d): %s (failed to parse error response: %v)", resp.StatusCode, string(respBody), unmarshalErr)
+		}
 
 		// リーダーフォワーディング処理
 		if resp.StatusCode == http.StatusMisdirectedRequest && attempt < c.maxRetriesOnForward {
 			log.Printf("APIClient: Received 421 Misdirected Request from %s. Attempting to forward (attempt %d/%d). Body: %s", fullURL, attempt+1, c.maxRetriesOnForward, string(respBody))
 			// エラーメッセージからリーダーのRaftアドレスを抽出
-			// 例: "Not a leader. Please send request to leader node0 (127.0.0.1:7000)"
+			// APIErrorResponse.Error に格納されていると期待
 			re := regexp.MustCompile(`leader [^ ]+ \(([^)]+)\)`)
-			matches := re.FindStringSubmatch(errResp.Error) // APIErrorResponse.Error に格納されていると期待
+			matches := re.FindStringSubmatch(errResp.Error) // errResp.Error を使用
 			if len(matches) < 2 {
 				// もし APIErrorResponse.Error が期待した形式でない場合、レスポンスボディ全体から探す
 				matches = re.FindStringSubmatch(string(respBody))
@@ -281,17 +285,9 @@ func (c *APIClient) makeRequestRecursive(method, path string, body interface{}, 
 				log.Printf("APIClient: Extracted leader Raft address: %s", leaderRaftAddr)
 				if leaderHttpApiAddr, ok := getHttpApiAddrFromRaftAddr(leaderRaftAddr); ok {
 					log.Printf("APIClient: Found corresponding HTTP API address for leader: %s. Retrying request.", leaderHttpApiAddr)
-					// オリジナルのAPIClientのbaseURLは変更せず、再帰呼び出し時に新しいURLを生成する
-					// 注意：ここでは新しいAPIClientインスタンスを作成せず、baseURLを一時的に上書きする形で再試行する。
-					// よりクリーンなのは、新しいターゲットアドレスでNewAPIClientしてメソッドを呼び出すことだが、
-					// makeRequestRecursive のシグネチャを変えずに済むように、baseURLを一時的に変更するアプローチは取らない。
-					// 代わりに、再帰呼び出しに新しいbaseURLを渡すか、この場で新しいリクエストを作る。
-					// ここでは、単純化のため、このクライアントのbaseURLを一時的に変更して再帰する。
-					// ただし、これはスレッドセーフではないので注意。このCLIはシングルスレッドなので問題ない。
-
-					// スレッドセーフにするなら、新しい client を作るか、baseURL を引数で渡す
 					originalBaseURL := c.baseURL
 					c.baseURL = fmt.Sprintf("http://%s", leaderHttpApiAddr)
+					// makeRequestRecursive の呼び出し前にエラーをクリア
 					err = c.makeRequestRecursive(method, path, body, responseDest, attempt+1)
 					c.baseURL = originalBaseURL // baseURLを元に戻す
 					return err                  // 再帰呼び出しの結果をそのまま返す
@@ -302,17 +298,15 @@ func (c *APIClient) makeRequestRecursive(method, path string, body interface{}, 
 			}
 		}
 
-		// フォワーディングしなかった、またはできなかった場合のエラー処理
-		if errResp.Error != "" {
-			errMsg := fmt.Sprintf("API error (status %d): %s", resp.StatusCode, errResp.Error)
-			if errResp.Message != "" {
-				errMsg += fmt.Sprintf(" (Details: %s)", errResp.Message)
-			}
-			return fmt.Errorf(errMsg)
+		// フォワーディングしなかった、またはできなかった場合、またはその他の400以上のエラー
+		errMsg := fmt.Sprintf("API error (status %d): %s", resp.StatusCode, errResp.Error)
+		if errResp.Message != "" {
+			errMsg += fmt.Sprintf(" (Details: %s)", errResp.Message)
 		}
-		return fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(respBody))
+		return fmt.Errorf(errMsg)
 	}
 
+	// 成功レスポンス (2xx)
 	if responseDest != nil {
 		if err := json.Unmarshal(respBody, responseDest); err != nil {
 			return fmt.Errorf("failed to unmarshal successful response body: %w. Body: %s", err, string(respBody))

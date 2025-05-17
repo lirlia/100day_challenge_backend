@@ -11,8 +11,14 @@ import (
 	"day42_raft_nosql_simulator_local_test/internal/server"
 	"day42_raft_nosql_simulator_local_test/internal/store"
 
-	"github.com/hashicorp/raft"
 	raftboltdb "github.com/hashicorp/raft-boltdb"
+
+	"github.com/hashicorp/raft"
+)
+
+const (
+	raftTimeout         = 10 * time.Second
+	retainSnapshotCount = 2
 )
 
 // Config はRaftノードの設定です。
@@ -23,12 +29,14 @@ import (
 // DataDir: Raftログ、スナップショット、BoltDBファイルなどを保存するディレクトリ。
 // IsLeader: このノードが初期状態でリーダーとして起動するかどうか（通常はfalseで、リーダー選出に任せる）。
 // BootstrapCluster: 新しいクラスタをブートストラップするかどうか。最初のノードのみtrueに設定。
+// JoinAddr: Joinするクラスタのアドレス
 type Config struct {
 	NodeID           raft.ServerID
 	Addr             raft.ServerAddress // Raft通信用のアドレス
 	HttpApiAddr      string             // HTTP APIサーバー用のアドレス (例: "127.0.0.1:8080")
 	DataDir          string
 	BootstrapCluster bool
+	JoinAddr         string // 追加: Joinするクラスタのアドレス
 }
 
 // Node はRaftクラスタの単一ノードを表します。
@@ -49,7 +57,8 @@ type Node struct {
 	transport     raft.Transport        // Raftノード間通信用のトランスポート
 	boltStore     *raftboltdb.BoltStore // LogStoreとStableStoreを兼ねるBoltDBストア
 	snapshotStore raft.SnapshotStore
-	httpApiServer *server.APIServer // HTTP APIサーバーの参照 (server は internal/server のパッケージ名と仮定)
+	httpApiServer *server.APIServer // HTTP APIサーバーの参照
+	raftConfig    *raft.Config      // raftConfig を追加
 }
 
 // GetConfig はノードの設定を返します。
@@ -67,13 +76,13 @@ func (n *Node) Transport() raft.Transport {
 	return n.transport
 }
 
-// NodeID はノードのIDを返します。
-func (n *Node) NodeID() raft.ServerID {
+// RaftNodeID はノードのRaft ServerIDを返します。
+func (n *Node) RaftNodeID() raft.ServerID {
 	return n.config.NodeID
 }
 
-// Addr はノードのアドレスを返します。
-func (n *Node) Addr() raft.ServerAddress {
+// RaftAddr はノードのRaft ServerAddressを返します。
+func (n *Node) RaftAddr() raft.ServerAddress {
 	return n.config.Addr
 }
 
@@ -81,65 +90,87 @@ func (n *Node) Addr() raft.ServerAddress {
 // 初期化には、Raftの設定、FSMの準備、トランスポート層のセットアップ、
 // ログストア、安定ストア、スナップショットストアの準備が含まれます。
 // 成功すると初期化されたNodeへのポインタを返します。エラーが発生した場合はエラーを返します。
-func NewNode(cfg Config, transport raft.Transport) (*Node, error) { // fsm引数を削除
-	kvStoreBasePath := filepath.Join(cfg.DataDir, "kvstore")
-	kv, err := store.NewKVStore(kvStoreBasePath, string(cfg.NodeID))
+func NewNode(cfg Config, transport raft.Transport) (*Node, error) {
+	log.Printf("[INFO] [RaftNode] [%s] NewNode: Initializing Raft node with config: %+v", cfg.NodeID, cfg)
+
+	// KVStoreの初期化
+	kvStore, err := store.NewKVStore(cfg.DataDir, string(cfg.NodeID))
 	if err != nil {
+		log.Printf("[ERROR] [RaftNode] [%s] NewNode: Failed to create KVStore: %v", cfg.NodeID, err)
 		return nil, fmt.Errorf("failed to create KVStore: %w", err)
 	}
 
-	fsm := store.NewFSM(kvStoreBasePath, kv, string(cfg.NodeID)) // KVStoreをFSMに渡す
+	// FSMの初期化。KVStoreを渡す。
+	fsm := store.NewFSM(kvStore, string(cfg.NodeID)) // dataDir引数を削除
 
-	n := &Node{
-		fsm:       fsm,
-		kvStore:   kv, // NodeにもKVStoreを保持
-		config:    cfg,
-		transport: transport,
+	// Raftログストアと安定ストアの設定 (BoltDBを使用)
+	// 1つのBoltDBファイルでログストアと安定ストアを兼ねる
+	boltDBPath := filepath.Join(cfg.DataDir, "raft.db")
+	log.Printf("[DEBUG] [RaftNode] [%s] NewNode: BoltDB Store path: %s", cfg.NodeID, boltDBPath)
+
+	boltDBStore, err := raftboltdb.NewBoltStore(boltDBPath)
+	if err != nil {
+		log.Printf("[ERROR] [RaftNode] [%s] NewNode: Failed to create Bolt store at %s: %v", cfg.NodeID, boltDBPath, err)
+		return nil, fmt.Errorf("failed to create bolt store %s: %w", boltDBPath, err)
 	}
 
+	// スナップショットストアの設定
+	snapshotStore, err := raft.NewFileSnapshotStore(cfg.DataDir, retainSnapshotCount, os.Stderr)
+	if err != nil {
+		boltDBStore.Close() // エラー時は既に開いたストアを閉じる
+		log.Printf("[ERROR] [RaftNode] [%s] NewNode: Failed to create snapshot store at %s: %v", cfg.NodeID, cfg.DataDir, err)
+		return nil, fmt.Errorf("failed to create snapshot store at %s: %w", cfg.DataDir, err)
+	}
+
+	node := &Node{
+		fsm:           fsm,
+		kvStore:       kvStore,
+		config:        cfg,
+		transport:     transport,
+		boltStore:     boltDBStore, // 修正: logStore, stableStore の代わりに boltStore
+		snapshotStore: snapshotStore,
+	}
+
+	// HTTP APIサーバーの初期化と起動
+	// nodeが完全に初期化されてから APIServer を作成するために、nodeのポインタを渡す
+	// RaftNodeProxy を満たすために node 自身を渡す
+	node.httpApiServer = server.NewAPIServer(cfg.HttpApiAddr, node)
+	err = node.httpApiServer.Start() // Startがエラーを返すように修正した場合
+	if err != nil {
+		boltDBStore.Close()
+		log.Printf("[ERROR] [RaftNode] [%s] NewNode: Failed to start HTTP API server: %v", cfg.NodeID, err)
+		return nil, fmt.Errorf("failed to start HTTP API server: %w", err)
+	}
+
+	// Raftインスタンスの作成
 	raftCfg := raft.DefaultConfig()
 	raftCfg.LocalID = cfg.NodeID
 	raftCfg.HeartbeatTimeout = 1000 * time.Millisecond
 	raftCfg.ElectionTimeout = 1000 * time.Millisecond
+	raftCfg.LeaderLeaseTimeout = 500 * time.Millisecond
 	raftCfg.CommitTimeout = 50 * time.Millisecond
-	// raftCfg.Logger = hclog.New(&hclog.LoggerOptions{Name: string(cfg.NodeID), Level: hclog.Debug})
+	raftCfg.SnapshotInterval = 20 * time.Second // スナップショットの間隔
+	raftCfg.SnapshotThreshold = 5               // この数のコミット後にスナップショット
 
-	if err := os.MkdirAll(cfg.DataDir, 0700); err != nil {
-		return nil, fmt.Errorf("failed to create data directory %s: %w", cfg.DataDir, err)
-	}
+	// ログ関連の設定
+	// raftCfg.Logger = hclog.New(&hclog.LoggerOptions{
+	// Name: "raft-" + string(cfg.NodeID),
+	// Level: hclog.LevelFromString("DEBUG"), // 必要に応じて変更
+	// Output: os.Stderr,
+	// })
 
-	boltDBPath := filepath.Join(cfg.DataDir, "raft.db")
-	boltStore, err := raftboltdb.NewBoltStore(boltDBPath)
+	r, err := raft.NewRaft(raftCfg, fsm, boltDBStore, boltDBStore, snapshotStore, transport)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create bolt store at %s: %w", boltDBPath, err)
+		boltDBStore.Close()
+		// snapshotStoreはCloseメソッドを持たない
+		log.Printf("[ERROR] [RaftNode] [%s] NewNode: Failed to create Raft instance: %v", cfg.NodeID, err)
+		return nil, fmt.Errorf("failed to create raft instance: %w", err)
 	}
-	n.boltStore = boltStore // boltStoreをNodeに保存
-
-	snapshotStore, err := raft.NewFileSnapshotStore(cfg.DataDir, 2, os.Stderr)
-	if err != nil {
-		n.boltStore.Close() // エラーが発生したら、作成済みのboltStoreを閉じる
-		return nil, fmt.Errorf("failed to create snapshot store at %s: %w", cfg.DataDir, err)
-	}
-	n.snapshotStore = snapshotStore
-
-	r, err := raft.NewRaft(raftCfg, fsm, n.boltStore, n.boltStore, n.snapshotStore, transport)
-	if err != nil {
-		n.boltStore.Close()
-		// snapshotStoreは明示的なCloseメソッドがない場合がある
-		return nil, fmt.Errorf("failed to create raft instance for node %s: %w", cfg.NodeID, err)
-	}
-	n.raft = r
-
-	// HTTP APIサーバーの初期化と起動
-	if cfg.HttpApiAddr != "" { // コメントアウトを解除
-		n.httpApiServer = server.NewAPIServer(n, cfg.HttpApiAddr)
-		n.httpApiServer.Start()
-		log.Printf("Node %s: HTTP API server configured on %s", cfg.NodeID, cfg.HttpApiAddr)
-	} else {
-		log.Printf("Node %s: HTTP API server not configured (HttpApiAddr is empty)", cfg.NodeID)
-	}
+	node.raft = r
+	node.raftConfig = raftCfg // raftConfig を保存
 
 	if cfg.BootstrapCluster {
+		log.Printf("[INFO] [RaftNode] [%s] NewNode: Bootstrapping cluster with self as leader", cfg.NodeID)
 		configuration := raft.Configuration{
 			Servers: []raft.Server{
 				{
@@ -150,13 +181,23 @@ func NewNode(cfg Config, transport raft.Transport) (*Node, error) { // fsm引数
 		}
 		f := r.BootstrapCluster(configuration)
 		if err := f.Error(); err != nil {
-			r.Shutdown().Error()
-			n.boltStore.Close()
-			return nil, fmt.Errorf("failed to bootstrap cluster for node %s: %w", cfg.NodeID, err)
+			log.Printf("[ERROR] [RaftNode] [%s] NewNode: Failed to bootstrap cluster: %v", cfg.NodeID, err)
+			// クリーンアップは NewRaft のエラー処理で行われるため、ここでは不要
+			return nil, fmt.Errorf("failed to bootstrap cluster: %w", err)
 		}
+		log.Printf("[INFO] [RaftNode] [%s] NewNode: Cluster bootstrapped successfully", cfg.NodeID)
+	} else if cfg.JoinAddr != "" {
+		log.Printf("[INFO] [RaftNode] [%s] NewNode: Attempting to join existing cluster at %s", cfg.NodeID, cfg.JoinAddr)
+		// TODO: Join処理の実装 (AddVoterなど)
+		// この部分はE2Eテストでは直接は使われていないが、将来的に必要になる
+		// if err := n.Join(cfg.JoinAddr); err != nil {
+		// return nil, fmt.Errorf("failed to join cluster: %w", err)
+		// }
+		log.Printf("[WARN] [RaftNode] [%s] NewNode: Join functionality is not fully implemented yet.", cfg.NodeID)
 	}
 
-	return n, nil
+	log.Printf("[INFO] [RaftNode] [%s] NewNode: Raft node initialized successfully. Leader: %v", cfg.NodeID, r.Leader())
+	return node, nil
 }
 
 // Start はノードを起動します。(現在はNewNodeでRaftが起動処理を開始)
@@ -272,21 +313,19 @@ func (n *Node) GetTableMetadata(tableName string) (*store.TableMetadata, bool) {
 	return n.fsm.GetTableMetadata(tableName) // FSMにメソッドを追加する必要がある
 }
 
-// ListTables はFSMに存在するすべてのテーブル名とメタデータのリストを取得します。
-// これもローカルリードです。
-func (n *Node) ListTables() map[string]store.TableMetadata {
-	return n.fsm.ListTables() // FSMにメソッドを追加する必要がある
+// ListTables はノードが管理しているテーブルの一覧を返します。
+// これはFSMから取得されます。
+func (n *Node) ListTables() []string { // 返り値の型を []string に変更
+	log.Printf("[INFO] [RaftNode] [%s] ListTables: Called", n.config.NodeID)
+	tables := n.fsm.ListTables() // FSMのListTablesは []string を返す
+	log.Printf("[INFO] [RaftNode] [%s] ListTables: FSM returned %d tables: %v", n.config.NodeID, len(tables), tables)
+	return tables
 }
 
 // ListTablesFromFSM はFSMに存在するすべてのテーブル名のリストを返します。
 // これは RaftNodeProxy インターフェースのために必要です。
 func (n *Node) ListTablesFromFSM() []string {
-	tablesMap := n.fsm.ListTables()
-	tableNames := make([]string, 0, len(tablesMap))
-	for name := range tablesMap {
-		tableNames = append(tableNames, name)
-	}
-	return tableNames
+	return n.fsm.ListTables() // 修正: fsm.ListTables() は既に []string を返す
 }
 
 // IsLeader はこのノードが現在Raftクラスタのリーダーであるかどうかを確認します。
@@ -294,17 +333,17 @@ func (n *Node) IsLeader() bool {
 	return n.raft.State() == raft.Leader
 }
 
-// LeaderAddr は現在のクラスタリーダーのアドレスを返します。
+// RaftLeaderAddress は現在のクラスタリーダーのアドレスを返します。
 // リーダーがいない場合は空文字列を返します。
-func (n *Node) LeaderAddr() raft.ServerAddress {
+func (n *Node) RaftLeaderAddress() raft.ServerAddress {
 	return n.raft.Leader()
 }
 
-// LeaderID は現在のクラスタリーダーのIDを返します。
-func (n *Node) LeaderID() raft.ServerID {
-	addr, id := n.raft.LeaderWithID() // 返り値の順番を入れ替えてみる (Linterの指摘に基づく仮説)
-	log.Printf("[DEBUG] Node %s LeaderID(): self.config.NodeID=%s, LeaderWithID() returned AddrAsID: %s, IDAsAddr: %s", n.config.NodeID, n.config.NodeID, addr, id)
-	return id // こちらが ServerID であると仮定
+// RaftLeaderID は現在のクラスタリーダーのIDを返します。
+func (n *Node) RaftLeaderID() raft.ServerID {
+	addr, id := n.raft.LeaderWithID()
+	log.Printf("[DEBUG] Node %s RaftLeaderID(): self.config.NodeID=%s, LeaderWithID() returned AddrAsID: %s, IDAsAddr: %s", n.config.NodeID, n.config.NodeID, addr, id)
+	return id
 }
 
 // Stats はRaftノードの統計情報を返します。
@@ -342,7 +381,7 @@ func (n *Node) WaitForLeader(timeout time.Duration) (raft.ServerAddress, error) 
 	for {
 		select {
 		case <-ticker.C:
-			leaderAddr := n.LeaderAddr()
+			leaderAddr := n.RaftLeaderAddress()
 			if leaderAddr != "" {
 				return leaderAddr, nil
 			}
@@ -450,41 +489,83 @@ func (n *Node) QueryItemsFromLocalStore(tableName string, partitionKey string, s
 
 // GetClusterStatus は現在のノードとクラスタのステータス情報を返します。
 func (n *Node) GetClusterStatus() (map[string]interface{}, error) {
+	log.Printf("[INFO] [RaftNode] [%s] GetClusterStatus: Called", n.config.NodeID)
 	status := make(map[string]interface{})
 	status["node_id"] = n.NodeID()
 	status["is_leader"] = n.IsLeader()
-	status["current_leader_address"] = n.LeaderAddr() // http_api.go の RaftNodeProxy.LeaderAddress() に合わせる
-	status["current_leader_id"] = n.LeaderID()        // http_api.go の RaftNodeProxy.LeaderID() に合わせる
+	status["current_leader_address"] = n.LeaderAddr()
+	status["current_leader_id"] = n.LeaderID()
 
-	// Raftの統計情報を追加
 	raftStats := n.raft.Stats()
 	status["raft_stats"] = raftStats
 
-	// テーブル一覧を追加 (FSMから取得)
-	tablesMetadata := n.fsm.ListTables() // FSMにこのメソッドがある
-	tableNames := make([]string, 0, len(tablesMetadata))
-	for name := range tablesMetadata {
-		tableNames = append(tableNames, name)
+	// テーブル一覧 (FSMから取得)
+	tableNames := n.fsm.ListTables() // これは []string
+	// FSMのテーブルメタデータも取得できれば理想的だが、現状は名前のみ
+	// 以前の実装では f.tables (map[string]TableMetadata) を直接返していたが、
+	// FSMのインターフェースとしては ListTables() []string のみ公開されている。
+	// 必要であれば、FSMにGetTableMetadata(name string)のようなメソッドを追加する。
+	status["tables_in_fsm"] = tableNames
+
+	// Raftの設定情報（一部）
+	// raftConfigはNode構造体に保存されているはず
+	if n.raftConfig != nil {
+		status["raft_configuration_summary"] = map[string]interface{}{
+			"snapshot_interval":  n.raftConfig.SnapshotInterval,
+			"snapshot_threshold": n.raftConfig.SnapshotThreshold,
+			// "protocol_version": n.raftConfig.ProtocolVersion, // ProtocolVersionはRaftインスタンスから取得するのが一般的
+		}
 	}
-	status["tables"] = tableNames
-
-	// ノード自身のRaft状態
-	status["raft_state"] = n.raft.State().String()
-
-	// 現在のRaft設定を取得
-	cfgFuture := n.raft.GetConfiguration()
-	if err := cfgFuture.Error(); err == nil {
-		status["raft_configuration"] = cfgFuture.Configuration()
-	} else {
-		log.Printf("Node %s: Failed to get raft configuration for status: %v", n.NodeID(), err)
-		status["raft_configuration"] = "Error retrieving configuration"
+	if n.raft != nil {
+		status["raft_protocol_version"] = n.raft.ProtocolVersion()
+		// status["raft_peers"] = n.raft.Peers() // Peers()メソッドは存在しない
+		// Configuration() から取得するのが一般的
+		configFuture := n.raft.GetConfiguration()
+		if err := configFuture.Error(); err == nil {
+			status["raft_current_configuration_servers"] = configFuture.Configuration().Servers
+		}
 	}
 
+	log.Printf("[INFO] [RaftNode] [%s] GetClusterStatus: Returning status for node %s, leader: %v", n.config.NodeID, n.NodeID(), n.IsLeader())
 	return status, nil
 }
 
-// LeaderWithID は現在のクラスタリーダーのアドレスとIDを返します。
+// RaftLeaderWithID は現在のクラスタリーダーのアドレスとIDを返します。
 // LeaderID() が LeaderWithID() の第2返り値を返すように変更したため、このメソッドも追加。
-func (n *Node) LeaderWithID() (raft.ServerAddress, raft.ServerID) {
+func (n *Node) RaftLeaderWithID() (raft.ServerAddress, raft.ServerID) {
 	return n.raft.LeaderWithID()
+}
+
+// NodeID returns the string representation of the node's Raft ID.
+// This is to satisfy the RaftNodeProxy interface.
+func (n *Node) NodeID() string {
+	return string(n.config.NodeID)
+}
+
+// LeaderWithID is a wrapper for RaftLeaderWithID to satisfy RaftNodeProxy which expects string return types.
+func (n *Node) LeaderWithID() (string, string) {
+	addr, id := n.RaftLeaderWithID()
+	return string(addr), string(id)
+}
+
+// LeaderAddr is a wrapper for RaftLeaderAddress to satisfy RaftNodeProxy which expects string return types.
+func (n *Node) LeaderAddr() string {
+	return string(n.RaftLeaderAddress())
+}
+
+// LeaderIDString is a wrapper for RaftLeaderID to satisfy RaftNodeProxy.
+// This specific method LeaderID() string is now directly implemented as NodeID() returns string.
+// However, RaftNodeProxy might expect a LeaderID() string method specifically for the leader's ID.
+// Let's ensure the RaftNodeProxy interface is matched.
+// The proxy expects LeaderID() string. Node.RaftLeaderID() returns raft.ServerID.
+// So we need a new LeaderID() string for the proxy.
+// func (n *Node) OldLeaderID() string { // This was string(n.config.NodeID) but that's NodeID()
+//
+//		 return string(n.RaftLeaderID())
+//	}
+//
+// The proxy interface has: LeaderID() string. This should be the ID of the current leader, not the node itself.
+func (n *Node) LeaderID() string {
+	_, id := n.RaftLeaderWithID()
+	return string(id)
 }

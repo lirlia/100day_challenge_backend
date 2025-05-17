@@ -1,93 +1,90 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
-	"strings"
 	"time"
 
-	"github.com/hashicorp/raft" // raft.ServerID と raft.ServerAddress のため
+	// raft.ServerID と raft.ServerAddress のため
+	"day42_raft_nosql_simulator_local_test/internal/store" // store パッケージをインポート
 )
 
-// RaftNodeProxy は HTTPServer が Raftノードの機能にアクセスするためのインターフェースです。
+// RaftNodeProxy は APIServer が Raft ノードの機能にアクセスするためのインターフェースです。
+// これにより、APIServer と RaftNode間の循環参照を避けます。
 type RaftNodeProxy interface {
-	NodeID() raft.ServerID
 	IsLeader() bool
-	LeaderAddr() raft.ServerAddress
-	LeaderID() raft.ServerID
-	ProposeCreateTable(tableName, pkName, skName string, timeout time.Duration) (interface{}, error)
+	LeaderAddr() string // Raft ServerAddress (e.g., "127.0.0.1:7000")
+	LeaderID() string   // Raft ServerID (e.g., "node0")
+	NodeID() string
+	ProposeCreateTable(tableName, partitionKeyName, sortKeyName string, timeout time.Duration) (interface{}, error)
 	ProposeDeleteTable(tableName string, timeout time.Duration) (interface{}, error)
-	ProposePutItem(tableName string, item map[string]interface{}, timeout time.Duration) (interface{}, error)
-	ProposeDeleteItem(tableName, pk, sk string, timeout time.Duration) (interface{}, error)
-	GetItemFromLocalStore(tableName, itemKey string) (json.RawMessage, int64, error)
-	QueryItemsFromLocalStore(tableName, pk, skPrefix string) ([]map[string]interface{}, error)
+	ProposePutItem(tableName string, itemData map[string]interface{}, timeout time.Duration) (interface{}, error)
+	ProposeDeleteItem(tableName string, partitionKey string, sortKey string, timeout time.Duration) (interface{}, error)
+	GetItemFromLocalStore(tableName string, itemKey string) (json.RawMessage, int64, error) // itemKey は PK または PK_SK
+	QueryItemsFromLocalStore(tableName string, partitionKey string, sortKeyPrefix string) ([]map[string]interface{}, error)
+	GetTableMetadata(tableName string) (*store.TableMetadata, bool)
+	ListTablesFromFSM() []string
 	GetClusterStatus() (map[string]interface{}, error)
+	LeaderWithID() (raftAddress string, raftID string) // http_api.go での raft.ServerAddress, raft.ServerID の直接参照を避けるため文字列で返す
 }
 
-// APIServer はRaftノードと連携してHTTPリクエストを処理します。
+// APIServer は Raft ノードへの HTTP API を提供します。
+// この構造体は main 関数で初期化され、HTTPリクエストを処理します。
 type APIServer struct {
-	node   RaftNodeProxy
-	router *http.ServeMux
-	server *http.Server
+	httpServer *http.Server
+	nodeProxy  RaftNodeProxy // Raftノードの操作用プロキシ
+	addr       string
 }
 
 // NewAPIServer は新しいAPIServerインスタンスを作成します。
-func NewAPIServer(node RaftNodeProxy, httpAddr string) *APIServer {
-	s := &APIServer{
-		node:   node,
-		router: http.NewServeMux(),
+func NewAPIServer(addr string, nodeProxy RaftNodeProxy) *APIServer {
+	srv := &APIServer{
+		nodeProxy: nodeProxy,
+		addr:      addr,
 	}
-	s.server = &http.Server{
-		Addr:    httpAddr,
-		Handler: s.router,
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/create-table", srv.handleCreateTable)
+	mux.HandleFunc("/delete-table", srv.handleDeleteTable)
+	mux.HandleFunc("/put-item", srv.handlePutItem)
+	mux.HandleFunc("/get-item", srv.handleGetItem)
+	mux.HandleFunc("/delete-item", srv.handleDeleteItem)
+	mux.HandleFunc("/query-items", srv.handleQueryItems)
+	mux.HandleFunc("/status", srv.handleStatus)
+
+	srv.httpServer = &http.Server{
+		Addr:    addr,
+		Handler: mux,
 	}
-	s.setupRoutes()
-	return s
+	return srv
 }
 
-func (s *APIServer) setupRoutes() {
-	s.router.HandleFunc("/create-table", httpLogger(s.handleCreateTable))
-	s.router.HandleFunc("/delete-table", httpLogger(s.handleDeleteTable))
-	s.router.HandleFunc("/put-item", httpLogger(s.handlePutItem))
-	s.router.HandleFunc("/get-item", httpLogger(s.handleGetItem))
-	s.router.HandleFunc("/delete-item", httpLogger(s.handleDeleteItem))
-	s.router.HandleFunc("/query-items", httpLogger(s.handleQueryItems))
-	s.router.HandleFunc("/status", httpLogger(s.handleStatus))
-}
-
-func httpLogger(handler http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("HTTP Request: %s %s from %s", r.Method, r.URL.Path, r.RemoteAddr)
-		handler(w, r)
-	}
-}
-
-// Start はHTTPサーバーを非同期に起動します。
-func (s *APIServer) Start() {
-	log.Printf("Node %s: HTTP API server starting on %s", s.node.NodeID(), s.server.Addr)
+// Start はHTTP APIサーバーを起動します。
+func (s *APIServer) Start() error {
+	log.Printf("[INFO] [APIServer] [%s] HTTP API server starting on %s", s.nodeProxy.NodeID(), s.addr)
 	go func() {
-		if err := s.server.ListenAndServe(); err != http.ErrServerClosed {
-			log.Fatalf("Node %s: HTTP API server ListenAndServe failed: %v", s.node.NodeID(), err)
+		if err := s.httpServer.ListenAndServe(); err != http.ErrServerClosed {
+			log.Fatalf("[FATAL] [APIServer] [%s] HTTP API server ListenAndServe failed: %v", s.nodeProxy.NodeID(), err)
 		}
 	}()
+	return nil
 }
 
-// Shutdown はHTTPサーバーをシャットダウンします。
+// Shutdown はHTTP APIサーバーをシャットダウンします。
 func (s *APIServer) Shutdown(timeout time.Duration) error {
-	log.Printf("Node %s: Shutting down HTTP API server...", s.node.NodeID())
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	return s.server.Shutdown(ctx)
+	log.Printf("[INFO] [APIServer] [%s] HTTP API server shutting down...", s.nodeProxy.NodeID())
+	// TODO: context.WithTimeout を使用して適切にシャットダウンする
+	return s.httpServer.Close()
 }
 
-// --- DTOs (Data Transfer Objects) ---
+// --- Request/Response Structs (client.go と共通化も検討) ---
+
 type CreateTableRequest struct {
-	TableName        string `json:"table_name"`
-	PartitionKeyName string `json:"partition_key_name"`
-	SortKeyName      string `json:"sort_key_name,omitempty"`
+	TableName    string `json:"table_name"`
+	PartitionKey string `json:"partition_key_name"`
+	SortKey      string `json:"sort_key_name,omitempty"`
 }
 
 type DeleteTableRequest struct {
@@ -117,271 +114,237 @@ type QueryItemsRequest struct {
 	SortKeyPrefix string `json:"sort_key_prefix,omitempty"`
 }
 
-type GetItemResponse struct {
-	Item    json.RawMessage          `json:"item,omitempty"`
-	Items   []map[string]interface{} `json:"items,omitempty"`
-	Version int64                    `json:"version,omitempty"`
+// APIErrorResponse はエラー時のAPIレスポンスです。
+type APIErrorResponse struct {
+	Error   string `json:"error"`
+	Message string `json:"message,omitempty"`
 }
 
-type ErrorResponse struct {
-	Error string `json:"error"`
+// APISuccessResponse は成功時のAPIレスポンスの基本形です。
+type APISuccessResponse struct {
+	Message     string                   `json:"message"`
+	FSMResponse interface{}              `json:"fsm_response,omitempty"`
+	Item        json.RawMessage          `json:"item,omitempty"`
+	Items       []map[string]interface{} `json:"items,omitempty"`
+	Version     int64                    `json:"version,omitempty"`
 }
 
-// --- Handlers ---
+// --- HTTP Handlers ---
+
 func (s *APIServer) handleCreateTable(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		writeJSONError(w, "Only POST method is allowed", http.StatusMethodNotAllowed)
+		http.Error(w, "Only POST method is allowed", http.StatusMethodNotAllowed)
 		return
 	}
+
+	if !s.nodeProxy.IsLeader() {
+		leaderAddr, leaderID := s.nodeProxy.LeaderWithID()
+		errMsg := fmt.Sprintf("Not a leader. Please send request to leader %s (%s)", leaderID, leaderAddr)
+		log.Printf("[WARN] [APIServer] [%s] handleCreateTable: %s", s.nodeProxy.NodeID(), errMsg)
+		s.respondWithError(w, http.StatusMisdirectedRequest, errMsg, "Request must be sent to the leader node.")
+		return
+	}
+
 	var req CreateTableRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSONError(w, fmt.Sprintf("Invalid request body: %v", err), http.StatusBadRequest)
+		s.respondWithError(w, http.StatusBadRequest, "Invalid request payload", err.Error())
 		return
 	}
-	defer r.Body.Close()
-	if req.TableName == "" || req.PartitionKeyName == "" {
-		writeJSONError(w, "tableName and partitionKeyName are required", http.StatusBadRequest)
-		return
-	}
-	if !s.node.IsLeader() {
-		leaderAddr := s.node.LeaderAddr()
-		leaderID := s.node.LeaderID()
-		if leaderAddr == "" {
-			writeJSONError(w, "No leader elected in the cluster to handle CreateTable", http.StatusMisdirectedRequest)
-			return
-		}
-		log.Printf("Node %s is not leader, current leader is %s (%s)", s.node.NodeID(), leaderID, leaderAddr)
-		writeJSONError(w, fmt.Sprintf("Not a leader. Please send request to leader %s (%s)", leaderID, leaderAddr), http.StatusMisdirectedRequest)
-		return
-	}
-	log.Printf("Node %s (Leader): Processing CreateTable request for table '%s'", s.node.NodeID(), req.TableName)
-	apiResponse, err := s.node.ProposeCreateTable(req.TableName, req.PartitionKeyName, req.SortKeyName, 5*time.Second)
+
+	fsmResponse, err := s.nodeProxy.ProposeCreateTable(req.TableName, req.PartitionKey, req.SortKey, 10*time.Second)
 	if err != nil {
-		log.Printf("Node %s: ProposeCreateTable for table '%s' failed: %v", s.node.NodeID(), req.TableName, err)
-		writeJSONError(w, fmt.Sprintf("Failed to propose CreateTable: %v", err), http.StatusInternalServerError)
+		s.respondWithError(w, http.StatusInternalServerError, "Failed to propose CreateTable command", err.Error())
 		return
 	}
-	log.Printf("Node %s: CreateTable for table '%s' proposed successfully. Response from FSM: %v", s.node.NodeID(), req.TableName, apiResponse)
-	writeJSONResponse(w, map[string]interface{}{"message": "CreateTable proposal accepted", "fsm_response": apiResponse}, http.StatusAccepted)
+
+	s.respondWithJSON(w, http.StatusOK, APISuccessResponse{
+		Message:     fmt.Sprintf("CreateTable proposal accepted for table %s", req.TableName),
+		FSMResponse: fsmResponse,
+	})
 }
 
 func (s *APIServer) handleDeleteTable(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		writeJSONError(w, "Only POST method is allowed for DeleteTable", http.StatusMethodNotAllowed)
+		http.Error(w, "Only POST method is allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	var req DeleteTableRequest // Using the DTO
+
+	if !s.nodeProxy.IsLeader() {
+		leaderAddr, leaderID := s.nodeProxy.LeaderWithID()
+		errMsg := fmt.Sprintf("Not a leader. Please send request to leader %s (%s)", leaderID, leaderAddr)
+		log.Printf("[WARN] [APIServer] [%s] handleDeleteTable: %s", s.nodeProxy.NodeID(), errMsg)
+		s.respondWithError(w, http.StatusMisdirectedRequest, errMsg, "Request must be sent to the leader node.")
+		return
+	}
+
+	var req DeleteTableRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSONError(w, fmt.Sprintf("Invalid request body: %v", err), http.StatusBadRequest)
+		s.respondWithError(w, http.StatusBadRequest, "Invalid request payload", err.Error())
 		return
 	}
-	defer r.Body.Close()
-	if req.TableName == "" {
-		writeJSONError(w, "tableName is required for DeleteTable", http.StatusBadRequest)
-		return
-	}
-	if !s.node.IsLeader() {
-		leaderAddr := s.node.LeaderAddr()
-		leaderID := s.node.LeaderID()
-		if leaderAddr == "" {
-			writeJSONError(w, "No leader elected to handle DeleteTable", http.StatusMisdirectedRequest)
-			return
-		}
-		log.Printf("Node %s is not leader, current leader is %s (%s)", s.node.NodeID(), leaderID, leaderAddr)
-		writeJSONError(w, fmt.Sprintf("Not a leader. Please send request to leader %s (%s)", leaderID, leaderAddr), http.StatusMisdirectedRequest)
-		return
-	}
-	log.Printf("Node %s (Leader): Processing DeleteTable request for table '%s'", s.node.NodeID(), req.TableName)
-	apiResponse, err := s.node.ProposeDeleteTable(req.TableName, 5*time.Second)
+
+	fsmResponse, err := s.nodeProxy.ProposeDeleteTable(req.TableName, 10*time.Second)
 	if err != nil {
-		log.Printf("Node %s: ProposeDeleteTable for table '%s' failed: %v", s.node.NodeID(), req.TableName, err)
-		writeJSONError(w, fmt.Sprintf("Failed to propose DeleteTable: %v", err), http.StatusInternalServerError)
+		s.respondWithError(w, http.StatusInternalServerError, "Failed to propose DeleteTable command", err.Error())
 		return
 	}
-	if fsmErr, ok := apiResponse.(error); ok && fsmErr != nil {
-		log.Printf("Node %s: FSM error during DeleteTable for '%s': %v", s.node.NodeID(), req.TableName, fsmErr)
-		if strings.Contains(fsmErr.Error(), "not found") {
-			writeJSONError(w, fmt.Sprintf("FSM returned an error for DeleteTable: %v (table not found)", fsmErr), http.StatusNotFound)
-		} else {
-			writeJSONError(w, fmt.Sprintf("FSM returned an error for DeleteTable: %v", fsmErr), http.StatusInternalServerError)
-		}
-		return
-	}
-	log.Printf("Node %s: DeleteTable for table '%s' proposed successfully. FSM response: %v", s.node.NodeID(), req.TableName, apiResponse)
-	writeJSONResponse(w, map[string]interface{}{"message": "DeleteTable proposal accepted", "fsm_response": apiResponse}, http.StatusAccepted)
+
+	s.respondWithJSON(w, http.StatusOK, APISuccessResponse{
+		Message:     fmt.Sprintf("DeleteTable proposal accepted for table %s", req.TableName),
+		FSMResponse: fsmResponse,
+	})
 }
 
 func (s *APIServer) handlePutItem(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSONError(w, "Only POST method is allowed for PutItem", http.StatusMethodNotAllowed)
+		http.Error(w, "Only POST method is allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if !s.nodeProxy.IsLeader() {
+		leaderAddr, leaderID := s.nodeProxy.LeaderWithID()
+		errMsg := fmt.Sprintf("Not a leader. Please send request to leader %s (%s)", leaderID, leaderAddr)
+		log.Printf("[WARN] [APIServer] [%s] handlePutItem: %s", s.nodeProxy.NodeID(), errMsg)
+		s.respondWithError(w, http.StatusMisdirectedRequest, errMsg, "Request must be sent to the leader node.")
+		return
+	}
+
 	var req PutItemRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSONError(w, fmt.Sprintf("Invalid PutItem request body: %v", err), http.StatusBadRequest)
+		s.respondWithError(w, http.StatusBadRequest, "Invalid request payload", err.Error())
 		return
 	}
-	defer r.Body.Close()
-	if req.TableName == "" || req.Item == nil || len(req.Item) == 0 {
-		writeJSONError(w, "tableName and item are required for PutItem", http.StatusBadRequest)
-		return
-	}
-	if !s.node.IsLeader() {
-		leaderAddr := s.node.LeaderAddr()
-		leaderID := s.node.LeaderID()
-		if leaderAddr == "" {
-			writeJSONError(w, "No leader elected to handle PutItem", http.StatusMisdirectedRequest)
-			return
-		}
-		log.Printf("Node %s is not leader, current leader is %s (%s)", s.node.NodeID(), leaderID, leaderAddr)
-		writeJSONError(w, fmt.Sprintf("Not a leader. Please send PutItem request to leader %s (%s)", leaderID, leaderAddr), http.StatusMisdirectedRequest)
-		return
-	}
-	log.Printf("Node %s (Leader): Processing PutItem request for table '%s'", s.node.NodeID(), req.TableName)
-	apiResponse, err := s.node.ProposePutItem(req.TableName, req.Item, 5*time.Second)
+
+	fsmResponse, err := s.nodeProxy.ProposePutItem(req.TableName, req.Item, 10*time.Second)
 	if err != nil {
-		log.Printf("Node %s: ProposePutItem for table '%s' failed: %v", s.node.NodeID(), req.TableName, err)
-		writeJSONError(w, fmt.Sprintf("Failed to propose PutItem: %v", err), http.StatusInternalServerError)
+		s.respondWithError(w, http.StatusInternalServerError, "Failed to propose PutItem command", err.Error())
 		return
 	}
-	log.Printf("Node %s: PutItem for table '%s' proposed successfully. FSM response: %v", s.node.NodeID(), req.TableName, apiResponse)
-	writeJSONResponse(w, map[string]interface{}{"message": "PutItem proposal accepted", "fsm_response": apiResponse}, http.StatusAccepted)
+	s.respondWithJSON(w, http.StatusOK, APISuccessResponse{Message: "PutItem proposal accepted", FSMResponse: fsmResponse})
 }
 
 func (s *APIServer) handleGetItem(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeJSONError(w, "Only POST method is allowed for GetItem", http.StatusMethodNotAllowed)
+	if r.Method != http.MethodPost { // DynamoDB GetItem は通常POST (GETも可だがペイロードが複雑な場合がある)
+		http.Error(w, "Only POST method is allowed for GetItem", http.StatusMethodNotAllowed)
 		return
 	}
+
 	var req GetItemRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSONError(w, fmt.Sprintf("Invalid GetItem request body: %v", err), http.StatusBadRequest)
+		s.respondWithError(w, http.StatusBadRequest, "Invalid request payload", err.Error())
 		return
 	}
-	defer r.Body.Close()
-	if req.TableName == "" || req.PartitionKey == "" {
-		writeJSONError(w, "tableName and partitionKey are required for GetItem", http.StatusBadRequest)
+
+	// GetItem はローカルリードなのでリーダーシップチェックは不要だが、
+	// テーブル定義はFSMから取得するので、ノードがクラスタの一部であることは前提。
+	meta, exists := s.nodeProxy.GetTableMetadata(req.TableName)
+	if !exists {
+		s.respondWithError(w, http.StatusNotFound, fmt.Sprintf("Table %s not found", req.TableName), "")
 		return
 	}
-	log.Printf("Node %s: Processing GetItem request for table '%s', PK: %s, SK: %s", s.node.NodeID(), req.TableName, req.PartitionKey, req.SortKey)
+
 	itemKey := req.PartitionKey
-	if req.SortKey != "" {
+	if meta.SortKeyName != "" {
+		if req.SortKey == "" {
+			s.respondWithError(w, http.StatusBadRequest, fmt.Sprintf("Sort key must be provided for table %s", req.TableName), "")
+			return
+		}
 		itemKey += "_" + req.SortKey
 	}
-	itemData, version, err := s.node.GetItemFromLocalStore(req.TableName, itemKey)
+
+	itemData, version, err := s.nodeProxy.GetItemFromLocalStore(req.TableName, itemKey)
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
-			writeJSONError(w, "Item not found", http.StatusNotFound)
-		} else {
-			log.Printf("Node %s: GetItemFromLocalStore for table '%s', key '%s' failed: %v", s.node.NodeID(), req.TableName, itemKey, err)
-			writeJSONError(w, fmt.Sprintf("Failed to get item: %v", err), http.StatusInternalServerError)
-		}
+		// KVStoreのGetItemはアイテムが見つからない場合エラーを返すので、それを404として扱う
+		// TODO: エラーの種類を判別してより適切なステータスコードを返す
+		s.respondWithError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to get item: %s", err.Error()), "")
 		return
 	}
-	if itemData == nil {
-		writeJSONError(w, "Item not found (nil data)", http.StatusNotFound)
+	if itemData == nil { // 通常、GetItemFromLocalStoreがエラーを返すのでここには来ないはずだが念のため
+		s.respondWithError(w, http.StatusNotFound, fmt.Sprintf("Item %s not found in table %s", itemKey, req.TableName), "")
 		return
 	}
-	log.Printf("Node %s: GetItem for table '%s', key '%s' successful. Version: %d", s.node.NodeID(), req.TableName, itemKey, version)
-	writeJSONResponse(w, GetItemResponse{Item: itemData, Version: version}, http.StatusOK)
+
+	s.respondWithJSON(w, http.StatusOK, APISuccessResponse{Message: "Item retrieved successfully", Item: itemData, Version: version})
 }
 
 func (s *APIServer) handleDeleteItem(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSONError(w, "Only POST method is allowed for DeleteItem", http.StatusMethodNotAllowed)
+		http.Error(w, "Only POST method is allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if !s.nodeProxy.IsLeader() {
+		leaderAddr, leaderID := s.nodeProxy.LeaderWithID()
+		errMsg := fmt.Sprintf("Not a leader. Please send request to leader %s (%s)", leaderID, leaderAddr)
+		log.Printf("[WARN] [APIServer] [%s] handleDeleteItem: %s", s.nodeProxy.NodeID(), errMsg)
+		s.respondWithError(w, http.StatusMisdirectedRequest, errMsg, "Request must be sent to the leader node.")
+		return
+	}
+
 	var req DeleteItemRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSONError(w, fmt.Sprintf("Invalid DeleteItem request body: %v", err), http.StatusBadRequest)
+		s.respondWithError(w, http.StatusBadRequest, "Invalid request payload", err.Error())
 		return
 	}
-	defer r.Body.Close()
-	if req.TableName == "" || req.PartitionKey == "" {
-		writeJSONError(w, "tableName and partitionKey are required for DeleteItem", http.StatusBadRequest)
-		return
-	}
-	if !s.node.IsLeader() {
-		leaderAddr := s.node.LeaderAddr()
-		leaderID := s.node.LeaderID()
-		if leaderAddr == "" {
-			writeJSONError(w, "No leader elected to handle DeleteItem", http.StatusMisdirectedRequest)
-			return
-		}
-		log.Printf("Node %s is not leader, current leader is %s (%s)", s.node.NodeID(), leaderID, leaderAddr)
-		writeJSONError(w, fmt.Sprintf("Not a leader. Please send DeleteItem request to leader %s (%s)", leaderID, leaderAddr), http.StatusMisdirectedRequest)
-		return
-	}
-	log.Printf("Node %s (Leader): Processing DeleteItem request for table '%s', PK: %s, SK: %s", s.node.NodeID(), req.TableName, req.PartitionKey, req.SortKey)
-	apiResponse, err := s.node.ProposeDeleteItem(req.TableName, req.PartitionKey, req.SortKey, 5*time.Second)
+
+	fsmResponse, err := s.nodeProxy.ProposeDeleteItem(req.TableName, req.PartitionKey, req.SortKey, 10*time.Second)
 	if err != nil {
-		log.Printf("Node %s: ProposeDeleteItem for table '%s' failed: %v", s.node.NodeID(), req.TableName, err)
-		writeJSONError(w, fmt.Sprintf("Failed to propose DeleteItem: %v", err), http.StatusInternalServerError)
+		s.respondWithError(w, http.StatusInternalServerError, "Failed to propose DeleteItem command", err.Error())
 		return
 	}
-	log.Printf("Node %s: DeleteItem for table '%s' proposed successfully. FSM response: %v", s.node.NodeID(), req.TableName, apiResponse)
-	writeJSONResponse(w, map[string]interface{}{"message": "DeleteItem proposal accepted", "fsm_response": apiResponse}, http.StatusAccepted)
+	s.respondWithJSON(w, http.StatusOK, APISuccessResponse{Message: "DeleteItem proposal accepted", FSMResponse: fsmResponse})
 }
 
 func (s *APIServer) handleQueryItems(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSONError(w, "Only POST method is allowed for QueryItems", http.StatusMethodNotAllowed)
+		http.Error(w, "Only POST method is allowed for QueryItems", http.StatusMethodNotAllowed)
 		return
 	}
+
 	var req QueryItemsRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSONError(w, fmt.Sprintf("Invalid QueryItems request body: %v", err), http.StatusBadRequest)
+		s.respondWithError(w, http.StatusBadRequest, "Invalid request payload", err.Error())
 		return
 	}
-	defer r.Body.Close()
-	if req.TableName == "" || req.PartitionKey == "" {
-		writeJSONError(w, "tableName and partitionKey are required for QueryItems", http.StatusBadRequest)
+
+	// QueryItemsもローカルリード
+	_, exists := s.nodeProxy.GetTableMetadata(req.TableName)
+	if !exists {
+		s.respondWithError(w, http.StatusNotFound, fmt.Sprintf("Table %s not found", req.TableName), "")
 		return
 	}
-	log.Printf("Node %s: Processing QueryItems request for table '%s', PK: %s, SKPrefix: %s", s.node.NodeID(), req.TableName, req.PartitionKey, req.SortKeyPrefix)
-	items, err := s.node.QueryItemsFromLocalStore(req.TableName, req.PartitionKey, req.SortKeyPrefix)
+
+	items, err := s.nodeProxy.QueryItemsFromLocalStore(req.TableName, req.PartitionKey, req.SortKeyPrefix)
 	if err != nil {
-		log.Printf("Node %s: QueryItemsFromLocalStore for table '%s', PK '%s' failed: %v", s.node.NodeID(), req.TableName, req.PartitionKey, err)
-		writeJSONError(w, fmt.Sprintf("Failed to query items: %v", err), http.StatusInternalServerError)
+		s.respondWithError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to query items: %s", err.Error()), "")
 		return
 	}
-	if items == nil {
-		items = []map[string]interface{}{}
-	}
-	log.Printf("Node %s: QueryItems for table '%s', PK '%s' successful. Found %d items.", s.node.NodeID(), req.TableName, req.PartitionKey, len(items))
-	writeJSONResponse(w, GetItemResponse{Items: items}, http.StatusOK)
+
+	s.respondWithJSON(w, http.StatusOK, APISuccessResponse{Message: "Items queried successfully", Items: items})
 }
 
 func (s *APIServer) handleStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		writeJSONError(w, "Only GET method is allowed for Status", http.StatusMethodNotAllowed)
+		http.Error(w, "Only GET method is allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	statusInfo, err := s.node.GetClusterStatus()
+
+	status, err := s.nodeProxy.GetClusterStatus()
 	if err != nil {
-		log.Printf("Node %s: Failed to get cluster status: %v", s.node.NodeID(), err)
-		writeJSONError(w, fmt.Sprintf("Failed to get cluster status: %v", err), http.StatusInternalServerError)
+		s.respondWithError(w, http.StatusInternalServerError, "Failed to get cluster status", err.Error())
 		return
 	}
-	log.Printf("Node %s: Successfully retrieved cluster status.", s.node.NodeID())
-	writeJSONResponse(w, statusInfo, http.StatusOK)
+	s.respondWithJSON(w, http.StatusOK, status)
 }
 
-// --- Helper functions ---
-func writeJSONError(w http.ResponseWriter, message string, statusCode int) {
+// --- Helper functions for responding ---
+
+func (s *APIServer) respondWithError(w http.ResponseWriter, code int, errorType string, message string) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(ErrorResponse{Error: message})
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(APIErrorResponse{Error: errorType, Message: message})
 }
 
-func writeJSONResponse(w http.ResponseWriter, data interface{}, statusCode int) {
+func (s *APIServer) respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(statusCode)
-	if data != nil {
-		if err := json.NewEncoder(w).Encode(data); err != nil {
-			log.Printf("Error writing JSON response body: %v", err)
-		}
-	}
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(payload)
 }
