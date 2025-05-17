@@ -127,6 +127,62 @@ func (f *FSM) Apply(logEntry *raft.Log) interface{} {
 			return CommandResponse{Success: false, Error: fmt.Sprintf("failed to unmarshal PutItem payload: %v", err)}
 		}
 
+		// JSONデコードされた数値はすべてfloat64型になるため、一貫性を保つために
+		// Itemを一度map[string]interface{}に変換し、数値をすべてfloat64に統一する
+		var itemMap map[string]interface{}
+		if err := json.Unmarshal(payload.Item, &itemMap); err != nil {
+			f.logger.Printf("[ERROR] FSM.Apply(PutItem): Failed to unmarshal item map: %v", err)
+			return CommandResponse{Success: false, Error: fmt.Sprintf("failed to unmarshal item map: %v", err)}
+		}
+
+		// 数値をfloat64に統一（再帰的に処理）
+		var convertToFloat64 func(interface{}) interface{}
+		convertToFloat64 = func(v interface{}) interface{} {
+			switch val := v.(type) {
+			case int:
+				return float64(val)
+			case int64:
+				return float64(val)
+			case int32:
+				return float64(val)
+			case uint:
+				return float64(val)
+			case uint64:
+				return float64(val)
+			case uint32:
+				return float64(val)
+			case float32:
+				return float64(val)
+			case map[string]interface{}:
+				for k, v := range val {
+					val[k] = convertToFloat64(v)
+				}
+				return val
+			case []interface{}:
+				for i, v := range val {
+					val[i] = convertToFloat64(v)
+				}
+				return val
+			default:
+				return v
+			}
+		}
+
+		// マップの各要素に対して数値変換を適用
+		for k, v := range itemMap {
+			itemMap[k] = convertToFloat64(v)
+		}
+
+		// 変換したitemMapを再度JSONにエンコード
+		updatedItem, err := json.Marshal(itemMap)
+		if err != nil {
+			f.logger.Printf("[ERROR] FSM.Apply(PutItem): Failed to marshal updated item map: %v", err)
+			return CommandResponse{Success: false, Error: fmt.Sprintf("failed to marshal updated item map: %v", err)}
+		}
+
+		// 変換後のJSONをペイロードのItemに上書き
+		payload.Item = updatedItem
+
 		meta, tableExists := f.tables[payload.TableName]
 		if !tableExists {
 			f.logger.Printf("[ERROR] FSM.Apply(PutItem): Table '%s' not found for item.", payload.TableName)
@@ -239,16 +295,41 @@ func (f *FSM) Apply(logEntry *raft.Log) interface{} {
 
 		f.logger.Printf("[INFO] FSM.Apply(DeleteItem): Calling kvStore.DeleteItem for table '%s', key '%s', ts %d", payload.TableName, itemKey, timestamp)
 		if err := f.kvStore.DeleteItem(payload.TableName, itemKey, timestamp); err != nil {
+			// DeleteItemがエラーを返した場合は失敗として扱う
+			// (KVStoreの実装ではアイテムが存在しない場合でもnilを返すため、この条件に入ることはないはず)
 			f.logger.Printf("[ERROR] FSM.Apply(DeleteItem): kvStore.DeleteItem failed for table '%s', key '%s': %v", payload.TableName, itemKey, err)
-			// DeleteItemが ErrItemNotFound を返す場合、それは成功とみなすかエラーとするか。
-			// DynamoDBのDeleteItemは、存在しないアイテムを削除しようとしてもエラーにならない (冪等性)。
-			// kv_store.DeleteItem も同様に ErrItemNotFound を返さず、単に何もしない(nilを返す)ように変更するのが良いかもしれない。
-			// 現状のkv_storeはErrItemNotFoundを返すので、FSMではそれをエラーとして扱う。
 			return CommandResponse{Success: false, TableName: payload.TableName, ItemKey: itemKey, Error: fmt.Sprintf("kvStore.DeleteItem failed: %v", err)}
 		}
 
 		f.logger.Printf("[INFO] FSM.Apply(DeleteItem): Successfully deleted item from table '%s', key '%s'", payload.TableName, itemKey)
 		return CommandResponse{Success: true, TableName: payload.TableName, ItemKey: itemKey, Message: "Item deleted successfully"}
+
+	case QueryItemsCommandType:
+		var payload QueryItemsCommandPayload
+		if err := json.Unmarshal(cmd.Payload, &payload); err != nil {
+			f.logger.Printf("[ERROR] FSM.Apply(QueryItems): Failed to unmarshal payload: %v", err)
+			return CommandResponse{Success: false, Error: fmt.Sprintf("failed to unmarshal QueryItems payload: %v", err)}
+		}
+		if _, tableExists := f.tables[payload.TableName]; !tableExists {
+			f.logger.Printf("[ERROR] FSM.Apply(QueryItems): Table '%s' not found.", payload.TableName)
+			return CommandResponse{Success: false, TableName: payload.TableName, Error: fmt.Sprintf("table %s not found", payload.TableName)}
+		}
+		partitionKey := ""
+		sortKeyPrefix := ""
+		if payload.Filter != nil {
+			if pk, ok := payload.Filter["partition_key"].(string); ok {
+				partitionKey = pk
+			}
+			if sk, ok := payload.Filter["sort_key_prefix"].(string); ok {
+				sortKeyPrefix = sk
+			}
+		}
+		items, err := f.kvStore.QueryItems(payload.TableName, partitionKey, sortKeyPrefix)
+		if err != nil {
+			f.logger.Printf("[ERROR] FSM.Apply(QueryItems): kvStore.QueryItems failed for table '%s': %v", payload.TableName, err)
+			return CommandResponse{Success: false, TableName: payload.TableName, Error: fmt.Sprintf("kvStore.QueryItems failed: %v", err)}
+		}
+		return CommandResponse{Success: true, TableName: payload.TableName, Data: items}
 
 	default:
 		f.logger.Printf("[ERROR] FSM.Apply: Unknown command type: %s", cmd.Type)

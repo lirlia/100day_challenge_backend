@@ -14,6 +14,7 @@ const (
 	DeleteTableCommandType CommandType = "DeleteTable"
 	PutItemCommandType     CommandType = "PutItem"
 	DeleteItemCommandType  CommandType = "DeleteItem"
+	QueryItemsCommandType  CommandType = "QueryItems"
 )
 
 // Command はFSMに適用される操作の汎用ラッパーです。
@@ -47,6 +48,12 @@ type DeleteItemCommandPayload struct {
 	PartitionKey string `json:"partition_key"`
 	SortKey      string `json:"sort_key"`  // オプショナル
 	Timestamp    int64  `json:"timestamp"` // LWW用タイムスタンプ (UnixNano)
+}
+
+// QueryItemsCommandPayload はアイテムクエリコマンドのペイロードです。
+type QueryItemsCommandPayload struct {
+	TableName string                 `json:"table_name"`
+	Filter    map[string]interface{} `json:"filter"` // フィルタ条件（省略可）
 }
 
 // EncodeCommand は指定されたコマンドタイプとペイロードからコマンドを生成し、JSONバイト列にエンコードします。

@@ -253,8 +253,8 @@ func (s *KVStore) DeleteItem(tableName string, itemKey string, timestamp int64) 
 		}
 		log.Printf("[DEBUG] [KVStore] [%s] DeleteItem: LWW check PASSED for '%s' (delete_ts: %d >= item_ts: %d)", s.localNodeID, itemKey, timestamp, existingStoredItem.Timestamp)
 	} else {
-		log.Printf("[INFO] [KVStore] [%s] DeleteItem: file '%s' (for itemKey '%s') does NOT exist. Returning ErrItemNotFound.", s.localNodeID, filePath, itemKey)
-		return ErrItemNotFound // 存在しない場合は ErrItemNotFound を返す
+		log.Printf("[INFO] [KVStore] [%s] DeleteItem: file '%s' (for itemKey '%s') does NOT exist. No action needed.", s.localNodeID, filePath, itemKey)
+		return nil // 存在しない場合も成功として扱う（DynamoDBと同様）
 	}
 
 	if err := os.Remove(filePath); err != nil {
@@ -274,10 +274,9 @@ func (s *KVStore) QueryItems(tableName string, partitionKey string, sortKeyPrefi
 
 	if _, err := os.Stat(tableDataPath); os.IsNotExist(err) {
 		log.Printf("[WARN] [KVStore] [%s] QueryItems: table directory '%s' for table '%s' does not exist.", s.localNodeID, tableDataPath, tableName)
-		// テーブルが存在しない場合、空のリストとnilエラーを返す (DynamoDBの挙動に合わせる)
-		// あるいは、FSMで管理されているテーブル情報と矛盾する場合はエラーとすることも検討できる。
-		// ここでは、ディレクトリが存在しない = アイテムなし、として扱う。
-		return []map[string]interface{}{}, nil // 空のスライスを返す
+		// テーブルが存在しない場合はエラーを返す
+		// FSMのテストケースでは、存在しないテーブルに対するクエリはエラーを返すことを期待している
+		return nil, fmt.Errorf("table '%s' does not exist", tableName)
 	}
 
 	dirEntries, err := os.ReadDir(tableDataPath)
