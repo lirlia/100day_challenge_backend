@@ -127,7 +127,7 @@ ITEM_DATA2='{
 
 **テーブル削除**
 ```bash
-./day42_raft_nosql_simulator delete-table --target-addr localhost:8100 --table-name Music
+./day42_raft_nosql_simulator delete-table --target-addr localhost:8100 Music
 ```
 
 **ノードステータス確認**
@@ -170,32 +170,6 @@ ITEM_DATA2='{
     ```
 8.  **テーブル削除**: `Music` テーブルを削除。
     ```bash
-    ./day42_raft_nosql_simulator delete-table --target-addr localhost:8100 --table-name Music
+    ./day42_raft_nosql_simulator delete-table --target-addr localhost:8100 Music
     ```
-9.  **サーバー停止**: ターミナル1で `Ctrl+C` を押してサーバーを停止。
-
-## ディレクトリ構成
-
-```
-.
-├── cmd/
-│   └── cli/            # CLIエントリーポイントとコマンド定義
-│       ├── main.go
-│       ├── root.go
-│       ├── item.go
-│       └── table.go
-├── internal/
-│   ├── client/         # HTTP APIクライアント
-│   ├── raft_node/      # Raftノード管理、Raftロジック
-│   ├── server/         # HTTP APIサーバー
-│   └── store/          # データストア (KVStore)、FSM、コマンド定義
-├── data/                 # (実行時生成) Raftログ、スナップショット、データストア (ノードごと)
-├── logs_e2e_test/        # (テスト時生成) E2Eテストログ
-├── go.mod
-├── go.sum
-├── Makefile
-├── README.md
-├── PROGRESS.md
-├── test_e2e.sh           # E2Eテストスクリプト
-└── day42_raft_nosql_simulator # (ビルド時生成) 実行バイナリ
-```
+9.  **サーバー停止**: ターミナル1で `Ctrl+C`
