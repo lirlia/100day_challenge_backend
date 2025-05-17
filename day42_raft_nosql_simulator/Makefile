@@ -2,7 +2,7 @@ BINARY_NAME=day42_raft_nosql_simulator
 CLI_OUTPUT_DIR=.
 GO_FILES=$(shell find . -name '*.go' -not -path "./vendor/*")
 
-.PHONY: all build clean test run-e2e run-e2e-verbose server cli help
+.PHONY: all build clean test run-e2e run-e2e-verbose server cli help run-consistency-test
 
 all: build
 
@@ -46,6 +46,11 @@ run-e2e-verbose:
 	@bash -x ./test_e2e.sh
 	@echo "E2E tests completed."
 
+# 結果整合性テストの実行 (test_eventual_consistency.sh を利用)
+run-consistency-test:
+	@echo "Running Eventual Consistency tests..."
+	@./test_eventual_consistency.sh
+	@echo "Eventual Consistency tests completed."
 
 # フォーマットとLinter
 fmt: ## フォーマットを実行 (go fmt)
