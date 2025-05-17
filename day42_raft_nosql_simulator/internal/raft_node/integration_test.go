@@ -184,7 +184,7 @@ func TestIntegration_ItemOperations(t *testing.T) {
 	time.Sleep(integrationTestWaitDelay)
 
 	item1PKVal := "item001"
-	item1SKVal := "2024-07-26T10:00:00Z"
+	item1SKVal := "2024-07-26T10-00-00Z"
 	item1Data := map[string]interface{}{pkName: item1PKVal, skName: item1SKVal, "value": "data1"}
 	item1Key := item1PKVal + "_" + item1SKVal
 
@@ -206,7 +206,7 @@ func TestIntegration_ItemOperations(t *testing.T) {
 	})
 
 	item2PKVal := "item001"              // 同じPK
-	item2SKVal := "2024-07-26T11:00:00Z" // 異なるSK
+	item2SKVal := "2024-07-26T11-00-00Z" // 異なるSK
 	item2Data := map[string]interface{}{pkName: item2PKVal, skName: item2SKVal, "value": "data2"}
 	item2Key := item2PKVal + "_" + item2SKVal
 

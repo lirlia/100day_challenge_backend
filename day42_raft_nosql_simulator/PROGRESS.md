@@ -12,8 +12,8 @@
 - [x] 複数Raftノード (3ノード想定) をTCPトランスポートでクラスタを形成する処理の実装 (完了)
 - [x] リーダー選出の確認 (ログ出力などで) (完了)
 - [x] テスト作成: クラスタ起動、リーダー選出、シャットダウン (`internal/raft_node/node_test.go`) (完了)
-- [ ] テスト実施 (`go test ./internal/raft_node/...`) と確認
-- [ ] コミット: `day42: step 1/7 Raft cluster foundation setup and initial tests`
+- [x] テスト実施 (`go test ./internal/raft_node/...`) と確認
+- [x] コミット: `day42: step 1/7 Raft cluster foundation setup and initial tests`
 
 ## フェーズ2: データストアとFSM (Finite State Machine)
 - [X] **FSM実装 (`internal/store/fsm.go`)**
