@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Day 43 - Go Type Inference</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>MiniLang 型推論</h1>
+        <form action="/" method="post">
+            <label for="code">コード入力:</label>
+            <textarea id="code" name="code" rows="10" placeholder="例: let x = 10 in x + 5">{{ .Code }}</textarea>
+            <button type="submit">型を推論</button>
+        </form>
+        {{if .Result}}
+        <div class="result">
+            <h2>推論結果:</h2>
+            <pre>{{ .Result }}</pre>
+        </div>
+        {{end}}
+    </div>
+    <footer>
+        <p>&copy; <span id="year"></span> lirlia. All rights reserved.</p>
+    </footer>
+    <script>
+        document.getElementById('year').textContent = new Date().getFullYear();
+    </script>
+</body>
+</html>
