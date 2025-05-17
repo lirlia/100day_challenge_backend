@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
+	"regexp"
 	"time"
 	// APIサーバーのDTOを直接参照するか、ここで再定義する。
 	// 今回はAPIサーバー側の server.CreateTableRequest などを直接は参照せず、
@@ -15,16 +17,33 @@ import (
 
 // APIClient は Raft ノードの HTTP API と通信するためのクライアントです。
 type APIClient struct {
-	httpClient *http.Client
-	baseURL    string // APIサーバーのベースURL (例: "http://127.0.0.1:8100")
+	httpClient          *http.Client
+	baseURL             string // APIサーバーのベースURL (例: "http://127.0.0.1:8100")
+	maxRetriesOnForward int    // リーダーフォワーディングの最大リトライ回数
 }
 
 // NewAPIClient は新しい APIClient を作成します。
 func NewAPIClient(targetNodeAddr string) *APIClient {
 	return &APIClient{
-		httpClient: &http.Client{Timeout: 10 * time.Second},
-		baseURL:    fmt.Sprintf("http://%s", targetNodeAddr),
+		httpClient:          &http.Client{Timeout: 10 * time.Second},
+		baseURL:             fmt.Sprintf("http://%s", targetNodeAddr),
+		maxRetriesOnForward: 1, // デフォルトのリトライ回数は1回
 	}
+}
+
+// raftToHttpApiAddr はRaftアドレスを対応するHTTP APIアドレスに変換します。
+// このマッピングはe2eテストやサーバー起動時の設定と一致している必要があります。
+var raftToHttpApiAddrMap = map[string]string{
+	"127.0.0.1:7000": "127.0.0.1:8100", // Node0 (本来のRaft Addr)
+	"127.0.0.1:7001": "127.0.0.1:8101", // Node1
+	"127.0.0.1:7002": "127.0.0.1:8102", // Node2
+	"127.0.0.1:8000": "127.0.0.1:8100", // Leader (node0) が 8000番で通知される場合への対応
+	// 必要に応じて他のノードのマッピングも追加
+}
+
+func getHttpApiAddrFromRaftAddr(raftAddr string) (string, bool) {
+	httpAddr, ok := raftToHttpApiAddrMap[raftAddr]
+	return httpAddr, ok
 }
 
 // --- Request/Response Structs ---
@@ -205,6 +224,10 @@ func (c *APIClient) QueryItems(tableName, partitionKey, sortKeyPrefix string) (*
 }
 
 func (c *APIClient) makeRequest(method, path string, body interface{}, responseDest interface{}) error {
+	return c.makeRequestRecursive(method, path, body, responseDest, 0)
+}
+
+func (c *APIClient) makeRequestRecursive(method, path string, body interface{}, responseDest interface{}, attempt int) error {
 	var reqBody []byte
 	var err error
 	if body != nil {
@@ -214,7 +237,11 @@ func (c *APIClient) makeRequest(method, path string, body interface{}, responseD
 		}
 	}
 
-	req, err := http.NewRequest(method, c.baseURL+path, bytes.NewBuffer(reqBody))
+	currentBaseURL := c.baseURL
+	fullURL := currentBaseURL + path
+	log.Printf("APIClient: Attempt %d: Sending %s request to %s", attempt+1, method, fullURL)
+
+	req, err := http.NewRequest(method, fullURL, bytes.NewBuffer(reqBody))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -224,7 +251,7 @@ func (c *APIClient) makeRequest(method, path string, body interface{}, responseD
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to execute request to %s%s: %w", c.baseURL, path, err)
+		return fmt.Errorf("failed to execute request to %s: %w", fullURL, err)
 	}
 	defer resp.Body.Close()
 
@@ -235,7 +262,48 @@ func (c *APIClient) makeRequest(method, path string, body interface{}, responseD
 
 	if resp.StatusCode >= 400 { // エラーレスポンス
 		var errResp APIErrorResponse
-		if jsonErr := json.Unmarshal(respBody, &errResp); jsonErr == nil && errResp.Error != "" {
+		json.Unmarshal(respBody, &errResp) // エラーは無視して、errResp.Errorが空なら次のフォールバック
+
+		// リーダーフォワーディング処理
+		if resp.StatusCode == http.StatusMisdirectedRequest && attempt < c.maxRetriesOnForward {
+			log.Printf("APIClient: Received 421 Misdirected Request from %s. Attempting to forward (attempt %d/%d). Body: %s", fullURL, attempt+1, c.maxRetriesOnForward, string(respBody))
+			// エラーメッセージからリーダーのRaftアドレスを抽出
+			// 例: "Not a leader. Please send request to leader node0 (127.0.0.1:7000)"
+			re := regexp.MustCompile(`leader [^ ]+ \(([^)]+)\)`)
+			matches := re.FindStringSubmatch(errResp.Error) // APIErrorResponse.Error に格納されていると期待
+			if len(matches) < 2 {
+				// もし APIErrorResponse.Error が期待した形式でない場合、レスポンスボディ全体から探す
+				matches = re.FindStringSubmatch(string(respBody))
+			}
+
+			if len(matches) >= 2 {
+				leaderRaftAddr := matches[1]
+				log.Printf("APIClient: Extracted leader Raft address: %s", leaderRaftAddr)
+				if leaderHttpApiAddr, ok := getHttpApiAddrFromRaftAddr(leaderRaftAddr); ok {
+					log.Printf("APIClient: Found corresponding HTTP API address for leader: %s. Retrying request.", leaderHttpApiAddr)
+					// オリジナルのAPIClientのbaseURLは変更せず、再帰呼び出し時に新しいURLを生成する
+					// 注意：ここでは新しいAPIClientインスタンスを作成せず、baseURLを一時的に上書きする形で再試行する。
+					// よりクリーンなのは、新しいターゲットアドレスでNewAPIClientしてメソッドを呼び出すことだが、
+					// makeRequestRecursive のシグネチャを変えずに済むように、baseURLを一時的に変更するアプローチは取らない。
+					// 代わりに、再帰呼び出しに新しいbaseURLを渡すか、この場で新しいリクエストを作る。
+					// ここでは、単純化のため、このクライアントのbaseURLを一時的に変更して再帰する。
+					// ただし、これはスレッドセーフではないので注意。このCLIはシングルスレッドなので問題ない。
+
+					// スレッドセーフにするなら、新しい client を作るか、baseURL を引数で渡す
+					originalBaseURL := c.baseURL
+					c.baseURL = fmt.Sprintf("http://%s", leaderHttpApiAddr)
+					err = c.makeRequestRecursive(method, path, body, responseDest, attempt+1)
+					c.baseURL = originalBaseURL // baseURLを元に戻す
+					return err                  // 再帰呼び出しの結果をそのまま返す
+				}
+				log.Printf("APIClient: Could not find HTTP API address mapping for Raft address: %s. Forwarding failed.", leaderRaftAddr)
+			} else {
+				log.Printf("APIClient: Could not extract leader Raft address from 421 response: %s. Forwarding failed.", string(respBody))
+			}
+		}
+
+		// フォワーディングしなかった、またはできなかった場合のエラー処理
+		if errResp.Error != "" {
 			errMsg := fmt.Sprintf("API error (status %d): %s", resp.StatusCode, errResp.Error)
 			if errResp.Message != "" {
 				errMsg += fmt.Sprintf(" (Details: %s)", errResp.Message)

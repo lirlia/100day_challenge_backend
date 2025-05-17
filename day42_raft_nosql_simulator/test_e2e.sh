@@ -244,21 +244,29 @@ main() {
   fi
   echo "Query PK='$ITEM1_PK', SKPrefix='Don\'t' returned 1 item as expected."
 
-  # 9. フォロワーへの書き込み試行 (アイテム登録) - 失敗するはず
-  echo_section "Test 9: Attempt Put Item on follower ($FOLLOWER_ADDR) - Should Fail"
-  FAIL_ITEM_DATA_JSON_CONTENT="\"$PARTITION_KEY\":\"FailPK\",\"$SORT_KEY\":\"FailSK\",\"data\":\"dummy\""
+  # 9. フォロワーへの書き込み試行 (アイテム登録) - フォワーディングされて成功するはず
+  echo_section "Test 9: Attempt Put Item on follower ($FOLLOWER_ADDR) - Should be forwarded and succeed"
+  FAIL_PK="ForwardTestPK"
+  FAIL_SK="ForwardTestSK"
+  FAIL_ITEM_DATA_JSON_CONTENT="\"$PARTITION_KEY\":\"$FAIL_PK\",\"$SORT_KEY\":\"$FAIL_SK\",\"data\":\"forwarded_item\""
   FAIL_DATA_FOR_CLI="{${FAIL_ITEM_DATA_JSON_CONTENT}}"
-  OUTPUT_PUT_FOLLOWER_ERR=$($CLI_BIN put-item --target-addr "$FOLLOWER_ADDR" --table-name "$TEST_TABLE" --item-data "$FAIL_DATA_FOR_CLI" 2>&1)
-  # このコマンドは失敗を期待するので、check_command_success は使わない
-  if echo "$OUTPUT_PUT_FOLLOWER_ERR" | grep -qE "(421 Misdirected Request|not the leader|Not a leader|Failed to forward request|no leader|Unable to apply command: not the leader)"; then
-    echo -e "${GREEN_COLOR}SUCCESS: Put item on follower failed with expected message.${RESET_COLOR}"
-    echo "$OUTPUT_PUT_FOLLOWER_ERR"
-  else
-    echo -e "${RED_COLOR}FAILURE: Put item on follower did NOT fail with expected message (421 or 'not the leader' variants).${RESET_COLOR}"
-    echo "$OUTPUT_PUT_FOLLOWER_ERR"
-    handle_error "Put item on follower failure message mismatch"
-    exit 1
-  fi
+  OUTPUT_PUT_FOLLOWER=$($CLI_BIN put-item --target-addr "$FOLLOWER_ADDR" --table-name "$TEST_TABLE" --item-data "$FAIL_DATA_FOR_CLI" 2>&1)
+  check_command_success "Put item on follower (forwarding check)"
+  check_grep_success "Put item on follower response (forwarding check)" "PutItem API call successful" "$OUTPUT_PUT_FOLLOWER"
+
+  # 9.1 リーダーからフォワーディングされたアイテムを取得できるか確認
+  echo "Test 9.1: Get forwarded item from leader ($LEADER_ADDR)"
+  OUTPUT_GET_FORWARDED_ITEM=$($CLI_BIN get-item --target-addr "$LEADER_ADDR" --table-name "$TEST_TABLE" --partition-key "$FAIL_PK" --sort-key "$FAIL_SK" 2>&1)
+  check_command_success "Get forwarded item from leader"
+  check_grep_success "Get forwarded item PK" "\"Artist\":\"$FAIL_PK\"" "$OUTPUT_GET_FORWARDED_ITEM"
+  check_grep_success "Get forwarded item SK" "\"SongTitle\":\"$FAIL_SK\"" "$OUTPUT_GET_FORWARDED_ITEM"
+  check_grep_success "Get forwarded item data" "\"data\":\"forwarded_item\"" "$OUTPUT_GET_FORWARDED_ITEM"
+
+  # 9.2 フォワーディングされたアイテムを削除 (クリーンアップ)
+  echo "Test 9.2: Delete forwarded item from leader ($LEADER_ADDR)"
+  OUTPUT_DELETE_FORWARDED_ITEM=$($CLI_BIN delete-item --target-addr "$LEADER_ADDR" --table-name "$TEST_TABLE" --partition-key "$FAIL_PK" --sort-key "$FAIL_SK" 2>&1)
+  check_command_success "Delete forwarded item"
+  check_grep_success "Delete forwarded item response" "DeleteItem API call successful" "$OUTPUT_DELETE_FORWARDED_ITEM"
 
   # 10. アイテム削除 (Item2)
   echo_section "Test 10: Delete Item 2 ('$ITEM2_PK'/'$ITEM2_SK') from '$TEST_TABLE'"

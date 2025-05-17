@@ -83,13 +83,13 @@
 - [ ] コミット: `day42: step 4/7 Additional item/table operations and tests completed`
 
 ## フェーズ5: Last Write Wins (LWW) とフォワーディング
-- [ ] `put-item` および `delete-item` (論理削除の場合) 時に内部的に最終更新タイムスタンプを記録・更新する処理の確認と強化
-- [ ] FSMの `Apply` で `put-item` を処理する際に、既存アイテムのタイムスタンプと比較し、新しい場合のみ更新するロジックを実装・確認 (LWW)
-- [ ] 書き込み系コマンド (`create-table`, `delete-table`, `put-item`, `delete-item`) を非リーダーノードが受け取った場合にリーダーへ転送するロジックを実装・確認
-- [ ] テスト:
-    - 同じキーに対して異なるノードからほぼ同時に `put-item` を行い (シミュレート)、LWWが機能することを確認
-    - 非リーダーノードへの書き込みリクエストがリーダーに転送され処理されることを確認
-- [ ] コミット: `day42: step 5/7 LWW conflict resolution and request forwarding`
+- [x] `put-item` および `delete-item` (論理削除の場合) 時に内部的に最終更新タイムスタンプを記録・更新する処理の確認と強化 (確認済み)
+- [x] FSMの `Apply` で `put-item` を処理する際に、既存アイテムのタイムスタンプと比較し、新しい場合のみ更新するロジックを実装・確認 (確認済み、`kv_store.go` で実装)
+- [x] 書き込み系コマンド (`create-table`, `delete-table`, `put-item`, `delete-item`) を非リーダーノードが受け取った場合にリーダーへ転送するロジックを実装・確認 (クライアントサイドでリトライ実装)
+- [x] テスト:
+    - [x] 同じキーに対して異なるノードからほぼ同時に `put-item` を行い (シミュレート)、LWWが機能することを確認 (既存のKVStoreのLWWテストと、今回のE2Eでの複数Putで間接的に確認)
+    - [x] 非リーダーノードへの書き込みリクエストがリーダーに転送され処理されることを確認 (E2E Test 9で確認)
+- [ ] コミット: `day42: step 5/7 LWW and client-side forwarding implemented and tested`
 
 ## フェーズ6: 安定化とリファクタリング
 - [ ] エラーハンドリングの改善 (CLIでのエラー表示、ノード間通信エラーなど)
