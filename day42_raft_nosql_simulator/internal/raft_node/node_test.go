@@ -45,6 +45,7 @@ func TestClusterLeaderElectionAndShutdown(t *testing.T) {
 		nodeID := raft.ServerID(nodeIDStr)
 		addr := fmt.Sprintf("127.0.0.1:%d", testBasePort+i)
 		raftAddr := raft.ServerAddress(addr)
+		httpAddr := fmt.Sprintf("127.0.0.1:%d", testBasePort+i+100) // HTTP APIポートをずらす
 		nodeDataDir := filepath.Join(testDataDirRoot, nodeIDStr)
 
 		transport, err := raft.NewTCPTransport(string(raftAddr), nil, 3, testRaftTimeout, ioutil.Discard) // ログ出力を抑制
@@ -54,6 +55,7 @@ func TestClusterLeaderElectionAndShutdown(t *testing.T) {
 		cfg := raft_node.Config{
 			NodeID:           nodeID,
 			Addr:             raftAddr,
+			HttpApiAddr:      httpAddr, // HttpApiAddr を設定
 			DataDir:          nodeDataDir,
 			BootstrapCluster: i == 0, // 最初のノードのみクラスタをブートストラップ
 		}

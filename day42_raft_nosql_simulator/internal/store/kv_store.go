@@ -2,6 +2,7 @@ package store
 
 import (
 	"encoding/json"
+	"errors" // errors パッケージをインポート
 	"fmt"
 	"log"
 	"net/url" // net/url をインポート
@@ -9,6 +10,9 @@ import (
 	"path/filepath"
 	"strings"
 )
+
+// ErrItemNotFound はアイテムが見つからない場合に返されるエラーです。
+var ErrItemNotFound = errors.New("item not found")
 
 // KVStore はローカルファイルシステム上でキーバリューストアを管理します。
 // 各テーブルはベースディレクトリ内のサブディレクトリとして表現されます。
@@ -192,7 +196,7 @@ func (s *KVStore) GetItem(tableName string, itemKey string) (json.RawMessage, in
 	fileInfo, statErr := os.Stat(filePath)
 	if os.IsNotExist(statErr) {
 		log.Printf("[WARN] [KVStore] [%s] GetItem: file '%s' (for itemKey(raw) '%s') NOT FOUND. os.Stat error: %v", s.localNodeID, filePath, itemKey, statErr)
-		return nil, 0, fmt.Errorf("item %s not found in table %s", itemKey, tableName)
+		return nil, 0, ErrItemNotFound // ErrItemNotFound を返す
 	}
 	if statErr != nil {
 		log.Printf("[ERROR] [KVStore] [%s] GetItem: os.Stat for file '%s' (itemKey(raw) '%s') FAILED: %v", s.localNodeID, filePath, itemKey, statErr)
@@ -249,8 +253,8 @@ func (s *KVStore) DeleteItem(tableName string, itemKey string, timestamp int64) 
 		}
 		log.Printf("[DEBUG] [KVStore] [%s] DeleteItem: LWW check PASSED for '%s' (delete_ts: %d >= item_ts: %d)", s.localNodeID, itemKey, timestamp, existingStoredItem.Timestamp)
 	} else {
-		log.Printf("[INFO] [KVStore] [%s] DeleteItem: file '%s' (for itemKey '%s') does NOT exist. Nothing to delete.", s.localNodeID, filePath, itemKey)
-		return nil // 存在しない場合はエラーとしない (冪等性のため)
+		log.Printf("[INFO] [KVStore] [%s] DeleteItem: file '%s' (for itemKey '%s') does NOT exist. Returning ErrItemNotFound.", s.localNodeID, filePath, itemKey)
+		return ErrItemNotFound // 存在しない場合は ErrItemNotFound を返す
 	}
 
 	if err := os.Remove(filePath); err != nil {

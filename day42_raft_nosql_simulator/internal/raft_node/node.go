@@ -101,7 +101,7 @@ func NewNode(cfg Config, transport raft.Transport) (*Node, error) {
 	}
 
 	// FSMの初期化。KVStoreを渡す。
-	fsm := store.NewFSM(kvStore, string(cfg.NodeID)) // dataDir引数を削除
+	fsm := store.NewFSM(kvStore, cfg.NodeID, log.Default())
 
 	// Raftログストアと安定ストアの設定 (BoltDBを使用)
 	// 1つのBoltDBファイルでログストアと安定ストアを兼ねる

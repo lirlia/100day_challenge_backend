@@ -105,5 +105,3 @@
 - [x] 簡単な動作デモシナリオを `README.md` に記載
 - [x] `.cursor/rules/knowledge.mdc` の更新
 - [x] コミット: `day42: step 7/7 Documentation and finalization`
-
-## フェーズ 2: テーブル管理とキーバリュー操作のためのFSMロジック実装

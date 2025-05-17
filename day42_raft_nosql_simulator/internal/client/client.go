@@ -3,11 +3,13 @@ package client
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"regexp"
+	"strings"
 	"time"
 	// APIサーバーのDTOを直接参照するか、ここで再定義する。
 	// 今回はAPIサーバー側の server.CreateTableRequest などを直接は参照せず、
@@ -20,6 +22,7 @@ type APIClient struct {
 	httpClient          *http.Client
 	baseURL             string // APIサーバーのベースURL (例: "http://127.0.0.1:8100")
 	maxRetriesOnForward int    // リーダーフォワーディングの最大リトライ回数
+	targetAddr          string // Added for DeleteTable method
 }
 
 // NewAPIClient は新しい APIClient を作成します。
@@ -28,6 +31,7 @@ func NewAPIClient(targetNodeAddr string) *APIClient {
 		httpClient:          &http.Client{Timeout: 10 * time.Second},
 		baseURL:             fmt.Sprintf("http://%s", targetNodeAddr),
 		maxRetriesOnForward: 1, // デフォルトのリトライ回数は1回
+		targetAddr:          targetNodeAddr,
 	}
 }
 
@@ -82,26 +86,47 @@ type QueryItemsRequest struct {
 	SortKeyPrefix string `json:"sort_key_prefix,omitempty"`
 }
 
-// DeleteTableRequest はテーブル削除APIへのリクエストボディです。
+// DeleteTableRequest defines the payload for a delete table request.
+// The actual API might just take the table name in the URL path.
 type DeleteTableRequest struct {
 	TableName string `json:"table_name"`
 }
 
+/*
+// GenericResponse is a generic structure for API responses that might be success or failure.
+// It's less type-safe than specific success/error responses.
+type GenericResponse struct {
+	Success     bool        `json:"success"`
+	Message     string      `json:"message,omitempty"`
+	Error       string      `json:"error,omitempty"`
+	Data        interface{} `json:"data,omitempty"`
+	TableName   string      `json:"table_name,omitempty"`
+	ItemKey     string      `json:"item_key,omitempty"`
+	Version     int64       `json:"version,omitempty"`
+	Item        json.RawMessage `json:"item,omitempty"`
+	Items       []map[string]interface{} `json:"items,omitempty"`
+	FSMResponse interface{} `json:"fsm_response,omitempty"`
+}
+*/
+
 // APISuccessResponse は成功時のAPIレスポンスの基本形です。
 // FSMからの具体的なレスポンスは FSMResponse に格納されます。
 type APISuccessResponse struct {
-	Message     string      `json:"message"`
-	FSMResponse interface{} `json:"fsm_response,omitempty"` // Raft FSMからの結果 (コマンド依存)
-	// GetItem や QueryItems のためのフィールド
-	Item    json.RawMessage          `json:"item,omitempty"`    // GetItem で返される単一アイテム
-	Items   []map[string]interface{} `json:"items,omitempty"`   // QueryItemsで返される複数アイテム
-	Version int64                    `json:"version,omitempty"` // GetItemでアイテムのバージョンを返す場合
+	Message     string                   `json:"message"`
+	TableName   string                   `json:"table_name,omitempty"`
+	ItemKey     string                   `json:"item_key,omitempty"`     // For PutItem, GetItem, DeleteItem
+	Version     int64                    `json:"version,omitempty"`      // For GetItem (could also be for PutItem if versions are returned)
+	Item        json.RawMessage          `json:"item,omitempty"`         // For GetItem
+	Items       []map[string]interface{} `json:"items,omitempty"`        // For QueryItems
+	FSMResponse interface{}              `json:"fsm_response,omitempty"` // Raw FSM response, if any
+	Tables      []string                 `json:"tables,omitempty"`       // For ListTables
 }
 
 // APIErrorResponse はエラー時のAPIレスポンスです。
 type APIErrorResponse struct {
-	Error   string `json:"error"`
-	Message string `json:"message,omitempty"` // より詳細なユーザー向けメッセージ
+	Error       string `json:"error"`
+	Message     string `json:"message,omitempty"` // より詳細なユーザー向けメッセージ
+	HttpApiAddr string `json:"http_api_addr"`
 }
 
 // --- Client Methods ---
@@ -151,17 +176,57 @@ func (c *APIClient) CreateTable(tableName, partitionKeyName, sortKeyName string)
 	return &apiResp, nil
 }
 
-// DeleteTable は指定されたテーブルを削除するようRaftノードにリクエストします。
+// DeleteTable sends a request to delete a table.
 func (c *APIClient) DeleteTable(tableName string) (*APISuccessResponse, error) {
-	reqBody := DeleteTableRequest{
-		TableName: tableName,
+	if tableName == "" {
+		return nil, errors.New("table name cannot be empty for DeleteTable")
 	}
-	var apiResp APISuccessResponse
-	err := c.makeRequest(http.MethodPost, "/delete-table", reqBody, &apiResp)
+
+	// Ensure targetAddr includes the scheme (http://)
+	finalTargetAddr := c.targetAddr
+	if !strings.HasPrefix(finalTargetAddr, "http://") && !strings.HasPrefix(finalTargetAddr, "https://") {
+		finalTargetAddr = "http://" + finalTargetAddr
+	}
+	reqURL := fmt.Sprintf("%s/tables/%s", finalTargetAddr, tableName)
+	log.Printf("[CLI] DeleteTable: Requesting DELETE %s", reqURL)
+
+	httpReq, err := http.NewRequest("DELETE", reqURL, nil)
 	if err != nil {
-		return nil, err
+		log.Printf("[CLI] DeleteTable: Failed to create HTTP request: %v", err)
+		return nil, fmt.Errorf("failed to create DeleteTable request: %w", err)
 	}
-	return &apiResp, nil
+
+	// Use c.httpClient if it's already initialized and configured (e.g., in NewAPIClient).
+	httpClientToUse := c.httpClient
+	if httpClientToUse == nil {
+		httpClientToUse = &http.Client{Timeout: 10 * time.Second} // Fallback if not initialized
+	}
+
+	httpResp, err := httpClientToUse.Do(httpReq)
+	if err != nil {
+		log.Printf("[CLI] DeleteTable: Failed to execute request: %v", err)
+		return nil, fmt.Errorf("failed to execute DeleteTable request: %w", err)
+	}
+	defer httpResp.Body.Close()
+
+	log.Printf("[CLI] DeleteTable: Response Status: %s", httpResp.Status)
+
+	if httpResp.StatusCode != http.StatusOK {
+		// Use the existing handleErrorResponse method
+		return nil, c.handleErrorResponse(httpResp)
+	}
+
+	body, err := io.ReadAll(httpResp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read DeleteTable response body (status %d): %v", httpResp.StatusCode, err)
+	}
+
+	var successResp APISuccessResponse
+	if err := json.Unmarshal(body, &successResp); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal DeleteTable success response (status %d, body: %s): %v", httpResp.StatusCode, string(body), err)
+	}
+
+	return &successResp, nil
 }
 
 // PutItem は指定されたテーブルにアイテムを登録/更新するようRaftノードにリクエストします。
@@ -313,4 +378,22 @@ func (c *APIClient) makeRequestRecursive(method, path string, body interface{}, 
 		}
 	}
 	return nil
+}
+
+func (c *APIClient) handleErrorResponse(resp *http.Response) error {
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read error response body: %w", err)
+	}
+
+	var errResp APIErrorResponse
+	if unmarshalErr := json.Unmarshal(body, &errResp); unmarshalErr != nil {
+		return fmt.Errorf("failed to parse error response: %w", unmarshalErr)
+	}
+
+	errMsg := fmt.Sprintf("API error (status %d): %s", resp.StatusCode, errResp.Error)
+	if errResp.Message != "" {
+		errMsg += fmt.Sprintf(" (Details: %s)", errResp.Message)
+	}
+	return fmt.Errorf(errMsg)
 }

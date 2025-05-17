@@ -47,6 +47,7 @@ func setupIntegrationTestCluster(t *testing.T) ([]*raft_node.Node, []raft.Transp
 		cfg := raft_node.Config{
 			NodeID:           nodeID,
 			Addr:             raftAddr,
+			HttpApiAddr:      fmt.Sprintf("127.0.0.1:%d", integrationTestBasePort+i+100), // Add offset for HTTP API port
 			DataDir:          nodeDataDir,
 			BootstrapCluster: i == 0, // 最初のノードのみクラスタをブートストラップ
 		}

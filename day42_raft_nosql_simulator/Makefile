@@ -16,7 +16,7 @@ build: fmt vet
 # DATA_DIR を指定可能にする (デフォルトは ./data)
 server: build
 	@echo "Starting Raft NoSQL server cluster..."
-	@DATA_DIR=${DATA_DIR:-data} $(CLI_OUTPUT_DIR)/$(BINARY_NAME) server --data-dir-root $(DATA_DIR)
+	@$(CLI_OUTPUT_DIR)/$(BINARY_NAME) server --data-dir-root $${DATA_DIR:-data}
 
 # CLIコマンドの実行 (例: テーブル作成)
 # TARGET_ADDR と TABLE_NAME を指定可能にする
