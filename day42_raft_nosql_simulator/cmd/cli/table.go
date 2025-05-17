@@ -52,12 +52,44 @@ var createTableCmd = &cobra.Command{
 	},
 }
 
+var tableNameDeleteTable string
+
+var deleteTableCmd = &cobra.Command{
+	Use:   "delete-table",
+	Short: "Deletes a table",
+	Long:  `Deletes the specified table and all its items from the distributed key-value store.`,
+	Args:  cobra.NoArgs,
+	Run: func(cmd *cobra.Command, args []string) {
+		if tableNameDeleteTable == "" {
+			log.Fatalf("Error: table-name is required for delete-table")
+		}
+
+		if targetNodeAddr == "" {
+			log.Fatalf("Error: --target-addr is required")
+		}
+		apiClient := client.NewAPIClient(targetNodeAddr)
+
+		log.Printf("Sending DeleteTable request to %s for table '%s'...", targetNodeAddr, tableNameDeleteTable)
+		resp, err := apiClient.DeleteTable(tableNameDeleteTable)
+		if err != nil {
+			log.Fatalf("DeleteTable API call failed: %v", err)
+		}
+		fmt.Printf("DeleteTable API call successful. Message: %s\n", resp.Message)
+		if resp.FSMResponse != nil {
+			fmt.Printf("FSM Response: %v\n", resp.FSMResponse)
+		}
+	},
+}
+
 func init() {
 	// create-table コマンドのフラグ設定
 	createTableCmd.Flags().StringVarP(&tableNameCreate, "table-name", "t", "", "Name of the table to create (required)")
 	createTableCmd.Flags().StringVarP(&partitionKeyNameCreate, "partition-key", "p", "", "Name of the partition key (required)")
 	createTableCmd.Flags().StringVarP(&sortKeyNameCreate, "sort-key", "s", "", "Name of the sort key (optional)")
 	// createTableCmd.Flags().StringVarP(&targetNodeAddr, "target-addr", "a", "", "Address of the Raft node (required)") // root.go で定義済みのため削除
+
+	// DeleteTable flags
+	deleteTableCmd.Flags().StringVarP(&tableNameDeleteTable, "table-name", "t", "", "Name of the table to delete (required)")
 
 	// ルートコマンドにtableコマンドを追加する (tableCmd があればそれに追加)
 	// 通常はroot.goのinit()で tableCmd を rootCmd.AddCommand(tableCmd) のように追加し、
@@ -66,4 +98,5 @@ func init() {
 	// tableCmd.AddCommand(createTableCmd)
 	// rootCmd.AddCommand(tableCmd)
 	rootCmd.AddCommand(createTableCmd) // root.go で定義された rootCmd に追加
+	rootCmd.AddCommand(deleteTableCmd)
 }
