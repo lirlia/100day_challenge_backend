@@ -124,3 +124,14 @@ func NewDeleteItemCommandPayload(tableName, partitionKey, sortKey string) *Delet
 		Timestamp:    time.Now().UnixNano(),
 	}
 }
+
+// CommandResponse はFSMのApplyメソッドからの標準的なレスポンスです。
+// Raftのログ適用結果としてクライアントに返されることを想定しています。
+type CommandResponse struct {
+	Success   bool        `json:"success"`
+	Message   string      `json:"message,omitempty"`
+	Data      interface{} `json:"data,omitempty"`       // GetItemやQueryItemsなどの結果用
+	Error     string      `json:"error,omitempty"`      // エラー時の詳細
+	TableName string      `json:"table_name,omitempty"` // 操作対象のテーブル名
+	ItemKey   string      `json:"item_key,omitempty"`   // 操作対象のアイテムキー (PK or PK_SK)
+}

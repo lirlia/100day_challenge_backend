@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"day42_raft_nosql_simulator_local_test/internal/server"
-	"day42_raft_nosql_simulator_local_test/internal/store"
+	"github.com/lirlia/100day_challenge_backend/day42_raft_nosql_simulator/internal/server"
+	"github.com/lirlia/100day_challenge_backend/day42_raft_nosql_simulator/internal/store"
 
 	raftboltdb "github.com/hashicorp/raft-boltdb"
 

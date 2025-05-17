@@ -4,8 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"  // エラーログ用
-	"sync" // テーブルメタデータアクセスのためのロック
+	"log"
 
 	"github.com/hashicorp/raft"
 )
@@ -17,186 +16,169 @@ type TableMetadata struct {
 	SortKeyName      string `json:"sort_key_name,omitempty"` // オプショナル
 }
 
-// FSM は Raft のステートマシンです。
-// テーブルのメタデータと、KVStoreへの参照を保持します。
+// FSM はRaftのログエントリを適用し、状態を更新するステートマシンです。
+// KVStoreへの操作をラップします。
 type FSM struct {
-	mu          sync.RWMutex
-	tables      map[string]TableMetadata // テーブル名 -> メタデータ
-	kvStore     *KVStore                 // データディレクトリ操作用
-	dataDir     string                   // KVStoreの初期化に必要
-	localNodeID string                   // デバッグログ用
+	kvStore     *KVStore
+	localNodeID string // デバッグログ用
+	// テーブル定義などを保持するならここに追加
+	tables map[string]TableMetadata // テーブル名とメタデータのマップ
 }
 
-// NewFSM は新しい FSM インスタンスを作成します。
+// NewFSM は新しいFSMインスタンスを作成します。
 // dataDir はKVStoreが使用するデータストレージのベースパスです。
-func NewFSM(dataDir string, kvStore *KVStore, localNodeID string) *FSM {
+func NewFSM(kvStore *KVStore, localNodeID string) *FSM {
+	log.Printf("[INFO] [FSM] [%s] NewFSM: Initializing FSM", localNodeID)
 	return &FSM{
-		tables:      make(map[string]TableMetadata),
 		kvStore:     kvStore,
-		dataDir:     dataDir,
 		localNodeID: localNodeID,
+		tables:      make(map[string]TableMetadata),
 	}
 }
 
-// Apply は Raft ログエントリをステートマシンに適用します。
+// Apply はRaftからログエントリを受け取り、ステートマシンに適用します。
+// このメソッドはRaftによって呼び出され、返り値はアプリケーションのクライアントに返されます。
 func (f *FSM) Apply(logEntry *raft.Log) interface{} {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
-	var cmd Command
-	if err := json.Unmarshal(logEntry.Data, &cmd); err != nil {
-		log.Printf("[%s] FSM.Apply failed to unmarshal command: %v, data: %s", f.localNodeID, err, string(logEntry.Data))
-		// エラーを返すとRaftがおかしくなる可能性があるため、ここではnilを返すか、パニックする。
-		// 今回はログ出力に留める。
-		return fmt.Errorf("failed to unmarshal command: %w", err)
+	cmd := &Command{}
+	if err := json.Unmarshal(logEntry.Data, cmd); err != nil {
+		log.Printf("[ERROR] [FSM] [%s] Apply: Failed to unmarshal Raft log data: %v. LogData: %s", f.localNodeID, err, string(logEntry.Data))
+		return CommandResponse{Success: false, Error: fmt.Sprintf("failed to unmarshal command: %v", err)}
 	}
-
-	log.Printf("[%s] FSM.Apply received command: Type=%s", f.localNodeID, cmd.Type)
+	log.Printf("[DEBUG] [FSM] [%s] Apply: Received command: Type=%s", f.localNodeID, cmd.Type)
 
 	switch cmd.Type {
 	case CreateTableCommandType:
 		payload, err := DecodeCreateTableCommand(cmd.Payload)
 		if err != nil {
-			log.Printf("[%s] FSM.Apply failed to decode CreateTableCommand: %v", f.localNodeID, err)
-			return err
+			log.Printf("[ERROR] [FSM] [%s] Apply CreateTable: Failed to decode payload: %v", f.localNodeID, err)
+			return CommandResponse{Success: false, Error: fmt.Sprintf("failed to decode CreateTableCommand payload: %v", err)}
 		}
+		log.Printf("[INFO] [FSM] [%s] Apply CreateTable: TableName='%s', PK='%s', SK='%s'", f.localNodeID, payload.TableName, payload.PartitionKeyName, payload.SortKeyName)
 		if _, exists := f.tables[payload.TableName]; exists {
-			log.Printf("[%s] FSM.Apply table %s already exists", f.localNodeID, payload.TableName)
-			return fmt.Errorf("table %s already exists", payload.TableName)
+			log.Printf("[ERROR] [FSM] [%s] Apply CreateTable: table '%s' already exists", f.localNodeID, payload.TableName)
+			return CommandResponse{Success: false, Error: fmt.Sprintf("table %s already exists", payload.TableName), TableName: payload.TableName}
 		}
 		f.tables[payload.TableName] = TableMetadata{
 			TableName:        payload.TableName,
 			PartitionKeyName: payload.PartitionKeyName,
 			SortKeyName:      payload.SortKeyName,
 		}
-		// KVStoreにテーブル用のディレクトリを作成させる
 		if err := f.kvStore.EnsureTableDir(payload.TableName); err != nil {
-			log.Printf("[%s] FSM.Apply failed to ensure directory for table %s: %v", f.localNodeID, payload.TableName, err)
-			// FSMの状態は更新したが、ディレクトリ作成に失敗した場合。不整合だが、リカバリは難しい。
-			// エラーを返してRaftにリトライさせるか？冪等性があれば良いが、ディレクトリ作成は冪等。
-			return fmt.Errorf("failed to ensure directory for table %s: %w", payload.TableName, err)
+			log.Printf("[ERROR] [FSM] [%s] Apply CreateTable: Failed to ensure table directory for '%s': %v", f.localNodeID, payload.TableName, err)
+			return CommandResponse{Success: false, Error: fmt.Sprintf("failed to create table directory for %s: %v", payload.TableName, err), TableName: payload.TableName}
 		}
-		log.Printf("[%s] FSM.Apply created table %s", f.localNodeID, payload.TableName)
-		return nil // 成功時はnilまたは具体的な結果を返す
+		log.Printf("[INFO] [FSM] [%s] Apply CreateTable: Successfully processed for table '%s'", f.localNodeID, payload.TableName)
+		return CommandResponse{Success: true, Message: fmt.Sprintf("Table %s created/ensured successfully", payload.TableName), TableName: payload.TableName}
 
 	case DeleteTableCommandType:
 		payload, err := DecodeDeleteTableCommand(cmd.Payload)
 		if err != nil {
-			log.Printf("[%s] FSM.Apply failed to decode DeleteTableCommand: %v", f.localNodeID, err)
-			return err
+			log.Printf("[ERROR] [FSM] [%s] Apply DeleteTable: Failed to decode payload: %v", f.localNodeID, err)
+			return CommandResponse{Success: false, Error: fmt.Sprintf("failed to decode DeleteTableCommand payload: %v", err)}
 		}
+		log.Printf("[INFO] [FSM] [%s] Apply DeleteTable: TableName='%s'", f.localNodeID, payload.TableName)
 		if _, exists := f.tables[payload.TableName]; !exists {
-			log.Printf("[%s] FSM.Apply table %s not found for deletion", f.localNodeID, payload.TableName)
-			return fmt.Errorf("table %s not found", payload.TableName)
+			log.Printf("[ERROR] [FSM] [%s] Apply DeleteTable: table '%s' not found", f.localNodeID, payload.TableName)
+			return CommandResponse{Success: false, Error: fmt.Sprintf("table %s not found", payload.TableName), TableName: payload.TableName}
 		}
 		delete(f.tables, payload.TableName)
-		// KVStoreにテーブル用のディレクトリを削除させる
 		if err := f.kvStore.RemoveTableDir(payload.TableName); err != nil {
-			log.Printf("[%s] FSM.Apply failed to remove directory for table %s: %v", f.localNodeID, payload.TableName, err)
-			// FSMの状態は更新したが、ディレクトリ削除に失敗した場合。
-			return fmt.Errorf("failed to remove directory for table %s: %w", payload.TableName, err)
+			log.Printf("[ERROR] [FSM] [%s] Apply DeleteTable: Failed to remove table directory for '%s': %v", f.localNodeID, payload.TableName, err)
+			return CommandResponse{Success: false, Error: fmt.Sprintf("failed to remove table directory for %s: %v", payload.TableName, err), TableName: payload.TableName}
 		}
-		log.Printf("[%s] FSM.Apply deleted table %s", f.localNodeID, payload.TableName)
-		return nil
+		log.Printf("[INFO] [FSM] [%s] Apply DeleteTable: Successfully processed for table '%s'", f.localNodeID, payload.TableName)
+		return CommandResponse{Success: true, Message: fmt.Sprintf("Table %s deleted successfully", payload.TableName), TableName: payload.TableName}
 
 	case PutItemCommandType:
-		putPayload, err := DecodePutItemCommand(cmd.Payload)
+		payload, err := DecodePutItemCommand(cmd.Payload)
 		if err != nil {
-			log.Printf("[%s] FSM.Apply failed to decode PutItemCommand: %v", f.localNodeID, err)
-			return err
+			log.Printf("[ERROR] [FSM] [%s] Apply PutItem: Failed to decode payload: %v", f.localNodeID, err)
+			return CommandResponse{Success: false, Error: fmt.Sprintf("failed to decode PutItemCommand payload: %v", err)}
 		}
-		meta, exists := f.tables[putPayload.TableName]
+		meta, exists := f.tables[payload.TableName]
 		if !exists {
-			log.Printf("[%s] FSM.Apply PutItem: table %s not found", f.localNodeID, putPayload.TableName)
-			return fmt.Errorf("table %s not found", putPayload.TableName)
+			log.Printf("[ERROR] [FSM] [%s] Apply PutItem: table '%s' not found", f.localNodeID, payload.TableName)
+			return CommandResponse{Success: false, Error: fmt.Sprintf("table %s not found", payload.TableName), TableName: payload.TableName}
 		}
 
-		// itemRawData からパーティションキーとソートキーの値を抽出
 		var itemDataMap map[string]interface{}
-		if err := json.Unmarshal(putPayload.Item, &itemDataMap); err != nil {
-			log.Printf("[%s] FSM.Apply PutItem: failed to unmarshal item data from payload for table %s: %v", f.localNodeID, putPayload.TableName, err)
-			return fmt.Errorf("failed to unmarshal item data from payload for table %s: %w", putPayload.TableName, err)
+		if err := json.Unmarshal(payload.Item, &itemDataMap); err != nil {
+			log.Printf("[ERROR] [FSM] [%s] Apply PutItem: failed to unmarshal item data for table '%s': %v", f.localNodeID, payload.TableName, err)
+			return CommandResponse{Success: false, Error: fmt.Sprintf("failed to unmarshal item data for table %s: %v", payload.TableName, err), TableName: payload.TableName}
 		}
-
 		pkValue, pkOk := itemDataMap[meta.PartitionKeyName]
 		if !pkOk || pkValue == nil {
-			log.Printf("[%s] FSM.Apply PutItem: partition key %s not found or is null in item for table %s", f.localNodeID, meta.PartitionKeyName, putPayload.TableName)
-			return fmt.Errorf("partition key %s not found or is null in item for table %s", meta.PartitionKeyName, putPayload.TableName)
+			errMsg := fmt.Sprintf("partition key '%s' not found or is null in item for table '%s'", meta.PartitionKeyName, payload.TableName)
+			log.Printf("[ERROR] [FSM] [%s] Apply PutItem: %s", f.localNodeID, errMsg)
+			return CommandResponse{Success: false, Error: errMsg, TableName: payload.TableName}
 		}
-		pkStr, pkIsStr := pkValue.(string) // キーは文字列を想定
-		if !pkIsStr {
-			log.Printf("[%s] FSM.Apply PutItem: partition key %s is not a string in item for table %s", f.localNodeID, meta.PartitionKeyName, putPayload.TableName)
-			return fmt.Errorf("partition key %s must be a string, got %T", meta.PartitionKeyName, pkValue)
+		pkStr, pkIsStr := pkValue.(string)
+		if !pkIsStr || pkStr == "" {
+			errMsg := fmt.Sprintf("partition key '%s' must be a non-empty string, got '%v' (type %T) for table '%s'", meta.PartitionKeyName, pkValue, pkValue, payload.TableName)
+			log.Printf("[ERROR] [FSM] [%s] Apply PutItem: %s", f.localNodeID, errMsg)
+			return CommandResponse{Success: false, Error: errMsg, TableName: payload.TableName}
 		}
-		if pkStr == "" {
-			return fmt.Errorf("partition key %s cannot be empty string", meta.PartitionKeyName)
-		}
-
 		itemStoreKey := pkStr
 		if meta.SortKeyName != "" {
 			skValue, skOk := itemDataMap[meta.SortKeyName]
 			if !skOk || skValue == nil {
-				log.Printf("[%s] FSM.Apply PutItem: sort key %s not found or is null in item for table %s (but defined in metadata)", f.localNodeID, meta.SortKeyName, putPayload.TableName)
-				return fmt.Errorf("sort key %s not found or is null in item for table %s", meta.SortKeyName, putPayload.TableName)
+				errMsg := fmt.Sprintf("sort key '%s' not found or is null in item for table '%s' (but defined in metadata)", meta.SortKeyName, payload.TableName)
+				log.Printf("[ERROR] [FSM] [%s] Apply PutItem: %s", f.localNodeID, errMsg)
+				return CommandResponse{Success: false, Error: errMsg, TableName: payload.TableName}
 			}
 			skStr, skIsStr := skValue.(string)
 			if !skIsStr {
-				log.Printf("[%s] FSM.Apply PutItem: sort key %s is not a string in item for table %s", f.localNodeID, meta.SortKeyName, putPayload.TableName)
-				return fmt.Errorf("sort key %s must be a string, got %T", meta.SortKeyName, skValue)
+				errMsg := fmt.Sprintf("sort key '%s' must be a string, got '%v' (type %T) for table '%s'", meta.SortKeyName, skValue, skValue, payload.TableName)
+				log.Printf("[ERROR] [FSM] [%s] Apply PutItem: %s", f.localNodeID, errMsg)
+				return CommandResponse{Success: false, Error: errMsg, TableName: payload.TableName}
 			}
-			// ソートキーが空文字列でも許容する場合があるため、ここではチェックしない。
-			itemStoreKey = pkStr + "_" + skStr
+			itemStoreKey += "_" + skStr
 		}
-
-		if err := f.kvStore.PutItem(putPayload.TableName, itemStoreKey, putPayload.Item, putPayload.Timestamp); err != nil {
-			log.Printf("[%s] FSM.Apply PutItem: KVStore.PutItem failed for table %s, key %s: %v", f.localNodeID, putPayload.TableName, itemStoreKey, err)
-			return fmt.Errorf("KVStore.PutItem failed for table %s, key %s: %w", putPayload.TableName, itemStoreKey, err)
+		log.Printf("[INFO] [FSM] [%s] Apply PutItem: TableName='%s', StoreKey='%s', Timestamp=%d", f.localNodeID, payload.TableName, itemStoreKey, payload.Timestamp)
+		if err := f.kvStore.PutItem(payload.TableName, itemStoreKey, payload.Item, payload.Timestamp); err != nil {
+			log.Printf("[ERROR] [FSM] [%s] Apply PutItem: Failed to put item '%s' in table '%s': %v", f.localNodeID, itemStoreKey, payload.TableName, err)
+			return CommandResponse{Success: false, Error: fmt.Sprintf("failed to put item %s in table %s: %v", itemStoreKey, payload.TableName, err), TableName: payload.TableName, ItemKey: itemStoreKey}
 		}
-		log.Printf("[%s] FSM.Apply PutItem successful for table %s, key %s", f.localNodeID, putPayload.TableName, itemStoreKey)
-		return nil
+		log.Printf("[INFO] [FSM] [%s] Apply PutItem: Successfully processed for table '%s', key '%s'", f.localNodeID, payload.TableName, itemStoreKey)
+		return CommandResponse{Success: true, Message: fmt.Sprintf("Item %s put successfully in table %s", itemStoreKey, payload.TableName), TableName: payload.TableName, ItemKey: itemStoreKey}
 
 	case DeleteItemCommandType:
-		deletePayload, err := DecodeDeleteItemCommand(cmd.Payload)
+		payload, err := DecodeDeleteItemCommand(cmd.Payload)
 		if err != nil {
-			log.Printf("[%s] FSM.Apply failed to decode DeleteItemCommand: %v", f.localNodeID, err)
-			return err
+			log.Printf("[ERROR] [FSM] [%s] Apply DeleteItem: Failed to decode payload: %v", f.localNodeID, err)
+			return CommandResponse{Success: false, Error: fmt.Sprintf("failed to decode DeleteItemCommand payload: %v", err)}
 		}
-		meta, exists := f.tables[deletePayload.TableName]
+		meta, exists := f.tables[payload.TableName]
 		if !exists {
-			log.Printf("[%s] FSM.Apply DeleteItem: table %s not found", f.localNodeID, deletePayload.TableName)
-			return fmt.Errorf("table %s not found", deletePayload.TableName)
+			log.Printf("[ERROR] [FSM] [%s] Apply DeleteItem: table '%s' not found", f.localNodeID, payload.TableName)
+			return CommandResponse{Success: false, Error: fmt.Sprintf("table %s not found", payload.TableName), TableName: payload.TableName}
 		}
-
-		// DeleteItemCommandPayload には PartitionKey と SortKey が直接含まれている
-		itemStoreKey := deletePayload.PartitionKey
+		itemStoreKey := payload.PartitionKey
 		if meta.SortKeyName != "" {
-			// メタデータにソートキーが定義されている場合、ペイロードのソートキーも使う
-			// ペイロードのSortKeyが空でも、定義されていれば "_" で結合する (空のソートキーを表現)
-			itemStoreKey = deletePayload.PartitionKey + "_" + deletePayload.SortKey
-		} else if deletePayload.SortKey != "" {
-			// メタデータにソートキーが定義されていないのに、ペイロードにソートキーがある場合はエラー
-			log.Printf("[%s] FSM.Apply DeleteItem: sort key provided in payload for table %s which has no sort key defined", f.localNodeID, deletePayload.TableName)
-			return fmt.Errorf("sort key provided for table %s which has no sort key defined", deletePayload.TableName)
+			// ペイロードのSortKeyが空文字列でも結合する（空のソートキーを表現するため）
+			itemStoreKey += "_" + payload.SortKey
+		} else if payload.SortKey != "" {
+			errMsg := fmt.Sprintf("sort key provided in payload for table '%s' which has no sort key defined", payload.TableName)
+			log.Printf("[ERROR] [FSM] [%s] Apply DeleteItem: %s", f.localNodeID, errMsg)
+			return CommandResponse{Success: false, Error: errMsg, TableName: payload.TableName}
 		}
-
-		if err := f.kvStore.DeleteItem(deletePayload.TableName, itemStoreKey, deletePayload.Timestamp); err != nil {
-			log.Printf("[%s] FSM.Apply DeleteItem: KVStore.DeleteItem failed for table %s, key %s: %v", f.localNodeID, deletePayload.TableName, itemStoreKey, err)
-			return fmt.Errorf("KVStore.DeleteItem failed for table %s, key %s: %w", deletePayload.TableName, itemStoreKey, err)
+		log.Printf("[INFO] [FSM] [%s] Apply DeleteItem: TableName='%s', StoreKey='%s', Timestamp=%d", f.localNodeID, payload.TableName, itemStoreKey, payload.Timestamp)
+		if err := f.kvStore.DeleteItem(payload.TableName, itemStoreKey, payload.Timestamp); err != nil {
+			log.Printf("[ERROR] [FSM] [%s] Apply DeleteItem: Failed to delete item '%s' from table '%s': %v", f.localNodeID, itemStoreKey, payload.TableName, err)
+			return CommandResponse{Success: false, Error: fmt.Sprintf("failed to delete item %s from table %s: %v", itemStoreKey, payload.TableName, err), TableName: payload.TableName, ItemKey: itemStoreKey}
 		}
-		log.Printf("[%s] FSM.Apply DeleteItem successful for table %s, key %s", f.localNodeID, deletePayload.TableName, itemStoreKey)
-		return nil
+		log.Printf("[INFO] [FSM] [%s] Apply DeleteItem: Successfully processed for table '%s', key '%s'", f.localNodeID, payload.TableName, itemStoreKey)
+		return CommandResponse{Success: true, Message: fmt.Sprintf("Item %s deleted successfully from table %s", itemStoreKey, payload.TableName), TableName: payload.TableName, ItemKey: itemStoreKey}
 
 	default:
-		log.Printf("[%s] FSM.Apply received unknown command type: %s", f.localNodeID, cmd.Type)
-		return fmt.Errorf("unknown command type: %s", cmd.Type)
+		log.Printf("[ERROR] [FSM] [%s] Apply: Unknown command type: %s", f.localNodeID, cmd.Type)
+		return CommandResponse{Success: false, Error: fmt.Sprintf("unknown command type: %s", cmd.Type)}
 	}
 }
 
 // GetTableMetadata は指定されたテーブルのメタデータを返します。
 // テーブルが存在しない場合は nil と false を返します。
 func (f *FSM) GetTableMetadata(tableName string) (*TableMetadata, bool) {
-	f.mu.RLock()
-	defer f.mu.RUnlock()
 	meta, exists := f.tables[tableName]
 	if !exists {
 		return nil, false
@@ -206,98 +188,106 @@ func (f *FSM) GetTableMetadata(tableName string) (*TableMetadata, bool) {
 	return &metaCopy, true
 }
 
-// ListTables は現在FSMに存在するすべてのテーブルのメタデータのマップを返します。
-// マップのキーはテーブル名です。
-func (f *FSM) ListTables() map[string]TableMetadata {
-	f.mu.RLock()
-	defer f.mu.RUnlock()
-	tablesCopy := make(map[string]TableMetadata, len(f.tables))
-	for k, v := range f.tables {
-		tablesCopy[k] = v
+// ListTables はFSMが認識しているテーブルの一覧を返します。
+// TODO: 実際にはテーブルメタデータを保持し、そこから返す
+func (f *FSM) ListTables() []string {
+	log.Printf("[INFO] [FSM] [%s] ListTables: Called", f.localNodeID)
+	// PoC段階ではKVStoreのディレクトリ一覧から取得するか、
+	// あるいはFSM内で管理しているテーブルリストを返す。
+	// 現状はFSMのtablesマップのキーを返す
+	tableNames := make([]string, 0, len(f.tables))
+	for name := range f.tables {
+		tableNames = append(tableNames, name)
 	}
-	return tablesCopy
+	log.Printf("[INFO] [FSM] [%s] ListTables: Returning %d tables: %v", f.localNodeID, len(tableNames), tableNames)
+	return tableNames
 }
 
-// Snapshot は現在のステートマシンのスナップショットを生成します。
-// スナップショットにはテーブルメタデータが含まれます。
+// Snapshot は現在のFSMの状態のスナップショットを返します。
+// この実装では、KVStoreのデータはファイルシステムにあるため、
+// スナップショット作成は比較的軽量にできるはずですが、ここでは簡略化のため何もしません。
+// 実際の永続化はファイルシステムへの書き込みによって行われているため、
+// Raftのスナップショットとしては、どのログエントリまで適用されたか、くらいで良いかもしれません。
+// より高度な実装では、ファイルシステムのコピーや特定のチェックポイントファイルを作成することが考えられます。
 func (f *FSM) Snapshot() (raft.FSMSnapshot, error) {
-	f.mu.RLock()
-	defer f.mu.RUnlock()
-
+	log.Printf("[INFO] [FSM] [%s] Snapshot: Creating FSM snapshot with current table metadata (%d tables)", f.localNodeID, len(f.tables))
+	// この例では、FSM自体のメモリ上の状態は最小限（テーブルメタデータなど）なので、
+	// スナップショットにはそれらを含めるか、あるいはKVStoreが永続化するので何もしないか。
+	// ここではテーブルメタデータのみをスナップショットに含めます。
 	tablesCopy := make(map[string]TableMetadata, len(f.tables))
 	for k, v := range f.tables {
 		tablesCopy[k] = v
 	}
-
-	log.Printf("[%s] FSM.Snapshot creating snapshot with %d tables", f.localNodeID, len(tablesCopy))
 	return &fsmSnapshot{tables: tablesCopy, localNodeID: f.localNodeID}, nil
 }
 
-// Restore はスナップショットからステートマシンを復元します。
+// Restore はスナップショットからFSMの状態を復元します。
+// この例では、KVStoreのデータはファイルシステムに既に永続化されているため、
+// 基本的には何もしなくても良いか、あるいはスナップショットに含まれるメタデータを復元します。
 func (f *FSM) Restore(rc io.ReadCloser) error {
-	defer rc.Close()
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
-	var tables map[string]TableMetadata
-	if err := json.NewDecoder(rc).Decode(&tables); err != nil {
-		log.Printf("[%s] FSM.Restore failed to decode snapshot: %v", f.localNodeID, err)
+	log.Printf("[INFO] [FSM] [%s] Restore: Restoring FSM from snapshot", f.localNodeID)
+	// スナップショットの内容を読み取り、FSMの状態（例：テーブルメタデータ）を復元する
+	var tablesSnapshot map[string]TableMetadata
+	dec := json.NewDecoder(rc)
+	if err := dec.Decode(&tablesSnapshot); err != nil {
+		_ = rc.Close()
+		log.Printf("[ERROR] [FSM] [%s] Restore: Failed to decode snapshot data: %v", f.localNodeID, err)
 		return fmt.Errorf("failed to decode snapshot: %w", err)
 	}
+	f.tables = tablesSnapshot
+	log.Printf("[INFO] [FSM] [%s] Restore: Successfully restored %d tables from snapshot", f.localNodeID, len(f.tables))
 
-	f.tables = tables
-	// スナップショット復元後、KVStore側のディレクトリ構造も整合性を取る必要がある。
-	// EnsureTableDirを各テーブルに対して呼び出す。
+	// KVStore側のディレクトリも復元されたテーブルに合わせてEnsureTableDirしておくのが堅牢
+	// ただし、KVStoreのデータ自体はRaftログの再適用や既存データによって整合性が取れるはずなので必須ではないかもしれない。
 	for tableName := range f.tables {
 		if err := f.kvStore.EnsureTableDir(tableName); err != nil {
-			// ここでエラーが発生すると復元が不完全になる。
-			// 起動時のエラーとして処理し、起動を失敗させるべきかもしれない。
-			log.Printf("[%s] FSM.Restore failed to ensure directory for table %s during restore: %v", f.localNodeID, tableName, err)
-			return fmt.Errorf("failed to ensure directory for table %s during restore: %w", tableName, err)
+			log.Printf("[WARN] [FSM] [%s] Restore: Failed to ensure directory for restored table '%s', but proceeding: %v", f.localNodeID, tableName, err)
+			// 致命的ではないかもしれないので警告にとどめる
 		}
 	}
-
-	log.Printf("[%s] FSM.Restore restored state with %d tables", f.localNodeID, len(f.tables))
-	return nil
+	return rc.Close() // 必ずCloseする
 }
 
-// fsmSnapshot は FSMSnapshot インターフェースを実装します。
+// fsmSnapshot は Raft のスナップショットインターフェースを実装します。
+// この例ではテーブルのメタデータのみをスナップショットに含めます。
 type fsmSnapshot struct {
 	tables      map[string]TableMetadata
-	localNodeID string // デバッグログ用
+	localNodeID string // デバッグ用
 }
 
+// Persist はスナップショットの内容を Raft のストレージに永続化します。
 func (s *fsmSnapshot) Persist(sink raft.SnapshotSink) error {
-	log.Printf("[%s] fsmSnapshot.Persist started", s.localNodeID)
+	log.Printf("[INFO] [FSM] [%s] fsmSnapshot.Persist started with %d tables", s.localNodeID, len(s.tables))
 	err := func() error {
 		data, err := json.Marshal(s.tables)
 		if err != nil {
-			log.Printf("[%s] fsmSnapshot.Persist failed to marshal tables: %v", s.localNodeID, err)
+			log.Printf("[ERROR] [FSM] [%s] fsmSnapshot.Persist failed to marshal tables: %v", s.localNodeID, err)
 			return fmt.Errorf("failed to marshal tables for snapshot: %w", err)
 		}
 		if _, err := sink.Write(data); err != nil {
-			log.Printf("[%s] fsmSnapshot.Persist failed to write to sink: %v", s.localNodeID, err)
+			log.Printf("[ERROR] [FSM] [%s] fsmSnapshot.Persist failed to write to sink: %v", s.localNodeID, err)
 			return fmt.Errorf("failed to write snapshot to sink: %w", err)
 		}
 		return nil
 	}()
 
 	if err != nil {
-		log.Printf("[%s] fsmSnapshot.Persist error, aborting sink: %v", s.localNodeID, err)
+		log.Printf("[ERROR] [FSM] [%s] fsmSnapshot.Persist error, aborting sink: %v", s.localNodeID, err)
 		_ = sink.Cancel() // sink.Cancel()のエラーは無視
 		return err
 	}
 
 	if err := sink.Close(); err != nil {
-		log.Printf("[%s] fsmSnapshot.Persist failed to close sink: %v", s.localNodeID, err)
+		log.Printf("[ERROR] [FSM] [%s] fsmSnapshot.Persist failed to close sink: %v", s.localNodeID, err)
 		return fmt.Errorf("failed to close snapshot sink: %w", err)
 	}
-	log.Printf("[%s] fsmSnapshot.Persist completed successfully", s.localNodeID)
+	log.Printf("[INFO] [FSM] [%s] fsmSnapshot.Persist completed successfully", s.localNodeID)
 	return nil
 }
 
+// Release はスナップショットが不要になったときに呼び出されます。
 func (s *fsmSnapshot) Release() {
-	log.Printf("[%s] fsmSnapshot.Release called", s.localNodeID)
+	log.Printf("[INFO] [FSM] [%s] fsmSnapshot.Release called", s.localNodeID)
 	// スナップショットが不要になったときに呼ばれる。
 	// メモリ上のリソースなどがあればここで解放する。今回は特に何もしない。
 }

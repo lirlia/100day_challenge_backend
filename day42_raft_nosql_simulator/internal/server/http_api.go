@@ -8,7 +8,7 @@ import (
 	"time"
 
 	// raft.ServerID と raft.ServerAddress のため
-	"day42_raft_nosql_simulator_local_test/internal/store" // store パッケージをインポート
+	"github.com/lirlia/100day_challenge_backend/day42_raft_nosql_simulator/internal/store" // store パッケージをインポート
 )
 
 // RaftNodeProxy は APIServer が Raft ノードの機能にアクセスするためのインターフェースです。

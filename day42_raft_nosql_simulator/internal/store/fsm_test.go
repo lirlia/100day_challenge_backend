@@ -44,7 +44,7 @@ func setupFSMWithKVStore(t *testing.T) (*FSM, *KVStore, string) {
 	kv, err := NewKVStore(kvStoreDir, nodeID)
 	require.NoError(t, err)
 
-	fsm := NewFSM(kvStoreDir, kv, nodeID)
+	fsm := NewFSM(kv, nodeID)
 	require.NotNil(t, fsm)
 	return fsm, kv, baseDir
 }
@@ -100,7 +100,9 @@ func TestFSM_TableOperations(t *testing.T) {
 		tables := fsm.ListTables()
 		require.Len(t, tables, 1, "Should be one table listed")
 		require.Contains(t, tables, tableName1)
-		require.Equal(t, pk1, tables[tableName1].PartitionKeyName)
+		meta, exists := fsm.GetTableMetadata(tableName1)
+		require.True(t, exists, "Metadata for table %s should exist", tableName1)
+		require.Equal(t, pk1, meta.PartitionKeyName)
 	})
 
 	t.Run("DeleteTable", func(t *testing.T) {
@@ -309,7 +311,7 @@ func TestFSM_SnapshotRestore(t *testing.T) {
 	newNodeID := "restored-fsm-node"
 	newKv, err := NewKVStore(newKvStoreDir, newNodeID)
 	require.NoError(t, err)
-	newFSM := NewFSM(newKvStoreDir, newKv, newNodeID)
+	newFSM := NewFSM(newKv, newNodeID)
 
 	err = newFSM.Restore(io.NopCloser(bytes.NewReader(snapData)))
 	require.NoError(t, err, "Restore should succeed")

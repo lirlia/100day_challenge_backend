@@ -161,7 +161,7 @@ main() {
 
   # 1. テーブル作成
   echo_section "Test 1: Create Table '$TEST_TABLE'"
-  OUTPUT_CREATE_TABLE=$($CLI_BIN create-table --target-addr "$LEADER_ADDR" --table-name "$TEST_TABLE" --partition-key "$PARTITION_KEY" --sort-key "$SORT_KEY" 2>&1)
+  OUTPUT_CREATE_TABLE=$($CLI_BIN create-table --target-addr "$LEADER_ADDR" --table-name "$TEST_TABLE" --partition-key-name "$PARTITION_KEY" --sort-key-name "$SORT_KEY" 2>&1)
   check_command_success "Create Table '$TEST_TABLE'"
   check_grep_success "Create Table '$TEST_TABLE' response" "CreateTable API call successful" "$OUTPUT_CREATE_TABLE"
 

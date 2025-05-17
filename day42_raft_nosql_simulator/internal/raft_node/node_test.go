@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"day42_raft_nosql_simulator_local_test/internal/raft_node"
+	"github.com/lirlia/100day_challenge_backend/day42_raft_nosql_simulator/internal/raft_node"
 
 	"github.com/hashicorp/raft"
 	"github.com/stretchr/testify/require"
@@ -73,8 +73,8 @@ func TestClusterLeaderElectionAndShutdown(t *testing.T) {
 		for _, n := range nodes {
 			if n.IsLeader() {
 				leaderNode = n
-				leaderID = n.LeaderID()
-				leaderAddr = n.LeaderAddr()
+				leaderID = n.RaftLeaderID()
+				leaderAddr = n.RaftLeaderAddress()
 				return true
 			}
 		}
@@ -86,16 +86,16 @@ func TestClusterLeaderElectionAndShutdown(t *testing.T) {
 
 	// 3. 他のノードをクラスタに追加 (Voterとして)
 	for _, node := range nodes {
-		if node.NodeID() == leaderNode.NodeID() {
+		if node.RaftNodeID() == leaderNode.RaftNodeID() {
 			continue
 		}
-		t.Logf("Attempting to add voter %s (%s) to leader %s", node.NodeID(), node.Addr(), leaderNode.NodeID())
-		err := leaderNode.AddVoter(node.NodeID(), node.Addr(), 0, testRaftTimeout)
+		t.Logf("Attempting to add voter %s (%s) to leader %s", node.RaftNodeID(), node.RaftAddr(), leaderNode.RaftNodeID())
+		err := leaderNode.AddVoter(node.RaftNodeID(), node.RaftAddr(), 0, testRaftTimeout)
 		if err != nil {
 			// 時々 "not leader" エラーが出ることがある。リトライか、より長い待機時間が必要かもしれない。
-			t.Logf("Warning: Failed to add voter %s to leader %s: %v. This might happen if leadership changed.", node.NodeID(), leaderNode.NodeID(), err)
+			t.Logf("Warning: Failed to add voter %s to leader %s: %v. This might happen if leadership changed.", node.RaftNodeID(), leaderNode.RaftNodeID(), err)
 		} else {
-			t.Logf("AddVoter call for %s completed.", node.NodeID())
+			t.Logf("AddVoter call for %s completed.", node.RaftNodeID())
 		}
 	}
 	// 設定変更がクラスタ全体に伝播するのを待つ
@@ -103,14 +103,14 @@ func TestClusterLeaderElectionAndShutdown(t *testing.T) {
 
 	// 4. 全ノードがリーダーを認識しているか確認
 	for i, n := range nodes {
-		finalLeaderAddr := n.LeaderAddr()
-		finalLeaderID := n.LeaderID()
+		finalLeaderAddr := n.RaftLeaderAddress()
+		finalLeaderID := n.RaftLeaderID()
 		t.Logf("Node %d (%s): State=%s, IsLeader=%v, RecognizedLeaderAddr=%s, RecognizedLeaderID=%s",
-			i, n.NodeID(), n.Stats()["state"], n.IsLeader(), finalLeaderAddr, finalLeaderID)
+			i, n.RaftNodeID(), n.Stats()["state"], n.IsLeader(), finalLeaderAddr, finalLeaderID)
 		// リーダーノード自体も、他のフォロワーも、選出されたリーダーの正しいアドレスを認識しているべき
-		require.Equal(t, leaderAddr, finalLeaderAddr, "Node %s should recognize leader address %s, got %s", n.NodeID(), leaderAddr, finalLeaderAddr)
+		require.Equal(t, leaderAddr, finalLeaderAddr, "Node %s should recognize leader address %s, got %s", n.RaftNodeID(), leaderAddr, finalLeaderAddr)
 		// リーダーIDも同様 (Linterの問題で以前アドレスが返っていたが、修正後はIDのはず)
-		require.Equal(t, leaderID, finalLeaderID, "Node %s should recognize leader ID %s, got %s", n.NodeID(), leaderID, finalLeaderID)
+		require.Equal(t, leaderID, finalLeaderID, "Node %s should recognize leader ID %s, got %s", n.RaftNodeID(), leaderID, finalLeaderID)
 	}
 
 	// 5. シャットダウン処理
@@ -118,16 +118,16 @@ func TestClusterLeaderElectionAndShutdown(t *testing.T) {
 	for i := len(nodes) - 1; i >= 0; i-- {
 		nodeToShutdown := nodes[i]
 		transportToClose := transports[i]
-		t.Logf("Shutting down node %s", nodeToShutdown.NodeID())
+		t.Logf("Shutting down node %s", nodeToShutdown.RaftNodeID())
 		err := nodeToShutdown.Shutdown()
-		require.NoError(t, err, "Error shutting down node %s", nodeToShutdown.NodeID())
+		require.NoError(t, err, "Error shutting down node %s", nodeToShutdown.RaftNodeID())
 
 		if transportToClose != nil {
 			if netTransport, ok := transportToClose.(*raft.NetworkTransport); ok {
 				err := netTransport.Close()
-				require.NoError(t, err, "Error closing transport for node %s", nodeToShutdown.NodeID())
+				require.NoError(t, err, "Error closing transport for node %s", nodeToShutdown.RaftNodeID())
 			} else {
-				t.Logf("Transport for node %s is not *raft.NetworkTransport, type: %T", nodeToShutdown.NodeID(), transportToClose)
+				t.Logf("Transport for node %s is not *raft.NetworkTransport, type: %T", nodeToShutdown.RaftNodeID(), transportToClose)
 			}
 		}
 	}

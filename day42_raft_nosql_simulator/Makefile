@@ -50,7 +50,7 @@ run-e2e-verbose:
 # フォーマットとLinter
 fmt: ## フォーマットを実行 (go fmt)
 	@echo "Formatting Go files..."
-	@go fmt $(GO_FILES)
+	@go fmt ./...
 
 vet: ## 静的解析を実行 (go vet)
 	@echo "Running go vet..."

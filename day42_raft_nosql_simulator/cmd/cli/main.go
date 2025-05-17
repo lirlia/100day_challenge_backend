@@ -12,7 +12,7 @@ import (
 
 	"github.com/hashicorp/raft"
 
-	"day42_raft_nosql_simulator_local_test/internal/raft_node"
+	"github.com/lirlia/100day_challenge_backend/day42_raft_nosql_simulator/internal/raft_node"
 	// "github.com/lirlia/100day_challenge_backend/day42_raft_nosql_simulator/internal/store"
 )
 
@@ -112,7 +112,7 @@ func runServer() {
 		time.Sleep(1 * time.Second)
 		status := node.Stats()
 		leaderID, leaderAddr := node.LeaderWithID()
-		log.Printf("Node %d (%s): State=%s, IsLeader=%t, Term=%d, LastLogIndex=%d, RecognizedLeaderAddr=%s, RecognizedLeaderID=%s",
+		log.Printf("Node %d (%s): State=%s, IsLeader=%t, Term=%s, LastLogIndex=%s, RecognizedLeaderAddr=%s, RecognizedLeaderID=%s",
 			i, node.NodeID(), status["state"], node.IsLeader(), status["term"], status["last_log_index"], leaderAddr, leaderID)
 	}
 

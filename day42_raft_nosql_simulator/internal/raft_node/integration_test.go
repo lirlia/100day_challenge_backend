@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"day42_raft_nosql_simulator_local_test/internal/raft_node"
+	"github.com/lirlia/100day_challenge_backend/day42_raft_nosql_simulator/internal/raft_node"
 
 	"github.com/hashicorp/raft"
 	"github.com/stretchr/testify/require"
@@ -69,17 +69,17 @@ func setupIntegrationTestCluster(t *testing.T) ([]*raft_node.Node, []raft.Transp
 		return false
 	}, 20*time.Second, 500*time.Millisecond, "Leader should be elected in integration test cluster")
 	require.NotNil(t, leaderNode, "Leader node should not be nil")
-	t.Logf("Integration test leader elected: Node ID=%s, Address=%s", leaderNode.NodeID(), leaderNode.Addr())
+	t.Logf("Integration test leader elected: Node ID=%s, Address=%s", leaderNode.RaftNodeID(), leaderNode.RaftAddr())
 
 	// 他のノードをクラスタに追加 (Voterとして)
 	for _, node := range nodes {
-		if node.NodeID() == leaderNode.NodeID() {
+		if node.RaftNodeID() == leaderNode.RaftNodeID() {
 			continue
 		}
-		t.Logf("Attempting to add voter %s (%s) to leader %s in integration test", node.NodeID(), node.Addr(), leaderNode.NodeID())
-		err := leaderNode.AddVoter(node.NodeID(), node.Addr(), 0, integrationTestRaftTimeout)
-		require.NoError(t, err, "Failed to add voter %s to leader %s: %v", node.NodeID(), leaderNode.NodeID(), err)
-		t.Logf("AddVoter call for %s completed in integration test.", node.NodeID())
+		t.Logf("Attempting to add voter %s (%s) to leader %s in integration test", node.RaftNodeID(), node.RaftAddr(), leaderNode.RaftNodeID())
+		err := leaderNode.AddVoter(node.RaftNodeID(), node.RaftAddr(), 0, integrationTestRaftTimeout)
+		require.NoError(t, err, "Failed to add voter %s to leader %s: %v", node.RaftNodeID(), leaderNode.RaftNodeID(), err)
+		t.Logf("AddVoter call for %s completed in integration test.", node.RaftNodeID())
 	}
 
 	// 設定変更がクラスタ全体に伝播するのを待つ
@@ -90,14 +90,14 @@ func setupIntegrationTestCluster(t *testing.T) ([]*raft_node.Node, []raft.Transp
 		for i := len(nodes) - 1; i >= 0; i-- {
 			nodeToShutdown := nodes[i]
 			transportToClose := transports[i]
-			t.Logf("Shutting down integration node %s", nodeToShutdown.NodeID())
+			t.Logf("Shutting down integration node %s", nodeToShutdown.RaftNodeID())
 			if err := nodeToShutdown.Shutdown(); err != nil {
-				t.Logf("Error shutting down integration node %s: %v", nodeToShutdown.NodeID(), err)
+				t.Logf("Error shutting down integration node %s: %v", nodeToShutdown.RaftNodeID(), err)
 			}
 
 			if netTransport, ok := transportToClose.(*raft.NetworkTransport); ok {
 				if err := netTransport.Close(); err != nil {
-					t.Logf("Error closing transport for node %s: %v", nodeToShutdown.NodeID(), err)
+					t.Logf("Error closing transport for node %s: %v", nodeToShutdown.RaftNodeID(), err)
 				}
 			}
 		}
@@ -140,7 +140,7 @@ func TestIntegration_TableOperations(t *testing.T) {
 		// 全ノードでテーブル存在確認 (FSM直接)
 		for _, node := range nodes {
 			meta, exists := node.GetFSM().GetTableMetadata(tableName)
-			require.True(t, exists, "Node %s: Table %s should exist in FSM", node.NodeID(), tableName)
+			require.True(t, exists, "Node %s: Table %s should exist in FSM", node.RaftNodeID(), tableName)
 			require.Equal(t, tableName, meta.TableName)
 			require.Equal(t, pkName, meta.PartitionKeyName)
 		}
@@ -150,7 +150,9 @@ func TestIntegration_TableOperations(t *testing.T) {
 		// いずれかの一つのノード (例: リーダー) でリスト取得確認
 		tables := leader.GetFSM().ListTables()
 		require.Contains(t, tables, tableName, "ListTables should contain the created table")
-		require.Equal(t, pkName, tables[tableName].PartitionKeyName)
+		meta, exists := leader.GetFSM().GetTableMetadata(tableName)
+		require.True(t, exists, "Table %s should exist for metadata check", tableName)
+		require.Equal(t, pkName, meta.PartitionKeyName)
 	})
 
 	t.Run("DeleteTable", func(t *testing.T) {
@@ -162,7 +164,7 @@ func TestIntegration_TableOperations(t *testing.T) {
 		// 全ノードでテーブル非存在確認
 		for _, node := range nodes {
 			_, exists := node.GetFSM().GetTableMetadata(tableName)
-			require.False(t, exists, "Node %s: Table %s should not exist in FSM after deletion", node.NodeID(), tableName)
+			require.False(t, exists, "Node %s: Table %s should not exist in FSM after deletion", node.RaftNodeID(), tableName)
 		}
 	})
 }
@@ -197,11 +199,11 @@ func TestIntegration_ItemOperations(t *testing.T) {
 		// 全ノードでアイテム存在確認 (KVStore直接リード)
 		for _, node := range nodes {
 			retrievedData, _, getErr := node.GetItemFromLocalStore(tableName, item1Key)
-			require.NoError(t, getErr, "Node %s: GetItemFromLocalStore for %s should succeed", node.NodeID(), item1Key)
+			require.NoError(t, getErr, "Node %s: GetItemFromLocalStore for %s should succeed", node.RaftNodeID(), item1Key)
 			var retrievedMap map[string]interface{}
 			err = json.Unmarshal(retrievedData, &retrievedMap)
-			require.NoError(t, err, "Node %s: Failed to unmarshal retrieved item data", node.NodeID())
-			require.Equal(t, item1Data["value"], retrievedMap["value"], "Node %s: Item data mismatch", node.NodeID())
+			require.NoError(t, err, "Node %s: Failed to unmarshal retrieved item data", node.RaftNodeID())
+			require.Equal(t, item1Data["value"], retrievedMap["value"], "Node %s: Item data mismatch", node.RaftNodeID())
 		}
 	})
 
@@ -248,8 +250,8 @@ func TestIntegration_ItemOperations(t *testing.T) {
 		// 全ノードでアイテム非存在確認
 		for _, node := range nodes {
 			_, _, getErr := node.GetItemFromLocalStore(tableName, item1Key)
-			require.Error(t, getErr, "Node %s: Item %s should be deleted", node.NodeID(), item1Key)
-			require.Contains(t, getErr.Error(), "not found", "Node %s: Error message for deleted item is incorrect", node.NodeID())
+			require.Error(t, getErr, "Node %s: Item %s should be deleted", node.RaftNodeID(), item1Key)
+			require.Contains(t, getErr.Error(), "not found", "Node %s: Error message for deleted item is incorrect", node.RaftNodeID())
 		}
 
 		// item2は残っているはず
