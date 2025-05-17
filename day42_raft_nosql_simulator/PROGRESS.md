@@ -80,7 +80,7 @@
     - [x] アイテム削除 (`delete-item`) 後に `get-item` で取得できないこと (E2Eテストで確認済み)
     - [x] `query-items` が正しくパーティションキーでフィルタされたアイテム一覧を返すこと (E2Eテストで確認済み)
     - [x] テーブル削除 (`delete-table`) 後、そのテーブルへの操作がエラーになること (E2Eテストで確認)
-- [ ] コミット: `day42: step 4/7 Additional item/table operations and tests completed`
+- [x] コミット: `day42: step 4/7 delete-table command, API endpoint, and tests completed`
 
 ## フェーズ5: Last Write Wins (LWW) とフォワーディング
 - [x] `put-item` および `delete-item` (論理削除の場合) 時に内部的に最終更新タイムスタンプを記録・更新する処理の確認と強化 (確認済み)
@@ -89,7 +89,7 @@
 - [x] テスト:
     - [x] 同じキーに対して異なるノードからほぼ同時に `put-item` を行い (シミュレート)、LWWが機能することを確認 (既存のKVStoreのLWWテストと、今回のE2Eでの複数Putで間接的に確認)
     - [x] 非リーダーノードへの書き込みリクエストがリーダーに転送され処理されることを確認 (E2E Test 9で確認)
-- [ ] コミット: `day42: step 5/7 LWW and client-side forwarding implemented and tested`
+- [x] コミット: `day42: step 5/7 LWW and client-side forwarding implemented and tested`
 
 ## フェーズ6: 安定化とリファクタリング
 - [ ] エラーハンドリングの改善 (CLIでのエラー表示、ノード間通信エラーなど)
