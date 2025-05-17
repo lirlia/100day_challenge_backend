@@ -73,14 +73,14 @@
 
 ## フェーズ4: その他のテーブル・アイテム操作
 - [x] `delete-table` コマンドの実装 (`--table-name <name>`)
-- [ ] `delete-item` コマンドの実装 (`--table-name <name> --key '<json_object_string_for_key>'`)
-- [ ] `query-items` コマンドの実装 (`--table-name <name> --partition-key-value <value>`)
-- [ ] テスト:
+- [x] `delete-item` コマンドの実装 (`--table-name <name> --key '<json_object_string_for_key>'`)
+- [x] `query-items` コマンドの実装 (`--table-name <name> --partition-key-value <value>`)
+- [x] テスト:
     - [x] `delete-table` コマンドがAPI経由で正しく動作すること (E2Eテストで確認)
     - [x] アイテム削除 (`delete-item`) 後に `get-item` で取得できないこと (E2Eテストで確認済み)
     - [x] `query-items` が正しくパーティションキーでフィルタされたアイテム一覧を返すこと (E2Eテストで確認済み)
-    - [ ] テーブル削除 (`delete-table`) 後、そのテーブルへの操作がエラーになること (今後のテスト項目)
-- [ ] コミット: `day42: step 4/7 Additional item/table operations (delete-table, delete-item, query-items)`
+    - [x] テーブル削除 (`delete-table`) 後、そのテーブルへの操作がエラーになること (E2Eテストで確認)
+- [ ] コミット: `day42: step 4/7 Additional item/table operations and tests completed`
 
 ## フェーズ5: Last Write Wins (LWW) とフォワーディング
 - [ ] `put-item` および `delete-item` (論理削除の場合) 時に内部的に最終更新タイムスタンプを記録・更新する処理の確認と強化

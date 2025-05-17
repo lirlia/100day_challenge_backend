@@ -285,18 +285,61 @@ main() {
   check_command_success "Delete Table '$TEST_TABLE'"
   check_grep_success "Delete Table '$TEST_TABLE' response" "DeleteTable API call successful" "$OUTPUT_DELETE_TABLE"
 
-  # # 13. (オプション) テーブルがリストから消えたことを確認 (Go側に未実装のためコメントアウト)
-  # echo_section "Test 13: Verify table deletion via status (optional)"
-  # sleep 2 # FSM適用までのラグを考慮
-  # OUTPUT_STATUS_AFTER_DELETE=$($CLI_BIN status --target-addr "$LEADER_ADDR" 2>&1)
-  # check_command_success "Get status after table deletion"
-  # if echo "$OUTPUT_STATUS_AFTER_DELETE" | grep -q "$TEST_TABLE"; then
-  #     echo -e "${RED_COLOR}FAILURE: Table '$TEST_TABLE' still found in status after deletion.${RESET_COLOR}"
-  #     echo "$OUTPUT_STATUS_AFTER_DELETE"
-  #     handle_error "Table found in status after deletion"
-  #     exit 1
-  # fi
-  # echo -e "${GREEN_COLOR}SUCCESS: Table '$TEST_TABLE' not found in status after deletion, as expected.${RESET_COLOR}"
+  # 13. テーブル削除後の操作がエラーになることを確認
+  echo_section "Test 13: Operations on deleted table '$TEST_TABLE' should fail"
+  sleep 2 # FSM適用までのラグを考慮
+
+  # 13.1 PutItem on deleted table
+  echo "Test 13.1: Attempt PutItem on deleted table"
+  FAIL_PUT_DELETED_TABLE_OUTPUT=$($CLI_BIN put-item --target-addr "$LEADER_ADDR" --table-name "$TEST_TABLE" --item-data "{\"$PARTITION_KEY\":\"FailPK\",\"$SORT_KEY\":\"FailSK\"}" 2>&1)
+  if echo "$FAIL_PUT_DELETED_TABLE_OUTPUT" | grep -qEi "(not found|does not exist|no such table)"; then
+    echo -e "${GREEN_COLOR}SUCCESS: PutItem on deleted table failed as expected.${RESET_COLOR}"
+    echo "$FAIL_PUT_DELETED_TABLE_OUTPUT"
+  else
+    echo -e "${RED_COLOR}FAILURE: PutItem on deleted table did NOT fail with expected message.${RESET_COLOR}"
+    echo "$FAIL_PUT_DELETED_TABLE_OUTPUT"
+    handle_error "PutItem on deleted table - unexpected success or wrong error"
+    exit 1
+  fi
+
+  # 13.2 GetItem from deleted table
+  echo "Test 13.2: Attempt GetItem from deleted table"
+  FAIL_GET_DELETED_TABLE_OUTPUT=$($CLI_BIN get-item --target-addr "$LEADER_ADDR" --table-name "$TEST_TABLE" --partition-key "$ITEM1_PK" --sort-key "$ITEM1_SK" 2>&1)
+  if echo "$FAIL_GET_DELETED_TABLE_OUTPUT" | grep -qEi "(not found|does not exist|no such table)"; then
+    echo -e "${GREEN_COLOR}SUCCESS: GetItem from deleted table failed as expected.${RESET_COLOR}"
+    echo "$FAIL_GET_DELETED_TABLE_OUTPUT"
+  else
+    echo -e "${RED_COLOR}FAILURE: GetItem from deleted table did NOT fail with expected message.${RESET_COLOR}"
+    echo "$FAIL_GET_DELETED_TABLE_OUTPUT"
+    handle_error "GetItem from deleted table - unexpected success or wrong error"
+    exit 1
+  fi
+
+  # 13.3 QueryItems on deleted table
+  echo "Test 13.3: Attempt QueryItems on deleted table"
+  FAIL_QUERY_DELETED_TABLE_OUTPUT=$($CLI_BIN query-items --target-addr "$LEADER_ADDR" --table-name "$TEST_TABLE" --partition-key "$ITEM1_PK" 2>&1)
+  if echo "$FAIL_QUERY_DELETED_TABLE_OUTPUT" | grep -qEi "(not found|does not exist|no such table)"; then
+    echo -e "${GREEN_COLOR}SUCCESS: QueryItems on deleted table failed as expected.${RESET_COLOR}"
+    echo "$FAIL_QUERY_DELETED_TABLE_OUTPUT"
+  else
+    echo -e "${RED_COLOR}FAILURE: QueryItems on deleted table did NOT fail with expected message.${RESET_COLOR}"
+    echo "$FAIL_QUERY_DELETED_TABLE_OUTPUT"
+    handle_error "QueryItems on deleted table - unexpected success or wrong error"
+    exit 1
+  fi
+
+  # 13.4 DeleteItem from deleted table
+  echo "Test 13.4: Attempt DeleteItem from deleted table"
+  FAIL_DELETE_ITEM_DELETED_TABLE_OUTPUT=$($CLI_BIN delete-item --target-addr "$LEADER_ADDR" --table-name "$TEST_TABLE" --partition-key "$ITEM1_PK" --sort-key "$ITEM1_SK" 2>&1)
+  if echo "$FAIL_DELETE_ITEM_DELETED_TABLE_OUTPUT" | grep -qEi "(not found|does not exist|no such table)"; then
+    echo -e "${GREEN_COLOR}SUCCESS: DeleteItem from deleted table failed as expected.${RESET_COLOR}"
+    echo "$FAIL_DELETE_ITEM_DELETED_TABLE_OUTPUT"
+  else
+    echo -e "${RED_COLOR}FAILURE: DeleteItem from deleted table did NOT fail with expected message.${RESET_COLOR}"
+    echo "$FAIL_DELETE_ITEM_DELETED_TABLE_OUTPUT"
+    handle_error "DeleteItem from deleted table - unexpected success or wrong error"
+    exit 1
+  fi
 
   echo -e "\n${GREEN_COLOR}=====================================${RESET_COLOR}"
   echo -e "${GREEN_COLOR}All E2E tests passed successfully!${RESET_COLOR}"
