@@ -517,7 +517,11 @@ func (n *Node) GetClusterStatus() (map[string]interface{}, error) {
 		}
 	}
 	if n.raft != nil {
-		status["raft_protocol_version"] = n.raft.ProtocolVersion()
+		if protoVersion, ok := n.raft.Stats()["protocol_version"]; ok {
+			status["raft_protocol_version"] = protoVersion
+		} else {
+			status["raft_protocol_version"] = "unknown"
+		}
 		// status["raft_peers"] = n.raft.Peers() // Peers()メソッドは存在しない
 		// Configuration() から取得するのが一般的
 		configFuture := n.raft.GetConfiguration()

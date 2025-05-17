@@ -23,6 +23,15 @@ var (
 	nodes       []*raft_node.Node
 )
 
+// SetDataDirBase はサーバーのデータディレクトリのベースパスを設定します。
+// この関数は cmd/cli/root.go の serverCmd から呼び出されます。
+func SetDataDirBase(newBase string) {
+	if newBase != "" {
+		dataDirBase = newBase
+		log.Printf("Data directory base path set to: %s", dataDirBase)
+	}
+}
+
 // runServer はRaftクラスタサーバーを起動・管理します。
 func runServer() {
 	log.Println("Starting Raft cluster server...")
@@ -84,13 +93,13 @@ func runServer() {
 	if leaderNode == nil {
 		log.Fatalf("No leader elected after 15 seconds")
 	}
-	log.Printf("Leader elected: Node ID=%s, Address=%s", leaderNode.NodeID(), leaderNode.Addr())
+	log.Printf("Leader elected: Node ID=%s, Address=%s", leaderNode.NodeID(), leaderNode.RaftAddr())
 
 	for _, node := range nodes {
 		if node.NodeID() == leaderNode.NodeID() {
 			continue
 		}
-		log.Printf("Attempting to add voter %s (%s) to leader %s", node.NodeID(), node.Addr(), leaderNode.NodeID())
+		log.Printf("Attempting to add voter %s (%s) to leader %s", node.NodeID(), node.RaftAddr(), leaderNode.NodeID())
 		err := leaderNode.AddVoter(node.GetConfig().NodeID, node.GetConfig().Addr, 0, 0)
 		if err != nil {
 			log.Printf("Warning: failed to add voter %s to cluster: %v", node.NodeID(), err)

@@ -10,6 +10,7 @@ import (
 var (
 	targetNodeAddr string // ターゲットノードのRAFTアドレス (例: 127.0.0.1:8000)
 	// targetNodeID string // 将来的にはNodeIDで指定も検討
+	dataDirRoot string // 追加: サーバーのデータディレクトリのルート
 )
 
 // rootCmd は全てのサブコマンドのベースとなるルートコマンドです。
@@ -38,6 +39,10 @@ var serverCmd = &cobra.Command{
 	Use:   "server",
 	Short: "Starts the Raft NoSQL database server cluster",
 	Run: func(cmd *cobra.Command, args []string) {
+		// dataDirRoot フラグが設定されていれば、main.go の dataDirBase を更新
+		if dataDirRoot != "" {
+			SetDataDirBase(dataDirRoot) // main.go のセッターを呼び出す
+		}
 		runServer() // runServer() は main.go で定義されている (同じパッケージなのでアクセス可能)
 	},
 }
@@ -54,6 +59,9 @@ func Execute() {
 func init() {
 	// グローバル永続フラグ
 	rootCmd.PersistentFlags().StringVar(&targetNodeAddr, "target-addr", "", "Target node Raft address (e.g., 127.0.0.1:8000). If empty, a random node or leader might be chosen by the command.")
+
+	// serverCmd にローカルフラグを追加
+	serverCmd.Flags().StringVar(&dataDirRoot, "data-dir-root", "./data", "Root directory for server data storage.")
 
 	rootCmd.AddCommand(serverCmd)
 
