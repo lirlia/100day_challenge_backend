@@ -1,0 +1,369 @@
+
+Discarded input sections
+
+ .comment       0x0000000000000000       0x13 build/main.o
+ .eh_frame      0x0000000000000000      0x320 build/main.o
+ .comment       0x0000000000000000       0x13 build/gdt.o
+ .eh_frame      0x0000000000000000       0x98 build/gdt.o
+ .comment       0x0000000000000000       0x13 build/idt.o
+ .eh_frame      0x0000000000000000      0x278 build/idt.o
+ .comment       0x0000000000000000       0x13 build/pmm.o
+ .eh_frame      0x0000000000000000      0x178 build/pmm.o
+ .comment       0x0000000000000000       0x13 build/paging.o
+ .eh_frame      0x0000000000000000       0xb8 build/paging.o
+ .comment       0x0000000000000000       0x13 build/serial.o
+ .eh_frame      0x0000000000000000      0x118 build/serial.o
+ .comment       0x0000000000000000       0x13 build/apic.o
+ .eh_frame      0x0000000000000000      0x180 build/apic.o
+ .comment       0x0000000000000000       0x13 build/font8x8_basic.o
+ .comment       0x0000000000000000       0x13 build/task.o
+ .eh_frame      0x0000000000000000      0x118 build/task.o
+
+Memory Configuration
+
+Name             Origin             Length             Attributes
+*default*        0x0000000000000000 0xffffffffffffffff
+
+Linker script and memory map
+
+                0xffffffff80000000                . = 0xffffffff80000000
+                0xffffffff80000000                _kernel_start = .
+
+.text           0xffffffff80000000     0x78fa
+                0xffffffff80000000                _text_start = .
+ *(.text .text.*)
+ .text          0xffffffff80000000     0x1f28 build/main.o
+                0xffffffff8000071c                kernel_main
+                0xffffffff80000e38                dummy_task_a_main
+                0xffffffff80000eaa                dummy_task_b_main
+                0xffffffff80000f1c                kernel_main_after_paging
+                0xffffffff80001655                hcf
+                0xffffffff8000165d                memcpy
+                0xffffffff80001677                memset
+                0xffffffff80001690                uint64_to_dec_str
+                0xffffffff8000177d                uint64_to_hex_str
+                0xffffffff8000183b                panic
+                0xffffffff8000187f                fill_screen
+                0xffffffff80001964                put_char
+                0xffffffff80001b57                put_string
+                0xffffffff80001cf3                put_hex
+                0xffffffff80001d2d                print_serial_str_hex
+                0xffffffff80001d8f                print_serial_str_int
+                0xffffffff80001df1                clear_screen_with_color
+                0xffffffff80001e09                set_text_color
+                0xffffffff80001e20                set_bg_color
+                0xffffffff80001e37                put_string_at
+                0xffffffff80001ee1                print_serial_str
+                0xffffffff80001f08                put_string_at_serial
+ .text          0xffffffff80001f28      0x2a5 build/gdt.o
+                0xffffffff8000205f                init_gdt
+                0xffffffff8000219b                tss_set_rsp0
+ .text          0xffffffff800021cd      0xd03 build/idt.o
+                0xffffffff800024f1                isr_handler_c
+                0xffffffff80002718                interrupt_handler_c
+                0xffffffff800027f7                irq_handler_c
+                0xffffffff800028be                register_interrupt_handler
+                0xffffffff8000291f                register_irq_handler
+                0xffffffff80002980                init_idt
+ .text          0xffffffff80002ed0     0x162c build/pmm.o
+                0xffffffff80002f46                init_pmm
+                0xffffffff8000342f                pmm_alloc_page
+                0xffffffff80003720                pmm_free_page
+                0xffffffff80003b97                pmm_get_free_page_count
+                0xffffffff80003ba4                pmm_get_stack_entries_per_page
+                0xffffffff80003baf                pmm_get_current_stack_top_idx
+                0xffffffff80003bbc                pmm_get_first_pmm_stack_phys_addr
+                0xffffffff80003bc9                pmm_get_allocated_stack_page_count
+                0xffffffff80003c03                pmm_stack_test
+ .text          0xffffffff800044fc     0x1fcf build/paging.o
+                0xffffffff800045a0                map_page
+                0xffffffff8000537c                init_paging
+ .text          0xffffffff800064cb      0x276 build/serial.o
+                0xffffffff80006508                init_serial
+                0xffffffff80006603                is_transmit_empty
+                0xffffffff8000662a                write_serial_char
+                0xffffffff80006664                print_serial
+                0xffffffff800066bb                print_serial_hex
+                0xffffffff80006707                print_serial_dec
+ .text          0xffffffff80006741      0x7e8 build/apic.o
+                0xffffffff80006886                timer_handler
+                0xffffffff80006aa4                init_apic
+                0xffffffff80006e15                lapic_timer_set
+                0xffffffff80006ef7                lapic_send_eoi
+ .text          0xffffffff80006f29        0x0 build/font8x8_basic.o
+ .text          0xffffffff80006f29      0x806 build/task.o
+                0xffffffff80006f98                init_task_queue
+                0xffffffff80006fff                enqueue_task
+                0xffffffff80007098                dequeue_task
+                0xffffffff80007141                is_task_queue_empty
+                0xffffffff8000716f                is_task_queue_full
+                0xffffffff8000719e                schedule
+                0xffffffff800072c8                create_task
+ .text          0xffffffff8000772f      0x1bc build/isr_stubs.o
+                0xffffffff8000772f                isr_common_stub
+                0xffffffff8000776b                isr0
+                0xffffffff80007772                isr1
+                0xffffffff80007779                isr2
+                0xffffffff80007780                isr3
+                0xffffffff80007787                isr4
+                0xffffffff8000778e                isr5
+                0xffffffff80007795                isr6
+                0xffffffff8000779c                isr7
+                0xffffffff800077a3                isr8
+                0xffffffff800077a8                isr9
+                0xffffffff800077af                isr10
+                0xffffffff800077b7                isr11
+                0xffffffff800077bf                isr12
+                0xffffffff800077c7                isr13
+                0xffffffff800077cf                isr14
+                0xffffffff800077d7                isr16
+                0xffffffff800077e1                isr17
+                0xffffffff800077e9                isr18
+                0xffffffff800077f3                isr19
+                0xffffffff800077fd                isr20
+                0xffffffff80007807                isr21
+                0xffffffff8000780f                isr28
+                0xffffffff80007819                isr29
+                0xffffffff80007821                isr30
+                0xffffffff80007866                irq0
+                0xffffffff8000786d                irq1
+                0xffffffff80007874                irq2
+                0xffffffff8000787b                irq3
+                0xffffffff80007882                irq4
+                0xffffffff80007889                irq5
+                0xffffffff80007890                irq6
+                0xffffffff80007897                irq7
+                0xffffffff8000789e                irq8
+                0xffffffff800078a5                irq9
+                0xffffffff800078af                irq10
+                0xffffffff800078b9                irq11
+                0xffffffff800078c3                irq12
+                0xffffffff800078cd                irq13
+                0xffffffff800078d7                irq14
+                0xffffffff800078e1                irq15
+ .text          0xffffffff800078eb        0xf build/paging_success_halt.o
+                0xffffffff800078eb                switch_to_kernel_higher_half_and_run
+                0xffffffff800078fa                _text_end = .
+
+.iplt           0xffffffff800078fa        0x0
+ .iplt          0xffffffff800078fa        0x0 build/main.o
+
+.rodata         0xffffffff80008000     0x33fb
+                0xffffffff80008000                _rodata_start = .
+ *(.rodata .rodata.*)
+ .rodata        0xffffffff80008000      0xe29 build/main.o
+ *fill*         0xffffffff80008e29        0x7 
+ .rodata        0xffffffff80008e30       0x61 build/gdt.o
+ *fill*         0xffffffff80008e91        0x7 
+ .rodata        0xffffffff80008e98      0x286 build/idt.o
+ *fill*         0xffffffff8000911e        0x2 
+ .rodata        0xffffffff80009120      0xb20 build/pmm.o
+ .rodata        0xffffffff80009c40      0xe65 build/paging.o
+ .rodata        0xffffffff8000aaa5        0x3 build/serial.o
+ .rodata        0xffffffff8000aaa8      0x269 build/apic.o
+ *fill*         0xffffffff8000ad11        0xf 
+ .rodata        0xffffffff8000ad20      0x400 build/font8x8_basic.o
+                0xffffffff8000ad20                font8x8_basic
+ .rodata        0xffffffff8000b120      0x2db build/task.o
+                0xffffffff8000b3fb                _rodata_end = .
+
+.rela.dyn       0xffffffff8000b400        0x0
+ .rela.got      0xffffffff8000b400        0x0 build/main.o
+ .rela.iplt     0xffffffff8000b400        0x0 build/main.o
+ .rela.text     0xffffffff8000b400        0x0 build/main.o
+
+.data           0xffffffff8000c000      0x148
+                0xffffffff8000c000                _data_start = .
+ *(.data .data.*)
+ .data          0xffffffff8000c000      0x140 build/main.o
+                0xffffffff8000c040                memmap_request
+                0xffffffff8000c080                hhdm_request
+                0xffffffff8000c0c0                kernel_addr_request
+                0xffffffff8000c100                smp_request
+                0xffffffff8000c138                FONT_SCALE
+                0xffffffff8000c13c                text_color
+ .data          0xffffffff8000c140        0x0 build/gdt.o
+ .data          0xffffffff8000c140        0x0 build/idt.o
+ .data          0xffffffff8000c140        0x0 build/pmm.o
+ .data          0xffffffff8000c140        0x0 build/paging.o
+ .data          0xffffffff8000c140        0x0 build/serial.o
+ .data          0xffffffff8000c140        0x0 build/apic.o
+ .data          0xffffffff8000c140        0x0 build/font8x8_basic.o
+ .data          0xffffffff8000c140        0x8 build/task.o
+ .data          0xffffffff8000c148        0x0 build/isr_stubs.o
+ .data          0xffffffff8000c148        0x0 build/paging_success_halt.o
+                0xffffffff8000c148                _data_end = .
+
+.got            0xffffffff8000c148        0x0
+ .got           0xffffffff8000c148        0x0 build/main.o
+
+.got.plt        0xffffffff8000c148        0x0
+ .got.plt       0xffffffff8000c148        0x0 build/main.o
+
+.igot.plt       0xffffffff8000c148        0x0
+ .igot.plt      0xffffffff8000c148        0x0 build/main.o
+
+.requests
+ *(.requests)
+
+.bss            0xffffffff8000d000     0x1b10
+                0xffffffff8000d000                _bss_start = .
+ *(.bss .bss.*)
+ .bss           0xffffffff8000d000       0x28 build/main.o
+                0xffffffff8000d000                framebuffer
+                0xffffffff8000d008                hhdm_offset
+                0xffffffff8000d010                cursor_x
+                0xffffffff8000d014                cursor_y
+                0xffffffff8000d018                bg_color
+ *fill*         0xffffffff8000d028       0x18 
+ .bss           0xffffffff8000d040       0xb8 build/gdt.o
+                0xffffffff8000d040                gdt
+                0xffffffff8000d078                gdt_ptr
+                0xffffffff8000d090                tss
+ *fill*         0xffffffff8000d0f8        0x8 
+ .bss           0xffffffff8000d100     0x18a0 build/idt.o
+                0xffffffff8000d100                idt
+                0xffffffff8000e100                idt_ptr_struct
+ .bss           0xffffffff8000e9a0       0x70 build/pmm.o
+                0xffffffff8000e9a0                pmm_info
+ .bss           0xffffffff8000ea10       0x28 build/paging.o
+                0xffffffff8000ea10                kernel_pml4_phys
+                0xffffffff8000ea18                kernel_pml4_virt
+                0xffffffff8000ea20                kernel_stack_top_phys
+ .bss           0xffffffff8000ea38        0x0 build/serial.o
+ .bss           0xffffffff8000ea38       0x18 build/apic.o
+                0xffffffff8000ea38                tick_counter
+                0xffffffff8000ea40                x2apic_enabled
+                0xffffffff8000ea48                apic_virt_base
+ .bss           0xffffffff8000ea50        0x0 build/font8x8_basic.o
+ *fill*         0xffffffff8000ea50       0x10 
+ .bss           0xffffffff8000ea60       0xb0 build/task.o
+                0xffffffff8000ea60                current_task
+                0xffffffff8000ea80                ready_queue
+ .bss           0xffffffff8000eb10        0x0 build/isr_stubs.o
+ .bss           0xffffffff8000eb10        0x0 build/paging_success_halt.o
+ *(COMMON)
+                0xffffffff8000eb10                _bss_end = .
+                0xffffffff8000eb10                _kernel_end = .
+
+/DISCARD/
+ *(.comment)
+ *(.eh_frame)
+LOAD build/main.o
+LOAD build/gdt.o
+LOAD build/idt.o
+LOAD build/pmm.o
+LOAD build/paging.o
+LOAD build/serial.o
+LOAD build/apic.o
+LOAD build/font8x8_basic.o
+LOAD build/task.o
+LOAD build/isr_stubs.o
+LOAD build/paging_success_halt.o
+OUTPUT(build/kernel.elf elf64-x86-64)
+
+.debug_info     0x0000000000000000     0x5265
+ .debug_info    0x0000000000000000     0x18b6 build/main.o
+ .debug_info    0x00000000000018b6      0x3bc build/gdt.o
+ .debug_info    0x0000000000001c72      0x9cc build/idt.o
+ .debug_info    0x000000000000263e      0x940 build/pmm.o
+ .debug_info    0x0000000000002f7e      0xd7e build/paging.o
+ .debug_info    0x0000000000003cfc      0x2f4 build/serial.o
+ .debug_info    0x0000000000003ff0      0xa1c build/apic.o
+ .debug_info    0x0000000000004a0c       0x9e build/font8x8_basic.o
+ .debug_info    0x0000000000004aaa      0x75f build/task.o
+ .debug_info    0x0000000000005209       0x2e build/isr_stubs.o
+ .debug_info    0x0000000000005237       0x2e build/paging_success_halt.o
+
+.debug_abbrev   0x0000000000000000     0x1269
+ .debug_abbrev  0x0000000000000000      0x366 build/main.o
+ .debug_abbrev  0x0000000000000366      0x177 build/gdt.o
+ .debug_abbrev  0x00000000000004dd      0x25c build/idt.o
+ .debug_abbrev  0x0000000000000739      0x242 build/pmm.o
+ .debug_abbrev  0x000000000000097b      0x27a build/paging.o
+ .debug_abbrev  0x0000000000000bf5      0x13f build/serial.o
+ .debug_abbrev  0x0000000000000d34      0x26c build/apic.o
+ .debug_abbrev  0x0000000000000fa0       0x67 build/font8x8_basic.o
+ .debug_abbrev  0x0000000000001007      0x23a build/task.o
+ .debug_abbrev  0x0000000000001241       0x14 build/isr_stubs.o
+ .debug_abbrev  0x0000000000001255       0x14 build/paging_success_halt.o
+
+.debug_aranges  0x0000000000000000      0x200
+ .debug_aranges
+                0x0000000000000000       0x30 build/main.o
+ .debug_aranges
+                0x0000000000000030       0x30 build/gdt.o
+ .debug_aranges
+                0x0000000000000060       0x30 build/idt.o
+ .debug_aranges
+                0x0000000000000090       0x30 build/pmm.o
+ .debug_aranges
+                0x00000000000000c0       0x30 build/paging.o
+ .debug_aranges
+                0x00000000000000f0       0x30 build/serial.o
+ .debug_aranges
+                0x0000000000000120       0x30 build/apic.o
+ .debug_aranges
+                0x0000000000000150       0x20 build/font8x8_basic.o
+ .debug_aranges
+                0x0000000000000170       0x30 build/task.o
+ .debug_aranges
+                0x00000000000001a0       0x30 build/isr_stubs.o
+ .debug_aranges
+                0x00000000000001d0       0x30 build/paging_success_halt.o
+
+.debug_rnglists
+                0x0000000000000000       0x5a
+ .debug_rnglists
+                0x0000000000000000       0x2d build/main.o
+ .debug_rnglists
+                0x000000000000002d       0x2d build/pmm.o
+
+.debug_line     0x0000000000000000     0x26da
+ .debug_line    0x0000000000000000      0xa15 build/main.o
+ .debug_line    0x0000000000000a15      0x101 build/gdt.o
+ .debug_line    0x0000000000000b16      0x45c build/idt.o
+ .debug_line    0x0000000000000f72      0x747 build/pmm.o
+ .debug_line    0x00000000000016b9      0x77b build/paging.o
+ .debug_line    0x0000000000001e34      0x130 build/serial.o
+ .debug_line    0x0000000000001f64      0x331 build/apic.o
+ .debug_line    0x0000000000002295       0x43 build/font8x8_basic.o
+ .debug_line    0x00000000000022d8      0x311 build/task.o
+ .debug_line    0x00000000000025e9       0x9d build/isr_stubs.o
+ .debug_line    0x0000000000002686       0x54 build/paging_success_halt.o
+
+.debug_str      0x0000000000000000     0x16b8
+ .debug_str     0x0000000000000000     0x16b8 build/main.o
+                                        0xbd3 (size before relaxing)
+ .debug_str     0x00000000000016b8      0x29a build/gdt.o
+ .debug_str     0x00000000000016b8      0x43c build/idt.o
+ .debug_str     0x00000000000016b8      0x477 build/pmm.o
+ .debug_str     0x00000000000016b8      0x802 build/paging.o
+ .debug_str     0x00000000000016b8      0x197 build/serial.o
+ .debug_str     0x00000000000016b8      0x50a build/apic.o
+ .debug_str     0x00000000000016b8       0xd1 build/font8x8_basic.o
+ .debug_str     0x00000000000016b8      0x40a build/task.o
+ .debug_str     0x00000000000016b8       0x60 build/isr_stubs.o
+ .debug_str     0x00000000000016b8       0x6a build/paging_success_halt.o
+
+.debug_line_str
+                0x0000000000000000      0x187
+ .debug_line_str
+                0x0000000000000000      0x187 build/main.o
+                                        0x151 (size before relaxing)
+ .debug_line_str
+                0x0000000000000187      0x109 build/gdt.o
+ .debug_line_str
+                0x0000000000000187      0x115 build/idt.o
+ .debug_line_str
+                0x0000000000000187      0x11d build/pmm.o
+ .debug_line_str
+                0x0000000000000187      0x133 build/paging.o
+ .debug_line_str
+                0x0000000000000187      0x111 build/serial.o
+ .debug_line_str
+                0x0000000000000187      0x144 build/apic.o
+ .debug_line_str
+                0x0000000000000187      0x11a build/font8x8_basic.o
+ .debug_line_str
+                0x0000000000000187      0x12b build/task.o

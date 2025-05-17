@@ -1,0 +1,34 @@
+---
+triple:          'arm64-apple-darwin'
+binary-path:     limine
+relocations:
+  - { offsetInCU: 0x26, offset: 0x26, size: 0x8, addend: 0x0, symName: _main, symObjAddr: 0x0, symBinAddr: 0x100002FC4, symSize: 0x1FD4 }
+  - { offsetInCU: 0x3F, offset: 0x3F, size: 0x8, addend: 0x0, symName: _binary_limine_hdd_bin_data, symObjAddr: 0x2A50, symBinAddr: 0x100005B60, symSize: 0x0 }
+  - { offsetInCU: 0x9E, offset: 0x9E, size: 0x8, addend: 0x0, symName: _program_name, symObjAddr: 0x125B8, symBinAddr: 0x100010000, symSize: 0x0 }
+  - { offsetInCU: 0xC4, offset: 0xC4, size: 0x8, addend: 0x0, symName: _quiet, symObjAddr: 0x125C0, symBinAddr: 0x100010008, symSize: 0x0 }
+  - { offsetInCU: 0xE8, offset: 0xE8, size: 0x8, addend: 0x0, symName: _uninstall_file, symObjAddr: 0x125C8, symBinAddr: 0x100010010, symSize: 0x0 }
+  - { offsetInCU: 0x108, offset: 0x108, size: 0x8, addend: 0x0, symName: _device, symObjAddr: 0x125D0, symBinAddr: 0x100010018, symSize: 0x0 }
+  - { offsetInCU: 0x304, offset: 0x304, size: 0x8, addend: 0x0, symName: _block_size, symObjAddr: 0x125E0, symBinAddr: 0x100010028, symSize: 0x0 }
+  - { offsetInCU: 0x337, offset: 0x337, size: 0x8, addend: 0x0, symName: _cache_state, symObjAddr: 0x125E8, symBinAddr: 0x100010030, symSize: 0x0 }
+  - { offsetInCU: 0x371, offset: 0x371, size: 0x8, addend: 0x0, symName: _cached_block, symObjAddr: 0x125F0, symBinAddr: 0x100010038, symSize: 0x0 }
+  - { offsetInCU: 0x399, offset: 0x399, size: 0x8, addend: 0x0, symName: _uninstall_data_i, symObjAddr: 0x125F8, symBinAddr: 0x100010040, symSize: 0x0 }
+  - { offsetInCU: 0x3AF, offset: 0x3AF, size: 0x8, addend: 0x0, symName: _uninstall_data, symObjAddr: 0x12600, symBinAddr: 0x100010048, symSize: 0x0 }
+  - { offsetInCU: 0x403, offset: 0x403, size: 0x8, addend: 0x0, symName: _uninstalling, symObjAddr: 0x13E00, symBinAddr: 0x100011848, symSize: 0x0 }
+  - { offsetInCU: 0x41F, offset: 0x41F, size: 0x8, addend: 0x0, symName: _gpt2mbr_type_conv_table, symObjAddr: 0x7568, symBinAddr: 0x10000A678, symSize: 0x0 }
+  - { offsetInCU: 0x46D, offset: 0x46D, size: 0x8, addend: 0x0, symName: _crc32_table, symObjAddr: 0x75B0, symBinAddr: 0x10000A6C0, symSize: 0x0 }
+  - { offsetInCU: 0x4A0, offset: 0x4A0, size: 0x8, addend: 0x0, symName: _uninstall_data_rev, symObjAddr: 0x13E08, symBinAddr: 0x100011850, symSize: 0x0 }
+  - { offsetInCU: 0x4B6, offset: 0x4B6, size: 0x8, addend: 0x0, symName: _cache, symObjAddr: 0x125D8, symBinAddr: 0x100010020, symSize: 0x0 }
+  - { offsetInCU: 0xC8F, offset: 0xC8F, size: 0x8, addend: 0x0, symName: _main, symObjAddr: 0x0, symBinAddr: 0x100002FC4, symSize: 0x1FD4 }
+  - { offsetInCU: 0x1E8D, offset: 0x1E8D, size: 0x8, addend: 0x0, symName: _general_usage, symObjAddr: 0x1FD4, symBinAddr: 0x100004F98, symSize: 0x88 }
+  - { offsetInCU: 0x1EE2, offset: 0x1EE2, size: 0x8, addend: 0x0, symName: _bios_install_usage, symObjAddr: 0x2148, symBinAddr: 0x10000510C, symSize: 0xF4 }
+  - { offsetInCU: 0x1F95, offset: 0x1F95, size: 0x8, addend: 0x0, symName: _version, symObjAddr: 0x205C, symBinAddr: 0x100005020, symSize: 0xEC }
+  - { offsetInCU: 0x205F, offset: 0x205F, size: 0x8, addend: 0x0, symName: _uninstall, symObjAddr: 0x22CC, symBinAddr: 0x100005290, symSize: 0x1D8 }
+  - { offsetInCU: 0x215A, offset: 0x215A, size: 0x8, addend: 0x0, symName: _perror_wrap, symObjAddr: 0x223C, symBinAddr: 0x100005200, symSize: 0x90 }
+  - { offsetInCU: 0x219E, offset: 0x219E, size: 0x8, addend: 0x0, symName: _device_cache_block, symObjAddr: 0x2988, symBinAddr: 0x10000594C, symSize: 0xC4 }
+  - { offsetInCU: 0x2248, offset: 0x2248, size: 0x8, addend: 0x0, symName: __device_read, symObjAddr: 0x24A4, symBinAddr: 0x100005468, symSize: 0xB4 }
+  - { offsetInCU: 0x22BF, offset: 0x22BF, size: 0x8, addend: 0x0, symName: __device_write, symObjAddr: 0x2558, symBinAddr: 0x10000551C, symSize: 0x1D0 }
+  - { offsetInCU: 0x2413, offset: 0x2413, size: 0x8, addend: 0x0, symName: _device_flush_cache, symObjAddr: 0x2728, symBinAddr: 0x1000056EC, symSize: 0xB0 }
+  - { offsetInCU: 0x248F, offset: 0x248F, size: 0x8, addend: 0x0, symName: _reverse_uninstall_data, symObjAddr: 0x27D8, symBinAddr: 0x10000579C, symSize: 0x6C }
+  - { offsetInCU: 0x24A2, offset: 0x24A2, size: 0x8, addend: 0x0, symName: _reverse_uninstall_data, symObjAddr: 0x27D8, symBinAddr: 0x10000579C, symSize: 0x6C }
+  - { offsetInCU: 0x24C3, offset: 0x24C3, size: 0x8, addend: 0x0, symName: _store_uninstall_data, symObjAddr: 0x2844, symBinAddr: 0x100005808, symSize: 0x144 }
+...
