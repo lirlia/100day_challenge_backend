@@ -3,23 +3,15 @@ package ast
 import "fmt"
 
 // Expression は全ての式ノードが満たすインターフェースです。
-// Pos() はトークンの開始位置を返します (participleによって自動的に設定されます)。
-// String() はデバッグ用にASTノードの文字列表現を返します。
 type Expression interface {
-	Pos() int // participle が提供する Capture で取得される位置情報
+	Pos() int
 	String() string
-	// Dummy method to make this interface unique and identifiable
-	// (e.g. for type switches on Expression vs other interfaces)
 	sealedExpression()
 }
 
 // Program は MiniLang プログラムのルートノードです。
-// 式のリストを持つことができますが、今回は単一の式を想定します。
-// または、トップレベルのlet束縛の連続かもしれません。
-// 簡単のため、単一の式、または `let ... in ...` が連続する形のみを許可します。
-// participle の都合上、トップレベルはExpressionのポインタである必要があります。
 type Program struct {
-	Expression *TopLevelExpression `@@`
+	Expression *TopLevelExpression `@@?`
 }
 
 func (p *Program) Pos() int {
@@ -28,7 +20,6 @@ func (p *Program) Pos() int {
 	}
 	return 0
 }
-
 func (p *Program) String() string {
 	if p.Expression != nil {
 		return p.Expression.String()
@@ -38,14 +29,9 @@ func (p *Program) String() string {
 func (p *Program) sealedExpression() {}
 
 // TopLevelExpression はプログラムのトップレベルで許可される式です。
-// 通常のExpressionに加えて、Let式を直接含むことができます。
-// participleでは、複数のルールを試すためにOR (`|`) を使いますが、
-// ここでは単純化のため、Let式か、それ以外の一般の式(Term)かを区別します。
-// より正確には、MiniLangでは `let x = 1 in let y = 2 in x + y` のようなものがトップレベルに来ます。
-// または単に `1+2`のようなTermも可能です。
 type TopLevelExpression struct {
 	Let  *Let  `  @@`
-	Term *Term `| @@` // Let 以外の場合
+	Term *Term `| @@`
 }
 
 func (e *TopLevelExpression) Pos() int {
@@ -57,7 +43,6 @@ func (e *TopLevelExpression) Pos() int {
 	}
 	return 0
 }
-
 func (e *TopLevelExpression) String() string {
 	if e.Let != nil {
 		return e.Let.String()
@@ -70,55 +55,90 @@ func (e *TopLevelExpression) String() string {
 func (e *TopLevelExpression) sealedExpression() {}
 
 // --- Literal Values ---
-
 type Literal struct {
-	IntVal   *int    `  @Int`
-	BoolVal  *bool   `| @("true" | "false")`
-	Variable *string `| @Ident` // Ident は parser側で定義するトークン名
-	LParen   *string `| @"("`   // For parenthesized expressions
-	SubExpr  *Term   `  @@?`    // expression inside parentheses
-	RParen   *string `  @")"?`  // Closing parenthesis for SubExpr
+	// Option 1: Parenthesized Expression
+	LParen  *string `  @"("`
+	SubExpr *Term   `  @@`
+	RParen  *string `  @")"`
+	// Option 2: Integer Literal
+	IntVal *int `| @Int`
+	// Option 3: Boolean Literals
+	TrueTag  *string `| @True`
+	FalseTag *string `| @False`
+	// Option 4: Variable Identifier
+	Variable *string `| @Ident`
 }
 
-func (l *Literal) Pos() int { return 0 } // participle が Capture で設定するのを期待
+func (l *Literal) Pos() int {
+	if l.LParen != nil && l.SubExpr != nil { // Parenthesized expression
+		return l.SubExpr.Pos()
+	}
+	if l.IntVal != nil {
+		return 0 // Placeholder
+	}
+	if l.TrueTag != nil || l.FalseTag != nil {
+		return 0 // Placeholder
+	}
+	if l.Variable != nil {
+		return 0 // Placeholder
+	}
+	return 0
+}
+
 func (l *Literal) String() string {
+	if l.LParen != nil && l.SubExpr != nil && l.RParen != nil {
+		return fmt.Sprintf("(%s)", l.SubExpr.String())
+	}
 	if l.IntVal != nil {
 		return fmt.Sprintf("%d", *l.IntVal)
 	}
-	if l.BoolVal != nil {
-		return fmt.Sprintf("%t", *l.BoolVal)
+	if l.TrueTag != nil {
+		return "true"
+	}
+	if l.FalseTag != nil {
+		return "false"
 	}
 	if l.Variable != nil {
 		return *l.Variable
 	}
-	if l.SubExpr != nil { // Parenthesized expression
-		return fmt.Sprintf("(%s)", l.SubExpr.String())
-	}
-	return ""
+	return "<invalid_literal>" // Should not happen
 }
+
 func (l *Literal) sealedExpression() {}
 
-// --- Basic Terms (can be part of binary operations) ---
-// Factor は Literal または Function Application です。
-// Term は Factor の連続した二項演算です (例: factor op factor op factor ...)
+// --- Basic Terms ---
 type Factor struct {
-	// Function Application は factor(term) という形。左再帰を避けるため工夫が必要。
-	// fn x => x のようなラムダもFactorの一部として扱います。
-	Base *BaseFactor `@@`
-	Args []*Arg      `@@*` // For function application: Factor(Term, Term ...)
+	UnaryMinus *string     `@"-"?`
+	Base       *BaseFactor `@@`
+	Args       []*Arg      `@@*` // For function application: Factor(Term, Term ...)
 }
 
-func (f *Factor) Pos() int { return f.Base.Pos() }
+func (f *Factor) Pos() int {
+	if f.UnaryMinus != nil {
+		// Position of UnaryMinus or Base
+	}
+	if f.Base != nil {
+		return f.Base.Pos()
+	}
+	return 0
+}
 func (f *Factor) String() string {
-	res := f.Base.String()
+	res := ""
+	if f.UnaryMinus != nil {
+		res += "-"
+	}
+	if f.Base != nil {
+		res += f.Base.String() // Append to res, don't overwrite
+	}
 	for _, arg := range f.Args {
-		res += arg.String()
+		if arg != nil { // Added nil check for safety, though grammar implies args are constructed fully.
+			res += arg.String()
+		}
 	}
 	return res
 }
 func (f *Factor) sealedExpression() {}
 
-// BaseFactor は Literal, Lambda, If, Parenthesized expression など、より基本的な要素です。
 type BaseFactor struct {
 	Literal *Literal `  @@`
 	Lambda  *Lambda  `| @@`
@@ -152,37 +172,47 @@ func (bf *BaseFactor) String() string {
 }
 func (bf *BaseFactor) sealedExpression() {}
 
-// Arg は関数適用の引数部分です `(Term)`
 type Arg struct {
-	LParen *string `@"("`
-	Arg    *Term   `@@`
-	RParen *string `@")"`
+	LParen *string `@LParen` // Argument list starts with '('
+	Arg    *Term   `@@`      // The actual argument Term
+	RParen *string `@RParen` // Argument list ends with ')'
 }
 
-func (a *Arg) Pos() int { return 0 } // LParen の位置
+func (a *Arg) Pos() int {
+	// Position of the opening parenthesis could be a proxy.
+	return 0
+}
 func (a *Arg) String() string {
-	return fmt.Sprintf("(%s)", a.Arg.String())
+	if a.Arg != nil {
+		return fmt.Sprintf("(%s)", a.Arg.String())
+	}
+	return "()" // Represents an argument like `()` if that were possible, or an error state.
 }
 func (a *Arg) sealedExpression() {}
 
-// Term は演算子の優先順位を考慮した式です。
-// ここでは簡単化のため、加減算と乗除算の優先順位のみを考慮します。
+// --- Operator Precedence Terms ---
 // Term = AddTerm ( ( "+" | "-" ) AddTerm )*
-// AddTerm = MulTerm ( ( "*" | "/" ) MulTerm )*
-// MulTerm = CmpTerm ( ( ">" | "<" | "==" ) CmpTerm )*
-// CmpTerm = BoolTerm ( ( "&&" | "||" ) BoolTerm )*
-// BoolTerm = Factor
-// このような左再帰的な定義は participle では直接扱いにくいため、フラットなリストで演算を保持します。
 type Term struct {
 	Left  *AddTerm     `@@`
 	Right []*OpAddTerm `@@*`
 }
 
-func (t *Term) Pos() int { return t.Left.Pos() }
+func (t *Term) Pos() int {
+	if t.Left != nil {
+		return t.Left.Pos()
+	}
+	return 0
+}
 func (t *Term) String() string {
+	if t.Left == nil {
+		return ""
+	} // Should not happen with `@@`
 	res := t.Left.String()
 	for _, opTerm := range t.Right {
-		res += " " + opTerm.Operator + " " + opTerm.AddTerm.String()
+		// Ensure opTerm and its AddTerm are not nil before calling String()
+		if opTerm != nil && opTerm.AddTerm != nil {
+			res += " " + opTerm.Operator + " " + opTerm.AddTerm.String()
+		}
 	}
 	return res
 }
@@ -193,16 +223,27 @@ type OpAddTerm struct {
 	AddTerm  *AddTerm `@@`
 }
 
+// AddTerm = MulTerm ( ( "*" | "/" ) MulTerm )*
 type AddTerm struct {
 	Left  *MulTerm     `@@`
 	Right []*OpMulTerm `@@*`
 }
 
-func (at *AddTerm) Pos() int { return at.Left.Pos() }
+func (at *AddTerm) Pos() int {
+	if at.Left != nil {
+		return at.Left.Pos()
+	}
+	return 0
+}
 func (at *AddTerm) String() string {
+	if at.Left == nil {
+		return ""
+	}
 	res := at.Left.String()
 	for _, opTerm := range at.Right {
-		res += " " + opTerm.Operator + " " + opTerm.MulTerm.String()
+		if opTerm != nil && opTerm.MulTerm != nil {
+			res += " " + opTerm.Operator + " " + opTerm.MulTerm.String()
+		}
 	}
 	return res
 }
@@ -213,95 +254,173 @@ type OpMulTerm struct {
 	MulTerm  *MulTerm `@@`
 }
 
+// MulTerm = CmpTerm ( ( ">" | "<" | "==" ) CmpTerm )*
 type MulTerm struct {
 	Left  *CmpTerm     `@@`
 	Right []*OpCmpTerm `@@*`
 }
 
-func (mt *MulTerm) Pos() int { return mt.Left.Pos() }
+func (mt *MulTerm) Pos() int {
+	if mt.Left != nil {
+		return mt.Left.Pos()
+	}
+	return 0
+}
 func (mt *MulTerm) String() string {
+	if mt.Left == nil {
+		return ""
+	}
 	res := mt.Left.String()
 	for _, opTerm := range mt.Right {
-		res += " " + opTerm.Operator + " " + opTerm.CmpTerm.String()
+		if opTerm != nil && opTerm.CmpTerm != nil {
+			res += " " + opTerm.Operator + " " + opTerm.CmpTerm.String()
+		}
 	}
 	return res
 }
 func (mt *MulTerm) sealedExpression() {}
 
 type OpCmpTerm struct {
-	Operator string   `@(">" | "<" | "==")`
+	Operator string   `@(">" | "<" | Eq)` // Uses Eq token from lexer for ==
 	CmpTerm  *CmpTerm `@@`
 }
 
+// CmpTerm = BoolTerm ( ( "&&" | "||" ) BoolTerm )*
 type CmpTerm struct {
 	Left  *BoolTerm     `@@`
 	Right []*OpBoolTerm `@@*`
 }
 
-func (ct *CmpTerm) Pos() int { return ct.Left.Pos() }
+func (ct *CmpTerm) Pos() int {
+	if ct.Left != nil {
+		return ct.Left.Pos()
+	}
+	return 0
+}
 func (ct *CmpTerm) String() string {
+	if ct.Left == nil {
+		return ""
+	}
 	res := ct.Left.String()
 	for _, opTerm := range ct.Right {
-		res += " " + opTerm.Operator + " " + opTerm.BoolTerm.String()
+		if opTerm != nil && opTerm.BoolTerm != nil {
+			res += " " + opTerm.Operator + " " + opTerm.BoolTerm.String()
+		}
 	}
 	return res
 }
 func (ct *CmpTerm) sealedExpression() {}
 
 type OpBoolTerm struct {
-	Operator string    `@("&&" | "||")`
+	Operator string    `@(LogicalAnd | LogicalOr)` // Uses tokens from lexer
 	BoolTerm *BoolTerm `@@`
 }
 
+// BoolTerm = Factor
 type BoolTerm struct {
-	Factor *Factor `@@` // Factor には Literal, Lambda, If, FuncApp が含まれる
+	Factor *Factor `@@`
 }
 
-func (bt *BoolTerm) Pos() int          { return bt.Factor.Pos() }
-func (bt *BoolTerm) String() string    { return bt.Factor.String() }
+func (bt *BoolTerm) Pos() int {
+	if bt.Factor != nil {
+		return bt.Factor.Pos()
+	}
+	return 0
+}
+func (bt *BoolTerm) String() string {
+	if bt.Factor != nil {
+		return bt.Factor.String()
+	}
+	return ""
+}
 func (bt *BoolTerm) sealedExpression() {}
 
 // --- Compound Expressions ---
-
 type Let struct {
-	LetKw    string              `@"let"`
-	VarName  string              `@Ident`
-	Eq       string              `@"="`
-	BindExpr *Term               `@@` // 束縛される式
-	InKw     string              `@"in"`
-	BodyExpr *TopLevelExpression `@@` // let ... in (body)  本体は TopLevelExpression (LetまたはTermを含む可能性あり)
+	LetKw    string              `@LetKw`  // "let"
+	VarName  string              `@Ident`  // Variable name
+	Eq       string              `@Assign` // "=" from lexer
+	BindExpr *Term               `@@`      // Expression to bind
+	InKw     string              `@InKw`   // "in"
+	BodyExpr *TopLevelExpression `@@`      // Body expression
 }
 
-func (l *Let) Pos() int { return 0 } // "let" keyword position
+func (l *Let) Pos() int {
+	// Position of "let" keyword might be a good proxy.
+	return 0
+}
 func (l *Let) String() string {
-	return fmt.Sprintf("let %s = %s in %s", l.VarName, l.BindExpr.String(), l.BodyExpr.String())
+	varNameStr := "<nil_var>"
+	// VarName is not a pointer, so direct check for empty string.
+	if l.VarName != "" {
+		varNameStr = l.VarName
+	}
+
+	bindStr := "<nil_bind>"
+	if l.BindExpr != nil {
+		bindStr = l.BindExpr.String()
+	}
+
+	bodyStr := "<nil_body>"
+	if l.BodyExpr != nil {
+		bodyStr = l.BodyExpr.String()
+	}
+	return fmt.Sprintf("let %s = %s in %s", varNameStr, bindStr, bodyStr)
 }
 func (l *Let) sealedExpression() {}
 
 type If struct {
-	IfKw     string `@"if"`
-	CondExpr *Term  `@@`
-	ThenKw   string `@"then"`
-	ThenExpr *Term  `@@`
-	ElseKw   string `@"else"`
-	ElseExpr *Term  `@@`
+	IfKw     string `@IfKw`   // "if"
+	CondExpr *Term  `@@`      // Condition
+	ThenKw   string `@ThenKw` // "then"
+	ThenExpr *Term  `@@`      // Expression if true
+	ElseKw   string `@ElseKw` // "else"
+	ElseExpr *Term  `@@`      // Expression if false
 }
 
-func (i *If) Pos() int { return 0 } // "if" keyword position
+func (i *If) Pos() int {
+	// Position of "if" keyword.
+	return 0
+}
 func (i *If) String() string {
-	return fmt.Sprintf("if %s then %s else %s", i.CondExpr.String(), i.ThenExpr.String(), i.ElseExpr.String())
+	condStr := "<nil_cond>"
+	if i.CondExpr != nil {
+		condStr = i.CondExpr.String()
+	}
+
+	thenStr := "<nil_then>"
+	if i.ThenExpr != nil {
+		thenStr = i.ThenExpr.String()
+	}
+
+	elseStr := "<nil_else>"
+	if i.ElseExpr != nil {
+		elseStr = i.ElseExpr.String()
+	}
+	return fmt.Sprintf("if %s then %s else %s", condStr, thenStr, elseStr)
 }
 func (i *If) sealedExpression() {}
 
 type Lambda struct {
-	FnKw     string `@"fn"`
-	Param    string `@Ident`
-	Arrow    string `@"=>"`
-	BodyExpr *Term  `@@`
+	FnKw     string `@FnKw`  // "fn"
+	Param    string `@Ident` // Parameter name
+	Arrow    string `@Arrow` // "=>" from lexer
+	BodyExpr *Term  `@@`     // Body expression
 }
 
-func (l *Lambda) Pos() int { return 0 } // "fn" keyword position
+func (l *Lambda) Pos() int {
+	// Position of "fn" keyword.
+	return 0
+}
 func (l *Lambda) String() string {
-	return fmt.Sprintf("fn %s => %s", l.Param, l.BodyExpr.String())
+	paramStr := "<nil_param>"
+	if l.Param != "" {
+		paramStr = l.Param
+	}
+	bodyStr := "<nil_body>"
+	if l.BodyExpr != nil {
+		bodyStr = l.BodyExpr.String()
+	}
+	return fmt.Sprintf("fn %s => %s", paramStr, bodyStr)
 }
 func (l *Lambda) sealedExpression() {}
