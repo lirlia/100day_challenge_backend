@@ -448,6 +448,41 @@ func (n *Node) QueryItemsFromLocalStore(tableName string, partitionKey string, s
 	return n.kvStore.QueryItems(tableName, partitionKey, sortKeyPrefix)
 }
 
+// GetClusterStatus は現在のノードとクラスタのステータス情報を返します。
+func (n *Node) GetClusterStatus() (map[string]interface{}, error) {
+	status := make(map[string]interface{})
+	status["node_id"] = n.NodeID()
+	status["is_leader"] = n.IsLeader()
+	status["current_leader_address"] = n.LeaderAddr() // http_api.go の RaftNodeProxy.LeaderAddress() に合わせる
+	status["current_leader_id"] = n.LeaderID()        // http_api.go の RaftNodeProxy.LeaderID() に合わせる
+
+	// Raftの統計情報を追加
+	raftStats := n.raft.Stats()
+	status["raft_stats"] = raftStats
+
+	// テーブル一覧を追加 (FSMから取得)
+	tablesMetadata := n.fsm.ListTables() // FSMにこのメソッドがある
+	tableNames := make([]string, 0, len(tablesMetadata))
+	for name := range tablesMetadata {
+		tableNames = append(tableNames, name)
+	}
+	status["tables"] = tableNames
+
+	// ノード自身のRaft状態
+	status["raft_state"] = n.raft.State().String()
+
+	// 現在のRaft設定を取得
+	cfgFuture := n.raft.GetConfiguration()
+	if err := cfgFuture.Error(); err == nil {
+		status["raft_configuration"] = cfgFuture.Configuration()
+	} else {
+		log.Printf("Node %s: Failed to get raft configuration for status: %v", n.NodeID(), err)
+		status["raft_configuration"] = "Error retrieving configuration"
+	}
+
+	return status, nil
+}
+
 // LeaderWithID は現在のクラスタリーダーのアドレスとIDを返します。
 // LeaderID() が LeaderWithID() の第2返り値を返すように変更したため、このメソッドも追加。
 func (n *Node) LeaderWithID() (raft.ServerAddress, raft.ServerID) {

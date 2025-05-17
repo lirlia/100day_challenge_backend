@@ -279,11 +279,11 @@ main() {
     exit 1
   fi
 
-  # # 12. テーブル削除 (Go側に未実装のためコメントアウト)
-  # echo_section "Test 12: Delete Table '$TEST_TABLE'"
-  # OUTPUT_DELETE_TABLE=$($CLI_BIN delete-table --target-addr "$LEADER_ADDR" --table-name "$TEST_TABLE" 2>&1)
-  # check_command_success "Delete Table '$TEST_TABLE'"
-  # check_grep_success "Delete Table '$TEST_TABLE' response" "Table '$TEST_TABLE' deleted successfully" "$OUTPUT_DELETE_TABLE"
+  # 12. テーブル削除
+  echo_section "Test 12: Delete Table '$TEST_TABLE'"
+  OUTPUT_DELETE_TABLE=$($CLI_BIN delete-table --target-addr "$LEADER_ADDR" --table-name "$TEST_TABLE" 2>&1)
+  check_command_success "Delete Table '$TEST_TABLE'"
+  check_grep_success "Delete Table '$TEST_TABLE' response" "DeleteTable API call successful" "$OUTPUT_DELETE_TABLE"
 
   # # 13. (オプション) テーブルがリストから消えたことを確認 (Go側に未実装のためコメントアウト)
   # echo_section "Test 13: Verify table deletion via status (optional)"
@@ -299,7 +299,7 @@ main() {
   # echo -e "${GREEN_COLOR}SUCCESS: Table '$TEST_TABLE' not found in status after deletion, as expected.${RESET_COLOR}"
 
   echo -e "\n${GREEN_COLOR}=====================================${RESET_COLOR}"
-  echo -e "${GREEN_COLOR}All E2E tests passed successfully! (Delete Table tests skipped)${RESET_COLOR}" # メッセージ変更
+  echo -e "${GREEN_COLOR}All E2E tests passed successfully!${RESET_COLOR}"
   echo -e "${GREEN_COLOR}=====================================${RESET_COLOR}"
 
 }
