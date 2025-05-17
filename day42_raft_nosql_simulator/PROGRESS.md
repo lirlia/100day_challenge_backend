@@ -69,7 +69,7 @@
     - [X] アイテムQueryリクエスト
     - [X] ステータス取得リクエスト
     - [X] `cmd/cli/table.go`, `cmd/cli/item.go` からクライアントを利用
-- [ ] コミット: `day42: step 3/7 CLI command stubs and initial structure`
+- [X] コミット: `day42: step 3/7 CLI, HTTP API, client logic implementation and E2E tests passed`
 
 ## フェーズ4: その他のテーブル・アイテム操作
 - [ ] `delete-table` コマンドの実装 (`--table-name <name>`)
