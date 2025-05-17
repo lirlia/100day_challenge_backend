@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/hashicorp/raft"
-	"github.com/spf13/cobra"
 
 	"github.com/lirlia/100day_challenge_backend/day42_raft_nosql_simulator/internal/raft_node"
 	// "github.com/lirlia/100day_challenge_backend/day42_raft_nosql_simulator/internal/store"
@@ -134,41 +133,20 @@ func runServer() {
 	log.Println("All nodes shut down. Exiting.")
 }
 
-var rootCmd = &cobra.Command{
-	Use:   "raft-nosql-cli",
-	Short: "A CLI for interacting with the Raft-based NoSQL database.",
-	Long: `raft-nosql-cli is a command-line interface to manage and interact with
- a distributed NoSQL database built on top of the Raft consensus algorithm.`,
-	Args: func(cmd *cobra.Command, args []string) error {
-		if len(args) == 0 {
-			return nil
-		}
-		return nil
-	},
-	Run: func(cmd *cobra.Command, args []string) {
-		if len(args) == 0 {
-			runServer()
-			return
-		}
-		cmd.Usage()
-	},
-}
+// serverCmd はサーバーを起動するためのコマンド (明示的に指定する場合)
+// この定義は root.go に移管する
+// var serverCmd = &cobra.Command{
+// 	Use:   "server",
+// 	Short: "Starts the Raft NoSQL database server cluster",
+// 	Run: func(cmd *cobra.Command, args []string) {
+// 		runServer()
+// 	},
+// }
 
-var serverCmd = &cobra.Command{
-	Use:   "server",
-	Short: "Starts the Raft NoSQL database server cluster",
-	Run: func(cmd *cobra.Command, args []string) {
-		runServer()
-	},
-}
-
-func init() {
-	rootCmd.AddCommand(serverCmd)
-}
+// rootCmd の定義と init() は root.go に移管する
+// var rootCmd = &cobra.Command{...}
+// func init() {...}
 
 func main() {
-	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
+	Execute() // root.go で定義された Execute を呼び出す
 }

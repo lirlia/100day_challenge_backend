@@ -38,32 +38,33 @@
     - [X] `commands_test.go`: コマンド (デ)シリアライズテスト
     - [X] `fsm_test.go`: FSMのテーブル操作、アイテム操作、スナップショット/リストアのテスト
     - [X] `kv_store_test.go`: KVStoreのディレクトリ操作、アイテムCRUD操作、クエリ操作のテスト
-- [ ] **統合テスト (`main.go` または別テストファイル)**
-    - [ ] クラスタ経由でのテーブル作成・削除・一覧取得のテスト
-    - [ ] クラスタ経由でのアイテムPut・Get・Delete・Queryのテスト
-    - [ ] リーダー障害時のスナップショットからの復旧テスト (発展)
-    - [X] **統合テスト (`internal/raft_node/integration_test.go`)**
+- [X] **統合テスト (`internal/raft_node/integration_test.go`)**
     - [X] クラスタ経由でのテーブル作成・削除・一覧取得のテスト
     - [X] クラスタ経由でのアイテムPut・Get・Delete・Queryのテスト
     - [ ] リーダー障害時のスナップショットからの復旧テスト (発展)
-- [ ] コミット: `day42: step 2/7 Data store, FSM, and initial integration tests`
+- [X] コミット: `day42: step 2/7 Data store, FSM, and initial integration tests`
 
 ## フェーズ3: CLIインターフェースと書き込み/読み取りパス (コア機能)
-- [ ] CLIフレームワーク (`spf13/cobra`) を用いた基本的なCLI構造の作成 (`cmd/cli/main.go`, `cmd/cli/root.go`)
-- [ ] `create-table` コマンドの実装 (`--table-name <name> --partition-key <pk_name>:<pk_type> [--sort-key <sk_name>:<sk_type>]`)
-- [ ] `put-item` コマンドの実装 (`--table-name <name> --item '<json_object_string>'`)
-    - リクエストをRaftノードに送信する処理 (デフォルトはランダム、`--target-node <node_id>` で指定可)
-    - リクエストを受け取ったノードがリーダーでなければリーダーに転送する処理
-    - リーダーが操作をRaftログとして提案する処理 (`raft.Apply()`)
-    - FSMが更新を適用し、ローカルデータストアが更新されることを確認
-- [ ] `get-item` コマンドの実装 (`--table-name <name> --key '<json_object_string_for_key>'`)
-    - リクエストを受け取ったノードがローカルデータストアから直接読み取る処理 (結果整合性)
-- [ ] `--target-node <node_id>` グローバルオプションまたはコマンドオプションの実装
-- [ ] テスト:
-    - テーブル作成 (`create-table`)
-    - アイテム書き込み (`put-item`)
-    - アイテム読み取り (`get-item`) を複数ノードに対して行い、結果整合性を確認
-- [ ] コミット: `day42: step 3/7 CLI interface and core write/read path (create-table, put-item, get-item)`
+- [X] CLIフレームワーク (`spf13/cobra`) を用いた基本的なCLI構造の作成 (`cmd/cli/main.go`, `cmd/cli/root.go`, `cmd/cli/table.go`, `cmd/cli/item.go`)
+- [X] `create-table` コマンドのスタブ実装 (`--table-name <name> --partition-key <pk_name> [--sort-key <sk_name>]`)
+- [X] `put-item` コマンドのスタブ実装 (`--table-name <name> --item-data '<json_object_string>'`)
+- [X] `get-item` コマンドのスタブ実装 (`--table-name <name> --partition-key <value> [--sort-key <value>]`)
+- [X] `--target-addr <node_addr>` グローバルオプションの実装
+- [ ] **HTTP API 実装 (`internal/server/http_api.go` など)**
+    - [ ] `/create-table` エンドポイント (リーダーノードで `ProposeCreateTable` 呼び出し)
+    - [ ] `/put-item` エンドポイント (リーダーノードで `ProposePutItem` 呼び出し)
+    - [ ] `/get-item` エンドポイント (指定ノードのローカルKVStoreから読み出し)
+    - [ ] リクエスト転送ロジック (非リーダーが書き込みリクエストを受け取った場合にリーダーへ転送)
+- [ ] **CLIクライアントロジック実装 (`internal/client/client.go` など)**
+    - [ ] 指定された `targetNodeAddr` のHTTP APIを呼び出す処理
+    - [ ] `create-table` コマンドからクライアント経由でAPI呼び出し
+    - [ ] `put-item` コマンドからクライアント経由でAPI呼び出し
+    - [ ] `get-item` コマンドからクライアント経由でAPI呼び出し
+    - [ ] **テスト (CLI経由でのE2Eテスト)**
+    - [ ] `create-table` コマンドでテーブルがRaftクラスタに作成されること
+    - [ ] `put-item` コマンドでアイテムがRaftクラスタに保存されること
+    - [ ] `get-item` コマンドでアイテムがRaftクラスタから取得できること
+- [ ] コミット: `day42: step 3/7 CLI command stubs and initial structure`
 
 ## フェーズ4: その他のテーブル・アイテム操作
 - [ ] `delete-table` コマンドの実装 (`--table-name <name>`)
