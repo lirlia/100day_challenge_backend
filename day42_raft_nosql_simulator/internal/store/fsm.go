@@ -99,7 +99,92 @@ func (f *FSM) Apply(logEntry *raft.Log) interface{} {
 		log.Printf("[%s] FSM.Apply deleted table %s", f.localNodeID, payload.TableName)
 		return nil
 
-	// TODO: PutItemCommandType, DeleteItemCommandType の処理を追加
+	case PutItemCommandType:
+		putPayload, err := DecodePutItemCommand(cmd.Payload)
+		if err != nil {
+			log.Printf("[%s] FSM.Apply failed to decode PutItemCommand: %v", f.localNodeID, err)
+			return err
+		}
+		meta, exists := f.tables[putPayload.TableName]
+		if !exists {
+			log.Printf("[%s] FSM.Apply PutItem: table %s not found", f.localNodeID, putPayload.TableName)
+			return fmt.Errorf("table %s not found", putPayload.TableName)
+		}
+
+		// itemRawData からパーティションキーとソートキーの値を抽出
+		var itemDataMap map[string]interface{}
+		if err := json.Unmarshal(putPayload.Item, &itemDataMap); err != nil {
+			log.Printf("[%s] FSM.Apply PutItem: failed to unmarshal item data from payload for table %s: %v", f.localNodeID, putPayload.TableName, err)
+			return fmt.Errorf("failed to unmarshal item data from payload for table %s: %w", putPayload.TableName, err)
+		}
+
+		pkValue, pkOk := itemDataMap[meta.PartitionKeyName]
+		if !pkOk || pkValue == nil {
+			log.Printf("[%s] FSM.Apply PutItem: partition key %s not found or is null in item for table %s", f.localNodeID, meta.PartitionKeyName, putPayload.TableName)
+			return fmt.Errorf("partition key %s not found or is null in item for table %s", meta.PartitionKeyName, putPayload.TableName)
+		}
+		pkStr, pkIsStr := pkValue.(string) // キーは文字列を想定
+		if !pkIsStr {
+			log.Printf("[%s] FSM.Apply PutItem: partition key %s is not a string in item for table %s", f.localNodeID, meta.PartitionKeyName, putPayload.TableName)
+			return fmt.Errorf("partition key %s must be a string, got %T", meta.PartitionKeyName, pkValue)
+		}
+		if pkStr == "" {
+			return fmt.Errorf("partition key %s cannot be empty string", meta.PartitionKeyName)
+		}
+
+		itemStoreKey := pkStr
+		if meta.SortKeyName != "" {
+			skValue, skOk := itemDataMap[meta.SortKeyName]
+			if !skOk || skValue == nil {
+				log.Printf("[%s] FSM.Apply PutItem: sort key %s not found or is null in item for table %s (but defined in metadata)", f.localNodeID, meta.SortKeyName, putPayload.TableName)
+				return fmt.Errorf("sort key %s not found or is null in item for table %s", meta.SortKeyName, putPayload.TableName)
+			}
+			skStr, skIsStr := skValue.(string)
+			if !skIsStr {
+				log.Printf("[%s] FSM.Apply PutItem: sort key %s is not a string in item for table %s", f.localNodeID, meta.SortKeyName, putPayload.TableName)
+				return fmt.Errorf("sort key %s must be a string, got %T", meta.SortKeyName, skValue)
+			}
+			// ソートキーが空文字列でも許容する場合があるため、ここではチェックしない。
+			itemStoreKey = pkStr + "_" + skStr
+		}
+
+		if err := f.kvStore.PutItem(putPayload.TableName, itemStoreKey, putPayload.Item, putPayload.Timestamp); err != nil {
+			log.Printf("[%s] FSM.Apply PutItem: KVStore.PutItem failed for table %s, key %s: %v", f.localNodeID, putPayload.TableName, itemStoreKey, err)
+			return fmt.Errorf("KVStore.PutItem failed for table %s, key %s: %w", putPayload.TableName, itemStoreKey, err)
+		}
+		log.Printf("[%s] FSM.Apply PutItem successful for table %s, key %s", f.localNodeID, putPayload.TableName, itemStoreKey)
+		return nil
+
+	case DeleteItemCommandType:
+		deletePayload, err := DecodeDeleteItemCommand(cmd.Payload)
+		if err != nil {
+			log.Printf("[%s] FSM.Apply failed to decode DeleteItemCommand: %v", f.localNodeID, err)
+			return err
+		}
+		meta, exists := f.tables[deletePayload.TableName]
+		if !exists {
+			log.Printf("[%s] FSM.Apply DeleteItem: table %s not found", f.localNodeID, deletePayload.TableName)
+			return fmt.Errorf("table %s not found", deletePayload.TableName)
+		}
+
+		// DeleteItemCommandPayload には PartitionKey と SortKey が直接含まれている
+		itemStoreKey := deletePayload.PartitionKey
+		if meta.SortKeyName != "" {
+			// メタデータにソートキーが定義されている場合、ペイロードのソートキーも使う
+			// ペイロードのSortKeyが空でも、定義されていれば "_" で結合する (空のソートキーを表現)
+			itemStoreKey = deletePayload.PartitionKey + "_" + deletePayload.SortKey
+		} else if deletePayload.SortKey != "" {
+			// メタデータにソートキーが定義されていないのに、ペイロードにソートキーがある場合はエラー
+			log.Printf("[%s] FSM.Apply DeleteItem: sort key provided in payload for table %s which has no sort key defined", f.localNodeID, deletePayload.TableName)
+			return fmt.Errorf("sort key provided for table %s which has no sort key defined", deletePayload.TableName)
+		}
+
+		if err := f.kvStore.DeleteItem(deletePayload.TableName, itemStoreKey, deletePayload.Timestamp); err != nil {
+			log.Printf("[%s] FSM.Apply DeleteItem: KVStore.DeleteItem failed for table %s, key %s: %v", f.localNodeID, deletePayload.TableName, itemStoreKey, err)
+			return fmt.Errorf("KVStore.DeleteItem failed for table %s, key %s: %w", deletePayload.TableName, itemStoreKey, err)
+		}
+		log.Printf("[%s] FSM.Apply DeleteItem successful for table %s, key %s", f.localNodeID, deletePayload.TableName, itemStoreKey)
+		return nil
 
 	default:
 		log.Printf("[%s] FSM.Apply received unknown command type: %s", f.localNodeID, cmd.Type)

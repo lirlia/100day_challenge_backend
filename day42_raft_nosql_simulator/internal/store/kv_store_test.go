@@ -1,9 +1,11 @@
 package store
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -102,4 +104,224 @@ func TestNewKVStore_CreatesBaseDir(t *testing.T) {
 	stat, err := os.Stat(newBaseDir)
 	require.NoError(t, err, "Base directory should exist after NewKVStore")
 	require.True(t, stat.IsDir())
+}
+
+func TestKVStore_ItemOperations(t *testing.T) {
+	baseDir := t.TempDir()
+	nodeID := "test-node-kv-items"
+	kv, err := NewKVStore(baseDir, nodeID)
+	require.NoError(t, err)
+
+	tableName := "itemTable"
+	err = kv.EnsureTableDir(tableName)
+	require.NoError(t, err)
+
+	pk1 := "user123"
+	sk1 := "profile"
+	itemKey1 := pk1 + "_" + sk1
+	itemData1 := json.RawMessage(`{"name": "Alice", "age": 30}`)
+	ts1 := time.Now().UnixNano()
+
+	pk2 := "product456"
+	itemKey2 := pk2 // ソートキーなし
+	itemData2 := json.RawMessage(`{"name": "Laptop", "price": 1200}`)
+	ts2 := time.Now().UnixNano() + 1000 // ts1 より新しい
+
+	itemKeyNonExistent := "nonexistent_key"
+
+	t.Run("PutItem new item", func(t *testing.T) {
+		err := kv.PutItem(tableName, itemKey1, itemData1, ts1)
+		require.NoError(t, err)
+
+		// GetItemで確認
+		retrievedData, retrievedTs, getErr := kv.GetItem(tableName, itemKey1)
+		require.NoError(t, getErr)
+		require.Equal(t, ts1, retrievedTs)
+		require.JSONEq(t, string(itemData1), string(retrievedData))
+	})
+
+	t.Run("PutItem another new item (no sort key)", func(t *testing.T) {
+		err := kv.PutItem(tableName, itemKey2, itemData2, ts2)
+		require.NoError(t, err)
+
+		retrievedData, retrievedTs, getErr := kv.GetItem(tableName, itemKey2)
+		require.NoError(t, getErr)
+		require.Equal(t, ts2, retrievedTs)
+		require.JSONEq(t, string(itemData2), string(retrievedData))
+	})
+
+	t.Run("GetItem non-existent", func(t *testing.T) {
+		_, _, err := kv.GetItem(tableName, itemKeyNonExistent)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "not found")
+	})
+
+	t.Run("LWW PutItem older timestamp", func(t *testing.T) {
+		olderData := json.RawMessage(`{"name": "Alice Updated", "age": 31}`)
+		olderTs := ts1 - 1000 // ts1 より古い
+		err := kv.PutItem(tableName, itemKey1, olderData, olderTs)
+		require.NoError(t, err) // エラーにはならない (スキップされる)
+
+		// データが変わっていないことを確認
+		retrievedData, retrievedTs, _ := kv.GetItem(tableName, itemKey1)
+		require.Equal(t, ts1, retrievedTs)                          // 元のタイムスタンプのはず
+		require.JSONEq(t, string(itemData1), string(retrievedData)) // 元のデータのはず
+	})
+
+	t.Run("LWW PutItem newer timestamp", func(t *testing.T) {
+		newerData := json.RawMessage(`{"name": "Alice V2", "age": 32}`)
+		newerTs := ts1 + 1000 // ts1 より新しい
+		err := kv.PutItem(tableName, itemKey1, newerData, newerTs)
+		require.NoError(t, err)
+
+		retrievedData, retrievedTs, _ := kv.GetItem(tableName, itemKey1)
+		require.Equal(t, newerTs, retrievedTs)
+		require.JSONEq(t, string(newerData), string(retrievedData))
+		// 元の itemData1, ts1 は newerData, newerTs で上書きされたことを記録しておく
+		itemData1 = newerData
+		ts1 = newerTs
+	})
+
+	t.Run("DeleteItem non-existent", func(t *testing.T) {
+		err := kv.DeleteItem(tableName, itemKeyNonExistent, time.Now().UnixNano())
+		require.NoError(t, err) // エラーにはならない
+	})
+
+	t.Run("LWW DeleteItem older timestamp", func(t *testing.T) {
+		// itemKey1 (ts1) を削除しようとするが、より古いタイムスタンプで試みる
+		olderDeleteTs := ts1 - 1000
+		err := kv.DeleteItem(tableName, itemKey1, olderDeleteTs)
+		require.NoError(t, err) // エラーにはならない (スキップされる)
+
+		// データが削除されていないことを確認
+		_, _, getErr := kv.GetItem(tableName, itemKey1)
+		require.NoError(t, getErr, "Item should still exist after LWW delete skip")
+	})
+
+	t.Run("LWW DeleteItem newer timestamp", func(t *testing.T) {
+		// itemKey1 (ts1) を新しいタイムスタンプで削除
+		newerDeleteTs := ts1 + 1000
+		err := kv.DeleteItem(tableName, itemKey1, newerDeleteTs)
+		require.NoError(t, err)
+
+		// データが削除されたことを確認
+		_, _, getErr := kv.GetItem(tableName, itemKey1)
+		require.Error(t, getErr)
+		require.Contains(t, getErr.Error(), "not found")
+	})
+
+	t.Run("DeleteItem already deleted item", func(t *testing.T) {
+		// itemKey1は既に削除されている
+		err := kv.DeleteItem(tableName, itemKey1, time.Now().UnixNano())
+		require.NoError(t, err) // 存在しなくてもエラーにはならない
+	})
+
+	t.Run("PutItem with invalid key", func(t *testing.T) {
+		err := kv.PutItem(tableName, "../invalidKey", json.RawMessage(`{}`), time.Now().UnixNano())
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid character '.' in item key")
+	})
+}
+
+func TestKVStore_QueryItems(t *testing.T) {
+	baseDir := t.TempDir()
+	nodeID := "test-node-kv-query"
+	kv, err := NewKVStore(baseDir, nodeID)
+	require.NoError(t, err)
+
+	tableName := "queryTestTable"
+	err = kv.EnsureTableDir(tableName)
+	require.NoError(t, err)
+
+	// --- データ準備 ---
+	// PartitionKey: "sensorA"
+	sensorA_data1 := map[string]interface{}{"id": "sensorA", "ts": "20230101T100000Z", "value": 100, "loc": "room1"}
+	sensorA_json1, _ := json.Marshal(sensorA_data1)
+	kv.PutItem(tableName, "sensorA_20230101T100000Z", json.RawMessage(sensorA_json1), 100)
+
+	sensorA_data2 := map[string]interface{}{"id": "sensorA", "ts": "20230101T110000Z", "value": 105, "loc": "room1"}
+	sensorA_json2, _ := json.Marshal(sensorA_data2)
+	kv.PutItem(tableName, "sensorA_20230101T110000Z", json.RawMessage(sensorA_json2), 200)
+
+	sensorA_data3 := map[string]interface{}{"id": "sensorA", "ts": "20230102T100000Z", "value": 110, "loc": "room2"}
+	sensorA_json3, _ := json.Marshal(sensorA_data3)
+	kv.PutItem(tableName, "sensorA_20230102T100000Z", json.RawMessage(sensorA_json3), 300)
+
+	// PartitionKey: "sensorB"
+	sensorB_data1 := map[string]interface{}{"id": "sensorB", "ts": "20230101T100000Z", "value": 20}
+	sensorB_json1, _ := json.Marshal(sensorB_data1)
+	kv.PutItem(tableName, "sensorB_20230101T100000Z", json.RawMessage(sensorB_json1), 400)
+
+	// PartitionKey: "deviceC" (ソートキーなし)
+	deviceC_data1 := map[string]interface{}{"id": "deviceC", "status": "active"}
+	deviceC_json1, _ := json.Marshal(deviceC_data1)
+	kv.PutItem(tableName, "deviceC", json.RawMessage(deviceC_json1), 500)
+
+	t.Run("Query by PartitionKey only (sensorA)", func(t *testing.T) {
+		results, err := kv.QueryItems(tableName, "sensorA", "")
+		require.NoError(t, err)
+		require.Len(t, results, 3, "Should find 3 items for sensorA")
+		// 内容の検証 (順序は不定なので、存在を確認)
+		foundA1, foundA2, foundA3 := false, false, false
+		for _, item := range results {
+			if item["ts"] == "20230101T100000Z" && item["value"].(float64) == 100 {
+				foundA1 = true
+			}
+			if item["ts"] == "20230101T110000Z" && item["value"].(float64) == 105 {
+				foundA2 = true
+			}
+			if item["ts"] == "20230102T100000Z" && item["value"].(float64) == 110 {
+				foundA3 = true
+			}
+		}
+		require.True(t, foundA1 && foundA2 && foundA3, "All sensorA items should be found")
+	})
+
+	t.Run("Query by PartitionKey and SortKeyPrefix (sensorA, 20230101)", func(t *testing.T) {
+		results, err := kv.QueryItems(tableName, "sensorA", "20230101")
+		require.NoError(t, err)
+		require.Len(t, results, 2, "Should find 2 items for sensorA with prefix 20230101")
+		foundA1, foundA2 := false, false
+		for _, item := range results {
+			if item["ts"] == "20230101T100000Z" {
+				foundA1 = true
+			}
+			if item["ts"] == "20230101T110000Z" {
+				foundA2 = true
+			}
+		}
+		require.True(t, foundA1 && foundA2, "Both sensorA items with prefix 20230101 should be found")
+	})
+
+	t.Run("Query by PartitionKey (sensorB)", func(t *testing.T) {
+		results, err := kv.QueryItems(tableName, "sensorB", "")
+		require.NoError(t, err)
+		require.Len(t, results, 1)
+		require.Equal(t, "20230101T100000Z", results[0]["ts"])
+	})
+
+	t.Run("Query by PartitionKey (deviceC - no sort key)", func(t *testing.T) {
+		results, err := kv.QueryItems(tableName, "deviceC", "")
+		require.NoError(t, err)
+		require.Len(t, results, 1)
+		require.Equal(t, "active", results[0]["status"])
+	})
+
+	t.Run("Query non-existent PartitionKey", func(t *testing.T) {
+		results, err := kv.QueryItems(tableName, "nonExistentSensor", "")
+		require.NoError(t, err)
+		require.Len(t, results, 0)
+	})
+
+	t.Run("Query non-existent SortKeyPrefix", func(t *testing.T) {
+		results, err := kv.QueryItems(tableName, "sensorA", "nonExistentPrefix")
+		require.NoError(t, err)
+		require.Len(t, results, 0)
+	})
+
+	t.Run("Query on non-existent table", func(t *testing.T) {
+		_, err := kv.QueryItems("fakeTable", "anyPK", "")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "does not exist")
+	})
 }

@@ -152,6 +152,124 @@ func TestFSM_TableOperations(t *testing.T) {
 	})
 }
 
+func TestFSM_ItemOperations(t *testing.T) {
+	fsm, kv, _ := setupFSMWithKVStore(t) // kvも後で使う可能性があるので取得
+
+	// まずテーブルを作成
+	tableName := "fsmItemTable"
+	pkName := "itemID"
+	skName := "eventTime"
+	createTablePayload := CreateTableCommandPayload{TableName: tableName, PartitionKeyName: pkName, SortKeyName: skName}
+	createTableCmdBytes, _ := EncodeCommand(CreateTableCommandType, createTablePayload)
+	resp := fsm.Apply(&raft.Log{Data: createTableCmdBytes})
+	require.Nil(t, resp, "Setup: CreateTable should succeed")
+
+	// PutItem のテストデータ
+	pkValue1 := "item001"
+	skValue1 := "2024-01-15T100000Z"
+	itemDataMap1 := map[string]interface{}{pkName: pkValue1, skName: skValue1, "data": "Sample event 1"}
+	itemStoreKey1 := pkValue1 + "_" + "2024-01-15T100000Z"
+
+	putPayload1, err := NewPutItemCommandPayload(tableName, itemDataMap1)
+	require.NoError(t, err)
+	putCmdBytes1, _ := EncodeCommand(PutItemCommandType, putPayload1)
+
+	t.Run("Apply PutItem new item", func(t *testing.T) {
+		applyResp := fsm.Apply(&raft.Log{Data: putCmdBytes1})
+		require.Nil(t, applyResp, "Apply PutItem should succeed")
+
+		// KVStoreから直接取得して確認 (FSM経由のGetはまだないので)
+		retrievedItemData, retrievedTs, getErr := kv.GetItem(tableName, itemStoreKey1)
+		require.NoError(t, getErr)
+		require.Equal(t, putPayload1.Timestamp, retrievedTs)
+		var retrievedMap map[string]interface{}
+		err = json.Unmarshal(retrievedItemData, &retrievedMap)
+		require.NoError(t, err)
+		require.Equal(t, itemDataMap1, retrievedMap)
+	})
+
+	t.Run("Apply PutItem to non-existent table", func(t *testing.T) {
+		badPutPayload, _ := NewPutItemCommandPayload("nonExistentTableForPut", itemDataMap1)
+		badPutCmdBytes, _ := EncodeCommand(PutItemCommandType, badPutPayload)
+		applyResp := fsm.Apply(&raft.Log{Data: badPutCmdBytes})
+		require.Error(t, applyResp.(error))
+		require.Contains(t, applyResp.(error).Error(), "table nonExistentTableForPut not found")
+	})
+
+	t.Run("Apply PutItem missing partition key in data", func(t *testing.T) {
+		itemMissingPK := map[string]interface{}{skName: skValue1, "data": "Missing PK"} // PKがない
+		badPutPayload, _ := NewPutItemCommandPayload(tableName, itemMissingPK)
+		badPutCmdBytes, _ := EncodeCommand(PutItemCommandType, badPutPayload)
+		applyResp := fsm.Apply(&raft.Log{Data: badPutCmdBytes})
+		require.Error(t, applyResp.(error))
+		require.Contains(t, applyResp.(error).Error(), "partition key itemID not found or is null")
+	})
+
+	// LWWのテスト (PutItem)
+	t.Run("Apply PutItem LWW - older timestamp", func(t *testing.T) {
+		olderDataMap := map[string]interface{}{pkName: pkValue1, skName: skValue1, "data": "Older update attempt"}
+		olderPutPayload, _ := NewPutItemCommandPayload(tableName, olderDataMap)
+		olderPutPayload.Timestamp = putPayload1.Timestamp - 1000 // 確実に古いタイムスタンプ
+		olderPutCmdBytes, _ := EncodeCommand(PutItemCommandType, olderPutPayload)
+
+		applyResp := fsm.Apply(&raft.Log{Data: olderPutCmdBytes})
+		require.Nil(t, applyResp, "Apply PutItem with older timestamp should be skipped (nil response)")
+
+		// データが変わっていないことを確認
+		retrievedItemData, _, _ := kv.GetItem(tableName, itemStoreKey1)
+		var currentMap map[string]interface{}
+		json.Unmarshal(retrievedItemData, &currentMap)
+		require.Equal(t, "Sample event 1", currentMap["data"], "Data should not have been updated by older PutItem")
+	})
+
+	// DeleteItem のテストデータ
+	deleteTs := putPayload1.Timestamp + 2000 // putPayload1 より新しいタイムスタンプ
+	deletePayload1 := NewDeleteItemCommandPayload(tableName, pkValue1, skValue1)
+	deletePayload1.Timestamp = deleteTs // タイムスタンプを設定
+	deleteCmdBytes1, _ := EncodeCommand(DeleteItemCommandType, deletePayload1)
+
+	t.Run("Apply DeleteItem existing item", func(t *testing.T) {
+		applyResp := fsm.Apply(&raft.Log{Data: deleteCmdBytes1})
+		require.Nil(t, applyResp, "Apply DeleteItem should succeed")
+
+		// KVStoreから取得して削除されたか確認
+		_, _, getErr := kv.GetItem(tableName, itemStoreKey1)
+		require.Error(t, getErr)
+		require.Contains(t, getErr.Error(), "not found")
+	})
+
+	t.Run("Apply DeleteItem non-existent item", func(t *testing.T) {
+		// 既に削除されているか、元々存在しないキー
+		badDeletePayload := NewDeleteItemCommandPayload(tableName, "nonExistentPK", "nonExistentSK")
+		badDeleteCmdBytes, _ := EncodeCommand(DeleteItemCommandType, badDeletePayload)
+		applyResp := fsm.Apply(&raft.Log{Data: badDeleteCmdBytes})
+		require.Nil(t, applyResp) // KVStore.DeleteItem が nil を返すため、FSMもnil
+	})
+
+	t.Run("Apply DeleteItem to non-existent table", func(t *testing.T) {
+		badDeletePayload := NewDeleteItemCommandPayload("nonExistentTableForDelete", pkValue1, skValue1)
+		badDeleteCmdBytes, _ := EncodeCommand(DeleteItemCommandType, badDeletePayload)
+		applyResp := fsm.Apply(&raft.Log{Data: badDeleteCmdBytes})
+		require.Error(t, applyResp.(error))
+		require.Contains(t, applyResp.(error).Error(), "table nonExistentTableForDelete not found")
+	})
+
+	t.Run("Apply DeleteItem with sort key for table without sort key", func(t *testing.T) {
+		// ソートキーなしのテーブルを作成
+		noSkTableName := "noSkTable"
+		noSkPkName := "id"
+		createNoSkTablePayload := CreateTableCommandPayload{TableName: noSkTableName, PartitionKeyName: noSkPkName}
+		createNoSkTableCmdBytes, _ := EncodeCommand(CreateTableCommandType, createNoSkTablePayload)
+		fsm.Apply(&raft.Log{Data: createNoSkTableCmdBytes})
+
+		badDeletePayload := NewDeleteItemCommandPayload(noSkTableName, "somePK", "unexpectedSK")
+		badDeleteCmdBytes, _ := EncodeCommand(DeleteItemCommandType, badDeletePayload)
+		applyResp := fsm.Apply(&raft.Log{Data: badDeleteCmdBytes})
+		require.Error(t, applyResp.(error))
+		require.Contains(t, applyResp.(error).Error(), "sort key provided for table noSkTable which has no sort key defined")
+	})
+}
+
 func TestFSM_SnapshotRestore(t *testing.T) {
 	fsm, _, baseDir := setupFSMWithKVStore(t)
 

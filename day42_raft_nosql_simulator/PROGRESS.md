@@ -16,13 +16,32 @@
 - [ ] コミット: `day42: step 1/7 Raft cluster foundation setup and initial tests`
 
 ## フェーズ2: データストアとFSM (Finite State Machine)
-- [ ] アイテムのデータ構造定義 (`internal/store/types.go` または `pkg/types/types.go`) - パーティションキー、ソートキー、データ本体、最終更新タイムスタンプ
-- [ ] テーブルメタデータの構造定義 (`internal/store/types.go`)
-- [ ] Raft FSMインターフェース (`raft.FSM`) を実装する構造体の作成 (`internal/store/fsm.go`)
-- [ ] FSMに `Apply` メソッドを実装 (ログエントリをローカルストアに適用する処理)
-    - `create-table`, `delete-table`, `put-item`, `delete-item` 操作に対応
-- [ ] FSMに `Snapshot` と `Restore` メソッドを実装 (Raftログ圧縮のため)
-- [ ] 各ノードのローカルデータストアの設計と実装 (JSONファイルベース: `data/<node_id>/_tables.json` および `data/<node_id>/<table_name>.json`)
+- [X] **FSM実装 (`internal/store/fsm.go`)**
+    - [X] `TableMetadata` 構造体定義と `FSM` へのテーブルメタデータマップ追加
+    - [X] `Apply` メソッドでの `CreateTableCommand`, `DeleteTableCommand` 処理実装
+    - [X] `Snapshot` / `Restore` メソッドでのテーブルメタデータ永続化・復元実装
+    - [X] `GetTableMetadata`, `ListTables` リード専用メソッド実装
+    - [X] `Apply` メソッドでの `PutItemCommand`, `DeleteItemCommand` 処理実装 (アイテム操作)
+- [X] **ローカルデータストア実装 (`internal/store/kv_store.go`)**
+    - [X] `KVStore` 構造体定義と初期化 (ベースディレクトリ管理)
+    - [X] `EnsureTableDir`, `RemoveTableDir` (テーブルディレクトリ操作) 実装
+    - [X] `PutItem`: アイテムをJSONファイルとして保存 (LWW考慮)
+    - [X] `GetItem`: アイテムをJSONファイルから読み込み
+    - [X] `DeleteItem`: アイテムのJSONファイルを削除
+    - [X] `QueryItems`: パーティションキーとソートキープレフィックスでのスキャン実装
+- [X] **Raftノード拡張 (`internal/raft_node/node.go`)**
+    - [X] `Node` への `KVStore` 参照追加と `NewNode` での初期化
+    - [X] `ProposeCreateTable`, `ProposeDeleteTable` 実装
+    - [X] `ProposePutItem`, `ProposeDeleteItem` 実装
+    - [X] ローカルリード用 `GetItemFromLocalStore`, `QueryItemsFromLocalStore` メソッド実装 (KVStoreを直接呼び出し)
+- [X] **単体テスト**
+    - [X] `commands_test.go`: コマンド (デ)シリアライズテスト
+    - [X] `fsm_test.go`: FSMのテーブル操作、アイテム操作、スナップショット/リストアのテスト
+    - [X] `kv_store_test.go`: KVStoreのディレクトリ操作、アイテムCRUD操作、クエリ操作のテスト
+- [ ] **統合テスト (`main.go` または別テストファイル)**
+    - [ ] クラスタ経由でのテーブル作成・削除・一覧取得のテスト
+    - [ ] クラスタ経由でのアイテムPut・Get・Delete・Queryのテスト
+    - [ ] リーダー障害時のスナップショットからの復旧テスト (発展)
 - [ ] コミット: `day42: step 2/7 Data store and FSM implementation`
 
 ## フェーズ3: CLIインターフェースと書き込み/読み取りパス (コア機能)
@@ -77,36 +96,3 @@
 - [ ] コミット: `day42: step 7/7 Documentation and finalization`
 
 ## フェーズ 2: テーブル管理とキーバリュー操作のためのFSMロジック実装
-
-- [X] **コマンド構造体定義 (`internal/store/commands.go`)**
-    - [X] `CreateTableCommand`, `DeleteTableCommand`, `PutItemCommand`, `DeleteItemCommand` 構造体定義
-    - [X] コマンドのJSONシリアライズ/デシリアライズヘルパー関数実装
-- [X] **FSM実装 (`internal/store/fsm.go`)**
-    - [X] `TableMetadata` 構造体定義と `FSM` へのテーブルメタデータマップ追加
-    - [X] `Apply` メソッドでの `CreateTableCommand`, `DeleteTableCommand` 処理実装
-    - [X] `Snapshot` / `Restore` メソッドでのテーブルメタデータ永続化・復元実装
-    - [X] `GetTableMetadata`, `ListTables` リード専用メソッド実装
-    - [ ] `Apply` メソッドでの `PutItemCommand`, `DeleteItemCommand` 処理実装 (アイテム操作)
-- [X] **ローカルデータストア実装 (`internal/store/kv_store.go`)**
-    - [X] `KVStore` 構造体定義と初期化 (ベースディレクトリ管理)
-    - [X] `EnsureTableDir`, `RemoveTableDir` (テーブルディレクトリ操作) 実装
-    - [ ] `PutItem`: アイテムをJSONファイルとして保存 (LWW考慮)
-    - [ ] `GetItem`: アイテムをJSONファイルから読み込み
-    - [ ] `DeleteItem`: アイTEMのJSONファイルを削除
-    - [ ] `QueryItems`: パーティションキーに基づいたアイテムスキャンとフィルタリング
-- [X] **Raftノード拡張 (`internal/raft_node/node.go`)**
-    - [X] `NewNode` で `KVStore` と `FSM` を正しく初期化・連携
-    - [X] `ProposeCreateTable`, `ProposeDeleteTable` 実装
-    - [ ] `ProposePutItem`, `ProposeDeleteItem` 実装
-    - [ ] ローカルリード用 `GetItem`, `QueryItems` メソッド実装 (KVStoreを直接呼び出し)
-- [X] **単体テスト**
-    - [X] `commands_test.go`: コマンド (デ)シリアライズテスト
-    - [X] `fsm_test.go`: FSMのテーブル操作、アイテム操作、スナップショット/リストアのテスト
-    - [X] `kv_store_test.go`: KVStoreのディレクトリ操作、アイテムCRUD操作、クエリ操作のテスト
-- [ ] **統合テスト (`main.go` または別テストファイル)**
-    - [ ] クラスタ経由でのテーブル作成・削除・一覧取得のテスト
-    - [ ] クラスタ経由でのアイテムPut・Get・Delete・Queryのテスト
-    - [ ] リーダー障害時のスナップショットからの復旧テスト (発展)
-- [ ] **PROGRESS.md 更新とコミット**
-
-## フェーズ 3: CLIコマンドの実装 (Cobra)

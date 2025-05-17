@@ -1,6 +1,7 @@
 package raft_node
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -302,4 +303,106 @@ func (n *Node) WaitForLeader(timeout time.Duration) (raft.ServerAddress, error) 
 			return "", fmt.Errorf("timed out waiting for leader after %v", timeout)
 		}
 	}
+}
+
+// ProposePutItem はアイテム書き込みコマンドをRaftクラスタに提案します。
+func (n *Node) ProposePutItem(tableName string, itemData map[string]interface{}, timeout time.Duration) (interface{}, error) {
+	if !n.IsLeader() {
+		leaderID, leaderAddr := n.LeaderWithID()
+		log.Printf("Node %s is not a leader. Current leader is %s (%s). Cannot propose PutItem.", n.NodeID(), leaderID, leaderAddr)
+		return nil, fmt.Errorf("not a leader, current leader is %s (%s)", leaderID, leaderAddr)
+	}
+
+	// TableMetadataを取得して、キー名を確認する必要がある
+	meta, exists := n.fsm.GetTableMetadata(tableName)
+	if !exists {
+		return nil, fmt.Errorf("table %s not found", tableName)
+	}
+
+	// itemDataからパーティションキーとソートキーの値を検証 (FSMのApplyでも検証するが、Propose前にも行うと良い)
+	pkValue, pkOk := itemData[meta.PartitionKeyName]
+	if !pkOk || pkValue == nil {
+		return nil, fmt.Errorf("partition key %s not found or is null in item for table %s", meta.PartitionKeyName, tableName)
+	}
+	// 型チェックなどはFSMのApplyに任せる
+
+	putPayload, err := store.NewPutItemCommandPayload(tableName, itemData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create PutItemPayload: %w", err)
+	}
+
+	cmdBytes, err := store.EncodeCommand(store.PutItemCommandType, putPayload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode PutItem command: %w", err)
+	}
+
+	future := n.Apply(cmdBytes, timeout)
+	if err := future.Error(); err != nil {
+		return nil, fmt.Errorf("failed to apply PutItem command: %w", err)
+	}
+
+	response := future.Response()
+	if errResp, ok := response.(error); ok {
+		return nil, fmt.Errorf("fsm apply error for PutItem: %w", errResp)
+	}
+	return response, nil
+}
+
+// ProposeDeleteItem はアイテム削除コマンドをRaftクラスタに提案します。
+func (n *Node) ProposeDeleteItem(tableName string, partitionKey string, sortKey string, timeout time.Duration) (interface{}, error) {
+	if !n.IsLeader() {
+		leaderID, leaderAddr := n.LeaderWithID()
+		log.Printf("Node %s is not a leader. Current leader is %s (%s). Cannot propose DeleteItem.", n.NodeID(), leaderID, leaderAddr)
+		return nil, fmt.Errorf("not a leader, current leader is %s (%s)", leaderID, leaderAddr)
+	}
+
+	// TableMetadataを取得して、ソートキーの有無などを確認
+	meta, exists := n.fsm.GetTableMetadata(tableName)
+	if !exists {
+		return nil, fmt.Errorf("table %s not found", tableName)
+	}
+	if meta.SortKeyName == "" && sortKey != "" {
+		return nil, fmt.Errorf("sort key provided for table %s which has no sort key defined", tableName)
+	}
+	if meta.SortKeyName != "" && sortKey == "" {
+		// ソートキーが定義されているテーブルで、ソートキーが指定されていない場合。
+		// DynamoDBではエラーになるが、ここでは空のソートキーとして扱われるか、FSM側で検証される想定。
+		// NewDeleteItemCommandPayloadは空のソートキーを許容する。
+	}
+
+	deletePayload := store.NewDeleteItemCommandPayload(tableName, partitionKey, sortKey)
+	cmdBytes, err := store.EncodeCommand(store.DeleteItemCommandType, deletePayload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode DeleteItem command: %w", err)
+	}
+
+	future := n.Apply(cmdBytes, timeout)
+	if err := future.Error(); err != nil {
+		return nil, fmt.Errorf("failed to apply DeleteItem command: %w", err)
+	}
+
+	response := future.Response()
+	if errResp, ok := response.(error); ok {
+		return nil, fmt.Errorf("fsm apply error for DeleteItem: %w", errResp)
+	}
+	return response, nil
+}
+
+// GetItemFromLocalStore はローカルのKVStoreから直接アイテムを取得します (結果整合性)。
+// キーは、パーティションキー (ソートキーなしテーブル) または PartitionKey_SortKey (ソートキーありテーブル) の形式です。
+func (n *Node) GetItemFromLocalStore(tableName string, itemKey string) (json.RawMessage, int64, error) {
+	// KVStoreに直接アクセスするため、FSMのテーブル存在確認は行っても良いが、必須ではない。
+	// KVStore側でテーブルディレクトリの存在確認は行われる。
+	return n.kvStore.GetItem(tableName, itemKey)
+}
+
+// QueryItemsFromLocalStore はローカルのKVStoreから直接アイテムをクエリします (結果整合性)。
+func (n *Node) QueryItemsFromLocalStore(tableName string, partitionKey string, sortKeyPrefix string) ([]map[string]interface{}, error) {
+	return n.kvStore.QueryItems(tableName, partitionKey, sortKeyPrefix)
+}
+
+// LeaderWithID は現在のクラスタリーダーのアドレスとIDを返します。
+// LeaderID() が LeaderWithID() の第2返り値を返すように変更したため、このメソッドも追加。
+func (n *Node) LeaderWithID() (raft.ServerAddress, raft.ServerID) {
+	return n.raft.LeaderWithID()
 }
