@@ -47,6 +47,21 @@ type Node struct {
 	snapshotStore raft.SnapshotStore
 }
 
+// GetConfig はノードの設定を返します。
+func (n *Node) GetConfig() Config {
+	return n.config
+}
+
+// GetFSM はノードのFSMを返します。
+func (n *Node) GetFSM() *store.FSM {
+	return n.fsm
+}
+
+// Transport はノードのトランスポートを返します。
+func (n *Node) Transport() raft.Transport {
+	return n.transport
+}
+
 // NodeID はノードのIDを返します。
 func (n *Node) NodeID() raft.ServerID {
 	return n.config.NodeID

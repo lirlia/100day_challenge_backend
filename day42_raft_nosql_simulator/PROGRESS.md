@@ -42,7 +42,11 @@
     - [ ] クラスタ経由でのテーブル作成・削除・一覧取得のテスト
     - [ ] クラスタ経由でのアイテムPut・Get・Delete・Queryのテスト
     - [ ] リーダー障害時のスナップショットからの復旧テスト (発展)
-- [ ] コミット: `day42: step 2/7 Data store and FSM implementation`
+    - [X] **統合テスト (`internal/raft_node/integration_test.go`)**
+    - [X] クラスタ経由でのテーブル作成・削除・一覧取得のテスト
+    - [X] クラスタ経由でのアイテムPut・Get・Delete・Queryのテスト
+    - [ ] リーダー障害時のスナップショットからの復旧テスト (発展)
+- [ ] コミット: `day42: step 2/7 Data store, FSM, and initial integration tests`
 
 ## フェーズ3: CLIインターフェースと書き込み/読み取りパス (コア機能)
 - [ ] CLIフレームワーク (`spf13/cobra`) を用いた基本的なCLI構造の作成 (`cmd/cli/main.go`, `cmd/cli/root.go`)

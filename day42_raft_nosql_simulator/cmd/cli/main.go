@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -10,180 +11,164 @@ import (
 	"time"
 
 	"github.com/hashicorp/raft"
+	"github.com/spf13/cobra"
+
 	"github.com/lirlia/100day_challenge_backend/day42_raft_nosql_simulator/internal/raft_node"
+	// "github.com/lirlia/100day_challenge_backend/day42_raft_nosql_simulator/internal/store"
 )
 
-const (
-	numNodes    = 3
-	basePort    = 7000
-	dataDir     = "./data"
-	raftTimeout = 10 * time.Second
+var (
+	numNodes    int    = 3
+	basePort    int    = 8000
+	dataDirBase string = "./data"
+	nodes       []*raft_node.Node
 )
 
-func main() {
-	fmt.Println("Starting Raft cluster simulation...")
+// runServer はRaftクラスタサーバーを起動・管理します。
+func runServer() {
+	log.Println("Starting Raft cluster server...")
 
-	// クリーンアップ: 既存のデータディレクトリを削除 (シミュレーションのたびに初期状態にするため)
-	if err := os.RemoveAll(dataDir); err != nil {
-		log.Fatalf("Failed to remove existing data directory: %v", err)
-	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	nodes := make([]*raft_node.Node, numNodes)
-	transports := make([]raft.Transport, numNodes)
-	// InmemTransportは共有チャネルを使用するため、1つだけ作成し共有する
-	// ただし、NewTCPTransportのようにアドレス指定で接続先を分けることもできる。
-	// raft.NewInmemTransport() はアドレスを引数にとらないので、loopback を使う。
-	// 今回は各ノードがユニークなアドレスを持つ loopback FSM transport を使う。
-	// しかし、InmemTransportは一つのプロセス内でgoroutineとしてノードを動かすことを想定しており、
-	// 実際にはアドレスというよりは、IDで識別されるノード間でメッセージをルーティングする。
-	// もっともシンプルなのは raft.NewInmemTransport() を一つ作り共有するケース。
-	// ここでは、InmemTransport が内部でアドレスを解決できると仮定するが、
-	// 実際の hashicorp/raft の InmemTransport はそのような動作を直接サポートしない場合がある。
-	// TCPTransport の方がシミュレーションとしては現実に近い。
-	// 今回は、TCPTransportを使用します。
+	nodes = make([]*raft_node.Node, numNodes)
 
-	// fsm := store.NewFSM() // 全ノードで共有FSMインスタンス (内容はRaft経由で同期される) <- この行を削除し、Node内で個別に作成
-
-	var raftServers []raft.Server
 	for i := 0; i < numNodes; i++ {
-		nodeID := raft.ServerID(fmt.Sprintf("node%d", i))
-		// TCPTransportを使用するため、localhostの異なるポートでアドレスを生成
-		addr := fmt.Sprintf("127.0.0.1:%d", basePort+i)
-		raftAddr := raft.ServerAddress(addr)
+		nodeID := fmt.Sprintf("node%d", i)
+		rpcAddr := fmt.Sprintf("127.0.0.1:%d", basePort+i)
+		nodeDataDir := filepath.Join(dataDirBase, nodeID)
 
-		raftServers = append(raftServers, raft.Server{
-			ID:      nodeID,
-			Address: raftAddr,
-		})
-
-		transport, err := raft.NewTCPTransport(string(raftAddr), nil, 3, raftTimeout, os.Stderr)
-		if err != nil {
-			log.Fatalf("Failed to create TCP transport for %s: %v", nodeID, err)
+		if err := os.MkdirAll(filepath.Join(nodeDataDir, "snapshots"), 0755); err != nil {
+			log.Fatalf("Failed to create snapshot directory for node %s: %v", nodeID, err)
 		}
-		transports[i] = transport
 
 		cfg := raft_node.Config{
-			NodeID:           nodeID,
-			Addr:             raftAddr, // node.goのConfig.AddrはこのAddr
-			DataDir:          filepath.Join(dataDir, string(nodeID)),
-			BootstrapCluster: i == 0, // 最初のノードのみクラスタをブートストラップ
+			NodeID:           raft.ServerID(nodeID),
+			Addr:             raft.ServerAddress(rpcAddr),
+			DataDir:          nodeDataDir,
+			BootstrapCluster: i == 0,
 		}
 
-		// n, err := raft_node.NewNode(cfg, fsm, transport) // transportを渡す <- fsm引数を削除
+		transport, err := raft.NewTCPTransport(string(cfg.Addr), nil, 2, 5*time.Second, os.Stderr)
+		if err != nil {
+			log.Fatalf("Failed to create transport for node %s: %v", nodeID, err)
+		}
+
 		n, err := raft_node.NewNode(cfg, transport)
 		if err != nil {
 			log.Fatalf("Failed to create node %s: %v", nodeID, err)
 		}
 		nodes[i] = n
-		fmt.Printf("Node %s created. Data dir: %s, Addr: %s, Bootstrap: %v\n", nodeID, cfg.DataDir, cfg.Addr, cfg.BootstrapCluster)
+		log.Printf("Node %s created. Data dir: %s, Addr: %s, Bootstrap: %t", nodeID, nodeDataDir, rpcAddr, cfg.BootstrapCluster)
 	}
 
-	// 最初のノード(ブートストラップノード)のRaft設定に全サーバー情報を伝える
-	// NewNode内でBootstrapClusterがtrueの場合に自身の情報でブートストラップするので、
-	// 他のノードをAddVoterで追加する必要がある、または初期設定で全ノードを渡す。
-	// hashicorp/raftでは、BootstrapClusterは最初のサーバーリストでクラスタを開始する。
-	// 明示的に他のノードを参加させる必要はない。
-	// ただし、他のノードはリーダーに接続してクラスタに参加しようとする。
+	log.Println("Waiting for leader election...")
+	var leaderNode *raft_node.Node
 
-	fmt.Println("All nodes created. Waiting for leader election...")
-
-	// リーダー選出を待つ (最初のノードで代表して待つ)
-	var leaderAddr raft.ServerAddress
-	var leaderID raft.ServerID
-	var foundLeaderNode *raft_node.Node
-	var err error
-
-	for i := 0; i < 15; i++ { // 試行回数を少し増やす
-		for _, n := range nodes {
-			if n.IsLeader() {
-				leaderAddr = n.LeaderAddr()
-				leaderID = n.LeaderID()
-				foundLeaderNode = n
-				break
-			}
+	if numNodes > 0 {
+		_, err := nodes[0].WaitForLeader(15 * time.Second)
+		if err != nil {
+			log.Fatalf("Failed to find leader after 15 seconds: %v", err)
 		}
-		if foundLeaderNode != nil {
-			// フォロワーがリーダーを認識するのを少し待つ
-			time.Sleep(1 * time.Second)
+	}
+
+	for _, node := range nodes {
+		if node.IsLeader() {
+			leaderNode = node
 			break
 		}
-		time.Sleep(1 * time.Second) // 周期を少し短く
-		fmt.Println("Still waiting for leader...")
 	}
 
-	if foundLeaderNode == nil {
-		log.Fatalf("Failed to elect leader or identify leader node after multiple attempts: %v", err)
+	if leaderNode == nil {
+		log.Fatalf("No leader elected after 15 seconds")
 	}
-	fmt.Printf("Leader elected: Node ID=%s, Address=%s\n", leaderID, leaderAddr)
+	log.Printf("Leader elected: Node ID=%s, Address=%s", leaderNode.NodeID(), leaderNode.Addr())
 
-	// リーダーに他のノードをVoterとして追加する
-	if foundLeaderNode != nil {
-		for _, node := range nodes {
-			if node.NodeID() == foundLeaderNode.NodeID() {
-				continue // 自分自身は追加しない
-			}
-			fmt.Printf("Attempting to add voter %s (%s) to leader %s\n", node.NodeID(), node.Addr(), foundLeaderNode.NodeID())
-			err := foundLeaderNode.AddVoter(node.NodeID(), node.Addr(), 0, 500*time.Millisecond)
-			if err != nil {
-				log.Printf("Failed to add voter %s to leader %s: %v\n", node.NodeID(), foundLeaderNode.NodeID(), err)
-			} else {
-				fmt.Printf("Successfully added voter %s to leader %s\n", node.NodeID(), foundLeaderNode.NodeID())
-			}
+	for _, node := range nodes {
+		if node.NodeID() == leaderNode.NodeID() {
+			continue
 		}
-		// 設定変更が反映されるのを待つ
-		time.Sleep(2 * time.Second)
+		log.Printf("Attempting to add voter %s (%s) to leader %s", node.NodeID(), node.Addr(), leaderNode.NodeID())
+		err := leaderNode.AddVoter(node.GetConfig().NodeID, node.GetConfig().Addr, 0, 0)
+		if err != nil {
+			log.Printf("Warning: failed to add voter %s to cluster: %v", node.NodeID(), err)
+		} else {
+			log.Printf("Node %s added to cluster as voter.", node.NodeID())
+		}
 	}
 
-	// 状態表示
-	for i, n := range nodes {
-		// フォロワーノードもリーダー情報を表示できるように、リーダーノードから取得する
-		currentLeaderAddr := "N/A"
-		currentLeaderID := "N/A"
-		if foundLeaderNode != nil { // リーダーが見つかっていれば
-			// 各ノードが認識しているリーダーのアドレスを取得
-			// RaftライブラリのLeader()は自分がリーダーでなければ空を返すことがあるため、クラスタ全体としてのリーダー情報を表示する
-			// waitForLeaderで取得したものを正とするか、各ノードのLeader()を信頼するか。
-			// ここでは、waitForLeaderなどで特定したクラスタのリーダー情報を表示する。
-			// 個々のn.LeaderAddr() n.LeaderID() はそのノードが認識しているリーダー。
-			// 正しくは、各ノード n.LeaderAddr() と n.LeaderID() を使うべき。
-			// Leader()が空を返すのは、そのノードがまだリーダーを知らない状態。
-			currentLeaderAddr = string(n.LeaderAddr()) // n.LeaderAddr() は raft.ServerAddress (string)
-			currentLeaderID = string(n.LeaderID())     // n.LeaderID() は raft.ServerID (string)
-			if currentLeaderAddr == "" {
-				currentLeaderAddr = "Unknown"
-			}
-			if currentLeaderID == "" {
-				currentLeaderID = "Unknown"
-			}
-		}
-		fmt.Printf("Node %d (%s): State=%s, IsLeader=%v, NodeRecognizedLeaderAddr=%s, NodeRecognizedLeaderID=%s\n",
-			i, n.Stats()["id"], n.Stats()["state"], n.IsLeader(), currentLeaderAddr, currentLeaderID)
+	for i, node := range nodes {
+		time.Sleep(1 * time.Second)
+		status := node.Stats()
+		leaderID, leaderAddr := node.LeaderWithID()
+		log.Printf("Node %d (%s): State=%s, IsLeader=%t, Term=%d, LastLogIndex=%d, RecognizedLeaderAddr=%s, RecognizedLeaderID=%s",
+			i, node.NodeID(), status["state"], node.IsLeader(), status["term"], status["last_log_index"], leaderAddr, leaderID)
 	}
 
-	// シャットダウン処理
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
+	log.Println("Raft cluster server is running. Press Ctrl+C to shutdown.")
 
-	fmt.Println("Shutting down nodes...")
-	for i := len(nodes) - 1; i >= 0; i-- { // 逆順でシャットダウン
-		if err := nodes[i].Shutdown(); err != nil {
-			log.Printf("Error shutting down node %s: %v", nodes[i].Stats()["id"], err)
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+
+	select {
+	case <-ctx.Done():
+		log.Println("Server context cancelled.")
+	case s := <-sigCh:
+		log.Printf("Received signal: %v. Shutting down...", s)
+	}
+
+	for i := len(nodes) - 1; i >= 0; i-- {
+		n := nodes[i]
+		log.Printf("Shutting down node %s...", n.NodeID())
+		if err := n.Shutdown(); err != nil {
+			log.Printf("Error shutting down node %s: %v", n.NodeID(), err)
+		} else {
+			log.Printf("Node %s shutdown complete.", n.NodeID())
 		}
-		// TCPTransportの場合、個別にCloseが必要
-		if transports[i] != nil {
-			// NewTCPTransport は Transport インターフェースを返すが、
-			// その実体は *NetworkTransport である。
-			// *NetworkTransport は Close() メソッドを持つ。
-			if netTransport, ok := transports[i].(*raft.NetworkTransport); ok {
-				if err := netTransport.Close(); err != nil {
-					log.Printf("Error closing transport for node %s: %v", nodes[i].Stats()["id"], err)
-				}
-			} else {
-				// もし他の種類の Transport (例えば InmemTransport) の場合、Close がないかもしれない
-				log.Printf("Transport for node %s cannot be closed as *raft.NetworkTransport. Actual type: %T", nodes[i].Stats()["id"], transports[i])
+		if transportToClose, ok := n.Transport().(interface{ Close() error }); ok {
+			if err := transportToClose.Close(); err != nil {
+				log.Printf("Error closing transport for node %s: %v", n.NodeID(), err)
 			}
 		}
 	}
-	fmt.Println("Cluster shutdown complete.")
+	log.Println("All nodes shut down. Exiting.")
+}
+
+var rootCmd = &cobra.Command{
+	Use:   "raft-nosql-cli",
+	Short: "A CLI for interacting with the Raft-based NoSQL database.",
+	Long: `raft-nosql-cli is a command-line interface to manage and interact with
+ a distributed NoSQL database built on top of the Raft consensus algorithm.`,
+	Args: func(cmd *cobra.Command, args []string) error {
+		if len(args) == 0 {
+			return nil
+		}
+		return nil
+	},
+	Run: func(cmd *cobra.Command, args []string) {
+		if len(args) == 0 {
+			runServer()
+			return
+		}
+		cmd.Usage()
+	},
+}
+
+var serverCmd = &cobra.Command{
+	Use:   "server",
+	Short: "Starts the Raft NoSQL database server cluster",
+	Run: func(cmd *cobra.Command, args []string) {
+		runServer()
+	},
+}
+
+func init() {
+	rootCmd.AddCommand(serverCmd)
+}
+
+func main() {
+	if err := rootCmd.Execute(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
 }
