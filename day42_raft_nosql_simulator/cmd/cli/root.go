@@ -65,6 +65,16 @@ func init() {
 
 	rootCmd.AddCommand(serverCmd)
 
+	// table.go のコマンドを追加
+	rootCmd.AddCommand(createTableCmd)
+	rootCmd.AddCommand(deleteTableCmd)
+
+	// item.go のコマンドを追加
+	rootCmd.AddCommand(putItemCmd)
+	rootCmd.AddCommand(getItemCmd)
+	rootCmd.AddCommand(deleteItemCmd)
+	rootCmd.AddCommand(queryItemsCmd)
+
 	// ここに他のコマンド (table, itemなど) を追加していく
 	// rootCmd.AddCommand(tableCmd)
 	// rootCmd.AddCommand(itemCmd)

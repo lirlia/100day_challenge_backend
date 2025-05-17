@@ -1,4 +1,4 @@
-module day42_raft_nosql_simulator_local_test
+module github.com/lirlia/100day_challenge_backend/day42_raft_nosql_simulator
 
 go 1.22
 

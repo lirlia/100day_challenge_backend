@@ -100,10 +100,10 @@
 - [ ] コミット: `day42: step 6/7 Stabilization and refactoring`
 
 ## フェーズ7: ドキュメントと最終化
-- [ ] `README.md` のビルド方法、CLI使用方法を詳細に更新
-- [ ] コード全体の最終確認、不要なコメントやログの削除
-- [ ] 簡単な動作デモシナリオを `README.md` に記載
-- [ ] `.cursor/rules/knowledge.mdc` の更新
-- [ ] コミット: `day42: step 7/7 Documentation and finalization`
+- [x] `README.md` のビルド方法、CLI使用方法を詳細に更新
+- [x] コード全体の最終確認、不要なコメントやログの削除
+- [x] 簡単な動作デモシナリオを `README.md` に記載
+- [x] `.cursor/rules/knowledge.mdc` の更新
+- [x] コミット: `day42: step 7/7 Documentation and finalization`
 
 ## フェーズ 2: テーブル管理とキーバリュー操作のためのFSMロジック実装

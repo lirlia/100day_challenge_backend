@@ -5,10 +5,9 @@ import (
 	"fmt"
 	"log"
 
-	"day42_raft_nosql_simulator_local_test/internal/client" // client パッケージをインポート
+	"github.com/lirlia/100day_challenge_backend/day42_raft_nosql_simulator/internal/client"
 
 	"github.com/spf13/cobra"
-	// "github.com/lirlia/100day_challenge_backend/day42_raft_nosql_simulator/internal/client"
 )
 
 var (
@@ -197,8 +196,8 @@ func init() {
 	queryItemsCmd.Flags().StringVarP(&partitionKeyQuery, "partition-key", "p", "", "Partition key value (required)")
 	queryItemsCmd.Flags().StringVarP(&sortKeyPrefixQuery, "sort-key-prefix", "x", "", "Sort key prefix to query (optional)")
 
-	rootCmd.AddCommand(putItemCmd)
-	rootCmd.AddCommand(getItemCmd)
-	rootCmd.AddCommand(deleteItemCmd)
-	rootCmd.AddCommand(queryItemsCmd)
+	// rootCmd.AddCommand(putItemCmd) // root.go で追加
+	// rootCmd.AddCommand(getItemCmd) // root.go で追加
+	// rootCmd.AddCommand(deleteItemCmd) // root.go で追加
+	// rootCmd.AddCommand(queryItemsCmd) // root.go で追加
 }

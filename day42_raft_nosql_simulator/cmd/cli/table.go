@@ -3,100 +3,71 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
 
-	// "time"
-
-	"day42_raft_nosql_simulator_local_test/internal/client" // client パッケージをインポート
-
+	"github.com/lirlia/100day_challenge_backend/day42_raft_nosql_simulator/internal/client"
 	"github.com/spf13/cobra"
 )
 
 var (
-	// TokioApiClient // 未使用のためコメントアウト
-	tableNameCreate        string
-	partitionKeyNameCreate string
-	sortKeyNameCreate      string
-	// targetNodeAddr         string // root.goのグローバル永続フラグを使用するため削除
+	tableNameCreate      string
+	partitionKeyName     string
+	sortKeyName          string
+	tableNameDeleteTable string
 )
 
 var createTableCmd = &cobra.Command{
 	Use:   "create-table",
-	Short: "Creates a new table in the NoSQL database",
-	Long:  `Creates a new table with the specified name, partition key, and optional sort key.`,
-	Args:  cobra.NoArgs, // 引数なし、フラグで指定
+	Short: "Create a new table",
 	Run: func(cmd *cobra.Command, args []string) {
-		if tableNameCreate == "" {
-			log.Fatalf("Error: table-name is required")
+		if targetNodeAddr == "" {
+			fmt.Fprintln(os.Stderr, "Error: --target-addr must be specified")
+			os.Exit(1)
 		}
-		if partitionKeyNameCreate == "" {
-			log.Fatalf("Error: partition-key is required")
-		}
-		// if targetNodeAddr == "" {
-		// 	log.Fatalf("Error: --target-addr is required")
-		// }
-
 		apiClient := client.NewAPIClient(targetNodeAddr)
-
-		log.Printf("Sending CreateTable request to %s for table '%s' (PK: %s, SK: %s)...",
-			targetNodeAddr, tableNameCreate, partitionKeyNameCreate, sortKeyNameCreate)
-
-		resp, err := apiClient.CreateTable(tableNameCreate, partitionKeyNameCreate, sortKeyNameCreate)
+		log.Printf("Sending CreateTable request to %s for table '%s' (PK: %s, SK: %s)...", targetNodeAddr, tableNameCreate, partitionKeyName, sortKeyName)
+		resp, err := apiClient.CreateTable(tableNameCreate, partitionKeyName, sortKeyName)
 		if err != nil {
-			log.Fatalf("CreateTable API call failed: %v", err)
+			fmt.Fprintf(os.Stderr, "Error creating table: %v\n", err)
+			os.Exit(1)
 		}
-
-		fmt.Printf("CreateTable API call successful.\nMessage: %s\n", resp.Message)
+		fmt.Printf("CreateTable API call successful.\\nMessage: %s\\n", resp.Message)
 		if resp.FSMResponse != nil {
-			fmt.Printf("FSM Response: %v\n", resp.FSMResponse)
+			fmt.Printf("FSM Response: %v\\n", resp.FSMResponse)
 		}
 	},
 }
 
-var tableNameDeleteTable string
-
 var deleteTableCmd = &cobra.Command{
 	Use:   "delete-table",
-	Short: "Deletes a table",
-	Long:  `Deletes the specified table and all its items from the distributed key-value store.`,
-	Args:  cobra.NoArgs,
+	Short: "Delete a table",
 	Run: func(cmd *cobra.Command, args []string) {
-		if tableNameDeleteTable == "" {
-			log.Fatalf("Error: table-name is required for delete-table")
-		}
-
 		if targetNodeAddr == "" {
-			log.Fatalf("Error: --target-addr is required")
+			fmt.Fprintln(os.Stderr, "Error: --target-addr must be specified")
+			os.Exit(1)
 		}
 		apiClient := client.NewAPIClient(targetNodeAddr)
-
 		log.Printf("Sending DeleteTable request to %s for table '%s'...", targetNodeAddr, tableNameDeleteTable)
 		resp, err := apiClient.DeleteTable(tableNameDeleteTable)
 		if err != nil {
-			log.Fatalf("DeleteTable API call failed: %v", err)
+			fmt.Fprintf(os.Stderr, "Error deleting table: %v\n", err)
+			os.Exit(1)
 		}
-		fmt.Printf("DeleteTable API call successful. Message: %s\n", resp.Message)
+		fmt.Printf("DeleteTable API call successful.\\nMessage: %s\\n", resp.Message)
 		if resp.FSMResponse != nil {
-			fmt.Printf("FSM Response: %v\n", resp.FSMResponse)
+			fmt.Printf("FSM Response: %v\\n", resp.FSMResponse)
 		}
 	},
 }
 
 func init() {
-	// create-table コマンドのフラグ設定
-	createTableCmd.Flags().StringVarP(&tableNameCreate, "table-name", "t", "", "Name of the table to create (required)")
-	createTableCmd.Flags().StringVarP(&partitionKeyNameCreate, "partition-key", "p", "", "Name of the partition key (required)")
-	createTableCmd.Flags().StringVarP(&sortKeyNameCreate, "sort-key", "s", "", "Name of the sort key (optional)")
-	// createTableCmd.Flags().StringVarP(&targetNodeAddr, "target-addr", "a", "", "Address of the Raft node (required)") // root.go で定義済みのため削除
+	// RootCmd.AddCommand(createTableCmd) // root.go で追加する
+	createTableCmd.Flags().StringVar(&tableNameCreate, "table-name", "", "Name of the table to create (required)")
+	createTableCmd.Flags().StringVar(&partitionKeyName, "partition-key-name", "pk", "Name of the partition key attribute")
+	createTableCmd.Flags().StringVar(&sortKeyName, "sort-key-name", "", "Name of the sort key attribute (optional)")
+	createTableCmd.MarkFlagRequired("table-name")
 
-	// DeleteTable flags
-	deleteTableCmd.Flags().StringVarP(&tableNameDeleteTable, "table-name", "t", "", "Name of the table to delete (required)")
-
-	// ルートコマンドにtableコマンドを追加する (tableCmd があればそれに追加)
-	// 通常はroot.goのinit()で tableCmd を rootCmd.AddCommand(tableCmd) のように追加し、
-	// 現時点では直接rootCmdに追加するが、将来的には tableCmd のような中間コマンドを設ける
-	// var tableCmd = &cobra.Command{Use: "table", Short: "Manage tables"}
-	// tableCmd.AddCommand(createTableCmd)
-	// rootCmd.AddCommand(tableCmd)
-	rootCmd.AddCommand(createTableCmd) // root.go で定義された rootCmd に追加
-	rootCmd.AddCommand(deleteTableCmd)
+	// RootCmd.AddCommand(deleteTableCmd) // root.go で追加する
+	deleteTableCmd.Flags().StringVar(&tableNameDeleteTable, "table-name", "", "Name of the table to delete (required)")
+	deleteTableCmd.MarkFlagRequired("table-name")
 }
