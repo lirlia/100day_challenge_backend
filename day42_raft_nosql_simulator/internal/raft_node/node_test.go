@@ -8,8 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"day42_raft_nosql_simulator_local_test/internal/raft_node"
+
 	"github.com/hashicorp/raft"
-	"github.com/lirlia/100day_challenge_backend/day42_raft_nosql_simulator/internal/raft_node"
 	"github.com/stretchr/testify/require"
 )
 

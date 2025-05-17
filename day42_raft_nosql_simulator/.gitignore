@@ -43,3 +43,11 @@ next-env.d.ts
 # Environment Variables
 .env*.local
 # .env
+
+# Go build artifacts
+/day42_raft_nosql_simulator
+*.exe
+*.out
+
+# Test coverage
+/coverage.out

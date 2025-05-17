@@ -12,7 +12,7 @@ import (
 
 	"github.com/hashicorp/raft"
 
-	"github.com/lirlia/100day_challenge_backend/day42_raft_nosql_simulator/internal/raft_node"
+	"day42_raft_nosql_simulator_local_test/internal/raft_node"
 	// "github.com/lirlia/100day_challenge_backend/day42_raft_nosql_simulator/internal/store"
 )
 
@@ -35,6 +35,8 @@ func runServer() {
 	for i := 0; i < numNodes; i++ {
 		nodeID := fmt.Sprintf("node%d", i)
 		rpcAddr := fmt.Sprintf("127.0.0.1:%d", basePort+i)
+		httpApiPortOffset := 100 // Raftポートとのオフセット
+		httpApiAddr := fmt.Sprintf("127.0.0.1:%d", basePort+i+httpApiPortOffset)
 		nodeDataDir := filepath.Join(dataDirBase, nodeID)
 
 		if err := os.MkdirAll(filepath.Join(nodeDataDir, "snapshots"), 0755); err != nil {
@@ -44,6 +46,7 @@ func runServer() {
 		cfg := raft_node.Config{
 			NodeID:           raft.ServerID(nodeID),
 			Addr:             raft.ServerAddress(rpcAddr),
+			HttpApiAddr:      httpApiAddr, // HttpApiAddrを設定
 			DataDir:          nodeDataDir,
 			BootstrapCluster: i == 0,
 		}
