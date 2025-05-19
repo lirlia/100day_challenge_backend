@@ -105,6 +105,9 @@ func NewRouter(id string, ipNetStr string, mtu int) (*Router, error) {
 	}
 	r.AddRoute(directRoute)
 
+	// Initialize OSPF instance for this router
+	r.ospfInstance = NewOSPFInstance(r) // Create and assign OSPF instance
+
 	log.Printf("Router %s: Initialized. IP: %s", id, r.IPAddress.String())
 	return r, nil
 }
@@ -162,6 +165,11 @@ func (r *Router) Start() error {
 
 	// NeighborLinkからのパケット受信と処理
 	r.startNeighborLinkListeners()
+
+	// Start OSPF instance if it exists
+	if r.ospfInstance != nil {
+		r.ospfInstance.Start()
+	}
 
 	log.Printf("Router %s: Started.", r.ID)
 	return nil
@@ -278,7 +286,8 @@ func (r *Router) handlePacket(packet []byte, sourceInterface string) {
 	if destIP.Equal(r.IPAddress.IP) {
 		log.Printf("Router %s: Packet for self (%s) from %s. (Protocol: %d). Handling...", r.ID, destIP, sourceInterface, packet[9])
 		// ICMP Echo Requestの場合、Echo Replyを返す
-		if packet[9] == ICMPProtocolNumber { // Protocol is ICMP
+		protocol := packet[9]
+		if protocol == ICMPProtocolNumber { // Protocol is ICMP
 			// Check if it's an Echo Request by parsing ICMP header
 			ipv4HeaderLen := int(packet[0]&0x0F) * 4
 			if len(packet) > ipv4HeaderLen+8 { // Enough data for ICMP header (min 8 bytes for echo)
@@ -320,9 +329,57 @@ func (r *Router) handlePacket(packet []byte, sourceInterface string) {
 					return // Handled ICMP Echo Request
 				}
 			}
+		} else if protocol == 89 && r.ospfInstance != nil { // OSPF Protocol Number
+			log.Printf("Router %s: Received OSPF packet (Proto 89) for self from %s. Passing to OSPF instance.", r.ID, sourceInterface)
+			// OSPFパケットは通常、ルーターのリンクローカルアドレスや特定のOSPFマルチキャストアドレス宛。
+			// ここでは、ルーターのTUN IP宛に来たOSPFパケットも処理対象とするか、
+			// または、リンクIP宛に来たものを処理する。
+			// OSPF LSAは通常、リンクの対向IP (NeighborLink.RemoteInterfaceIP) から来るので、
+			// sourceInterface が neighborID の場合に、その neighbor の RemoteInterfaceIP を sourceIP として渡す。
+			var sourceLinkIP net.IP
+			if sourceInterface != r.TUNInterface.Name() { // From a neighbor link
+				r.neighborLinksMutex.RLock()
+				link, ok := r.NeighborLinks[sourceInterface]
+				if ok {
+					sourceLinkIP = link.RemoteInterfaceIP
+				}
+				r.neighborLinksMutex.RUnlock()
+			}
+			if sourceLinkIP == nil { // If from TUN or link not found, use packet's source IP
+				sourceLinkIP = net.IP(packet[12:16]) // packet source IP
+			}
+			r.ospfInstance.HandleReceivedOSPFPacket(packet, sourceLinkIP, sourceInterface)
+			return // Handled OSPF Packet
 		}
-		log.Printf("Router %s: Packet for self (%s) from %s. Protocol %d. Not an ICMP Echo Request or failed to parse. Dropping.", r.ID, destIP, sourceInterface, packet[9])
+		log.Printf("Router %s: Packet for self (%s) from %s. Protocol %d. Not an ICMP Echo Request or OSPF. Dropping.", r.ID, destIP, sourceInterface, protocol)
 		return
+	}
+
+	// OSPFパケットでないか、またはルーター自身宛でない場合、通常の転送処理
+	// ただし、隣接ルータから受信したOSPFパケット(宛先がマルチキャスト等)もここで処理する必要があるかもしれない。
+	// ここでは、まず宛先が自分自身(TUN IP)であるOSPFパケットのみ上記で処理する。
+	// リンクローカルなOSPFパケット(e.g. Hello)は、リンクのIP宛に来るため、上記のdestIP.Equal(r.IPAddress.IP)では通常ヒットしない。
+	// なので、destIPチェックの前にプロトコル89をチェックする方が良いかもしれない。
+
+	protocol := packet[9]
+	if protocol == 89 && r.ospfInstance != nil {
+		// OSPFパケットはルーティングテーブルで転送するのではなく、OSPFプロセスが処理する。
+		// 宛先IPが自分自身でなくても、OSPF制御パケットならここで処理。
+		log.Printf("Router %s: Received OSPF packet (Proto 89) from %s (Dest: %s). Passing to OSPF instance.", r.ID, sourceInterface, destIP)
+		var sourceLinkIP net.IP
+		if sourceInterface != r.TUNInterface.Name() { // From a neighbor link
+			r.neighborLinksMutex.RLock()
+			link, ok := r.NeighborLinks[sourceInterface]
+			if ok {
+				sourceLinkIP = link.RemoteInterfaceIP
+			}
+			r.neighborLinksMutex.RUnlock()
+		}
+		if sourceLinkIP == nil { // If from TUN or link not found, use packet's source IP
+			sourceLinkIP = net.IP(packet[12:16]) // packet source IP
+		}
+		r.ospfInstance.HandleReceivedOSPFPacket(packet, sourceLinkIP, sourceInterface)
+		return // Handled OSPF Packet, do not forward via routing table
 	}
 
 	// ルーティングテーブルでネクストホップを検索
@@ -434,6 +491,11 @@ func (r *Router) AddNeighborLink(
 		Type:        DirectRoute,
 	})
 
+	// Notify OSPF about the new link
+	if r.ospfInstance != nil {
+		r.ospfInstance.HandleLinkUp(neighborID, cost, localIP, remoteIP)
+	}
+
 	log.Printf("Router %s: Added neighbor link to %s (Local: %s, Remote: %s, Cost: %d)", r.ID, neighborID, localIP, remoteIP, cost)
 
 	// Start listener for this specific link if router is running
@@ -527,11 +589,6 @@ func (r *Router) listenToNeighbor(link *NeighborLink) {
 			}
 		}
 	}
-}
-
-// SetOSPFInstance はOSPFインスタンスをルーターに設定します。
-func (r *Router) SetOSPFInstance(ospf *OSPFInstance) {
-	r.ospfInstance = ospf
 }
 
 // GetLinkCost は指定された隣接ルーターIDへのリンクコストを返します。
