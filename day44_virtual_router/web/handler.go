@@ -83,6 +83,9 @@ func RegisterHandlers(muxRouter *mux.Router, mgr *router.RouterManager) {
 	apiRouter.HandleFunc("/link", addLinkHandler).Methods("POST")
 	apiRouter.HandleFunc("/link", deleteLinkHandler).Methods("DELETE")
 
+	// New API handler for ping
+	apiRouter.HandleFunc("/router/{id}/ping", pingAPIHandler).Methods("POST")
+
 	log.Println("RegisterHandlers: API and page handlers registered.")
 	log.Println("RegisterHandlers: Finished.")
 }
@@ -472,5 +475,75 @@ func apiRouterDetailHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Printf("apiRouterDetailHandler: error encoding JSON for router %s: %v", routerID, err)
 		http.Error(w, "Failed to encode router detail data", http.StatusInternalServerError)
+	}
+}
+
+// pingAPIHandler handles POST requests to /api/router/{id}/ping to simulate a ping.
+func pingAPIHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	routerID, ok := vars["id"]
+	if !ok || routerID == "" {
+		log.Println("pingAPIHandler: Missing router id in path")
+		http.Error(w, "Missing router id in path", http.StatusBadRequest)
+		return
+	}
+
+	var reqBody struct {
+		TargetIP string `json:"target_ip"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+		log.Printf("pingAPIHandler: Error decoding request body for router %s: %v", routerID, err)
+		http.Error(w, fmt.Sprintf("Invalid request body: %v", err), http.StatusBadRequest)
+		return
+	}
+	defer r.Body.Close()
+
+	if reqBody.TargetIP == "" {
+		log.Printf("pingAPIHandler: Missing target_ip in request body for router %s", routerID)
+		http.Error(w, "Missing target_ip in request body", http.StatusBadRequest)
+		return
+	}
+
+	log.Printf("pingAPIHandler: Received ping request from router %s to %s", routerID, reqBody.TargetIP)
+
+	rtr, routerExists := routerMgr.GetRouter(routerID)
+	if !routerExists {
+		log.Printf("pingAPIHandler: Router %s not found", routerID)
+		http.Error(w, fmt.Sprintf("Router %s not found", routerID), http.StatusNotFound)
+		return
+	}
+
+	if !rtr.IsRunning() {
+		log.Printf("pingAPIHandler: Router %s is not running", routerID)
+		http.Error(w, fmt.Sprintf("Router %s is not running", routerID), http.StatusServiceUnavailable)
+		return
+	}
+
+	success, rtt, message, err := rtr.SimulatePing(reqBody.TargetIP)
+	if err != nil { // This error is for invalid IP format from SimulatePing
+		log.Printf("pingAPIHandler: Error from SimulatePing for router %s to %s: %v", routerID, reqBody.TargetIP, err)
+		http.Error(w, fmt.Sprintf("Ping simulation error: %v", err), http.StatusBadRequest) // Likely bad IP format
+		return
+	}
+
+	response := map[string]interface{}{
+		"source_router_id": routerID,
+		"target_ip":        reqBody.TargetIP,
+		"success":          success,
+		"rtt_ms":           rtt,
+		"message":          message,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if !success {
+		// Although technically the API call itself succeeded, the ping operation failed.
+		// We could return 200 OK with success:false, or a more specific error code if desired.
+		// For now, 200 OK with success:false is fine. User can check the success field.
+		log.Printf("pingAPIHandler: Ping from %s to %s failed: %s", routerID, reqBody.TargetIP, message)
+	}
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Printf("pingAPIHandler: Error encoding response for router %s: %v", routerID, err)
+		// Header already set, can't send another http.Error, but the client might get partial response.
 	}
 }

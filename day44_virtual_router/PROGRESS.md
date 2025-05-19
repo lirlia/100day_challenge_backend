@@ -15,7 +15,9 @@
   - Added POST /api/link (addLinkHandler)
   - Added DELETE /api/link (deleteLinkHandler)
   - Resolved linter errors related to handler implementation and registration.
-- [ ] Step 3/5: Implement Ping API (POST /api/router/{id}/ping)
+- [x] Step 3/5: Implement Ping API (POST /api/router/{id}/ping)
+  - Added SimulatePing method to router.Router
+  - Added POST /api/router/{id}/ping (pingAPIHandler)
 - [ ] Step 4/5: Develop Frontend UI with React Flow for Network Visualization
 - [ ] Step 5/5: Implement Frontend Controls for Router/Link Management and Ping Execution
 

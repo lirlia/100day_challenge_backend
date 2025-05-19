@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math/rand"
 	"net"
 	"sort"
 	"sync"
@@ -33,6 +34,7 @@ type IRouter interface {
 	GetOSPFInstance() *OSPFInstance
 	GetID() string
 	GetRoutingTableForDisplay() map[string]string
+	SimulatePing(destinationIPStr string) (bool, int, string, error)
 }
 
 // RoutingEntry はルーティングテーブルのエントリを表します。
@@ -764,4 +766,81 @@ func (r *Router) GetRoutingTableForDisplay() map[string]string {
 			entry.Metric)
 	}
 	return displayTable
+}
+
+// SimulatePing checks if a destination IP is reachable based on the routing table
+// and returns a simulated RTT if successful.
+func (r *Router) SimulatePing(destinationIPStr string) (bool, int, string, error) {
+	r.routingTableMutex.RLock()
+	defer r.routingTableMutex.RUnlock()
+
+	destIP := net.ParseIP(destinationIPStr)
+	if destIP == nil {
+		return false, 0, "", fmt.Errorf("invalid destination IP address format: %s", destinationIPStr)
+	}
+
+	// Check direct connections first (local subnet)
+	ipNet := &net.IPNet{IP: r.IPAddress.IP, Mask: r.IPAddress.Mask}
+	if ipNet.Contains(destIP) {
+		if destIP.Equal(r.IPAddress.IP) { // Ping self
+			return true, 1, fmt.Sprintf("Pong from %s (self)", r.IPAddress.IP.String()), nil
+		}
+		r.neighborLinksMutex.RLock()
+		foundOnLink := false
+		var neighborRouterID string
+		for _, nl := range r.NeighborLinks {
+			if nl.RemoteInterfaceIP.Equal(destIP) {
+				foundOnLink = true
+				neighborRouterID = nl.RemoteRouterID
+				break
+			}
+		}
+		r.neighborLinksMutex.RUnlock()
+		if foundOnLink {
+			rtt := rand.Intn(10) + 1 // 1-10 ms for very close direct link
+			return true, rtt, fmt.Sprintf("Pong from %s (neighbor %s on direct link)", destinationIPStr, neighborRouterID), nil
+		}
+		// If not a direct neighbor IP, but on local subnet, treat as reachable with small RTT.
+		// This might be too simplistic, but ok for now.
+		// return true, rand.Intn(5) + 1, fmt.Sprintf("Pong from %s (local subnet)", destIPStr), nil
+		// Fall through to routing table lookup, as OSPF routes might be more specific or preferred.
+	}
+
+	var bestMatch *RoutingEntry
+	for _, entry := range r.RoutingTable {
+		if entry.Destination.Contains(destIP) {
+			if bestMatch == nil {
+				bestMatch = entry
+			} else {
+				// Check if current entry has a more specific subnet mask
+				currentMaskLen, _ := entry.Destination.Mask.Size()
+				bestMatchMaskLen, _ := bestMatch.Destination.Mask.Size()
+				if currentMaskLen > bestMatchMaskLen {
+					bestMatch = entry
+				}
+			}
+		}
+	}
+
+	if bestMatch != nil {
+		// Simulate RTT based on metric (e.g., metric * 2ms, plus some randomness)
+		baseRtt := bestMatch.Metric * 2   // Arbitrary calculation
+		randomJitter := rand.Intn(10)     // Add some jitter (0-9ms)
+		rtt := baseRtt + randomJitter + 1 // Ensure RTT is at least 1
+		if rtt < 1 {
+			rtt = 1
+		}
+		if rtt > 500 {
+			rtt = 500
+		} // Cap RTT
+
+		message := fmt.Sprintf("Pong from %s, NextHop: %s, Interface: %s, Metric: %d",
+			destinationIPStr,
+			bestMatch.NextHop.String(),
+			bestMatch.Interface,
+			bestMatch.Metric)
+		return true, rtt, message, nil
+	}
+
+	return false, 0, "Destination host unreachable", nil
 }
