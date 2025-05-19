@@ -62,12 +62,8 @@ func main() {
 		http.ListenAndServe(":8080", ws)
 	}()
 
-	time.Sleep(7 * time.Second)
-
-	mgr.RemoveLink("r1", "r2")
-	mgr.RemoveRouter("r1")
-	mgr.RemoveRouter("r2")
-	fmt.Println("ルーター削除・TUNデバイスクローズ完了")
+	// プログラムが終了しないように無限待機
+	select {}
 }
 
 // router.RouterのInbox()メソッドを追加してください
