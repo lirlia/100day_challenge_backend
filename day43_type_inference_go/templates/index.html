@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Day 43 - Go Type Inference</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+            margin: 0; /* Remove default body margin */
+        }
+        .container.two-column-layout {
+            display: flex;
+            flex-grow: 1;
+            gap: 20px;
+            padding: 15px; /* Add some padding to the overall container */
+            box-sizing: border-box; /* Ensure padding doesn't add to width/height */
+        }
+        .left-column {
+            width: 35%;
+            overflow-y: auto;
+            padding-right: 20px;
+            border-right: 1px solid #ddd;
+        }
+        .right-column {
+            width: 65%;
+            display: flex;
+            flex-direction: column;
+        }
+        .sample-categories {
+            margin-bottom: 0;
+        }
+        .sample-categories h2 {
+            font-size: 1.1em; /* Slightly smaller for the column */
+            margin-top: 15px;
+            margin-bottom: 8px;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 4px;
+        }
+        .category-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); /* Smaller buttons in column */
+            gap: 8px;
+        }
+        .category-grid button {
+            padding: 6px 10px; /* Smaller padding for smaller buttons */
+            background-color: #f0f0f0;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85em; /* Smaller font */
+            text-align: left;
+            width: 100%;
+        }
+        .category-grid button:hover {
+            background-color: #e0e0e0;
+        }
+        .code-form, .error-message, .result-output {
+            margin-bottom: 15px;
+        }
+        .code-form textarea {
+            width: 100%;
+            box-sizing: border-box;
+            min-height: 150px; /* Ensure textarea has a decent initial height */
+        }
+        .result-output pre, .error-message pre {
+            max-height: 250px;
+            overflow-y: auto;
+            background-color: #f9f9f9; /* Light background for pre blocks */
+            padding: 10px;
+            border: 1px solid #eee;
+            border-radius: 4px;
+        }
+        footer {
+            text-align: center;
+            padding: 10px;
+            background-color: #f1f1f1;
+            border-top: 1px solid #ddd;
+            width: 100%; /* Ensure footer spans full width */
+            box-sizing: border-box;
+        }
+
+        @media (max-width: 800px) { /* Adjusted breakpoint for better responsiveness */
+            .container.two-column-layout {
+                flex-direction: column;
+                padding: 10px; /* Less padding on smaller screens */
+            }
+            .left-column, .right-column {
+                width: 100%;
+                border-right: none;
+                padding-right: 0;
+                overflow-y: visible;
+            }
+            .left-column {
+                border-bottom: 1px solid #ddd;
+                margin-bottom: 15px;
+                padding-bottom: 15px;
+            }
+             .category-grid {
+                grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); /* Adjust for stacked layout */
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container two-column-layout">
+        <div class="left-column">
+            <h1>MiniLang Samples</h1>
+            <div class="sample-categories">
+                <p><strong>サンプルコードを選択:</strong></p>
+                {{$currentCategory := ""}}
+                {{range .SampleCodes}}
+                    {{if ne .Category $currentCategory}}
+                        {{if $currentCategory}}</div>{{end}} <!-- Close previous category-grid -->
+                        <h2>{{.Category}}</h2>
+                        <div class="category-grid">
+                        {{$currentCategory = .Category}}
+                    {{end}}
+                    <button type="button" onclick="insertSampleCode(this)" data-code="{{.Code}}">{{.Name}}</button>
+                {{end}}
+                {{if $currentCategory}}</div>{{end}} <!-- Close last category-grid -->
+            </div>
+        </div>
+        <div class="right-column">
+            <h1>Day43 - MiniLang 型推論</h1>
+
+            <form action="/" method="post" class="code-form">
+                <div>
+                    <label for="code">MiniLang コード:</label>
+                    <textarea id="code" name="code" rows="10" placeholder="例: let id = fn x => x in id 10">{{ .Code }}</textarea>
+                </div>
+                <button type="submit">型を推論</button>
+            </form>
+
+            {{if .ErrorMsg}}
+            <div class="error-message">
+                <h2>エラー:</h2>
+                <pre>{{ .ErrorMsg }}</pre>
+            </div>
+            {{end}}
+
+            <div class="result-output">
+                <h2>推論された型:</h2>
+                <pre class="type-result">{{if .Result}}{{ .Result }}{{else}}-{{end}}</pre>
+            </div>
+        </div>
+    </div>
+    <footer>
+        <p>&copy; <span id="year"></span> lirlia. All rights reserved.</p>
+    </footer>
+    <script>
+        document.getElementById('year').textContent = new Date().getFullYear();
+
+        function insertSampleCode(button) {
+            const codeToInsert = button.getAttribute('data-code');
+            const textarea = document.getElementById('code');
+            textarea.value = codeToInsert.replace(/\n/g, '\n');
+        }
+    </script>
+</body>
+</html>
