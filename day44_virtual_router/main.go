@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"os"
 	"time"
+	"net/http"
 	"github.com/lirlia/100day_challenge_backend/day44_virtual_router/router"
+	"github.com/lirlia/100day_challenge_backend/day44_virtual_router/web"
 )
 
 func main() {
@@ -51,6 +53,13 @@ func main() {
 			mgr.FloodAllLSA()
 			time.Sleep(5 * time.Second)
 		}
+	}()
+
+	// 管理画面Webサーバ起動
+	go func() {
+		ws := &web.WebServer{Mgr: mgr}
+		fmt.Println("管理画面: http://localhost:8080/")
+		http.ListenAndServe(":8080", ws)
 	}()
 
 	time.Sleep(7 * time.Second)

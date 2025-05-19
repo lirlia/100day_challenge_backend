@@ -210,3 +210,7 @@ func (r *Router) InboxWritable() chan<- Packet {
 func (r *Router) SetStaticRoute(dstIP, nextHop string) {
 	r.RoutingTbl[dstIP] = nextHop
 }
+
+func (m *RouterManager) Mu() *sync.RWMutex {
+	return &m.mu
+}
