@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"sort"
-	"strconv"
 
 	// "strconv"
 
@@ -69,14 +68,22 @@ func RegisterHandlers(muxRouter *mux.Router, mgr *router.RouterManager) {
 	muxRouter.HandleFunc("/router/add", addRouterHandler).Methods("POST")
 	muxRouter.HandleFunc("/router/delete", deleteRouterHandler).Methods("GET") // Kept as GET for simplicity from HTML form
 	muxRouter.HandleFunc("/link/add", addLinkHandler).Methods("POST")
-	muxRouter.HandleFunc("/link/delete", removeLinkHandler).Methods("POST")
+	// muxRouter.HandleFunc("/link/delete", removeLinkHandler).Methods("POST") // Removed old HTML form handler
 
 	// API Handlers (New)
 	apiRouter := muxRouter.PathPrefix("/api").Subrouter() // Create a subrouter for /api paths
 	apiRouter.HandleFunc("/topology", apiTopologyHandler).Methods("GET")
 	apiRouter.HandleFunc("/router/{id}", apiRouterDetailHandler).Methods("GET")
 
-	log.Println("RegisterHandlers: HTTP Handlers registered.")
+	// New API handlers for router management
+	apiRouter.HandleFunc("/router", addRouterHandler).Methods("POST")
+	apiRouter.HandleFunc("/router/{id}", deleteRouterHandler).Methods("DELETE")
+
+	// New API handlers for link management
+	apiRouter.HandleFunc("/link", addLinkHandler).Methods("POST")
+	apiRouter.HandleFunc("/link", deleteLinkHandler).Methods("DELETE")
+
+	log.Println("RegisterHandlers: API and page handlers registered.")
 	log.Println("RegisterHandlers: Finished.")
 }
 
@@ -131,142 +138,133 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func addRouterHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Only POST method is allowed", http.StatusMethodNotAllowed)
-		return
+	log.Println("addRouterHandler: received request")
+	var reqBody struct {
+		ID     string `json:"id"`
+		IPCidr string `json:"ip_cidr"`
+		MTU    int    `json:"mtu"` // Optional, defaults if not provided or zero
 	}
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Failed to parse form", http.StatusBadRequest)
-		return
-	}
-	routerID := r.FormValue("routerId")
-	ipNetStr := r.FormValue("ipNetStr")
-	// mtuStr := r.FormValue("mtu")
-	// mtu, _ := strconv.Atoi(mtuStr)
-	// if mtu == 0 {
-	// 	mtu = router.DefaultMTU
-	// }
-	mtu := router.DefaultMTU // Keep it simple for now
 
-	if routerID == "" || ipNetStr == "" {
-		// Handle error, maybe re-render form with error message
-		// For now, just redirect with an error (not ideal UX for form resubmission)
-		http.Redirect(w, r, "/?error=RouterID+and+IPNet+are+required", http.StatusSeeOther)
+	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+		log.Printf("addRouterHandler: Error decoding request body: %v", err)
+		http.Error(w, fmt.Sprintf("Invalid request body: %v", err), http.StatusBadRequest)
+		return
+	}
+	defer r.Body.Close()
+
+	if reqBody.ID == "" || reqBody.IPCidr == "" {
+		log.Printf("addRouterHandler: Missing id or ip_cidr in request body: %+v", reqBody)
+		http.Error(w, "Missing id or ip_cidr in request body", http.StatusBadRequest)
 		return
 	}
 
-	_, err := routerMgr.AddRouter(routerID, ipNetStr, mtu)
+	mtu := reqBody.MTU
+	if mtu == 0 {
+		mtu = router.DefaultMTU // Use default MTU if not specified or zero
+	}
+
+	log.Printf("addRouterHandler: Attempting to add router ID: %s, IP: %s, MTU: %d", reqBody.ID, reqBody.IPCidr, mtu)
+	newRouter, err := routerMgr.AddRouter(reqBody.ID, reqBody.IPCidr, mtu)
 	if err != nil {
-		log.Printf("Failed to add router %s: %v", routerID, err)
-		http.Redirect(w, r, "/?error="+template.URLQueryEscaper(err.Error()), http.StatusSeeOther)
+		log.Printf("addRouterHandler: Error adding router %s: %v", reqBody.ID, err)
+		http.Error(w, fmt.Sprintf("Failed to add router: %v", err), http.StatusInternalServerError)
 		return
 	}
-	http.Redirect(w, r, "/?success=Router+"+template.URLQueryEscaper(routerID)+"+added", http.StatusSeeOther)
+
+	log.Printf("addRouterHandler: Router %s added successfully", newRouter.GetID())
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	if err := json.NewEncoder(w).Encode(newRouter); err != nil { // Assuming Router struct can be marshalled
+		log.Printf("addRouterHandler: Error encoding response: %v", err)
+		// Already sent header, so can't send http.Error. Log it.
+	}
 }
 
 func deleteRouterHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Only GET method is allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	routerID := r.URL.Query().Get("id")
-	if routerID == "" {
-		http.Redirect(w, r, "/?error=Router+ID+required+for+deletion", http.StatusSeeOther)
+	vars := mux.Vars(r)
+	routerID, ok := vars["id"]
+	if !ok || routerID == "" {
+		log.Println("deleteRouterHandler: Missing router id in path")
+		http.Error(w, "Missing router id in path", http.StatusBadRequest)
 		return
 	}
 
-	// In a real app, add a confirmation step here.
+	log.Printf("deleteRouterHandler: Attempting to delete router ID: %s", routerID)
 	err := routerMgr.RemoveRouter(routerID)
 	if err != nil {
-		log.Printf("Failed to remove router %s: %v", routerID, err)
-		http.Redirect(w, r, "/?error="+template.URLQueryEscaper(err.Error()), http.StatusSeeOther)
+		log.Printf("deleteRouterHandler: Error deleting router %s: %v", routerID, err)
+		// Differentiate between "not found" and other errors if possible
+		// For now, assume any error is an internal server error or bad request (e.g., router has links)
+		http.Error(w, fmt.Sprintf("Failed to delete router: %v", err), http.StatusInternalServerError)
 		return
 	}
-	http.Redirect(w, r, "/?success=Router+"+template.URLQueryEscaper(routerID)+"+deleted", http.StatusSeeOther)
+
+	log.Printf("deleteRouterHandler: Router %s deleted successfully", routerID)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func addLinkHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Only POST method is allowed", http.StatusMethodNotAllowed)
+	log.Println("addLinkHandler: received request")
+	var reqBody struct {
+		SourceRouterID string `json:"source_router_id"`
+		TargetRouterID string `json:"target_router_id"`
+		SourceRouterIP string `json:"source_router_ip"` // e.g., "10.100.1.1"
+		TargetRouterIP string `json:"target_router_ip"` // e.g., "10.100.1.2"
+		Cost           int    `json:"cost"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+		log.Printf("addLinkHandler: Error decoding request body: %v", err)
+		http.Error(w, fmt.Sprintf("Invalid request body: %v", err), http.StatusBadRequest)
+		return
+	}
+	defer r.Body.Close()
+
+	if reqBody.SourceRouterID == "" || reqBody.TargetRouterID == "" || reqBody.SourceRouterIP == "" || reqBody.TargetRouterIP == "" || reqBody.Cost <= 0 {
+		log.Printf("addLinkHandler: Missing required fields or invalid cost in request body: %+v", reqBody)
+		http.Error(w, "Missing required fields (source_router_id, target_router_id, source_router_ip, target_router_ip) or invalid cost (must be > 0)", http.StatusBadRequest)
 		return
 	}
 
-	err := r.ParseForm()
+	log.Printf("addLinkHandler: Attempting to add link between %s (%s) and %s (%s) with cost %d",
+		reqBody.SourceRouterID, reqBody.SourceRouterIP, reqBody.TargetRouterID, reqBody.TargetRouterIP, reqBody.Cost)
+
+	err := routerMgr.AddLinkBetweenRouters(reqBody.SourceRouterID, reqBody.TargetRouterID, reqBody.SourceRouterIP, reqBody.TargetRouterIP, reqBody.Cost)
 	if err != nil {
-		log.Printf("Error parsing form: %v", err)
-		renderError(w, "Error parsing form", http.StatusBadRequest)
+		log.Printf("addLinkHandler: Error adding link: %v", err)
+		http.Error(w, fmt.Sprintf("Failed to add link: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	router1ID := r.FormValue("router1Id")
-	router1LinkIP := r.FormValue("router1LinkIp")
-	router2ID := r.FormValue("router2Id")
-	router2LinkIP := r.FormValue("router2LinkIp")
-	costStr := r.FormValue("cost")
-
-	if router1ID == "" || router1LinkIP == "" || router2ID == "" || router2LinkIP == "" || costStr == "" {
-		log.Printf("Missing form fields for add link")
-		renderError(w, "Missing form fields", http.StatusBadRequest)
-		return
-	}
-
-	cost, err := strconv.Atoi(costStr)
-	if err != nil {
-		log.Printf("Invalid cost value: %v", err)
-		renderError(w, "Invalid cost value: must be an integer", http.StatusBadRequest)
-		return
-	}
-	if cost <= 0 {
-		renderError(w, "Cost must be a positive integer", http.StatusBadRequest)
-		return
-	}
-
-	err = routerMgr.AddLinkBetweenRouters(router1ID, router1LinkIP, router2ID, router2LinkIP, cost)
-	if err != nil {
-		log.Printf("Error adding link: %v", err)
-		renderError(w, fmt.Sprintf("Error adding link: %s", err.Error()), http.StatusInternalServerError)
-		return
-	}
-
-	log.Printf("Successfully added link between %s (%s) and %s (%s) with cost %d", router1ID, router1LinkIP, router2ID, router2LinkIP, cost)
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	log.Printf("addLinkHandler: Link between %s and %s added successfully", reqBody.SourceRouterID, reqBody.TargetRouterID)
+	w.WriteHeader(http.StatusCreated) // Or http.StatusOK if not returning a resource representation
+	// Optionally return some representation of the link or just success
+	fmt.Fprintf(w, `{"message": "Link added successfully"}`)
 }
 
-// removeLinkHandler handles POST requests to delete a link between two routers.
-func removeLinkHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Only POST method is allowed for link deletion", http.StatusMethodNotAllowed)
+// deleteLinkHandler handles DELETE requests to /api/link to delete a link between routers.
+// Expects query parameters: from_router_id and to_router_id
+func deleteLinkHandler(w http.ResponseWriter, r *http.Request) {
+	log.Println("deleteLinkHandler: received request")
+	fromRouterID := r.URL.Query().Get("from_router_id")
+	toRouterID := r.URL.Query().Get("to_router_id")
+
+	if fromRouterID == "" || toRouterID == "" {
+		log.Println("deleteLinkHandler: Missing from_router_id or to_router_id query parameter")
+		http.Error(w, "Missing from_router_id or to_router_id query parameter", http.StatusBadRequest)
 		return
 	}
 
-	err := r.ParseForm()
+	log.Printf("deleteLinkHandler: Attempting to delete link between %s and %s", fromRouterID, toRouterID)
+	err := routerMgr.RemoveLinkBetweenRouters(fromRouterID, toRouterID)
 	if err != nil {
-		log.Printf("Error parsing form for remove link: %v", err)
-		// Using renderError to show the error on the index page
-		renderError(w, "Error parsing form data for link removal.", http.StatusBadRequest)
+		log.Printf("deleteLinkHandler: Error deleting link: %v", err)
+		http.Error(w, fmt.Sprintf("Failed to delete link: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	router1ID := r.FormValue("router1Id")
-	router2ID := r.FormValue("router2Id")
-
-	if router1ID == "" || router2ID == "" {
-		log.Printf("Missing router IDs for remove link operation.")
-		renderError(w, "Router IDs are missing. Cannot remove link.", http.StatusBadRequest)
-		return
-	}
-
-	err = routerMgr.RemoveLinkBetweenRouters(router1ID, router2ID)
-	if err != nil {
-		log.Printf("Error removing link between %s and %s: %v", router1ID, router2ID, err)
-		// Show a more specific error from the manager if possible
-		renderError(w, fmt.Sprintf("Failed to remove link: %s", err.Error()), http.StatusInternalServerError)
-		return
-	}
-
-	log.Printf("Successfully removed link between %s and %s", router1ID, router2ID)
-	successMessage := fmt.Sprintf("Link between router %s and %s has been successfully removed.", router1ID, router2ID)
-	http.Redirect(w, r, "/?alertType=success&alertMessage="+template.URLQueryEscaper(successMessage), http.StatusSeeOther)
+	log.Printf("deleteLinkHandler: Link between %s and %s deleted successfully", fromRouterID, toRouterID)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func routerDetailHandler(w http.ResponseWriter, r *http.Request) {

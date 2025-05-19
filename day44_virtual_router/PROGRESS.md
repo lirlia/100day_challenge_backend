@@ -9,7 +9,12 @@
   - Added initial API endpoints for topology and router details (`/api/topology`, `/api/router/{id}`).
   - Basic `fetch` in Next.js `page.tsx` to test API connection.
   - Troubleshot Next.js startup issues (Turbopack, directory paths, dependency reinstallation).
-- [ ] Step 2/5: Implement Router and Link Management APIs (POST/DELETE for routers and links)
+- [x] Step 2/5: Implement Router and Link Management APIs (POST/DELETE for routers and links)
+  - Added POST /api/router (addRouterHandler)
+  - Added DELETE /api/router/{id} (deleteRouterHandler)
+  - Added POST /api/link (addLinkHandler)
+  - Added DELETE /api/link (deleteLinkHandler)
+  - Resolved linter errors related to handler implementation and registration.
 - [ ] Step 3/5: Implement Ping API (POST /api/router/{id}/ping)
 - [ ] Step 4/5: Develop Frontend UI with React Flow for Network Visualization
 - [ ] Step 5/5: Implement Frontend Controls for Router/Link Management and Ping Execution
