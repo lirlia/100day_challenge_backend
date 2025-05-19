@@ -1,0 +1,155 @@
+{{define "index_content"}}
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+    <div class="md:col-span-2">
+        <h3 class="text-xl font-bold mb-3 uppercase border-b-2 border-black pb-1">Managed Routers</h3>
+        {{if .Routers}}
+        <div class="overflow-x-auto brutalist-card">
+            <table class="brutalist-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>TUN Device</th>
+                        <th>TUN IP</th>
+                        <th>State</th>
+                        <th>OSPF</th>
+                        <th>Links</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range .Routers}}
+                    <tr>
+                        <td class="font-bold">{{.ID}}</td>
+                        <td>{{if .TUNInterface}}{{.TUNInterface.Name}}{{else}}N/A{{end}}</td>
+                        <td>{{.TUNIPNetString}}</td>
+                        <td>
+                            {{if .IsRunning}}
+                                <span class="inline-block px-2 py-1 text-xs font-semibold text-green-700 bg-green-200 border-2 border-green-700">RUNNING</span>
+                            {{else}}
+                                <span class="inline-block px-2 py-1 text-xs font-semibold text-red-700 bg-red-200 border-2 border-red-700">STOPPED</span>
+                            {{end}}
+                        </td>
+                        <td>
+                            {{if .OSPFEnabled}}
+                                <span class="inline-block px-2 py-1 text-xs font-semibold text-blue-700 bg-blue-200 border-2 border-blue-700">ENABLED</span>
+                            {{else}}
+                                <span class="inline-block px-2 py-1 text-xs font-semibold text-gray-700 bg-gray-200 border-2 border-gray-700">DISABLED</span>
+                            {{end}}
+                        </td>
+                        <td>{{len .GetFormattedNeighborLinks}}</td>
+                        <td class="whitespace-nowrap">
+                            <a href="/router/detail?id={{.ID}}" class="brutalist-button text-xs mr-1">Details</a>
+                            <form action="/router/delete" method="GET" class="inline" onsubmit="return confirm('Are you sure you want to delete router {{.ID}}?');">
+                                <input type="hidden" name="id" value="{{.ID}}">
+                                <button type="submit" class="brutalist-button brutalist-button-red text-xs">Delete Router</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {{if .GetFormattedNeighborLinks}}
+                    <tr>
+                        <td colspan="1"></td>
+                        <td colspan="6" class="py-1 px-2 border-t border-gray-300">
+                            <div class="text-xs font-semibold mb-1">Links:</div>
+                            <ul class="list-disc list-inside pl-4">
+                                {{range .GetFormattedNeighborLinks}}
+                                    <li class="mb-1">
+                                        To: {{.NeighborID}} (Cost: {{.Cost}}, LocalIP: {{.LocalLinkIP}}, RemoteIP: {{.RemoteLinkIP}})
+                                        <form action="/link/delete" method="POST" class="inline ml-2" onsubmit="return confirm('Are you sure you want to delete the link from {{.LocalRouterID}} to {{.NeighborID}}?');">
+                                            <input type="hidden" name="router1Id" value="{{.LocalRouterID}}">
+                                            <input type="hidden" name="router2Id" value="{{.NeighborID}}">
+                                            <button type="submit" class="text-xs text-red-500 hover:text-red-700 underline focus:outline-none">[Remove Link]</button>
+                                        </form>
+                                    </li>
+                                {{end}}
+                            </ul>
+                        </td>
+                    </tr>
+                    {{end}}
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+        {{else}}
+        <div class="brutalist-card">
+            <p>No virtual routers are currently configured.</p>
+        </div>
+        {{end}}
+    </div>
+
+    <div>
+        <div class="brutalist-card">
+            <h3 class="text-xl font-bold mb-3 uppercase border-b-2 border-black pb-1">Add New Router</h3>
+            <form action="/router/add" method="POST">
+                <div class="mb-3">
+                    <label for="routerId" class="block font-bold mb-1">Router ID:</label>
+                    <input type="text" id="routerId" name="routerId" class="brutalist-input w-full" placeholder="e.g., R3" required>
+                </div>
+                <div class="mb-3">
+                    <label for="ipNetStr" class="block font-bold mb-1">TUN IP Address (CIDR):</label>
+                    <input type="text" id="ipNetStr" name="ipNetStr" class="brutalist-input w-full" placeholder="e.g., 10.0.3.1/24" required>
+                </div>
+                <!-- MTU can be added later if needed -->
+                <button type="submit" class="brutalist-button w-full">Add Router</button>
+            </form>
+        </div>
+
+        <div class="brutalist-card mt-6">
+            <h3 class="text-xl font-bold mb-3 uppercase border-b-2 border-black pb-1">Add Link</h3>
+             <form action="/link/add" method="POST">
+                <div class="mb-3">
+                    <label for="router1Id" class="block font-bold mb-1">Router 1 ID:</label>
+                    <select id="router1Id" name="router1Id" class="brutalist-input brutalist-select w-full" required>
+                        <option value="">Select Router 1</option>
+                        {{range .Routers}}
+                        <option value="{{.ID}}">{{.ID}}</option>
+                        {{end}}
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label for="router1LinkIp" class="block font-bold mb-1">Router 1 Link IP:</label>
+                    <input type="text" id="router1LinkIp" name="router1LinkIp" class="brutalist-input w-full" placeholder="e.g., 192.168.x.1" required>
+                </div>
+
+                <div class="mb-3">
+                    <label for="router2Id" class="block font-bold mb-1">Router 2 ID:</label>
+                    <select id="router2Id" name="router2Id" class="brutalist-input brutalist-select w-full" required>
+                        <option value="">Select Router 2</option>
+                        {{range .Routers}}
+                        <option value="{{.ID}}">{{.ID}}</option>
+                        {{end}}
+                    </select>
+                </div>
+                 <div class="mb-3">
+                    <label for="router2LinkIp" class="block font-bold mb-1">Router 2 Link IP:</label>
+                    <input type="text" id="router2LinkIp" name="router2LinkIp" class="brutalist-input w-full" placeholder="e.g., 192.168.x.2" required>
+                </div>
+
+                <div class="mb-3">
+                    <label for="cost" class="block font-bold mb-1">Link Cost:</label>
+                    <input type="number" id="cost" name="cost" class="brutalist-input w-full" value="10" min="1" required>
+                </div>
+                <button type="submit" class="brutalist-button w-full">Add Link</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+// Simple client-side validation or interactions can go here if needed
+document.addEventListener('DOMContentLoaded', function () {
+    const urlParams = new URLSearchParams(window.location.search);
+    const error = urlParams.get('error');
+    const success = urlParams.get('success');
+
+    // These are handled by the server rendering them into the divs now, but client-side display is also an option.
+    // if (error) {
+    //     const errorDiv = document.getElementById('alert-error-message');
+    //     if(errorDiv) errorDiv.textContent = decodeURIComponent(error.replace(/\+/g, ' '));
+    // }
+    // if (success) {
+    //    const successDiv = document.getElementById('alert-success-message');
+    //    if(successDiv) successDiv.textContent = decodeURIComponent(success.replace(/\+/g, ' '));
+    // }
+});
+</script>
+{{end}}

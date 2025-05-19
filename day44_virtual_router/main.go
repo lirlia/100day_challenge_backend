@@ -2,86 +2,79 @@ package main
 
 import (
 	"log"
-	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/lirlia/100day_challenge_backend/day44_virtual_router/router"
+	"github.com/lirlia/100day_challenge_backend/day44_virtual_router/web"
 )
 
+var routerMgr *router.RouterManager
+
 func main() {
-	log.Println("Starting virtual router application...")
+	log.Println("Starting virtual router application with web management...")
 
-	// ルーター1の設定
-	r1ID := "R1"
-	r1IPNetStr := "10.0.1.1/24"
-	r1TunMTU := router.DefaultMTU
-	r1LinkIPToR2 := net.ParseIP("192.168.0.1")
+	routerMgr = router.NewRouterManager()
 
-	// ルーター2の設定
-	r2ID := "R2"
-	r2IPNetStr := "10.0.2.1/24"
-	r2TunMTU := router.DefaultMTU
-	r2LinkIPToR1 := net.ParseIP("192.168.0.2")
-
-	// ルーターインスタンスの作成
-	r1, err := router.NewRouter(r1ID, r1IPNetStr, r1TunMTU)
+	// 初期ルーターとリンクのセットアップ (例)
+	// Web UIから追加・削除できるようにするため、ここでは最小限にするか、設定ファイルから読み込む等を将来的に検討
+	_, err := routerMgr.AddRouter("R1", "10.0.1.1/24", router.DefaultMTU)
 	if err != nil {
-		log.Fatalf("Failed to create router %s: %v", r1ID, err)
+		log.Fatalf("Failed to add initial router R1: %v", err)
 	}
-	r2, err := router.NewRouter(r2ID, r2IPNetStr, r2TunMTU)
+	log.Println("main: Router R1 added successfully.")
+
+	_, err = routerMgr.AddRouter("R2", "10.0.2.1/24", router.DefaultMTU)
 	if err != nil {
-		log.Fatalf("Failed to create router %s: %v", r2ID, err)
+		log.Fatalf("Failed to add initial router R2: %v", err)
 	}
+	log.Println("main: Router R2 added successfully.")
 
-	// ルーター間リンク用のチャネル作成 (双方向)
-	// R1 -> R2
-	r1ToR2Chan := make(chan []byte, 128)
-	// R2 -> R1
-	r2ToR1Chan := make(chan []byte, 128)
-
-	linkCost := 10
-
-	// R1にR2へのリンクを追加
-	err = r1.AddNeighborLink(r1LinkIPToR2, r2LinkIPToR1, r2ID, r1ToR2Chan, r2ToR1Chan, linkCost)
+	// リンク用のIPアドレスを、各ルータのTUN IPとは異なるセグメントにする
+	// 例えば、R1-R2間リンクを 10.255.0.1 と 10.255.0.2 で構成
+	err = routerMgr.AddLinkBetweenRouters("R1", "R2", "10.255.0.1", "10.255.0.2", 10)
 	if err != nil {
-		log.Fatalf("Router %s: Failed to add neighbor link to %s: %v", r1ID, r2ID, err)
+		log.Fatalf("Failed to add initial link R1-R2: %v", err)
 	}
-	log.Printf("Router %s: Added link to %s (R1:%s <-> R2:%s)", r1ID, r2ID, r1LinkIPToR2, r2LinkIPToR1)
+	log.Println("main: Link R1-R2 added successfully.")
 
-	// R2にR1へのリンクを追加 (チャネルは逆方向になる)
-	err = r2.AddNeighborLink(r2LinkIPToR1, r1LinkIPToR2, r1ID, r2ToR1Chan, r1ToR2Chan, linkCost)
-	if err != nil {
-		log.Fatalf("Router %s: Failed to add neighbor link to %s: %v", r2ID, r1ID, err)
-	}
-	log.Printf("Router %s: Added link to %s (R2:%s <-> R1:%s)", r2ID, r1ID, r2LinkIPToR1, r1LinkIPToR2)
+	// Webサーバーの設定と起動
+	log.Println("main: About to register web handlers...")
+	web.RegisterHandlers(routerMgr)
 
-	// ルーターを起動
-	if err := r1.Start(); err != nil {
-		log.Fatalf("Failed to start router %s: %v", r1ID, err)
-	}
-	if err := r2.Start(); err != nil {
-		log.Fatalf("Failed to start router %s: %v", r2ID, err)
-	}
+	port := "8080"
+	log.Printf("Starting web management interface on :%s", port)
+	go func() {
+		log.Println("Web server goroutine started. Attempting to listen on port " + port)
+		err := http.ListenAndServe(":"+port, nil)
+		if err != nil {
+			log.Fatalf("FATAL: Failed to start web server: %v", err)
+		}
+		log.Println("Web server ListenAndServe finished without error (this should not happen normally).")
+	}()
 
-	log.Printf("Routers %s and %s started. TUN interfaces: %s (%s), %s (%s). Press Ctrl+C to stop.",
-		r1.ID, r2.ID,
-		r1.TUNInterface.Name(), r1.IPAddress.String(),
-		r2.TUNInterface.Name(), r2.IPAddress.String(),
-	)
+	// Give the goroutine a moment to start and potentially fail
+	time.Sleep(100 * time.Millisecond)
+
+	log.Println("Application started. Routers are running. Web UI at http://localhost:8080. Press Ctrl+C to stop.")
 
 	// Ctrl+Cなどのシグナルを待機してクリーンアップ
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	<-sigChan
 
-	log.Println("Shutting down routers...")
-	if err := r1.Stop(); err != nil {
-		log.Printf("Error stopping router %s: %v", r1ID, err)
-	}
-	if err := r2.Stop(); err != nil {
-		log.Printf("Error stopping router %s: %v", r2ID, err)
+	log.Println("Shutting down application...")
+	// Stop all routers managed by routerMgr
+	// This needs a method in RouterManager or iterate here
+	activeRouters := routerMgr.ListRouters()
+	for _, r := range activeRouters {
+		log.Printf("Stopping router %s via manager...", r.ID)
+		if err := routerMgr.RemoveRouter(r.ID); err != nil {
+			log.Printf("Error stopping/removing router %s: %v", r.ID, err)
+		}
 	}
 
 	log.Println("Virtual router application stopped.")

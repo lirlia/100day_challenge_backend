@@ -5,11 +5,35 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"sort"
 	"sync"
 	"time"
 
 	"github.com/songgao/water"
 )
+
+// IRouter defines the interface for a virtual router.
+type IRouter interface {
+	Start(ctx context.Context)
+	Stop()
+	AddRoute(route *RoutingEntry)
+	RemoveRoute(destination net.IPNet)
+	FindRoute(destinationIP net.IP) *RoutingEntry
+	PrintRoutingTable() string
+	AddNeighborLink(localIP, remoteIP net.IP, neighborID string, toNeighborChan chan []byte, fromNeighborChan chan []byte, cost int) error
+	RemoveNeighborLink(neighborID string) error
+	GetRoutingTable() []*RoutingEntry
+	TUNInterfaceName() string
+	TUNIPNet() *net.IPNet
+	TUNIPNetString() string
+	IsRunning() bool
+	OSPFEnabled() bool
+	GetFormattedNeighborLinks() []FormattedNeighborLink
+	SetOSPFInstance(ospf *OSPFInstance)
+	GetOSPFInstance() *OSPFInstance
+	GetID() string
+	GetRoutingTableForDisplay() map[string]string
+}
 
 // RoutingEntry はルーティングテーブルのエントリを表します。
 type RoutingEntry struct {
@@ -30,20 +54,30 @@ const (
 	DirectRoute RouteType = "direct" // 直接接続
 )
 
-// Router は仮想ルーターを表します。
+// FormattedNeighborLink is a struct for template display
+type FormattedNeighborLink struct {
+	NeighborID   string
+	LocalLinkIP  string // IP on this router's side of the link (requires enhancement to retrieve)
+	RemoteLinkIP string // IP on the neighbor's side of the link (requires enhancement to retrieve)
+	Cost         int
+	// We also need the local router ID to make a unique removal link
+	LocalRouterID string
+}
+
+// Router struct represents a virtual router
 type Router struct {
-	ID                 string
+	ID                 string // Changed to public field ID
 	TUNInterface       *water.Interface
 	IPAddress          net.IPNet // TUNデバイスのIP/マスク
 	RoutingTable       []*RoutingEntry
 	routingTableMutex  sync.RWMutex
-	NeighborLinks      map[string]*NeighborLink // key: NeighborRouterID
+	NeighborLinks      map[string]*NeighborLink
 	neighborLinksMutex sync.RWMutex
 	PacketChan         chan []byte // TUNデバイスから読み取ったパケットを受信
 	ctx                context.Context
 	cancelFunc         context.CancelFunc
 	wg                 sync.WaitGroup
-	IsRunning          bool
+	isRunning          bool
 	ospfInstance       *OSPFInstance // OSPF機能が必要な場合に設定
 }
 
@@ -92,7 +126,7 @@ func NewRouter(id string, ipNetStr string, mtu int) (*Router, error) {
 		PacketChan:    make(chan []byte, 256), // Buffer size can be tuned
 		ctx:           ctx,
 		cancelFunc:    cancel,
-		IsRunning:     false,
+		isRunning:     false,
 	}
 
 	// 直接接続ルートを追加
@@ -114,11 +148,11 @@ func NewRouter(id string, ipNetStr string, mtu int) (*Router, error) {
 
 // Start はルーターのパケット読み取りと処理を開始します。
 func (r *Router) Start() error {
-	if r.IsRunning {
+	if r.isRunning {
 		return fmt.Errorf("router %s is already running", r.ID)
 	}
 
-	r.IsRunning = true
+	r.isRunning = true
 	r.wg.Add(1) // For TUN reading goroutine
 
 	// TUNデバイスからパケットを読み取るゴルーチン
@@ -177,7 +211,7 @@ func (r *Router) Start() error {
 
 // Stop はルーターを停止します。
 func (r *Router) Stop() error {
-	if !r.IsRunning {
+	if !r.isRunning {
 		return fmt.Errorf("router %s is not running", r.ID)
 	}
 
@@ -209,7 +243,7 @@ func (r *Router) Stop() error {
 	r.neighborLinksMutex.Unlock()
 
 	r.wg.Wait() // Wait for all goroutines to finish
-	r.IsRunning = false
+	r.isRunning = false
 	log.Printf("Router %s: Stopped.", r.ID)
 	return nil
 }
@@ -303,7 +337,7 @@ func (r *Router) handlePacket(packet []byte, sourceInterface string) {
 					// 送信元インターフェースに応じて返送方法を決定
 					if sourceInterface == r.TUNInterface.Name() {
 						// TUNから来たのでTUNに書き出す (OSがルーティングする)
-						// log.Printf("Router %s: Sending ICMP Echo Reply (len %d) to TUN %s (orig_src %s)", r.ID, len(replyPkt), r.TUNInterface.Name(), net.IP(packet[12:16]))
+						// log.Printf("Router %s: Sending ICMP Echo Reply (len %d) to TUN %s (orig_src %s)", r.id, len(replyPkt), r.TUNInterface.Name(), net.IP(packet[12:16]))
 						_, errWrite := r.TUNInterface.Write(replyPkt)
 						if errWrite != nil {
 							log.Printf("Router %s: Error writing ICMP Echo Reply to TUN: %v", r.ID, errWrite)
@@ -455,13 +489,16 @@ func (r *Router) AddNeighborLink(
 	fromNeighborChan chan []byte,
 	cost int,
 ) error {
-	r.neighborLinksMutex.Lock()
-	defer r.neighborLinksMutex.Unlock()
+	log.Printf("Router %s: AddNeighborLink: Attempting to add link to %s (Local: %s, Remote: %s, Cost: %d)", r.ID, neighborID, localIP, remoteIP, cost)
+	r.neighborLinksMutex.Lock() // Lock at the beginning
 
 	if _, exists := r.NeighborLinks[neighborID]; exists {
+		r.neighborLinksMutex.Unlock() // Unlock before returning error
+		log.Printf("Router %s: AddNeighborLink: Link to neighbor %s already exists. Aborting add.", r.ID, neighborID)
 		return fmt.Errorf("router %s: link to neighbor %s already exists", r.ID, neighborID)
 	}
 
+	// Keep a reference to the link to be used after unlocking
 	link := &NeighborLink{
 		LocalInterfaceIP:  localIP,
 		RemoteRouterID:    neighborID,
@@ -471,39 +508,41 @@ func (r *Router) AddNeighborLink(
 		Cost:              cost,
 	}
 	r.NeighborLinks[neighborID] = link
+	log.Printf("Router %s: AddNeighborLink: Successfully added neighbor link struct to %s.", r.ID, neighborID)
 
-	// 隣接ルータへの直接ルートを追加 (ネクストホップは隣接ルータのリンクIP)
-	// 宛先は隣接ルータのTUNデバイスIPネットワークではなく、隣接ルータのリンクIP単体とするか、
-	// または、隣接ルータのTUNデバイスのネットワーク全体へのルートとするか。
-	// 通常、ポイントツーポイントリンクでは、相手のIPへのホストルートができる。
-	// ここでは、相手のTUNのIPアドレスへのルートを、このリンク経由で追加するイメージ。
-	// より一般的には、リンクの対向IPアドレスへの直接接続ルートを追加する。
-	// OSPFが有効なら、OSPFがネットワークルートを広告する。
+	// Unlock neighborLinksMutex before operations that don't directly need it or might lock other things
+	r.neighborLinksMutex.Unlock()
 
 	// Add a direct route for the immediate neighbor's link IP
-	// This helps in reaching the neighbor itself over this link.
+	// This is done after unlocking neighborLinksMutex as AddRoute has its own lock.
 	destNetForNeighborLink := net.IPNet{IP: remoteIP, Mask: net.CIDRMask(32, 32)} // Host route to neighbor's link IP
-	r.AddRoute(&RoutingEntry{
+	r.AddRoute(&RoutingEntry{                                                     // AddRoute itself handles locking r.routingTableMutex
 		Destination: destNetForNeighborLink,
 		NextHop:     remoteIP,
-		Interface:   neighborID, // interface is the neighbor router ID for link
+		Interface:   neighborID,
 		Metric:      cost,
 		Type:        DirectRoute,
 	})
 
-	// Notify OSPF about the new link
-	if r.ospfInstance != nil {
+	// Prepare flags for operations to be done after this point
+	notifyOSPF := r.ospfInstance != nil
+	listenerShouldStart := r.isRunning
+
+	if listenerShouldStart {
+		log.Printf("Router %s: AddNeighborLink: Router is running. Preparing to start listener goroutine for neighbor %s.", r.ID, neighborID)
+		r.wg.Add(1)
+		go r.listenToNeighbor(link) // 'link' is captured by the closure
+		log.Printf("Router %s: AddNeighborLink: Listener goroutine for neighbor %s launched.", r.ID, neighborID)
+	} else {
+		log.Printf("Router %s: AddNeighborLink: Router is NOT running. Listener goroutine for %s NOT launched.", r.ID, neighborID)
+	}
+
+	if notifyOSPF {
+		log.Printf("Router %s: AddNeighborLink: Notifying OSPF about link up to %s (after lock release and other ops).", r.ID, neighborID)
 		r.ospfInstance.HandleLinkUp(neighborID, cost, localIP, remoteIP)
 	}
 
-	log.Printf("Router %s: Added neighbor link to %s (Local: %s, Remote: %s, Cost: %d)", r.ID, neighborID, localIP, remoteIP, cost)
-
-	// Start listener for this specific link if router is running
-	if r.IsRunning {
-		r.wg.Add(1)
-		go r.listenToNeighbor(link)
-	}
-
+	log.Printf("Router %s: AddNeighborLink: Finished adding link to %s.", r.ID, neighborID)
 	return nil
 }
 
@@ -569,23 +608,29 @@ func (r *Router) startNeighborLinkListeners() {
 // listenToNeighbor は特定の隣接ルーターからのパケットを受信して処理します。
 func (r *Router) listenToNeighbor(link *NeighborLink) {
 	defer r.wg.Done()
-	defer log.Printf("Router %s: Listener for neighbor %s (via its FromNeighborChan) stopped.", r.ID, link.RemoteRouterID)
-	log.Printf("Router %s: Starting listener for packets from neighbor %s.", r.ID, link.RemoteRouterID)
+	log.Printf("Router %s: listenToNeighbor: Goroutine STARTING for neighbor %s.", r.ID, link.RemoteRouterID)
+	defer log.Printf("Router %s: listenToNeighbor: Goroutine STOPPING for neighbor %s (via its FromNeighborChan).", r.ID, link.RemoteRouterID)
+	// log.Printf("Router %s: Starting listener for packets from neighbor %s.", r.ID, link.RemoteRouterID) // Original log, can be removed or kept
 
 	for {
 		select {
 		case <-r.ctx.Done():
+			log.Printf("Router %s: listenToNeighbor: Context cancelled for neighbor %s. Exiting goroutine.", r.ID, link.RemoteRouterID)
 			return
 		case packet, ok := <-link.FromNeighborChan:
+			// log.Printf("Router %s: listenToNeighbor: Received from FromNeighborChan for %s (ok: %t)", r.ID, link.RemoteRouterID, ok) // Debug log
 			if !ok {
-				log.Printf("Router %s: FromNeighborChan for neighbor %s closed.", r.ID, link.RemoteRouterID)
+				log.Printf("Router %s: listenToNeighbor: FromNeighborChan for neighbor %s CLOSED. Exiting goroutine.", r.ID, link.RemoteRouterID)
 				// Potentially trigger link down processing if not already handled by RemoveNeighborLink
 				// For now, just exit the goroutine.
 				return
 			}
 			if len(packet) > 0 {
 				// log.Printf("Router %s: Received %d bytes from neighbor %s via channel.", r.ID, len(packet), link.RemoteRouterID)
+				log.Printf("Router %s: listenToNeighbor: Packet (len %d) received from neighbor %s. Dispatching to handlePacket.", r.ID, len(packet), link.RemoteRouterID)
 				go r.handlePacket(packet, link.RemoteRouterID) // sourceInterface is neighborID
+			} else {
+				log.Printf("Router %s: listenToNeighbor: Empty packet (or nil) received from neighbor %s. Ignoring.", r.ID, link.RemoteRouterID)
 			}
 		}
 	}
@@ -607,18 +652,22 @@ func (r *Router) GetSelfIP() net.IP {
 	return r.IPAddress.IP
 }
 
-// GetNeighborLinks は現在の隣接リンクのコピーを返します。
+// GetNeighborLinks returns a copy of the neighbor links map.
 func (r *Router) GetNeighborLinks() map[string]*NeighborLink {
+	log.Printf("Router %s: GetNeighborLinks START.", r.ID)
 	r.neighborLinksMutex.RLock()
 	defer r.neighborLinksMutex.RUnlock()
+	// Create a copy to avoid race conditions if the caller modifies the map
+	// or if the map is modified by another goroutine while the caller is using it.
 	linksCopy := make(map[string]*NeighborLink, len(r.NeighborLinks))
 	for id, link := range r.NeighborLinks {
-		linksCopy[id] = link // Shallow copy of link pointer
+		linksCopy[id] = link // Shallow copy of pointer is fine for read-only use by OSPF
 	}
+	log.Printf("Router %s: GetNeighborLinks FINISHED, returning %d links.", r.ID, len(linksCopy))
 	return linksCopy
 }
 
-// GetRoutingTable は現在のルーティングテーブルのコピーを返します。
+// GetRoutingTable returns a copy of the routing table.
 func (r *Router) GetRoutingTable() []*RoutingEntry {
 	r.routingTableMutex.RLock()
 	defer r.routingTableMutex.RUnlock()
@@ -629,4 +678,90 @@ func (r *Router) GetRoutingTable() []*RoutingEntry {
 		tableCopy[i] = &entryCopy
 	}
 	return tableCopy
+}
+
+// TUNIPNetString returns the TUN IP address and mask in CIDR string format (e.g., "10.0.1.1/24")
+func (r *Router) TUNIPNetString() string {
+	if r.TUNInterface == nil { // Should not happen if router is initialized
+		return "N/A"
+	}
+	ones, _ := r.IPAddress.Mask.Size()
+	return fmt.Sprintf("%s/%d", r.IPAddress.IP.String(), ones)
+}
+
+// IsRunning checks if the router is currently active.
+func (r *Router) IsRunning() bool {
+	return r.isRunning
+}
+
+// OSPFEnabled checks if OSPF is configured and running for this router.
+func (r *Router) OSPFEnabled() bool {
+	return r.ospfInstance != nil // For now, just checks if instance exists. Could check a status field later.
+}
+
+// GetFormattedNeighborLinks returns a slice of neighbor links formatted for display.
+func (r *Router) GetFormattedNeighborLinks() []FormattedNeighborLink {
+	r.neighborLinksMutex.RLock()
+	defer r.neighborLinksMutex.RUnlock()
+
+	links := make([]FormattedNeighborLink, 0, len(r.NeighborLinks))
+
+	for neighborID, nl := range r.NeighborLinks {
+		if nl == nil {
+			continue
+		}
+		links = append(links, FormattedNeighborLink{
+			LocalRouterID: r.ID,
+			NeighborID:    neighborID,
+			Cost:          nl.Cost,
+			LocalLinkIP:   "N/A", // Placeholder, needs enhancement
+			RemoteLinkIP:  "N/A", // Placeholder, needs enhancement
+		})
+	}
+
+	sort.Slice(links, func(i, j int) bool {
+		return links[i].NeighborID < links[j].NeighborID
+	})
+
+	return links
+}
+
+// SetOSPFInstance sets the OSPF instance for the router.
+// This is typically called by NewOSPFInstance.
+func (r *Router) SetOSPFInstance(ospf *OSPFInstance) {
+	r.ospfInstance = ospf
+}
+
+// GetOSPFInstance returns the OSPF instance associated with the router.
+func (r *Router) GetOSPFInstance() *OSPFInstance {
+	return r.ospfInstance
+}
+
+// GetID returns the router's ID. This implements IRouter.
+func (r *Router) GetID() string {
+	return r.ID
+}
+
+// GetRoutingTableForDisplay はルーティングテーブルを画面表示用に整形して返します。
+// 例: map["10.0.2.0/24"] = "via 10.0.100.2 (eth0, OSPF, Metric: 20)"
+func (r *Router) GetRoutingTableForDisplay() map[string]string {
+	r.routingTableMutex.RLock()
+	defer r.routingTableMutex.RUnlock()
+
+	displayTable := make(map[string]string)
+	for _, entry := range r.RoutingTable {
+		dest := entry.Destination.String()
+		var via string
+		if entry.NextHop != nil {
+			via = fmt.Sprintf("via %s", entry.NextHop.String())
+		} else {
+			via = "directly connected"
+		}
+		displayTable[dest] = fmt.Sprintf("%s, Interface: %s, Type: %s, Metric: %d",
+			via,
+			entry.Interface,
+			entry.Type,
+			entry.Metric)
+	}
+	return displayTable
 }

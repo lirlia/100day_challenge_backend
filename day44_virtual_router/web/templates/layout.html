@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.PageTitle}} - Virtual Router Sim</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom global styles if needed */
+        .table-fixed {
+            table-layout: fixed;
+            width: 100%;
+        }
+        .table-fixed th, .table-fixed td {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+    <nav class="bg-blue-600 text-white p-4 shadow-md">
+        <div class="container mx-auto flex justify-between items-center">
+            <a href="/" class="text-2xl font-bold hover:text-blue-200">Router Sim</a>
+            <div>
+                <!-- Navigation links can be added here if needed -->
+            </div>
+        </div>
+    </nav>
+
+    <main class="container mx-auto p-4 mt-4">
+        {{if .Error}}
+            <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
+                <strong class="font-bold">Error!</strong>
+                <span class="block sm:inline">{{.Error}}</span>
+            </div>
+        {{end}}
+
+        {{if .ContentTemplateName}}
+            {{if eq .ContentTemplateName "index_content"}}
+                {{template "index_content" .}}
+            {{else if eq .ContentTemplateName "router_detail_content"}}
+                {{template "router_detail_content" .}}
+            {{else}}
+                <p class="text-red-500">Error: Unknown content template name: {{.ContentTemplateName}}</p>
+            {{end}}
+        {{else}}
+            <!-- Fallback or default content if ContentTemplateName is not set -->
+            {{if not .Error}} <!-- Only show this if there isn't a primary error message -->
+                <p class="text-gray-600">No specific content template was specified.</p>
+            {{end}}
+        {{end}}
+    </main>
+
+    <footer class="bg-gray-800 text-white text-center p-4 mt-8">
+        <p>&copy; 2024 Virtual Router Simulator</p>
+    </footer>
+
+</body>
+</html>
