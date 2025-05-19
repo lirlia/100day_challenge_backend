@@ -276,8 +276,52 @@ func (r *Router) handlePacket(packet []byte, sourceInterface string) {
 
 	// ルーター自身のIP宛かチェック (例: ping to router's TUN IP)
 	if destIP.Equal(r.IPAddress.IP) {
-		log.Printf("Router %s: Packet for self (%s) from %s. (Protocol: %d). Handling (e.g. ICMP echo reply) if implemented, otherwise dropping.", r.ID, destIP, sourceInterface, packet[9])
-		// TODO: ICMP Echo Replyなどの処理を実装する場合
+		log.Printf("Router %s: Packet for self (%s) from %s. (Protocol: %d). Handling...", r.ID, destIP, sourceInterface, packet[9])
+		// ICMP Echo Requestの場合、Echo Replyを返す
+		if packet[9] == ICMPProtocolNumber { // Protocol is ICMP
+			// Check if it's an Echo Request by parsing ICMP header
+			ipv4HeaderLen := int(packet[0]&0x0F) * 4
+			if len(packet) > ipv4HeaderLen+8 { // Enough data for ICMP header (min 8 bytes for echo)
+				icmpHeader, err := ParseICMPHeader(packet[ipv4HeaderLen:])
+				if err == nil && icmpHeader.Type == ICMPEchoRequestType {
+					log.Printf("Router %s: Received ICMP Echo Request from %s for self. Replying...", r.ID, sourceInterface)
+					replyPkt, err := CreateICMPEchoReply(packet, r.IPAddress.IP)
+					if err != nil {
+						log.Printf("Router %s: Error creating ICMP Echo Reply: %v", r.ID, err)
+						return
+					}
+
+					// 送信元インターフェースに応じて返送方法を決定
+					if sourceInterface == r.TUNInterface.Name() {
+						// TUNから来たのでTUNに書き出す (OSがルーティングする)
+						// log.Printf("Router %s: Sending ICMP Echo Reply (len %d) to TUN %s (orig_src %s)", r.ID, len(replyPkt), r.TUNInterface.Name(), net.IP(packet[12:16]))
+						_, errWrite := r.TUNInterface.Write(replyPkt)
+						if errWrite != nil {
+							log.Printf("Router %s: Error writing ICMP Echo Reply to TUN: %v", r.ID, errWrite)
+						}
+					} else {
+						// 仮想リンクから来たので、そのリンク経由で返す
+						r.neighborLinksMutex.RLock()
+						link, ok := r.NeighborLinks[sourceInterface] // sourceInterface is NeighborRouterID
+						r.neighborLinksMutex.RUnlock()
+						if ok {
+							// log.Printf("Router %s: Sending ICMP Echo Reply (len %d) to neighbor %s (orig_src %s)", r.ID, len(replyPkt), link.RemoteRouterID, net.IP(packet[12:16]))
+							select {
+							case link.ToNeighborChan <- replyPkt:
+							case <-time.After(1 * time.Second):
+								log.Printf("Router %s: Timeout sending ICMP Echo Reply to neighbor %s", r.ID, link.RemoteRouterID)
+							case <-r.ctx.Done():
+								log.Printf("Router %s: Context done, not sending ICMP Echo Reply to neighbor %s", r.ID, link.RemoteRouterID)
+							}
+						} else {
+							log.Printf("Router %s: Source interface %s for Echo Request not found in neighbor links. Cannot reply.", r.ID, sourceInterface)
+						}
+					}
+					return // Handled ICMP Echo Request
+				}
+			}
+		}
+		log.Printf("Router %s: Packet for self (%s) from %s. Protocol %d. Not an ICMP Echo Request or failed to parse. Dropping.", r.ID, destIP, sourceInterface, packet[9])
 		return
 	}
 
