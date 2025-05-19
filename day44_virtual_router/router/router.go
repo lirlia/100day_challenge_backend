@@ -2,6 +2,7 @@ package router
 
 import (
 	"sync"
+	"log"
 )
 
 // ルーターID型
@@ -16,6 +17,8 @@ type Router struct {
 	RoutingTbl map[string]string  // 宛先IP→NextHopIP
 	inbox      chan Packet        // 受信パケットチャネル
 	quit       chan struct{}      // 終了通知
+	Tun        *TunDevice         // TUNデバイス
+	OSPF       *OSPFState         // OSPF状態
 }
 
 // ルーター間リンク
@@ -41,6 +44,13 @@ type RouterManager struct {
 func (m *RouterManager) AddRouter(id RouterID, name, ip string) *Router {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	tun, err := NewTunDevice("utun10")
+	if err != nil {
+		log.Printf("TUNデバイス作成失敗: %v", err)
+		return nil
+	}
+
 	r := &Router{
 		ID:         id,
 		Name:       name,
@@ -49,7 +59,9 @@ func (m *RouterManager) AddRouter(id RouterID, name, ip string) *Router {
 		RoutingTbl: make(map[string]string),
 		inbox:      make(chan Packet, 32),
 		quit:       make(chan struct{}),
+		Tun:        tun,
 	}
+	r.InitOSPF()
 	m.Routers[id] = r
 	go r.run() // goroutine起動
 	return r
@@ -62,16 +74,64 @@ func (m *RouterManager) RemoveRouter(id RouterID) {
 	r, ok := m.Routers[id]
 	if ok {
 		close(r.quit)
+		if r.Tun != nil {
+			r.Tun.Close()
+		}
 		delete(m.Routers, id)
 	}
 }
 
 // ルーターgoroutine本体
 func (r *Router) run() {
+	// TUNデバイス→inbox
+	go func() {
+		buf := make([]byte, 1500)
+		for {
+			select {
+			case <-r.quit:
+				return
+			default:
+				n, err := r.Tun.ReadPacket(buf)
+				if err != nil {
+					log.Printf("TUN読込エラー: %v", err)
+					continue
+				}
+				pkt := Packet{SrcIP: r.IP, DstIP: "", Data: append([]byte{}, buf[:n]...)}
+				r.inbox <- pkt
+			}
+		}
+	}()
+	// inbox→TUNデバイス
+	go func() {
+		for {
+			select {
+			case pkt := <-r.inbox:
+				if pkt.Data != nil {
+					_, err := r.Tun.WritePacket(pkt.Data)
+					if err != nil {
+						log.Printf("TUN書込エラー: %v", err)
+					}
+				}
+			case <-r.quit:
+				return
+			}
+		}
+	}()
+	// メインループ（リンク経由のパケット処理など）
 	for {
 		select {
-		case _ = <-r.inbox:
-			// TODO: パケット処理
+		case pkt := <-r.inbox:
+			// ルーティングテーブルに従って転送
+			if nextHop, ok := r.RoutingTbl[pkt.DstIP]; ok {
+				for peerID, link := range r.Links {
+					if string(peerID) == nextHop {
+						link.Outbox <- pkt
+						break
+					}
+				}
+			} else {
+				log.Printf("ルーティング不可: dst=%s", pkt.DstIP)
+			}
 		case <-r.quit:
 			return
 		}
@@ -134,4 +194,19 @@ func (m *RouterManager) RemoveLink(id1, id2 RouterID) {
 // Routerのinboxチャネルを返すメソッド
 func (r *Router) Inbox() <-chan Packet {
 	return r.inbox
+}
+
+// Routerのinboxチャネルにパケットを送信するメソッド
+func (r *Router) SendPacket(pkt Packet) {
+	r.inbox <- pkt
+}
+
+// 送信可能なinboxチャネルを返す
+func (r *Router) InboxWritable() chan<- Packet {
+	return r.inbox
+}
+
+// 静的ルート設定
+func (r *Router) SetStaticRoute(dstIP, nextHop string) {
+	r.RoutingTbl[dstIP] = nextHop
 }
