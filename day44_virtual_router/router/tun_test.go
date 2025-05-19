@@ -11,7 +11,9 @@ func TestTunDevice(t *testing.T) {
 		t.Skip("TUNデバイスのテストはroot権限が必要です。スキップします。")
 	}
 
-	tun, err := NewTunDevice("")
+	// TUNデバイス作成
+	tunName := "utun_test0"
+	tun, err := NewTunDevice(tunName)
 	if err != nil {
 		t.Skipf("TUNデバイス作成失敗: %v", err)
 	}
