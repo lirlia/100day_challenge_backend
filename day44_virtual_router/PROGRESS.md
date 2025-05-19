@@ -1,16 +1,18 @@
-# PROGRESS: Day44 Go仮想ルーター
+# Day 44: Virtual Router with Next.js UI
 
-- [x] Step 1/11: プロジェクト初期化と基本構造作成
-- [x] Step 2/11: TUNデバイス制御 (router/tun.go)
-- [x] Step 3/11: 仮想ルーターコア (router/router.go)
-- [x] Step 4/11: パケット処理 (router/packet.go)
-- [x] Step 5/11: ルーター間リンクと基本転送 (router/router.go, main.go)
-- [x] Step 6/11: OSPF風ルーティング (router/ospf.go)
-- [x] Step 7/11: Web管理画面: ルーターとリンクの管理 (web/handler.go, web/templates/*)
-- [ ] Step 8/11: Web管理画面: ルーティング制御と状態表示 (web/handler.go, web/templates/*)
-- [ ] Step 9/11: 統合と動作確認
-- [ ] Step 10/11: README作成
-- [ ] Step 11/11: PROGRESS.md 更新と最終コミット
+## Progress
+
+- [x] Step 1/5: Next.js frontend setup and API preparation
+  - Copied template to `frontend` directory.
+  - Configured `package.json` for the frontend.
+  - Introduced `gorilla/mux` to the Go backend.
+  - Added initial API endpoints for topology and router details (`/api/topology`, `/api/router/{id}`).
+  - Basic `fetch` in Next.js `page.tsx` to test API connection.
+  - Troubleshot Next.js startup issues (Turbopack, directory paths, dependency reinstallation).
+- [ ] Step 2/5: Implement Router and Link Management APIs (POST/DELETE for routers and links)
+- [ ] Step 3/5: Implement Ping API (POST /api/router/{id}/ping)
+- [ ] Step 4/5: Develop Frontend UI with React Flow for Network Visualization
+- [ ] Step 5/5: Implement Frontend Controls for Router/Link Management and Ping Execution
 
 # 進捗
 

@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gorilla/mux"
 	"github.com/lirlia/100day_challenge_backend/day44_virtual_router/router"
 	"github.com/lirlia/100day_challenge_backend/day44_virtual_router/web"
 )
@@ -42,14 +43,15 @@ func main() {
 	log.Println("main: Link R1-R2 added successfully.")
 
 	// Webサーバーの設定と起動
+	muxRouter := mux.NewRouter()
 	log.Println("main: About to register web handlers...")
-	web.RegisterHandlers(routerMgr)
+	web.RegisterHandlers(muxRouter, routerMgr)
 
 	port := "8080"
 	log.Printf("Starting web management interface on :%s", port)
 	go func() {
 		log.Println("Web server goroutine started. Attempting to listen on port " + port)
-		err := http.ListenAndServe(":"+port, nil)
+		err := http.ListenAndServe(":"+port, muxRouter)
 		if err != nil {
 			log.Fatalf("FATAL: Failed to start web server: %v", err)
 		}

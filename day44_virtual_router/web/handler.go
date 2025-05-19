@@ -1,9 +1,11 @@
 package web
 
 import (
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"log"
+	"net"
 	"net/http"
 	"sort"
 	"strconv"
@@ -46,11 +48,10 @@ type Breadcrumb struct {
 }
 
 // RegisterHandlers sets up the HTTP handlers and parses templates.
-func RegisterHandlers(mgr *router.RouterManager) {
+func RegisterHandlers(muxRouter *mux.Router, mgr *router.RouterManager) {
 	log.Println("RegisterHandlers: Starting...")
 	routerMgr = mgr
 
-	// Parse all templates once on startup
 	log.Println("RegisterHandlers: Attempting to parse templates from web/templates/*.html")
 	tpls, err := template.ParseGlob("web/templates/*.html")
 	if err != nil {
@@ -59,17 +60,22 @@ func RegisterHandlers(mgr *router.RouterManager) {
 	templates = tpls
 	log.Println("RegisterHandlers: Templates parsed successfully.")
 
-	// Serve static files (if any, not primary for Brutalism from CDN but useful for custom CSS/JS if needed)
-	// fs := http.FileServer(http.Dir("web/static"))
-	// http.Handle("/static/", http.StripPrefix("/static/", fs))
+	// HTML page handlers
+	muxRouter.HandleFunc("/", indexHandler).Methods("GET")
+	muxRouter.HandleFunc("/router/detail", routerDetailHandler).Methods("GET") // Path: /router/detail?id=R1 (Query param based)
+	// For path variable based detail: muxRouter.HandleFunc("/router/{id}", routerDetailHandler).Methods("GET")
 
-	http.HandleFunc("/", indexHandler)
-	http.HandleFunc("/router/add", addRouterHandler)
-	http.HandleFunc("/router/delete", deleteRouterHandler) // Using GET for simplicity, POST preferred
-	http.HandleFunc("/link/add", addLinkHandler)           // Add new route for adding links
-	http.HandleFunc("/link/delete", removeLinkHandler)     // Add this for deleting links
-	http.HandleFunc("/router/detail", routerDetailHandler) // New route for router details e.g. /router/detail?id=R1
-	// http.HandleFunc("/router/", routerDetailHandler) // Path with trailing slash for specific router
+	// Form submission handlers (HTML UI)
+	muxRouter.HandleFunc("/router/add", addRouterHandler).Methods("POST")
+	muxRouter.HandleFunc("/router/delete", deleteRouterHandler).Methods("GET") // Kept as GET for simplicity from HTML form
+	muxRouter.HandleFunc("/link/add", addLinkHandler).Methods("POST")
+	muxRouter.HandleFunc("/link/delete", removeLinkHandler).Methods("POST")
+
+	// API Handlers (New)
+	apiRouter := muxRouter.PathPrefix("/api").Subrouter() // Create a subrouter for /api paths
+	apiRouter.HandleFunc("/topology", apiTopologyHandler).Methods("GET")
+	apiRouter.HandleFunc("/router/{id}", apiRouterDetailHandler).Methods("GET")
+
 	log.Println("RegisterHandlers: HTTP Handlers registered.")
 	log.Println("RegisterHandlers: Finished.")
 }
@@ -264,8 +270,17 @@ func removeLinkHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func routerDetailHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	routerID := vars["id"]
+	// For query parameter based: /router/detail?id=R1
+	routerID := r.URL.Query().Get("id")
+	if routerID == "" {
+		// If using path variable like /router/{id}, then use mux.Vars:
+		// vars := mux.Vars(r)
+		// routerID = vars["id"]
+		// if routerID == "" { ... handle error ... }
+		log.Printf("routerDetailHandler: router ID missing from query params")
+		renderError(w, "Router ID is required for detail view.", http.StatusBadRequest)
+		return
+	}
 	log.Printf("routerDetailHandler: fetching details for router %s", routerID)
 
 	// rtr := routerMgr.GetRouter(routerID) // Incorrect usage
@@ -334,4 +349,130 @@ func InitTemplates() {
 		log.Fatalf("Failed to parse templates: %v", err)
 	}
 	log.Println("Successfully parsed all templates in web/templates/")
+}
+
+// API handler for topology data
+func apiTopologyHandler(w http.ResponseWriter, r *http.Request) {
+	log.Println("apiTopologyHandler: received request")
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*") // Allow all origins for simplicity during development
+
+	routers := routerMgr.ListRouters()
+	formattedRouters := []map[string]interface{}{}
+	for _, rtr := range routers {
+		formattedRouters = append(formattedRouters, map[string]interface{}{
+			"id":           rtr.ID,
+			"ip":           rtr.TUNIPNetString(),
+			"status":       rtr.IsRunning(), // Consider returning string "RUNNING"/"STOPPED"
+			"ospf_enabled": rtr.OSPFEnabled(),
+			// Add any other relevant router data for the topology view node
+		})
+	}
+
+	// Need a way to get all links from RouterManager, or iterate through routers and their links
+	// For now, let's assume we have a way to get all unique links
+	// This part needs a proper implementation in RouterManager or here
+	formattedLinks := []map[string]interface{}{}
+	allLinks := collectAllLinks(routerMgr) // Placeholder for a function that gathers all links
+
+	for _, link := range allLinks {
+		formattedLinks = append(formattedLinks, map[string]interface{}{
+			"source":    link.SourceRouterID,
+			"target":    link.TargetRouterID,
+			"cost":      link.Cost,
+			"local_ip":  link.LocalIP.String(), // Assuming Link has these fields
+			"remote_ip": link.RemoteIP.String(),
+		})
+	}
+
+	data := map[string]interface{}{
+		"routers": formattedRouters,
+		"links":   formattedLinks,
+	}
+
+	err := json.NewEncoder(w).Encode(data)
+	if err != nil {
+		log.Printf("apiTopologyHandler: error encoding JSON: %v", err)
+		http.Error(w, "Failed to encode topology data", http.StatusInternalServerError)
+	}
+}
+
+// Helper function placeholder - needs actual implementation
+type TopoLink struct { // Define a suitable struct for link representation
+	SourceRouterID string
+	TargetRouterID string
+	Cost           int
+	LocalIP        net.IP
+	RemoteIP       net.IP
+}
+
+func collectAllLinks(mgr *router.RouterManager) []TopoLink {
+	links := []TopoLink{}
+	processedLinks := make(map[string]bool) // To avoid duplicate links (R1-R2 and R2-R1)
+
+	for _, r := range mgr.ListRouters() {
+		neighborLinks := r.GetNeighborLinks() // This returns map[string]*NeighborLink
+		for neighborID, linkData := range neighborLinks {
+			linkKey1 := fmt.Sprintf("%s-%s", r.ID, neighborID)
+			linkKey2 := fmt.Sprintf("%s-%s", neighborID, r.ID)
+
+			if !processedLinks[linkKey1] && !processedLinks[linkKey2] {
+				links = append(links, TopoLink{
+					SourceRouterID: r.ID,
+					TargetRouterID: neighborID,
+					Cost:           linkData.Cost,
+					LocalIP:        linkData.LocalInterfaceIP,
+					RemoteIP:       linkData.RemoteInterfaceIP,
+				})
+				processedLinks[linkKey1] = true
+				processedLinks[linkKey2] = true
+			}
+		}
+	}
+	return links
+}
+
+// API handler for specific router details
+func apiRouterDetailHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	routerID := vars["id"]
+	log.Printf("apiRouterDetailHandler: received request for router %s", routerID)
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*") // Allow all origins for simplicity
+
+	rtr, ok := routerMgr.GetRouter(routerID)
+	if !ok {
+		log.Printf("apiRouterDetailHandler: router %s not found", routerID)
+		http.Error(w, fmt.Sprintf("Router %s not found", routerID), http.StatusNotFound)
+		return
+	}
+
+	var neighborsData []map[string]interface{}
+	var lsdbData map[string]router.LSAInfo
+	if rtr.OSPFEnabled() && rtr.GetOSPFInstance() != nil {
+		ospfNeighbors := rtr.GetOSPFInstance().GetOSPFNeighbors()
+		for _, n := range ospfNeighbors {
+			neighborsData = append(neighborsData, map[string]interface{}{"router_id": n.RouterID})
+		}
+		lsdbData = rtr.GetOSPFInstance().GetLSDBInfo()
+	} else {
+		neighborsData = []map[string]interface{}{}
+		lsdbData = make(map[string]router.LSAInfo)
+	}
+
+	data := map[string]interface{}{
+		"id":             rtr.ID,
+		"ip":             rtr.TUNIPNetString(),
+		"status":         rtr.IsRunning(), // Consider string RUNNING/STOPPED
+		"ospf_enabled":   rtr.OSPFEnabled(),
+		"routing_table":  rtr.GetRoutingTableForDisplay(),
+		"ospf_neighbors": neighborsData,
+		"lsdb":           lsdbData,
+	}
+
+	err := json.NewEncoder(w).Encode(data)
+	if err != nil {
+		log.Printf("apiRouterDetailHandler: error encoding JSON for router %s: %v", routerID, err)
+		http.Error(w, "Failed to encode router detail data", http.StatusInternalServerError)
+	}
 }
