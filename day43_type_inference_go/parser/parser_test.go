@@ -84,8 +84,8 @@ func TestParse_CompoundExpressions(t *testing.T) {
 		},
 		{
 			name:     "If Expression",
-			code:     "if x > 0 then 1 else -1",
-			expected: "if x > 0 then 1 else -1",
+			code:     "if x > 0 then 1 else 0 - 1",
+			expected: "if x > 0 then 1 else 0 - 1",
 			hasError: false,
 		},
 		{

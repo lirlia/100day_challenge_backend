@@ -1,6 +1,9 @@
 package ast
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // Expression は全ての式ノードが満たすインターフェースです。
 type Expression interface {
@@ -127,7 +130,17 @@ func (f *Factor) String() string {
 	}
 	for _, arg := range f.Args {
 		if arg != nil {
-			res += " " + arg.String() // 引数をスペースで区切る
+			argStr := arg.String()
+			if strings.HasPrefix(argStr, "(") {
+				res += argStr // e.g., func(arg) -> "func" + "(arg)"
+			} else {
+				// Only add space if function string is not empty AND arg string is not empty
+				if len(res) > 0 && len(argStr) > 0 {
+					res += " " + argStr // e.g., func arg -> "func" + " " + "arg"
+				} else {
+					res += argStr // If res is empty (should not happen for f.Function @@)
+				}
+			}
 		}
 	}
 	return res
@@ -196,7 +209,7 @@ func (t *Term) String() string {
 func (t *Term) sealedExpression() {}
 
 type OpAddTerm struct {
-	Operator string   `@("+" | "-")`
+	Operator string   `@(Plus | Minus)`
 	AddTerm  *AddTerm `@@`
 }
 
@@ -227,7 +240,7 @@ func (at *AddTerm) String() string {
 func (at *AddTerm) sealedExpression() {}
 
 type OpMulTerm struct {
-	Operator string   `@("*" | "/")`
+	Operator string   `@(Multiply | Divide)`
 	MulTerm  *MulTerm `@@`
 }
 
@@ -258,7 +271,7 @@ func (mt *MulTerm) String() string {
 func (mt *MulTerm) sealedExpression() {}
 
 type OpCmpTerm struct {
-	Operator string   `@(">" | "<" | Eq)` // Uses Eq token from lexer for ==
+	Operator string   `@(GreaterThan | LessThan | Eq)`
 	CmpTerm  *CmpTerm `@@`
 }
 
