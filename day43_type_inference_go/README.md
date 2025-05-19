@@ -1,64 +1,86 @@
-# Day 43: Go言語による型推論エンジン
+# Day 43: Go 製 型推論エンジン (Hindley-Milner / Algorithm W)
 
-このプロジェクトでは、Go言語を使用してHindley-Milner型システムに基づくシンプルな型推論エンジンを実装します。
-対象とするのは、基本的な算術演算、論理演算、let束縛、if式、関数定義（ラムダ式）、関数適用を含む小さな関数型言語 (MiniLang) です。
+MiniLang という小さな関数型言語のソースコードに対して、Hindley-Milnerアルゴリズム (具体的には Algorithm W) に基づいて型推論を実行するWebアプリケーションです。
+Go言語で型推論の主要なロジック (パーサー、型システム、単一化、推論器) を実装し、フロントエンドもGoの `html/template` を使用して構築しています。
 
-パーサーには `github.com/alecthomas/participle/v2` を利用し、それ以外の型推論のコアロジック（AST定義、型表現、単一化、推論アルゴリズム）はスクラッチで実装します。
+## 概要
 
-Web UIはGoの `html/template` を使用して作成し、ユーザーがMiniLangのコードを入力してその型が推論される過程を確認できるようにします。
+MiniLangで記述されたコードを入力すると、その式の型を推論して表示します。
+型エラーがある場合は、エラーメッセージを表示します。
 
-## MiniLang 文法概要
+UIから直接コードを入力できるほか、いくつかのサンプルコードを選択して簡単に入力エリアに挿入し、型推論を試すことができます。
 
-- **データ型**: `int`, `bool`
-- **リテラル**: 整数 (例: `10`), 真偽値 (`true`, `false`)
-- **変数**: (例: `x`, `myVar`)
-- **演算**:
-    - 算術: `+`, `-`, `*`, `/`
-    - 比較: `>`, `<`, `==`
-    - 論理: `&&`, `||`
-    - 括弧: `()`
-- **式**:
-    - `let <var> = <expr1> in <expr2>`
-    - `if <cond> then <expr_true> else <expr_false>`
-    - `fn <param> => <expr_body>`
-    - `<func_expr> (<arg_expr>)`
-- **コメント**: `#` から行末まで
+https://github.com/user-attachments/assets/02fdf306-5e92-4e34-abca-c34c3957339f
 
-## 実行方法
+[100日チャレンジ day43](https://zenn.dev/gin_nazo/scraps/fbc6986f4a1afe)
 
-```bash
-cd day43_type_inference_go
-go run main.go
-```
+## 主な機能
 
-その後、ブラウザで `http://localhost:3001` にアクセスしてください。 (ポート番号は仮。`main.go` で指定)
+-   **MiniLang パーサー:**
+    -   `participle` ライブラリを使用して、MiniLangのコードをAST (Abstract Syntax Tree) に変換します。
+    -   対応構文: 整数/真偽値リテラル、変数、算術演算 (`+`, `-`, `*`, `/`)、比較演算 (`>`, `<`, `==`)、論理演算 (`&&`, `||`)、括弧、`let`式、`if`式、`fn` (ラムダ式)、関数適用 (カリー化対応)、コメント (`#`)。
+-   **型システム:**
+    -   基本的な型 (`int`, `bool`)、型変数 (`'a`, `'b`, ...)、関数型 (`t1 -> t2`) を表現します。
+    -   多相性を扱うために型スキーム (`forall a. a -> a` など) をサポートします。
+-   **単一化 (Unification):**
+    -   2つの型が等価になるように型変数を具体化する代入 (Substitution) を見つけます。
+    -   Algorithm Wの中核的なステップです。
+-   **型推論 (Algorithm W):**
+    -   ASTと現在の型環境 (変数と型のマッピング) を基に、式の型を推論します。
+    -   `let`束縛では、式の結果の型を一般化 (generalize) し、型スキームとして環境に保存します。
+    -   変数が参照される際には、型スキームをインスタンス化 (instantiate) して具体的な型を得ます。
+-   **Web UI:**
+    -   Goの標準パッケージ (`net/http`, `html/template`) のみを使用して構築。
+    -   2カラムレイアウト:
+        -   左カラム: カテゴリ分けされたサンプルコード選択ボタン。
+        -   右カラム: コード入力用テキストエリア、型推論実行ボタン、結果表示エリア、エラーメッセージ表示エリア。
+    -   レスポンシブデザインを採用し、画面幅に応じてレイアウトが調整されます。
 
-## ディレクトリ構成
+## MiniLang 構文例
 
-```
-day43_type_inference_go/
-├── go.mod
-├── go.sum
-├── main.go                 # HTTPサーバー、ルーティング
-├── ast/
-│   └── ast.go              # ASTノード定義
-│   └── ast_test.go
-├── parser/
-│   └── parser.go           # パーサー実装
-│   └── parser_test.go
-├── types/
-│   └── types.go            # 型表現定義
-│   └── types_test.go
-├── unification/
-│   └── unification.go      # 単一化アルゴリズム
-│   └── unification_test.go
-├── inference/
-│   └── inference.go        # 型推論アルゴリズム
-│   └── inference_test.go
-├── templates/
-│   └── index.html          # UIテンプレート
-├── static/
-│   └── style.css           # (任意) スタイルシート
-├── README.md
-└── PROGRESS.md
-```
+-   `123` (型: `int`)
+-   `true` (型: `bool`)
+-   `1 + 2 * 3` (型: `int`)
+-   `if 1 > 0 then true else false` (型: `bool`)
+-   `let x = 10 in x + x` (型: `int`)
+-   `fn x => x + 1` (型: `int -> int`)
+-   `(fn x => x) 100` (型: `int`)
+-   `let id = fn x => x in id true` (型: `bool`)
+-   `let add = fn x => fn y => x + y in add 5 3` (型: `int`)
+
+## 技術スタック
+
+-   **バックエンド:** Go
+    -   Webフレームワーク: `net/http` (標準ライブラリ)
+    -   テンプレートエンジン: `html/template` (標準ライブラリ)
+    -   パーサージェネレータ: `github.com/alecthomas/participle/v2`
+-   **フロントエンド:** HTML, CSS (インラインスタイルとGoテンプレート)
+-   **開発ツール:** Go Modules
+
+## 起動方法
+
+1.  リポジトリをクローンします。
+2.  `day43_type_inference_go` ディレクトリに移動します。
+    ```bash
+    cd day43_type_inference_go
+    ```
+3.  必要なGoパッケージをダウンロードします (初回のみ)。
+    ```bash
+    go mod tidy
+    ```
+4.  サーバーを起動します。
+    ```bash
+    go run main.go
+    ```
+5.  ブラウザで `http://localhost:3001` を開きます。
+
+## 今後の展望 (オプション)
+
+-   より詳細なエラーメッセージとエラー箇所表示
+-   REPL (Read-Eval-Print Loop) インターフェースの追加
+-   対応するデータ型や演算子の拡充 (例: リスト、タプル)
+-   再帰関数のサポート (`let rec`)
+-   より高度なデザイントレンドの適用
+
+---
+&copy; 2024 lirlia

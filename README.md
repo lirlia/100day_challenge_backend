@@ -57,3 +57,4 @@ LLMで生成したコードを置いています。
 | Day40 | Go Microservices with Otel & Grafana                                       | <video src="https://github.com/user-attachments/assets/7b44ade8-9a0b-49eb-9c64-fb9d79efd445" > |
 | Day41 | Browser Security Playground                                                | <video src="https://github.com/user-attachments/assets/e8d86176-9cec-4ee6-81b1-5b6e4ffce098" > |
 | Day42 | Raft NoSQL                                                                 | <video src="https://github.com/user-attachments/assets/c402dd6c-6659-47a1-82d1-be45089486af" > |
+| Day43 | 型推論システム                                                             | <video src="https://github.com/user-attachments/assets/02fdf306-5e92-4e34-abca-c34c3957339f" > |
