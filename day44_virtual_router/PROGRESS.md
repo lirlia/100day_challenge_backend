@@ -1,8 +1,8 @@
 # PROGRESS: Day44 Go仮想ルーター
 
 - [x] Step 1/11: プロジェクト初期化と基本構造作成
-- [ ] Step 2/11: TUNデバイス制御 (router/tun.go)
-- [ ] Step 3/11: 仮想ルーターコア (router/router.go)
+- [x] Step 2/11: TUNデバイス制御 (router/tun.go)
+- [x] Step 3/11: 仮想ルーターコア (router/router.go)
 - [ ] Step 4/11: パケット処理 (router/packet.go)
 - [ ] Step 5/11: ルーター間リンクと基本転送 (router/router.go, main.go)
 - [ ] Step 6/11: OSPF風ルーティング (router/ospf.go)
