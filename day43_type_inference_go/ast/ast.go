@@ -107,32 +107,27 @@ func (l *Literal) String() string {
 func (l *Literal) sealedExpression() {}
 
 // --- Basic Terms ---
+// Factor は基本要素、または関数適用を表します。
+// f a b  のような形式をパースします (f が BaseFactor、a と b が引数としての BaseFactor)。
 type Factor struct {
-	UnaryMinus *string     `@"-"?`
-	Base       *BaseFactor `@@`
-	Args       []*Arg      `@@*` // For function application: Factor(Term, Term ...)
+	Function *BaseFactor   `@@`
+	Args     []*BaseFactor `@@*` // 連続する BaseFactor を引数としてパース
 }
 
 func (f *Factor) Pos() int {
-	if f.UnaryMinus != nil {
-		// Position of UnaryMinus or Base
-	}
-	if f.Base != nil {
-		return f.Base.Pos()
+	if f.Function != nil {
+		return f.Function.Pos()
 	}
 	return 0
 }
 func (f *Factor) String() string {
 	res := ""
-	if f.UnaryMinus != nil {
-		res += "-"
-	}
-	if f.Base != nil {
-		res += f.Base.String() // Append to res, don't overwrite
+	if f.Function != nil {
+		res += f.Function.String()
 	}
 	for _, arg := range f.Args {
-		if arg != nil { // Added nil check for safety, though grammar implies args are constructed fully.
-			res += arg.String()
+		if arg != nil {
+			res += " " + arg.String() // 引数をスペースで区切る
 		}
 	}
 	return res
@@ -171,24 +166,6 @@ func (bf *BaseFactor) String() string {
 	return ""
 }
 func (bf *BaseFactor) sealedExpression() {}
-
-type Arg struct {
-	LParen *string `@LParen` // Argument list starts with '('
-	Arg    *Term   `@@`      // The actual argument Term
-	RParen *string `@RParen` // Argument list ends with ')'
-}
-
-func (a *Arg) Pos() int {
-	// Position of the opening parenthesis could be a proxy.
-	return 0
-}
-func (a *Arg) String() string {
-	if a.Arg != nil {
-		return fmt.Sprintf("(%s)", a.Arg.String())
-	}
-	return "()" // Represents an argument like `()` if that were possible, or an error state.
-}
-func (a *Arg) sealedExpression() {}
 
 // --- Operator Precedence Terms ---
 // Term = AddTerm ( ( "+" | "-" ) AddTerm )*

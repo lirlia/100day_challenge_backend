@@ -8,18 +8,26 @@
 </head>
 <body>
     <div class="container">
-        <h1>MiniLang 型推論</h1>
-        <form action="/" method="post">
-            <label for="code">コード入力:</label>
-            <textarea id="code" name="code" rows="10" placeholder="例: let x = 10 in x + 5">{{ .Code }}</textarea>
+        <h1>MiniLang 型推論 (Hindley-Milner / Algorithm W)</h1>
+        <form action="/" method="post" class="code-form">
+            <div>
+                <label for="code">MiniLang コード:</label>
+                <textarea id="code" name="code" rows="10" placeholder="例: let id = fn x => x in id 10">{{ .Code }}</textarea>
+            </div>
             <button type="submit">型を推論</button>
         </form>
-        {{if .Result}}
-        <div class="result">
-            <h2>推論結果:</h2>
-            <pre>{{ .Result }}</pre>
+
+        {{if .ErrorMsg}}
+        <div class="error-message">
+            <h2>エラー:</h2>
+            <pre>{{ .ErrorMsg }}</pre>
         </div>
         {{end}}
+
+        <div class="result-output">
+            <h2>推論された型:</h2>
+            <pre class="type-result">{{if .Result}}{{ .Result }}{{else}}-{{end}}</pre>
+        </div>
     </div>
     <footer>
         <p>&copy; <span id="year"></span> lirlia. All rights reserved.</p>
