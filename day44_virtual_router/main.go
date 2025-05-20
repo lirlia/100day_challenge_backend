@@ -1,96 +1,74 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
+	_ "net/http/pprof" // For profiling
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
-	// "time" // time.Sleep が不要になるのでコメントアウト可能
-
-	"github.com/gorilla/mux"
-	"github.com/lirlia/100day_challenge_backend/day44_virtual_router/router"
+	"github.com/labstack/echo/v4"
 	"github.com/lirlia/100day_challenge_backend/day44_virtual_router/web"
+	// "github.com/lirlia/100day_challenge_backend/day44_virtual_router/router" // InMemoryStoreがルータ管理
 )
 
-var routerMgr *router.RouterManager
-
 func main() {
-	log.Println("Starting virtual router application with web management...")
+	log.Println("Starting Day44 Virtual Router application with Echo...")
 
-	routerMgr = router.NewRouterManager()
-
-	// 初期ルーターとリンクのセットアップ (例)
-	// Web UIから追加・削除できるようにするため、ここでは最小限にするか、設定ファイルから読み込む等を将来的に検討
-	_, err := routerMgr.AddRouter("R1", "10.0.1.1/24", router.DefaultMTU)
-	if err != nil {
-		log.Fatalf("Failed to add initial router R1: %v", err)
-	}
-	log.Println("main: Router R1 added successfully.")
-
-	_, err = routerMgr.AddRouter("R2", "10.0.2.1/24", router.DefaultMTU)
-	if err != nil {
-		log.Fatalf("Failed to add initial router R2: %v", err)
-	}
-	log.Println("main: Router R2 added successfully.")
-
-	// リンク用のIPアドレスを、各ルータのTUN IPとは異なるセグメントにする
-	// 例えば、R1-R2間リンクを 10.255.0.1 と 10.255.0.2 で構成
-	err = routerMgr.AddLinkBetweenRouters("R1", "R2", "10.255.0.1", "10.255.0.2", 10)
-	if err != nil {
-		log.Fatalf("Failed to add initial link R1-R2: %v", err)
-	}
-	log.Println("main: Link R1-R2 added successfully.")
-
-	// Webサーバーの設定と起動
-	muxRouter := mux.NewRouter()
-	log.Println("main: About to register web handlers...")
-	web.RegisterHandlers(muxRouter, routerMgr)
-
-	log.Println("---------------- REGISTERED ROUTES START ----------------")
-	// 'router' 変数名を 'rt' に変更 (引数名がパッケージ名と衝突するため)
-	err = muxRouter.Walk(func(route *mux.Route, rt *mux.Router, ancestors []*mux.Route) error {
-		pathTemplate, _ := route.GetPathTemplate()
-		methods, _ := route.GetMethods()
-		log.Printf("ROUTE: Path: %s, Methods: %v", pathTemplate, methods)
-		return nil
-	})
-	if err != nil {
-		log.Printf("Error walking routes: %v", err)
-	}
-	log.Println("---------------- REGISTERED ROUTES END ------------------")
-
-	port := "8080"
-	log.Printf("Starting web management interface on :%s (This will block. Press Ctrl+C to stop here in the terminal)", port)
-
-	// シグナルハンドリングを ListenAndServe の前に設定するか、ListenAndServe がエラーで終了した後にクリーンアップを実行する形にする
-	// ここではシンプルにするため、ListenAndServe の後にクリーンアップが来るようにするが、
-	// 実際には ListenAndServe が正常終了することは稀（エラー発生時のみ）。
-	// したがって、シグナルハンドリングは別のgoroutineで行うのが一般的。
-	// 今回のデバッグ目的では、サーバーがCtrl+Cで停止すればよしとする。
-	stopChan := make(chan os.Signal, 1)
-	signal.Notify(stopChan, syscall.SIGINT, syscall.SIGTERM)
-
+	// Setup profiling endpoint
 	go func() {
-		<-stopChan // シグナルを待機
-		log.Println("Shutting down application via signal...")
-		// Stop all routers managed by routerMgr
-		activeRouters := routerMgr.ListRouters()
-		for _, r := range activeRouters {
-			log.Printf("Stopping router %s via manager...", r.ID)
-			if err := routerMgr.RemoveRouter(r.ID); err != nil {
-				log.Printf("Error stopping/removing router %s: %v", r.ID, err)
-			}
+		log.Println("Profiling server listening on localhost:6060/debug/pprof/")
+		if err := http.ListenAndServe("localhost:6060", nil); err != nil {
+			log.Printf("Error starting profiling server: %v", err)
 		}
-		log.Println("Virtual router application stopped by signal.")
-		os.Exit(0) // シグナルで正常終了
 	}()
 
-	// http.ListenAndServe をメインスレッドで直接呼び出す
-	serverErr := http.ListenAndServe(":"+port, muxRouter)
-	if serverErr != nil && serverErr != http.ErrServerClosed { // ErrServerClosed は Shutdown() 時に発生するので無視
-		log.Fatalf("FATAL: Failed to start web server: %v", serverErr)
+	// Initialize the Datastore for API handlers (InMemoryStore in this case)
+	store := web.NewInMemoryStore() // InMemoryStoreがルータのインスタンスも管理する想定
+
+	// Create a new Echo instance
+	e := echo.New()
+
+	// Setup global middlewares (Logger, CORS) from web/middleware.go
+	web.SetupCommonMiddlewares(e) // web.Logger() と web.CORS() を適用
+
+	// Register all API handlers
+	web.RegisterHandlers(e, store)
+
+	// Start server
+	go func() {
+		log.Println("HTTP server listening on :8080 (Using Echo)")
+		if err := e.Start(":8080"); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("shutting down the server: %v", err)
+		}
+	}()
+
+	// Graceful shutdown setup
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
+
+	// Block until a signal is received.
+	sig := <-quit
+	log.Printf("Received signal %s, shutting down server...", sig)
+
+	// Create a context with a timeout for the shutdown.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Attempt to gracefully shut down the Echo server.
+	if err := e.Shutdown(ctx); err != nil {
+		log.Fatalf("Echo server shutdown failed: %+v", err)
 	}
-	log.Println("Server execution finished.") // 通常ここには来ないか、Shutdown後に来る
+
+	// InMemoryStore がルータのライフサイクル (OSPF停止など) を管理する場合、
+	// ここで store に対するクリーンアップ処理を呼び出すことを検討。
+	// 例: if a, ok := store.(interface{ StopAllRouters() }); ok { a.StopAllRouters() }
+	// 現状の Datastore インターフェースにはそのようなメソッドはないため、
+	// 必要であれば InMemoryStore 側に実装し、ここで呼び出す。
+	// 今回はシンプルに、プロセスの終了と共にリソースが解放されることを期待。
+
+	log.Println("Application shut down gracefully.")
 }
