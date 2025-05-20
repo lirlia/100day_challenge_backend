@@ -30,8 +30,8 @@
         - [x/partial] `GET /api/routers/{id}`: Get router details. (Initial implementation, OSPF/TUN details to be added)
         - [x/partial] `PUT /api/routers/{id}`: Update router (name, static routes). (Initial implementation)
         - [x] `DELETE /api/routers/{id}`: Delete a router.
-        - [x] `POST /api/routers/{source_router_id}/links`: Create a link between routers.
-        - [x] `DELETE /api/routers/{source_router_id}/links/{target_router_id}`: Delete a link.
+        - [x] `POST /api/links`: Create a link between routers.
+        - [x] `DELETE /api/links/from/:from_router_id/to/:to_router_id`: Delete a link.
         - [ ] `GET /api/routers/{id}/routing-table`: Get routing table.
         - [ ] `POST /api/routers/{id}/routing-table/static`: Add a static route.
         - [ ] `DELETE /api/routers/{id}/routing-table/static/{destination_network}`: Delete a static route.
@@ -41,12 +41,12 @@
     - [x] Implement basic validation for API inputs.
     - [x] Setup common middlewares (logger, CORS) in `web/middleware.go`.
 - [ ] **Step 5: Web UI with Go Templates & Tailwind CSS (CDN)**
-    - [ ] Design and implement HTML templates in `web/templates/` for:
-        - [ ] Main dashboard: List routers, add router button.
+    - [x] Design and implement HTML templates in `web/templates/` for:
+        - [x] Main dashboard: List routers, add router button. (layout.html, index.html with JS for list/add)
         - [ ] Router detail page: Router info, interfaces, static routes, OSPF neighbors, routing table, logs.
         - [ ] Forms for adding/editing routers, links, static routes.
-    - [ ] Use Tailwind CSS via CDN for styling.
-    - [ ] Implement JavaScript for dynamic UI updates (fetching data, submitting forms via AJAX).
+    - [x] Use Tailwind CSS via CDN for styling. (in layout.html)
+    - [x] Implement JavaScript for dynamic UI updates (fetching data, submitting forms via AJAX). (in index.html for router list/add)
 - [ ] **Step 6: TUN Device Integration & Packet Forwarding (Go)**
     - [ ] Implement actual TUN device creation/configuration using a library like `songgao/water`.
     - [ ] Implement logic to read IP packets from TUN devices.
