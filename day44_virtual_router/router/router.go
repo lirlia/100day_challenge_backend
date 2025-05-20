@@ -33,7 +33,8 @@ type IRouter interface {
 	SetOSPFInstance(ospf *OSPFInstance)
 	GetOSPFInstance() *OSPFInstance
 	GetID() string
-	GetRoutingTableForDisplay() map[string]string
+	GetRoutingTableForDisplay() []RoutingTableEntryForDisplay
+	GetLSDBForRouterDisplay() []LSAForDisplay
 	SimulatePing(destinationIPStr string) (bool, int, string, error)
 }
 
@@ -746,24 +747,23 @@ func (r *Router) GetID() string {
 
 // GetRoutingTableForDisplay はルーティングテーブルを画面表示用に整形して返します。
 // 例: map["10.0.2.0/24"] = "via 10.0.100.2 (eth0, OSPF, Metric: 20)"
-func (r *Router) GetRoutingTableForDisplay() map[string]string {
+func (r *Router) GetRoutingTableForDisplay() []RoutingTableEntryForDisplay {
 	r.routingTableMutex.RLock()
 	defer r.routingTableMutex.RUnlock()
-
-	displayTable := make(map[string]string)
+	displayTable := make([]RoutingTableEntryForDisplay, 0, len(r.RoutingTable))
 	for _, entry := range r.RoutingTable {
-		dest := entry.Destination.String()
-		var via string
+		var nextHopIP string
 		if entry.NextHop != nil {
-			via = fmt.Sprintf("via %s", entry.NextHop.String())
+			nextHopIP = entry.NextHop.String()
 		} else {
-			via = "directly connected"
+			nextHopIP = "-"
 		}
-		displayTable[dest] = fmt.Sprintf("%s, Interface: %s, Type: %s, Metric: %d",
-			via,
-			entry.Interface,
-			entry.Type,
-			entry.Metric)
+		displayTable = append(displayTable, RoutingTableEntryForDisplay{
+			DestinationCIDR: entry.Destination.String(),
+			NextHop:         nextHopIP,
+			Cost:            entry.Metric,
+			InterfaceName:   entry.Interface,
+		})
 	}
 	return displayTable
 }
@@ -843,4 +843,30 @@ func (r *Router) SimulatePing(destinationIPStr string) (bool, int, string, error
 	}
 
 	return false, 0, "Destination host unreachable", nil
+}
+
+type RoutingTableEntryForDisplay struct {
+	DestinationCIDR string `json:"destinationCidr"`
+	NextHop         string `json:"nextHop"`
+	Cost            int    `json:"cost"`
+	InterfaceName   string `json:"interfaceName"`
+}
+
+type RouterDataForDetailDisplay struct {
+	ID                     string                        `json:"id"`
+	IPAddress              string                        `json:"ipAddress"`
+	Gateway                string                        `json:"gateway"`
+	MTU                    int                           `json:"mtu"`
+	IsRunning              bool                          `json:"isRunning"`
+	RoutingTableForDisplay []RoutingTableEntryForDisplay `json:"routingTable"`
+	LSDBInfo               []LSAForDisplay               `json:"lsdb"`
+}
+
+// GetLSDBForRouterDisplay fetches LSDB info from the OSPF instance.
+func (r *Router) GetLSDBForRouterDisplay() []LSAForDisplay {
+	if r.ospfInstance == nil {
+		log.Printf("Router %s: OSPF instance is nil, cannot get LSDB for display.", r.ID)
+		return []LSAForDisplay{}
+	}
+	return r.ospfInstance.GetLSDBForDisplay()
 }

@@ -66,6 +66,20 @@ type OSPFNeighborData struct {
 	// state (e.g. Down, Init, TwoWay, Full)
 }
 
+// LSALinkForDisplay is used in LSAForDisplay to represent a link.
+type LSALinkForDisplay struct {
+	NeighborID string `json:"neighborId"`
+	SubnetCIDR string `json:"subnetCidr"` // This might be derived from NeighborLink's IPs or OSPFLinkState's Network
+	Cost       int    `json:"cost"`
+}
+
+// LSAForDisplay is used to send LSDB information to the frontend.
+type LSAForDisplay struct {
+	RouterID       string              `json:"routerId"`
+	SequenceNumber int64               `json:"sequenceNumber"`
+	Links          []LSALinkForDisplay `json:"links"`
+}
+
 // OSPFInstance manages the OSPF protocol logic for a single router.
 type OSPFInstance struct {
 	router             *Router               // Parent router
@@ -686,32 +700,49 @@ func (oi *OSPFInstance) GetLSDBEntries() []LSA {
 	return entries
 }
 
-// GetLSDBInfo returns a map of LSAInfo for display.
-// key is AdvertisingRouterID
-func (oi *OSPFInstance) GetLSDBInfo() map[string]LSAInfo {
+// GetLSDBForDisplay converts the LSDB into a format suitable for frontend display.
+func (oi *OSPFInstance) GetLSDBForDisplay() []LSAForDisplay {
 	oi.lsdbMutex.RLock()
 	defer oi.lsdbMutex.RUnlock()
 
-	infoMap := make(map[string]LSAInfo)
-	now := time.Now()
-	for advRouterID, entry := range oi.lsdb {
-		if entry.Lsa == nil {
+	displayLSAs := make([]LSAForDisplay, 0, len(oi.lsdb))
+	for _, entry := range oi.lsdb {
+		if entry.Lsa == nil { // Should not happen with proper LSA management
 			continue
 		}
-		var rawLsaBuf bytes.Buffer
-		enc := gob.NewEncoder(&rawLsaBuf) // Using gob for simplicity, could be JSON/custom
-		_ = enc.Encode(entry.Lsa)
+		lsa := entry.Lsa
+		displayLinks := make([]LSALinkForDisplay, 0, len(lsa.Links))
+		for _, linkState := range lsa.Links {
+			var subnetCidrStr string
+			if linkState.LinkType == "network" {
+				subnetCidrStr = linkState.Network.String()
+			} else if linkState.LinkType == "router" {
+				// For router links, we might not have a single "subnet CIDR".
+				// We could represent it with the neighbor's ID or a conceptual link representation.
+				// For now, let's use the neighbor ID as a placeholder, or combine local/remote IPs.
+				// A common practice is to use the network formed by the two interface IPs if they are /30 or /31.
+				// If LocalInterfaceIP and RemoteInterfaceIP are available and form a point-to-point link:
+				if linkState.LocalInterfaceIP != nil && linkState.RemoteInterfaceIP != nil {
+					// This is a simplification; proper subnet calculation from two IPs is complex.
+					subnetCidrStr = fmt.Sprintf("%s <-> %s", linkState.LocalInterfaceIP.String(), linkState.RemoteInterfaceIP.String())
+				} else {
+					subnetCidrStr = "N/A (Router Link)"
+				}
+			}
 
-		infoMap[advRouterID] = LSAInfo{
-			AdvertisingRouterID: entry.Lsa.AdvertisingRouterID,
-			SequenceNumber:      entry.Lsa.SequenceNumber,
-			Timestamp:           entry.Lsa.Timestamp.Format(time.RFC3339),
-			LinkCount:           len(entry.Lsa.Links),
-			AgeSeconds:          int64(now.Sub(entry.Lsa.Timestamp).Seconds()), // Or use ReceivedAt for age in DB
-			RawLSA:              fmt.Sprintf("%+v", entry.Lsa),                 // Basic representation
+			displayLinks = append(displayLinks, LSALinkForDisplay{
+				NeighborID: linkState.NeighborRouterID, // This is only set if LinkType is "router"
+				SubnetCIDR: subnetCidrStr,
+				Cost:       linkState.Metric,
+			})
 		}
+		displayLSAs = append(displayLSAs, LSAForDisplay{
+			RouterID:       lsa.AdvertisingRouterID,
+			SequenceNumber: lsa.SequenceNumber,
+			Links:          displayLinks,
+		})
 	}
-	return infoMap
+	return displayLSAs
 }
 
 // GetOSPFNeighbors returns a slice of OSPFNeighborData for display.
