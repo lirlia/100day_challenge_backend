@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"sort"
+	"strconv"
 
 	// "strconv"
 
@@ -16,9 +17,8 @@ import (
 )
 
 var (
-	routerMgr  *router.RouterManager
-	templates  *template.Template
-	baseLayout = "web/templates/layout.html"
+	routerMgr *router.RouterManager
+	templates *template.Template
 )
 
 // Alert defines the structure for alert messages to be displayed in templates.
@@ -35,9 +35,9 @@ type TemplateData struct {
 	// Links               []*router.Link // Temporarily commented out as router.Link is not defined and GetAllLinks is not available
 	Error               string
 	ContentTemplateName string
-	Neighbors           []router.OSPFNeighborData // Corrected type
-	LSDB                map[string]router.LSAInfo // Assumes LSAInfo is defined in router package
-	RoutingTable        map[string]string
+	Neighbors           []router.OSPFNeighborData            // Corrected type
+	LSDB                []router.LSAForDisplay               // Changed from map[string]router.LSAInfo
+	RoutingTable        []router.RoutingTableEntryForDisplay // Changed from map[string]string
 }
 
 type Breadcrumb struct {
@@ -46,9 +46,44 @@ type Breadcrumb struct {
 	IsActive bool
 }
 
+// loggingMiddleware is a simple middleware to log request details
+func loggingMiddleware(label string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			log.Printf("Logging Middleware (%s) - Before Next: %s %s", label, r.Method, r.URL.Path)
+
+			resInterceptor := &responseLogger{ResponseWriter: w, label: label}
+			next.ServeHTTP(resInterceptor, r) // Call the next handler
+
+			log.Printf("Logging Middleware (%s) - After Next: %s %s, Status: %d", label, r.Method, r.URL.Path, resInterceptor.status)
+		})
+	}
+}
+
+// responseLogger captures the status code and can be extended to capture headers
+type responseLogger struct {
+	http.ResponseWriter
+	status int
+	label  string
+}
+
+func (rl *responseLogger) WriteHeader(status int) {
+	rl.status = status
+	rl.ResponseWriter.WriteHeader(status)
+	log.Printf("Logging Middleware (%s) - WriteHeader: Status %d", rl.label, status)
+}
+
+func (rl *responseLogger) Write(b []byte) (int, error) {
+	// If status is not set, default to 200 OK before writing body
+	if rl.status == 0 {
+		rl.status = http.StatusOK
+	}
+	return rl.ResponseWriter.Write(b)
+}
+
 // RegisterHandlers sets up the HTTP handlers and parses templates.
 func RegisterHandlers(muxRouter *mux.Router, mgr *router.RouterManager) {
-	log.Println("RegisterHandlers: Starting...")
+	log.Println("!!!!!!!!!!!!!!!!!!!! WEB HANDLER REGISTRATION STARTED !!!!!!!!!!!!!!!!!!!!")
 	routerMgr = mgr
 
 	log.Println("RegisterHandlers: Attempting to parse templates from web/templates/*.html")
@@ -59,35 +94,51 @@ func RegisterHandlers(muxRouter *mux.Router, mgr *router.RouterManager) {
 	templates = tpls
 	log.Println("RegisterHandlers: Templates parsed successfully.")
 
+	// ★★★ グローバルなCORSミドルウェアを一時的にコメントアウト ★★★
+	// permissiveCORSMiddleware := handlers.CORS(
+	//     handlers.AllowedOrigins([]string{"*"}),
+	//     handlers.AllowedMethods([]string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"}),
+	//     handlers.AllowedHeaders([]string{"*"}),
+	//     handlers.AllowCredentials(),
+	// )
+	// muxRouter.Use(permissiveCORSMiddleware)
+
+	// グローバルなロギングミドルウェアは有効のまま
+	muxRouter.Use(loggingMiddleware("Global"))
+
 	// HTML page handlers
 	muxRouter.HandleFunc("/", indexHandler).Methods("GET")
-	muxRouter.HandleFunc("/router/detail", routerDetailHandler).Methods("GET") // Path: /router/detail?id=R1 (Query param based)
-	// For path variable based detail: muxRouter.HandleFunc("/router/{id}", routerDetailHandler).Methods("GET")
+	muxRouter.HandleFunc("/router/detail", routerDetailHandler).Methods("GET")
+	muxRouter.HandleFunc("/router/add", addRouterHTMLHandler).Methods("POST")
+	muxRouter.HandleFunc("/router/delete", deleteRouterHTMLHandler).Methods("GET")
+	muxRouter.HandleFunc("/link/add", addLinkHTMLHandler).Methods("POST")
 
-	// Form submission handlers (HTML UI)
-	muxRouter.HandleFunc("/router/add", addRouterHandler).Methods("POST")
-	muxRouter.HandleFunc("/router/delete", deleteRouterHandler).Methods("GET") // Kept as GET for simplicity from HTML form
-	muxRouter.HandleFunc("/link/add", addLinkHandler).Methods("POST")
-	// muxRouter.HandleFunc("/link/delete", removeLinkHandler).Methods("POST") // Removed old HTML form handler
+	apiRouter := muxRouter.PathPrefix("/api").Subrouter()
 
-	// API Handlers (New)
-	apiRouter := muxRouter.PathPrefix("/api").Subrouter() // Create a subrouter for /api paths
+	// /api/router への OPTIONS ハンドラ (これは有効のまま)
+	apiRouter.HandleFunc("/router", func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("EXPLICIT DAY44 OPTIONS HANDLER: Method: %s, Path: %s", r.Method, r.URL.Path)
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+		w.WriteHeader(http.StatusOK)
+		log.Println("EXPLICIT DAY44 OPTIONS HANDLER: Processed and CORS headers set.")
+	}).Methods(http.MethodOptions)
+
+	// /api/router への POST ハンドラ (これも有効のまま)
+	apiRouter.HandleFunc("/router", apiAddRouterHandler).Methods(http.MethodPost)
+
+	// 他のAPIエンドポイント
 	apiRouter.HandleFunc("/topology", apiTopologyHandler).Methods("GET")
 	apiRouter.HandleFunc("/router/{id}", apiRouterDetailHandler).Methods("GET")
-
-	// New API handlers for router management
-	apiRouter.HandleFunc("/router", addRouterHandler).Methods("POST")
-	apiRouter.HandleFunc("/router/{id}", deleteRouterHandler).Methods("DELETE")
-
-	// New API handlers for link management
-	apiRouter.HandleFunc("/link", addLinkHandler).Methods("POST")
-	apiRouter.HandleFunc("/link", deleteLinkHandler).Methods("DELETE")
-
-	// New API handler for ping
+	// apiAddRouterHandler is already defined for /router POST
+	apiRouter.HandleFunc("/router/{id}", apiDeleteRouterHandler).Methods("DELETE")
+	apiRouter.HandleFunc("/link", apiAddLinkHandler).Methods("POST")
+	apiRouter.HandleFunc("/link", apiDeleteLinkHandler).Methods("DELETE")
 	apiRouter.HandleFunc("/router/{id}/ping", pingAPIHandler).Methods("POST")
 
 	log.Println("RegisterHandlers: API and page handlers registered.")
-	log.Println("RegisterHandlers: Finished.")
+	log.Println("!!!!!!!!!!!!!!!!!!!! WEB HANDLER REGISTRATION FINISHED SUCCESSFULLY !!!!!!!!!!!!!!!!!!!!")
 }
 
 func renderTemplate(w http.ResponseWriter, tmplName string, data TemplateData) {
@@ -140,8 +191,77 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 	log.Println("indexHandler: successfully rendered template for", r.URL.Path)
 }
 
-func addRouterHandler(w http.ResponseWriter, r *http.Request) {
-	log.Println("addRouterHandler: received request")
+// Renaming HTML form handlers to avoid conflict with API handlers
+func addRouterHTMLHandler(w http.ResponseWriter, r *http.Request) {
+	log.Println("addRouterHTMLHandler: received request")
+	// Existing logic for HTML form submission to add router
+	// This handler typically redirects or renders a template, not JSON.
+	// For example:
+	if err := r.ParseForm(); err != nil {
+		renderError(w, "Failed to parse form.", http.StatusBadRequest)
+		return
+	}
+	id := r.FormValue("id")
+	ipCidr := r.FormValue("ip_cidr")
+	mtuStr := r.FormValue("mtu")
+	mtu := router.DefaultMTU
+	if mtuStr != "" {
+		// Parse MTU, handle error
+	}
+
+	_, err := routerMgr.AddRouter(id, ipCidr, mtu)
+	if err != nil {
+		renderError(w, fmt.Sprintf("Failed to add router: %v", err), http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func deleteRouterHTMLHandler(w http.ResponseWriter, r *http.Request) {
+	log.Println("deleteRouterHTMLHandler: received request")
+	// Existing logic for HTML form submission to delete router
+	routerID := r.URL.Query().Get("id") // Assuming ID from query param for GET based delete
+	if routerID == "" {
+		renderError(w, "Router ID missing for deletion.", http.StatusBadRequest)
+		return
+	}
+	err := routerMgr.RemoveRouter(routerID)
+	if err != nil {
+		renderError(w, fmt.Sprintf("Failed to delete router: %v", err), http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func addLinkHTMLHandler(w http.ResponseWriter, r *http.Request) {
+	log.Println("addLinkHTMLHandler: received request")
+	// Existing logic for HTML form submission to add link
+	if err := r.ParseForm(); err != nil {
+		renderError(w, "Failed to parse form.", http.StatusBadRequest)
+		return
+	}
+	sourceRouterID := r.FormValue("source_router_id")
+	targetRouterID := r.FormValue("target_router_id")
+	sourceRouterIP := r.FormValue("source_router_ip")
+	targetRouterIP := r.FormValue("target_router_ip")
+	costStr := r.FormValue("cost")
+	cost, err := strconv.Atoi(costStr)
+	if err != nil {
+		renderError(w, fmt.Sprintf("Invalid cost value: %s", costStr), http.StatusBadRequest)
+		return
+	}
+
+	err = routerMgr.AddLinkBetweenRouters(sourceRouterID, targetRouterID, sourceRouterIP, targetRouterIP, cost)
+	if err != nil {
+		renderError(w, fmt.Sprintf("Failed to add link: %v", err), http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+// API handler for adding a router (previously addRouterHandler)
+func apiAddRouterHandler(w http.ResponseWriter, r *http.Request) {
+	log.Println("apiAddRouterHandler: received request") // Changed log message
 	var reqBody struct {
 		ID     string `json:"id"`
 		IPCidr string `json:"ip_cidr"`
@@ -149,14 +269,14 @@ func addRouterHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
-		log.Printf("addRouterHandler: Error decoding request body: %v", err)
+		log.Printf("apiAddRouterHandler: Error decoding request body: %v", err)
 		http.Error(w, fmt.Sprintf("Invalid request body: %v", err), http.StatusBadRequest)
 		return
 	}
 	defer r.Body.Close()
 
 	if reqBody.ID == "" || reqBody.IPCidr == "" {
-		log.Printf("addRouterHandler: Missing id or ip_cidr in request body: %+v", reqBody)
+		log.Printf("apiAddRouterHandler: Missing id or ip_cidr in request body: %+v", reqBody)
 		http.Error(w, "Missing id or ip_cidr in request body", http.StatusBadRequest)
 		return
 	}
@@ -166,48 +286,58 @@ func addRouterHandler(w http.ResponseWriter, r *http.Request) {
 		mtu = router.DefaultMTU // Use default MTU if not specified or zero
 	}
 
-	log.Printf("addRouterHandler: Attempting to add router ID: %s, IP: %s, MTU: %d", reqBody.ID, reqBody.IPCidr, mtu)
+	log.Printf("apiAddRouterHandler: Attempting to add router ID: %s, IP: %s, MTU: %d", reqBody.ID, reqBody.IPCidr, mtu)
 	newRouter, err := routerMgr.AddRouter(reqBody.ID, reqBody.IPCidr, mtu)
 	if err != nil {
-		log.Printf("addRouterHandler: Error adding router %s: %v", reqBody.ID, err)
+		log.Printf("apiAddRouterHandler: Error adding router %s: %v", reqBody.ID, err)
 		http.Error(w, fmt.Sprintf("Failed to add router: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	log.Printf("addRouterHandler: Router %s added successfully", newRouter.GetID())
+	log.Printf("apiAddRouterHandler: Router %s added successfully", newRouter.GetID())
+	w.Header().Set("Access-Control-Allow-Origin", "http://localhost:3001")
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	if err := json.NewEncoder(w).Encode(newRouter); err != nil { // Assuming Router struct can be marshalled
-		log.Printf("addRouterHandler: Error encoding response: %v", err)
-		// Already sent header, so can't send http.Error. Log it.
+	// Encode the actual newRouter data, not the interface which might be problematic for JSON.
+	// Assuming newRouter has a method or can be structured for JSON response.
+	// For now, creating a map similar to other API responses.
+	response := map[string]interface{}{
+		"id":           newRouter.GetID(),
+		"ip":           newRouter.TUNIPNetString(),
+		"status":       newRouter.IsRunning(),
+		"ospf_enabled": newRouter.OSPFEnabled(),
+	}
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Printf("apiAddRouterHandler: Error encoding response: %v", err)
 	}
 }
 
-func deleteRouterHandler(w http.ResponseWriter, r *http.Request) {
+// API handler for deleting a router (previously deleteRouterHandler)
+func apiDeleteRouterHandler(w http.ResponseWriter, r *http.Request) {
+	log.Println("apiDeleteRouterHandler: received request") // Changed log message
 	vars := mux.Vars(r)
 	routerID, ok := vars["id"]
 	if !ok || routerID == "" {
-		log.Println("deleteRouterHandler: Missing router id in path")
+		log.Println("apiDeleteRouterHandler: Missing router id in path")
 		http.Error(w, "Missing router id in path", http.StatusBadRequest)
 		return
 	}
 
-	log.Printf("deleteRouterHandler: Attempting to delete router ID: %s", routerID)
+	log.Printf("apiDeleteRouterHandler: Attempting to delete router ID: %s", routerID)
 	err := routerMgr.RemoveRouter(routerID)
 	if err != nil {
-		log.Printf("deleteRouterHandler: Error deleting router %s: %v", routerID, err)
-		// Differentiate between "not found" and other errors if possible
-		// For now, assume any error is an internal server error or bad request (e.g., router has links)
+		log.Printf("apiDeleteRouterHandler: Error deleting router %s: %v", routerID, err)
 		http.Error(w, fmt.Sprintf("Failed to delete router: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	log.Printf("deleteRouterHandler: Router %s deleted successfully", routerID)
+	log.Printf("apiDeleteRouterHandler: Router %s deleted successfully", routerID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func addLinkHandler(w http.ResponseWriter, r *http.Request) {
-	log.Println("addLinkHandler: received request")
+// API handler for adding a link (previously addLinkHandler)
+func apiAddLinkHandler(w http.ResponseWriter, r *http.Request) {
+	log.Println("apiAddLinkHandler: received request") // Changed log message
 	var reqBody struct {
 		SourceRouterID string `json:"source_router_id"`
 		TargetRouterID string `json:"target_router_id"`
@@ -217,56 +347,57 @@ func addLinkHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
-		log.Printf("addLinkHandler: Error decoding request body: %v", err)
+		log.Printf("apiAddLinkHandler: Error decoding request body: %v", err)
 		http.Error(w, fmt.Sprintf("Invalid request body: %v", err), http.StatusBadRequest)
 		return
 	}
 	defer r.Body.Close()
 
 	if reqBody.SourceRouterID == "" || reqBody.TargetRouterID == "" || reqBody.SourceRouterIP == "" || reqBody.TargetRouterIP == "" || reqBody.Cost <= 0 {
-		log.Printf("addLinkHandler: Missing required fields or invalid cost in request body: %+v", reqBody)
+		log.Printf("apiAddLinkHandler: Missing required fields or invalid cost in request body: %+v", reqBody)
 		http.Error(w, "Missing required fields (source_router_id, target_router_id, source_router_ip, target_router_ip) or invalid cost (must be > 0)", http.StatusBadRequest)
 		return
 	}
 
-	log.Printf("addLinkHandler: Attempting to add link between %s (%s) and %s (%s) with cost %d",
+	log.Printf("apiAddLinkHandler: Attempting to add link between %s (%s) and %s (%s) with cost %d",
 		reqBody.SourceRouterID, reqBody.SourceRouterIP, reqBody.TargetRouterID, reqBody.TargetRouterIP, reqBody.Cost)
 
 	err := routerMgr.AddLinkBetweenRouters(reqBody.SourceRouterID, reqBody.TargetRouterID, reqBody.SourceRouterIP, reqBody.TargetRouterIP, reqBody.Cost)
 	if err != nil {
-		log.Printf("addLinkHandler: Error adding link: %v", err)
+		log.Printf("apiAddLinkHandler: Error adding link: %v", err)
 		http.Error(w, fmt.Sprintf("Failed to add link: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	log.Printf("addLinkHandler: Link between %s and %s added successfully", reqBody.SourceRouterID, reqBody.TargetRouterID)
-	w.WriteHeader(http.StatusCreated) // Or http.StatusOK if not returning a resource representation
-	// Optionally return some representation of the link or just success
-	fmt.Fprintf(w, `{"message": "Link added successfully"}`)
+	log.Printf("apiAddLinkHandler: Link between %s and %s added successfully", reqBody.SourceRouterID, reqBody.TargetRouterID)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	fmt.Fprintf(w, `{"message": "Link added successfully between %s and %s"}`, reqBody.SourceRouterID, reqBody.TargetRouterID)
 }
 
+// API handler for deleting a link (previously deleteLinkHandler)
 // deleteLinkHandler handles DELETE requests to /api/link to delete a link between routers.
 // Expects query parameters: from_router_id and to_router_id
-func deleteLinkHandler(w http.ResponseWriter, r *http.Request) {
-	log.Println("deleteLinkHandler: received request")
+func apiDeleteLinkHandler(w http.ResponseWriter, r *http.Request) {
+	log.Println("apiDeleteLinkHandler: received request") // Changed log message
 	fromRouterID := r.URL.Query().Get("from_router_id")
 	toRouterID := r.URL.Query().Get("to_router_id")
 
 	if fromRouterID == "" || toRouterID == "" {
-		log.Println("deleteLinkHandler: Missing from_router_id or to_router_id query parameter")
+		log.Println("apiDeleteLinkHandler: Missing from_router_id or to_router_id query parameter")
 		http.Error(w, "Missing from_router_id or to_router_id query parameter", http.StatusBadRequest)
 		return
 	}
 
-	log.Printf("deleteLinkHandler: Attempting to delete link between %s and %s", fromRouterID, toRouterID)
+	log.Printf("apiDeleteLinkHandler: Attempting to delete link between %s and %s", fromRouterID, toRouterID)
 	err := routerMgr.RemoveLinkBetweenRouters(fromRouterID, toRouterID)
 	if err != nil {
-		log.Printf("deleteLinkHandler: Error deleting link: %v", err)
+		log.Printf("apiDeleteLinkHandler: Error deleting link: %v", err)
 		http.Error(w, fmt.Sprintf("Failed to delete link: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	log.Printf("deleteLinkHandler: Link between %s and %s deleted successfully", fromRouterID, toRouterID)
+	log.Printf("apiDeleteLinkHandler: Link between %s and %s deleted successfully", fromRouterID, toRouterID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -294,17 +425,17 @@ func routerDetailHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Ensure OSPF instance exists before trying to get info from it
 	var neighbors []router.OSPFNeighborData
-	var lsdb map[string]router.LSAInfo
+	var lsdb []router.LSAForDisplay // Changed type from map[string]router.LSAInfo
 	if rtr.OSPFEnabled() && rtr.GetOSPFInstance() != nil {
 		neighbors = rtr.GetOSPFInstance().GetOSPFNeighbors()
-		lsdb = rtr.GetOSPFInstance().GetLSDBInfo()
+		lsdb = rtr.GetOSPFInstance().GetLSDBForDisplay() // Changed from GetLSDBInfo
 	} else {
 		log.Printf("routerDetailHandler: OSPF not enabled or instance is nil for router %s", routerID)
 		neighbors = []router.OSPFNeighborData{} // Initialize to empty slice
-		lsdb = make(map[string]router.LSAInfo)  // Initialize to empty map
+		lsdb = []router.LSAForDisplay{}         // Initialize to empty slice
 	}
 
-	routingTable := rtr.GetRoutingTableForDisplay()
+	routingTable := rtr.GetRoutingTableForDisplay() // This is already []router.RoutingTableEntryForDisplay
 
 	log.Printf("routerDetailHandler: Router: %s, Neighbors: %d, LSDB entries: %d, Routing table entries: %d", rtr.ID, len(neighbors), len(lsdb), len(routingTable))
 
@@ -313,8 +444,8 @@ func routerDetailHandler(w http.ResponseWriter, r *http.Request) {
 		RouterData:          rtr,
 		ContentTemplateName: "router_detail_content",
 		Neighbors:           neighbors,
-		LSDB:                lsdb,
-		RoutingTable:        routingTable,
+		LSDB:                lsdb,         // Type is now []router.LSAForDisplay
+		RoutingTable:        routingTable, // Type is now []router.RoutingTableEntryForDisplay
 	}
 
 	renderTemplate(w, "layout.html", data) // err is handled internally
@@ -355,8 +486,8 @@ func InitTemplates() {
 // API handler for topology data
 func apiTopologyHandler(w http.ResponseWriter, r *http.Request) {
 	log.Println("apiTopologyHandler: received request")
+	w.Header().Set("Access-Control-Allow-Origin", "http://localhost:3001")
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Access-Control-Allow-Origin", "*") // Allow all origins for simplicity during development
 
 	routers := routerMgr.ListRouters()
 	formattedRouters := []map[string]interface{}{}
@@ -434,48 +565,47 @@ func collectAllLinks(mgr *router.RouterManager) []TopoLink {
 }
 
 // API handler for specific router details
-func apiRouterDetailHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
+func apiRouterDetailHandler(w http.ResponseWriter, req *http.Request) {
+	vars := mux.Vars(req)
 	routerID := vars["id"]
-	log.Printf("apiRouterDetailHandler: received request for router %s", routerID)
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Access-Control-Allow-Origin", "*") // Allow all origins for simplicity
 
-	rtr, ok := routerMgr.GetRouter(routerID)
+	rtr, ok := routerMgr.GetRouter(routerID) // Changed r to rtr to avoid conflict if any
 	if !ok {
-		log.Printf("apiRouterDetailHandler: router %s not found", routerID)
 		http.Error(w, fmt.Sprintf("Router %s not found", routerID), http.StatusNotFound)
 		return
 	}
 
-	var neighborsData []map[string]interface{}
-	var lsdbData map[string]router.LSAInfo
-	if rtr.OSPFEnabled() && rtr.GetOSPFInstance() != nil {
-		ospfNeighbors := rtr.GetOSPFInstance().GetOSPFNeighbors()
-		for _, n := range ospfNeighbors {
-			neighborsData = append(neighborsData, map[string]interface{}{"router_id": n.RouterID})
-		}
-		lsdbData = rtr.GetOSPFInstance().GetLSDBInfo()
-	} else {
-		neighborsData = []map[string]interface{}{}
-		lsdbData = make(map[string]router.LSAInfo)
+	// Placeholder for actual gateway logic.
+	// For now, using a simple placeholder.
+	gatewayStr := "N/A"
+	if rtr.IPAddress.IP.IsLoopback() { // Example, actual gateway logic might be more complex
+		// gatewayStr = "N/A (Loopback)" // Or some other indicator
 	}
 
-	data := map[string]interface{}{
-		"id":             rtr.ID,
-		"ip":             rtr.TUNIPNetString(),
-		"status":         rtr.IsRunning(), // Consider string RUNNING/STOPPED
-		"ospf_enabled":   rtr.OSPFEnabled(),
-		"routing_table":  rtr.GetRoutingTableForDisplay(),
-		"ospf_neighbors": neighborsData,
-		"lsdb":           lsdbData,
+	// Placeholder for MTU. If Router struct stores MTU, retrieve it.
+	mtu := 1500 // Default or placeholder from router configuration
+	// if tun, ok := rtr.TUNInterface.(*router.TUNInterfaceDetails); ok { // Hypothetical type assertion for MTU
+	//     // mtu = tun.MTU() // If such method exists
+	// }
+
+	routerData := router.RouterDataForDetailDisplay{
+		ID:                     rtr.GetID(),
+		IPAddress:              rtr.TUNIPNetString(),
+		Gateway:                gatewayStr, // Using the placeholder
+		MTU:                    mtu,        // Using the placeholder or configured MTU
+		IsRunning:              rtr.IsRunning(),
+		RoutingTableForDisplay: rtr.GetRoutingTableForDisplay(), // This should return []RoutingTableEntryForDisplay
+		LSDBInfo:               rtr.GetLSDBForRouterDisplay(),   // This should return []LSAForDisplay
 	}
 
-	err := json.NewEncoder(w).Encode(data)
+	jsonBytes, err := json.Marshal(routerData)
 	if err != nil {
-		log.Printf("apiRouterDetailHandler: error encoding JSON for router %s: %v", routerID, err)
-		http.Error(w, "Failed to encode router detail data", http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf("Failed to marshal router detail for %s: %v", routerID, err), http.StatusInternalServerError)
+		return
 	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(jsonBytes)
 }
 
 // pingAPIHandler handles POST requests to /api/router/{id}/ping to simulate a ping.

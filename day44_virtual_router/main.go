@@ -6,7 +6,8 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
+
+	// "time" // time.Sleep が不要になるのでコメントアウト可能
 
 	"github.com/gorilla/mux"
 	"github.com/lirlia/100day_challenge_backend/day44_virtual_router/router"
@@ -47,37 +48,49 @@ func main() {
 	log.Println("main: About to register web handlers...")
 	web.RegisterHandlers(muxRouter, routerMgr)
 
+	log.Println("---------------- REGISTERED ROUTES START ----------------")
+	// 'router' 変数名を 'rt' に変更 (引数名がパッケージ名と衝突するため)
+	err = muxRouter.Walk(func(route *mux.Route, rt *mux.Router, ancestors []*mux.Route) error {
+		pathTemplate, _ := route.GetPathTemplate()
+		methods, _ := route.GetMethods()
+		log.Printf("ROUTE: Path: %s, Methods: %v", pathTemplate, methods)
+		return nil
+	})
+	if err != nil {
+		log.Printf("Error walking routes: %v", err)
+	}
+	log.Println("---------------- REGISTERED ROUTES END ------------------")
+
 	port := "8080"
-	log.Printf("Starting web management interface on :%s", port)
+	log.Printf("Starting web management interface on :%s (This will block. Press Ctrl+C to stop here in the terminal)", port)
+
+	// シグナルハンドリングを ListenAndServe の前に設定するか、ListenAndServe がエラーで終了した後にクリーンアップを実行する形にする
+	// ここではシンプルにするため、ListenAndServe の後にクリーンアップが来るようにするが、
+	// 実際には ListenAndServe が正常終了することは稀（エラー発生時のみ）。
+	// したがって、シグナルハンドリングは別のgoroutineで行うのが一般的。
+	// 今回のデバッグ目的では、サーバーがCtrl+Cで停止すればよしとする。
+	stopChan := make(chan os.Signal, 1)
+	signal.Notify(stopChan, syscall.SIGINT, syscall.SIGTERM)
+
 	go func() {
-		log.Println("Web server goroutine started. Attempting to listen on port " + port)
-		err := http.ListenAndServe(":"+port, muxRouter)
-		if err != nil {
-			log.Fatalf("FATAL: Failed to start web server: %v", err)
+		<-stopChan // シグナルを待機
+		log.Println("Shutting down application via signal...")
+		// Stop all routers managed by routerMgr
+		activeRouters := routerMgr.ListRouters()
+		for _, r := range activeRouters {
+			log.Printf("Stopping router %s via manager...", r.ID)
+			if err := routerMgr.RemoveRouter(r.ID); err != nil {
+				log.Printf("Error stopping/removing router %s: %v", r.ID, err)
+			}
 		}
-		log.Println("Web server ListenAndServe finished without error (this should not happen normally).")
+		log.Println("Virtual router application stopped by signal.")
+		os.Exit(0) // シグナルで正常終了
 	}()
 
-	// Give the goroutine a moment to start and potentially fail
-	time.Sleep(100 * time.Millisecond)
-
-	log.Println("Application started. Routers are running. Web UI at http://localhost:8080. Press Ctrl+C to stop.")
-
-	// Ctrl+Cなどのシグナルを待機してクリーンアップ
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	<-sigChan
-
-	log.Println("Shutting down application...")
-	// Stop all routers managed by routerMgr
-	// This needs a method in RouterManager or iterate here
-	activeRouters := routerMgr.ListRouters()
-	for _, r := range activeRouters {
-		log.Printf("Stopping router %s via manager...", r.ID)
-		if err := routerMgr.RemoveRouter(r.ID); err != nil {
-			log.Printf("Error stopping/removing router %s: %v", r.ID, err)
-		}
+	// http.ListenAndServe をメインスレッドで直接呼び出す
+	serverErr := http.ListenAndServe(":"+port, muxRouter)
+	if serverErr != nil && serverErr != http.ErrServerClosed { // ErrServerClosed は Shutdown() 時に発生するので無視
+		log.Fatalf("FATAL: Failed to start web server: %v", serverErr)
 	}
-
-	log.Println("Virtual router application stopped.")
+	log.Println("Server execution finished.") // 通常ここには来ないか、Shutdown後に来る
 }
