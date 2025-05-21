@@ -12,6 +12,16 @@ import (
 	"time"
 )
 
+// NetworkDevice defines the interface for a network device like TUNDevice or a mock.
+type NetworkDevice interface {
+	ReadPacket() ([]byte, bool)
+	WritePacket(packet []byte) (int, error)
+	Close() error
+	GetName() string      // Corresponds to TunDevice.Name
+	GetIP() net.IP        // Corresponds to TunDevice.IP
+	GetIPNet() *net.IPNet // To get the network for directly connected routes, derived from IP and Mask
+}
+
 const (
 	MaxPacketSize       = 1500
 	HelloInterval       = 5 * time.Second
@@ -99,15 +109,16 @@ type Neighbor struct {
 
 // Router represents a virtual router instance
 type Router struct {
-	ID                    string
-	TunDevice             *TUNDevice
-	RoutingTable          map[string]*RoutingEntry    // Destination CIDR -> Entry
-	Neighbors             map[string]*Neighbor        // Neighbor RouterID -> Neighbor Info
-	LSUDB                 map[string]*LinkStateUpdate // OriginatingRouterID -> LSU
-	shutdown              chan struct{}
-	wg                    sync.WaitGroup
-	config                RouterConfig
-	lastLSUGenerationTime time.Time
+	ID                     string
+	TunDevice              *TUNDevice
+	RoutingTable           map[string]*RoutingEntry    // Destination CIDR -> Entry
+	Neighbors              map[string]*Neighbor        // Neighbor RouterID -> Neighbor Info
+	LSUDB                  map[string]*LinkStateUpdate // OriginatingRouterID -> LSU
+	shutdown               chan struct{}
+	wg                     sync.WaitGroup
+	config                 RouterConfig
+	lastLSUGenerationTime  time.Time
+	RoutingTableUpdateChan chan []RoutingEntry // Added channel
 
 	// Mutexes for concurrent access
 	rtMutex       sync.RWMutex
@@ -137,14 +148,15 @@ func NewRouter(id string, config RouterConfig) (*Router, error) {
 	}
 
 	r := &Router{
-		ID:                    id,
-		TunDevice:             tun, // tun is already *TUNDevice
-		RoutingTable:          make(map[string]*RoutingEntry),
-		Neighbors:             make(map[string]*Neighbor),
-		LSUDB:                 make(map[string]*LinkStateUpdate),
-		shutdown:              make(chan struct{}),
-		config:                config,
-		lastLSUGenerationTime: time.Now(),
+		ID:                     id,
+		TunDevice:              tun, // tun is already *TUNDevice
+		RoutingTable:           make(map[string]*RoutingEntry),
+		Neighbors:              make(map[string]*Neighbor),
+		LSUDB:                  make(map[string]*LinkStateUpdate),
+		shutdown:               make(chan struct{}),
+		config:                 config,
+		lastLSUGenerationTime:  time.Now(),
+		RoutingTableUpdateChan: make(chan []RoutingEntry, 10), // Initialize channel
 	}
 	// Use the Name field directly, and IP.String() for IP
 	log.Printf("Router %s initialized with TUN %s (%s)", r.ID, r.TunDevice.Name, r.TunDevice.IP.String())
@@ -991,6 +1003,18 @@ func (r *Router) runSPF() {
 	r.RoutingTable = newRoutingTable
 	log.Printf("Router [%s] SPF run complete. Routing table updated (entries: %d).", r.ID, len(r.RoutingTable))
 	r.dumpRoutingTable() // Call dumpRoutingTable to log the new table content
+
+	// Notify about routing table update
+	tableCopy := make([]RoutingEntry, 0, len(r.RoutingTable))
+	for _, entry := range r.RoutingTable {
+		tableCopy = append(tableCopy, *entry)
+	}
+	select {
+	case r.RoutingTableUpdateChan <- tableCopy:
+		log.Printf("Router [%s] Sent routing table update notification", r.ID)
+	default:
+		log.Printf("Router [%s] Routing table update channel full, notification skipped", r.ID)
+	}
 }
 
 // Helper function to trace path (for debugging)
