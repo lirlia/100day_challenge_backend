@@ -11,6 +11,7 @@
     "check": "biome check --apply ."
   },
   "dependencies": {
+    "@heroicons/react": "^2.2.0",
     "better-sqlite3": "^11.1.2",
     "next": "15.3.0",
     "react": "^19.0.0",

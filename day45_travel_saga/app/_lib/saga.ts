@@ -2,7 +2,7 @@ import db from '@/lib/db'; // デフォルトインポートに変更
 
 interface SagaStep {
   name: string;
-  execute: () => Promise<BookingResponse>;
+  execute: (forceStatus?: 'success' | 'fail') => Promise<BookingResponse>;
   compensate: () => Promise<void>;
 }
 
@@ -12,9 +12,24 @@ interface BookingResponse {
   error?: string;
 }
 
+interface ForcedStepResults {
+  hotel?: 'success' | 'fail';
+  flight?: 'success' | 'fail';
+  car?: 'success' | 'fail';
+}
+
 // スタブ関数：ホテルの予約
-async function bookHotel(): Promise<BookingResponse> {
+async function bookHotel(forceStatus?: 'success' | 'fail'): Promise<BookingResponse> {
   console.log('[Saga Step] Attempting to book hotel...');
+  if (forceStatus === 'success') {
+    const reservationId = `hotel-${Date.now()}`;
+    console.log(`[Saga Step] Hotel booked successfully (forced): ${reservationId}`);
+    return { success: true, reservationId };
+  }
+  if (forceStatus === 'fail') {
+    console.error('[Saga Step] Hotel booking failed (forced)');
+    return { success: false, error: 'Hotel booking failed (forced)' };
+  }
   // 80%の確率で成功
   if (Math.random() < 0.8) {
     const reservationId = `hotel-${Date.now()}`;
@@ -32,8 +47,17 @@ async function cancelHotel(): Promise<void> {
 }
 
 // スタブ関数：航空券の予約
-async function bookFlight(): Promise<BookingResponse> {
+async function bookFlight(forceStatus?: 'success' | 'fail'): Promise<BookingResponse> {
   console.log('[Saga Step] Attempting to book flight...');
+  if (forceStatus === 'success') {
+    const reservationId = `flight-${Date.now()}`;
+    console.log(`[Saga Step] Flight booked successfully (forced): ${reservationId}`);
+    return { success: true, reservationId };
+  }
+  if (forceStatus === 'fail') {
+    console.error('[Saga Step] Flight booking failed (forced)');
+    return { success: false, error: 'Flight booking failed (forced)' };
+  }
   // 70%の確率で成功
   if (Math.random() < 0.7) {
     const reservationId = `flight-${Date.now()}`;
@@ -51,8 +75,17 @@ async function cancelFlight(): Promise<void> {
 }
 
 // スタブ関数：レンタカーの予約
-async function bookCar(): Promise<BookingResponse> {
+async function bookCar(forceStatus?: 'success' | 'fail'): Promise<BookingResponse> {
   console.log('[Saga Step] Attempting to book car...');
+  if (forceStatus === 'success') {
+    const reservationId = `car-${Date.now()}`;
+    console.log(`[Saga Step] Car rented successfully (forced): ${reservationId}`);
+    return { success: true, reservationId };
+  }
+  if (forceStatus === 'fail') {
+    console.error('[Saga Step] Car rental failed (forced)');
+    return { success: false, error: 'Car rental failed (forced)' };
+  }
   // 90%の確率で成功
   if (Math.random() < 0.9) {
     const reservationId = `car-${Date.now()}`;
@@ -69,12 +102,12 @@ async function cancelCar(): Promise<void> {
   return Promise.resolve(); // voidを返す
 }
 
-export async function handleSagaRequest(sagaId: string, userId: string, tripDetails: any) {
-  console.log(`[Saga] Starting saga for userId: ${userId}, sagaId: ${sagaId}`, tripDetails);
+export async function handleSagaRequest(sagaId: string, userId: string, tripDetails: any, forcedStepResults?: ForcedStepResults) {
+  console.log(`[Saga] Starting saga for userId: ${userId}, sagaId: ${sagaId}`, tripDetails, "Forced results:", forcedStepResults);
   const steps: SagaStep[] = [
-    { name: 'hotel', execute: bookHotel, compensate: cancelHotel },
-    { name: 'flight', execute: bookFlight, compensate: cancelFlight },
-    { name: 'car', execute: bookCar, compensate: cancelCar },
+    { name: 'hotel', execute: (fs) => bookHotel(fs ?? forcedStepResults?.hotel), compensate: cancelHotel },
+    { name: 'flight', execute: (fs) => bookFlight(fs ?? forcedStepResults?.flight), compensate: cancelFlight },
+    { name: 'car', execute: (fs) => bookCar(fs ?? forcedStepResults?.car), compensate: cancelCar },
   ];
 
   const executedSteps: SagaStep[] = [];

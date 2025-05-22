@@ -70,6 +70,24 @@ func (m *RouterManager) AddConnection(router1ID string, router2ID string) (Conne
 	}
 	m.connMutex.RUnlock()
 
+	// Get router instances to call AddPeer
+	m.mutex.RLock()
+	r1, r1Exists := m.routers[router1ID]
+	r2, r2Exists := m.routers[router2ID]
+	m.mutex.RUnlock()
+
+	// This check should ideally be redundant due to earlier checks, but good for safety
+	if !r1Exists || !r2Exists {
+		return ConnectionInfo{}, fmt.Errorf("one or both routers not found after initial check (concurrent modification?)")
+	}
+	if r1.TunDevice == nil || r2.TunDevice == nil {
+		return ConnectionInfo{}, fmt.Errorf("one or both routers do not have a TUN device initialized")
+	}
+
+	// Notify each router about the other peer
+	r1.AddPeer(r2.ID, r2.TunDevice.GetIP())
+	r2.AddPeer(r1.ID, r1.TunDevice.GetIP())
+
 	connID := uuid.New().String()
 	newConn := ConnectionInfo{
 		ID:        connID,
@@ -163,7 +181,7 @@ func (m *RouterManager) CreateAndStartRouter(id string, tunName string, ipCIDR s
 		// MTU is handled by NewRouter/NewTUNDevice if 0
 	}
 
-	r, err := NewRouter(actualID, config)
+	r, err := NewRouter(actualID, config, m)
 	if err != nil {
 		m.mutex.Unlock()
 		return nil, fmt.Errorf("failed to create router instance %s: %w", actualID, err)
@@ -273,6 +291,49 @@ func (m *RouterManager) GetAllRoutersInfo() []RouterInfo {
 		list = append(list, info)
 	}
 	return list
+}
+
+// RelayPacket attempts to relay a packet to a target router identified by its nextHopIP.
+// The packet is written to the target router's TUN device as if it arrived from the network.
+func (m *RouterManager) RelayPacket(sourceRouterID string, nextHopIP net.IP, packet []byte) bool {
+	m.mutex.RLock()
+	var targetRouter *Router
+	var targetRouterID string
+
+	// Find the router whose TUN device IP matches the nextHopIP
+	for id, r := range m.routers {
+		if r.TunDevice != nil && r.TunDevice.GetIP() != nil && r.TunDevice.GetIP().Equal(nextHopIP) {
+			targetRouter = r
+			targetRouterID = id
+			break
+		}
+	}
+	m.mutex.RUnlock()
+
+	if targetRouter != nil {
+		// Prevent relaying to self, though routing logic should prevent this.
+		if sourceRouterID == targetRouterID {
+			log.Printf("RouterManager: Attempted to relay packet from %s to itself (%s). Dropping.", sourceRouterID, targetRouterID)
+			return false
+		}
+
+		log.Printf("RouterManager: Relaying packet from %s to router %s (NextHop IP: %s) %d bytes, via its TUN %s",
+			sourceRouterID, targetRouterID, nextHopIP, len(packet), targetRouter.TunDevice.GetName())
+
+		// Write the packet to the target router's TUN device.
+		// This simulates the packet arriving on that TUN from the network.
+		// _, err := targetRouter.TunDevice.WritePacket(packet)
+		// if err != nil {
+		// 	log.Printf("RouterManager: Error writing packet to TUN %s of router %s: %v", targetRouter.TunDevice.GetName(), targetRouterID, err)
+		// 	return false
+		// }
+		// log.Printf("RouterManager: Packet successfully relayed to TUN %s of router %s.", targetRouter.TunDevice.GetName(), targetRouterID)
+		targetRouter.InjectPacket(packet, sourceRouterID) // Inject the packet directly
+		return true
+	} else {
+		log.Printf("RouterManager: No router found with TUN IP %s to relay packet from %s. Packet dropped.", nextHopIP, sourceRouterID)
+		return false
+	}
 }
 
 // ForwardPacketToRouter は、あるルーターから別のルーターへパケットを「中継」します。

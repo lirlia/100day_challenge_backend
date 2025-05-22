@@ -5,13 +5,13 @@ import db from '@/lib/db';
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { userId, tripDetails } = body;
+    const { userId, tripDetails, forcedStepResults } = body;
 
     if (!userId || !tripDetails) {
       return NextResponse.json({ error: 'Missing userId or tripDetails' }, { status: 400 });
     }
 
-    console.log(`[Travel API] Received travel request for userId: ${userId}`, tripDetails);
+    console.log(`[Travel API] Received travel request for userId: ${userId}`, tripDetails, "Forced results:", forcedStepResults);
 
     // Saga の実行IDを生成 (ここではシンプルにタイムスタンプを使用)
     const sagaId = `saga-${Date.now()}`;
@@ -21,8 +21,8 @@ export async function POST(request: Request) {
       'INSERT INTO saga_requests (id, user_id, trip_details, status, created_at, updated_at) VALUES (?, ?, ?, ?, datetime(\'now\'), datetime(\'now\'))'
     ).run(sagaId, userId, JSON.stringify(tripDetails), 'PENDING');
 
-    // handleSagaRequest に sagaId を渡す
-    const result = await handleSagaRequest(sagaId, userId, tripDetails);
+    // handleSagaRequest に forcedStepResults を渡す
+    const result = await handleSagaRequest(sagaId, userId, tripDetails, forcedStepResults);
 
     if (result.success) {
       console.log(`[Travel API] Saga successful for userId: ${userId}, sagaId: ${sagaId}`);

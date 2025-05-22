@@ -30,6 +30,8 @@ const (
 	BroadcastIPv4Str    = "255.255.255.255"
 	LinkStateHeaderSize = 20  // Simplified header size for LSU
 	OSPFProtocolNumber  = 253 // Experimental protocol number
+	ICMPProtocolNumber  = 1   // ICMP protocol number
+	enableBroadcastHello = false // Added enableBroadcastHello flag
 )
 
 // IPv4Header represents an IPv4 packet header.
@@ -47,6 +49,18 @@ type IPv4Header struct {
 	SrcIP       net.IP
 	DstIP       net.IP
 	Options     []byte // Optional, if IHL > 5
+}
+
+// ICMPHeader represents an ICMP packet header.
+// Make sure this is defined at the package level, similar to IPv4Header.
+// Corrected placement for ICMPHeader definition.
+type ICMPHeader struct {
+	Type     uint8
+	Code     uint8
+	Checksum uint16
+	ID       uint16
+	Seq      uint16
+	// Data []byte // Echo request/reply data, typically part of payload not fixed header
 }
 
 // PacketType defines the type of OSPF-like packet
@@ -124,6 +138,10 @@ type Router struct {
 	rtMutex       sync.RWMutex
 	neighborMutex sync.RWMutex
 	lsudbMutex    sync.RWMutex
+	peersMutex    sync.RWMutex // Mutex for ConnectedPeers
+	ConnectedPeers map[string]net.IP // RouterID -> IP address of connected peer's TUN device
+
+	manager *RouterManager // Reference to the RouterManager for relaying packets
 }
 
 // RouterConfig holds configuration for a router
@@ -134,7 +152,7 @@ type RouterConfig struct {
 }
 
 // NewRouter creates and initializes a new Router instance but does not start it.
-func NewRouter(id string, config RouterConfig) (*Router, error) {
+func NewRouter(id string, config RouterConfig, mgr *RouterManager) (*Router, error) {
 	// Parse TunIPAddress to get IP and Mask for TUNDevice and direct route
 	// parsedIP, ipNet, err := net.ParseCIDR(config.TunIPAddress) // These are not directly used here, TunDevice init handles it.
 	// if err != nil {
@@ -157,10 +175,23 @@ func NewRouter(id string, config RouterConfig) (*Router, error) {
 		config:                 config,
 		lastLSUGenerationTime:  time.Now(),
 		RoutingTableUpdateChan: make(chan []RoutingEntry, 10), // Initialize channel
+		ConnectedPeers:         make(map[string]net.IP),
+		manager:                mgr, // Store the manager reference
 	}
 	// Use the Name field directly, and IP.String() for IP
 	log.Printf("Router %s initialized with TUN %s (%s)", r.ID, r.TunDevice.Name, r.TunDevice.IP.String())
 	return r, nil
+}
+
+// AddPeer adds a connected peer router's information.
+func (r *Router) AddPeer(peerID string, peerIP net.IP) {
+	r.peersMutex.Lock()
+	defer r.peersMutex.Unlock()
+	if r.ConnectedPeers == nil {
+		r.ConnectedPeers = make(map[string]net.IP)
+	}
+	r.ConnectedPeers[peerID] = peerIP
+	log.Printf("Router %s: Added peer %s (%s)", r.ID, peerID, peerIP.String())
 }
 
 // Start begins the router's packet processing and routing protocol loops.
@@ -318,6 +349,14 @@ func (r *Router) triggerLSUGeneration() {
 
 // sendHelloPacket sends a Hello packet to discover neighbors.
 func (r *Router) sendHelloPacket() {
+	r.peersMutex.RLock()
+	defer r.peersMutex.RUnlock()
+
+	if len(r.ConnectedPeers) == 0 && !enableBroadcastHello {
+		// log.Printf("Router %s: No connected peers and broadcast Hello is disabled. Skipping Hello send.", r.ID)
+		return
+	}
+
 	hello := HelloPacket{
 		Header: OSPFHeader{
 			Type:      PacketTypeHello,
@@ -333,48 +372,84 @@ func (r *Router) sendHelloPacket() {
 		log.Printf("Router %s: Error encoding Hello packet: %v", r.ID, err)
 		return
 	}
-
+	helloData := buffer.Bytes()
 	srcIP := r.TunDevice.IP // IP is net.IP type
-	destIP := net.ParseIP(BroadcastIPv4Str)
 
-	ipHeader := &IPv4Header{
-		Version:     4,
-		IHL:         5,                         // IPv4 header length in 32-bit words (5 * 4 = 20 bytes)
-		TotalLength: uint16(20 + buffer.Len()), // 20 for IPv4 header
-		ID:          0,                         // Kernel will fill
-		TTL:         1,                         // For Hellos, not to be forwarded
-		Protocol:    OSPFProtocolNumber,
-		Checksum:    0, // Kernel will calculate
-		SrcIP:       srcIP,
-		DstIP:       destIP,
+	// Send to all connected peers via unicast
+	for peerID, peerIP := range r.ConnectedPeers {
+		ipHeader := &IPv4Header{
+			Version:     4,
+			IHL:         5,
+			TotalLength: uint16(20 + len(helloData)),
+			ID:          0,
+			TTL:         1, // For Hellos to direct peers
+			Protocol:    OSPFProtocolNumber,
+			Checksum:    0,
+			SrcIP:       srcIP,
+			DstIP:       peerIP,
+		}
+
+		finalPacket, err := constructIPPacket(ipHeader, helloData)
+		if err != nil {
+			log.Printf("Router %s: Error constructing IP packet for Hello to peer %s (%s): %v", r.ID, peerID, peerIP.String(), err)
+			continue
+		}
+
+		if r.manager == nil {
+			log.Printf("Router %s: RouterManager reference is nil. Cannot relay Hello packet to peer %s (%s).", r.ID, peerID, peerIP.String())
+			continue
+		}
+		relayed := r.manager.RelayPacket(r.ID, peerIP, finalPacket)
+		if !relayed {
+			log.Printf("Router %s: Failed to relay Hello packet to peer %s (%s) via RouterManager.", r.ID, peerID, peerIP.String())
+		}
 	}
 
-	finalPacket, err := constructIPPacket(ipHeader, buffer.Bytes())
-	if err != nil {
-		log.Printf("Router %s: Error constructing IP packet for Hello: %v", r.ID, err)
-		return
-	}
+	// Optional: Keep broadcast Hello for networks where peers are not explicitly connected (e.g. shared segment discovery)
+	// For this project, explicit connections are primary, so broadcast might be disabled or removed.
+	if enableBroadcastHello {
+		broadcastDestIP := net.ParseIP(BroadcastIPv4Str)
+		broadcastIPHeader := &IPv4Header{
+			Version:     4,
+			IHL:         5,
+			TotalLength: uint16(20 + len(helloData)),
+			ID:          0,
+			TTL:         1,
+			Protocol:    OSPFProtocolNumber,
+			Checksum:    0,
+			SrcIP:       srcIP,
+			DstIP:       broadcastDestIP,
+		}
+		broadcastFinalPacket, err := constructIPPacket(broadcastIPHeader, helloData)
+		if err != nil {
+			log.Printf("Router %s: Error constructing broadcast IP packet for Hello: %v", r.ID, err)
+			return // return here or continue depending on desired strictness
+		}
 
-	_, err = r.TunDevice.WritePacket(finalPacket)
-	if err != nil {
-		log.Printf("Router %s: Error sending Hello packet via TUN %s: %v", r.ID, r.TunDevice.Name, err)
-		return
+		_, err = r.TunDevice.WritePacket(broadcastFinalPacket)
+		if err != nil {
+			log.Printf("Router %s: Error sending broadcast Hello packet via TUN %s: %v", r.ID, r.TunDevice.Name, err)
+		} else {
+			log.Printf("Router %s: Sent broadcast Hello packet via %s.", r.ID, r.TunDevice.Name)
+		}
 	}
-	// log.Printf("Router %s: Sent Hello packet via %s.", r.ID, r.TunDevice.Name())
-	log.Printf("Router %s: Sent Hello packet via %s.", r.ID, r.TunDevice.Name)
 }
 
 // handleHelloPacket processes an incoming Hello packet.
 func (r *Router) handleHelloPacket(hello *HelloPacket, sourceIP net.IP) {
+	log.Printf("Router %s: Entered handleHelloPacket. Received Hello from RouterID: %s, SourceIP: %s, Interface: %s", r.ID, hello.Header.RouterID, sourceIP.String(), hello.Header.Interface)
+
 	r.neighborMutex.Lock()
 	defer r.neighborMutex.Unlock()
 
 	if hello.Header.RouterID == r.ID {
+		log.Printf("Router %s: Ignoring Hello from self.", r.ID)
 		return // Ignore Hellos from self
 	}
 
 	neighbor, exists := r.Neighbors[hello.Header.RouterID]
 	if !exists {
+		log.Printf("Router %s: Neighbor %s not found in existing neighbors. Creating new.", r.ID, hello.Header.RouterID)
 		neighbor = &Neighbor{
 			RouterID:             hello.Header.RouterID,
 			IPAddress:            sourceIP.String(),      // IP address from which Hello was received
@@ -383,11 +458,12 @@ func (r *Router) handleHelloPacket(hello *HelloPacket, sourceIP net.IP) {
 			AdjacencyEstablished: true, // Simplified: adjacency on first Hello
 		}
 		r.Neighbors[hello.Header.RouterID] = neighbor
-		log.Printf("Router %s: New neighbor %s (%s) discovered on interface %s (via local TUN %s). Triggering LSU/SPF.", r.ID, hello.Header.RouterID, sourceIP.String(), hello.Header.Interface, r.TunDevice.Name)
+		log.Printf("Router %s: New neighbor %s (%s) ADDED. Adjacency established. Triggering LSU/SPF.", r.ID, hello.Header.RouterID, sourceIP.String())
 		// When a new neighbor comes up, we need to regenerate our LSU and run SPF.
 		go r.triggerLSUGeneration() // Run in goroutine to avoid deadlock on neighborMutex
 		// SPF will be triggered by LSU generation
 	} else {
+		log.Printf("Router %s: Neighbor %s found. Updating LastHelloTime.", r.ID, hello.Header.RouterID)
 		neighbor.LastHelloTime = time.Now()
 		neighbor.IPAddress = sourceIP.String()         // Update IP in case it changed (e.g. DHCP)
 		neighbor.TunInterface = hello.Header.Interface // Update neighbor's interface name
@@ -419,77 +495,48 @@ func (r *Router) checkNeighborLiveness() bool {
 	return changed
 }
 
-// parseOSPFHeaderAndPacket attempts to decode a raw byte slice into an OSPF-like packet.
-// It returns the packet type, the decoded packet, the source IP, and any error.
-func parseOSPFHeaderAndPacket(rawPacket []byte, srcIP net.IP) (PacketType, interface{}, error) {
-	// Assuming rawPacket is the payload of an IP packet (e.g., after stripping IP header)
-	buffer := bytes.NewBuffer(rawPacket)
-	decoder := gob.NewDecoder(buffer)
-
-	// First, decode just the header to determine packet type
-	var commonHeader OSPFHeader
-	// Create a new buffer for decoding the header to avoid consuming the whole stream if it's a larger packet type
-	headerBuffer := bytes.NewBuffer(rawPacket) // Use the full packet for header decode attempt
-	headerDecoder := gob.NewDecoder(headerBuffer)
-	if err := headerDecoder.Decode(&commonHeader); err != nil {
-		return 0, nil, fmt.Errorf("error decoding OSPF common header: %w. Data: %x", err, rawPacket)
-	}
-
-	// Reset buffer and decoder to re-decode the full packet based on type
-	buffer.Reset()
-	buffer.Write(rawPacket)
-	decoder = gob.NewDecoder(buffer) // Re-initialize decoder with the full packet buffer
-
-	switch commonHeader.Type {
-	case PacketTypeHello:
-		var hello HelloPacket
-		if err := decoder.Decode(&hello); err != nil {
-			return 0, nil, fmt.Errorf("error decoding Hello packet: %w", err)
-		}
-		return PacketTypeHello, &hello, nil
-	case PacketTypeLSU:
-		var lsu LinkStateUpdate
-		if err := decoder.Decode(&lsu); err != nil {
-			return 0, nil, fmt.Errorf("error decoding LSU packet: %w", err)
-		}
-		return PacketTypeLSU, &lsu, nil
-	default:
-		return 0, nil, fmt.Errorf("unknown OSPF packet type: %d", commonHeader.Type)
-	}
-}
-
 // handleOSPFLogic is called by processIncomingPacket for OSPF packets.
 func (r *Router) handleOSPFLogic(packetData []byte, sourceIP net.IP) {
-	packetType, ospfPacket, err := parseOSPFHeaderAndPacket(packetData, sourceIP)
-	if err != nil {
-		log.Printf("Router %s: Error parsing OSPF packet from %s: %v. Packet data: %x", r.ID, sourceIP.String(), err, packetData)
+	// Try decoding as HelloPacket first
+	var hello HelloPacket
+	helloBuffer := bytes.NewBuffer(packetData)
+	helloDecoder := gob.NewDecoder(helloBuffer)
+	errHello := helloDecoder.Decode(&hello)
+
+	if errHello == nil && hello.Header.Type == PacketTypeHello {
+		log.Printf("Router %s: Decoded as HelloPacket. Received from %s (RouterID: %s) on interface %s", r.ID, sourceIP.String(), hello.Header.RouterID, hello.Header.Interface)
+		r.handleHelloPacket(&hello, sourceIP)
 		return
 	}
 
-	switch packetType {
-	case PacketTypeHello:
-		hello, ok := ospfPacket.(*HelloPacket)
-		if !ok {
-			log.Printf("Router %s: Failed to cast to HelloPacket from %s", r.ID, sourceIP.String())
-			return
-		}
-		log.Printf("Router %s: Received Hello from %s (RouterID: %s) on interface %s", r.ID, sourceIP.String(), hello.Header.RouterID, hello.Header.Interface)
-		r.handleHelloPacket(hello, sourceIP)
-	case PacketTypeLSU:
-		lsu, ok := ospfPacket.(*LinkStateUpdate)
-		if !ok {
-			log.Printf("Router %s: Failed to cast to LinkStateUpdate from %s", r.ID, sourceIP.String())
-			return
-		}
-		log.Printf("Router %s: Received LSU from %s (OrigRouterID: %s, Seq: %d) via %s", r.ID, sourceIP.String(), lsu.Header.RouterID, lsu.SequenceNumber, lsu.Header.Interface)
-		r.processIncomingLSU(lsu, sourceIP.String(), "") // Assuming received on r.TunDevice.Name(), skipInterface not used here
-	default:
-		log.Printf("Router %s: Received unknown OSPF packet type %d from %s", r.ID, packetType, sourceIP.String())
+	// If not a valid Hello or failed, try decoding as LinkStateUpdate
+	var lsu LinkStateUpdate
+	lsuBuffer := bytes.NewBuffer(packetData) // Use a new buffer for LSU decoding
+	lsuDecoder := gob.NewDecoder(lsuBuffer)
+	errLSU := lsuDecoder.Decode(&lsu)
+
+	if errLSU == nil && lsu.Header.Type == PacketTypeLSU {
+		log.Printf("Router %s: Decoded as LinkStateUpdate. Received LSU from %s (OrigRouterID: %s, Seq: %d) via interface %s", r.ID, sourceIP.String(), lsu.Header.RouterID, lsu.SequenceNumber, lsu.Header.Interface)
+		r.processIncomingLSU(&lsu, sourceIP.String(), "") // Assuming received on r.TunDevice.Name(), skipInterface not used here for now
+		return
 	}
+
+	// If neither, log error including details about why each decoding attempt might have failed.
+	log.Printf("Router %s: Error parsing OSPF packet from %s. Hello decode attempt error: %v (Packet Type if decoded: %d). LSU decode attempt error: %v (Packet Type if decoded: %d). Packet data: %x", r.ID, sourceIP.String(), errHello, hello.Header.Type, errLSU, lsu.Header.Type, packetData)
 }
 
 // processIncomingPacket is the entry point for all packets read from the TUN device.
 func (r *Router) processIncomingPacket(fullPacket []byte) {
+	// Temporary log to see ALL packets read from TUN before parsing
+	if len(fullPacket) >= 20 { // Basic check for minimum IPv4 header size
+		srcIPRaw := net.IP(fullPacket[12:16])
+		dstIPRaw := net.IP(fullPacket[16:20])
+		protocolRaw := fullPacket[9]
+		log.Printf("Router %s: RAW PACKET READ from TUN. Src: %s, Dst: %s, Proto: %d, Length: %d", r.ID, srcIPRaw.String(), dstIPRaw.String(), protocolRaw, len(fullPacket))
+	} else {
+		log.Printf("Router %s: RAW PACKET READ from TUN (too short for IP header). Length: %d, Data: %x", r.ID, len(fullPacket), fullPacket)
+	}
+
 	ipHeader, payload, err := parseIPPacket(fullPacket)
 	if err != nil {
 		log.Printf("Router %s: Error parsing IP packet: %v. Packet: %x", r.ID, err, fullPacket)
@@ -499,16 +546,19 @@ func (r *Router) processIncomingPacket(fullPacket []byte) {
 	// log.Printf("Router %s: Decoded IP Packet: %+v, Payload Length: %d", r.ID, ipHeader, len(payload))
 
 	// Check if the packet is for our OSPF-like protocol
-	if ipHeader.Protocol == 253 { // Our experimental protocol number
-		// log.Printf("Router %s: Received OSPF-like packet (Proto 253) from %s to %s", r.ID, ipHeader.SrcIP.String(), ipHeader.DstIP.String())
-		r.handleOSPFLogic(payload, ipHeader.SrcIP) // Pass the OSPF payload and original source IP
+	if ipHeader.Protocol == OSPFProtocolNumber {
+		r.handleOSPFLogic(payload, ipHeader.SrcIP)
 		return
 	}
 
-	// If it's not OSPF, it's a data packet that needs routing (or is for this router)
-	if ipHeader.DstIP.Equal(net.ParseIP(r.TunDevice.IP.String())) {
-		log.Printf("Router %s: Packet for self from %s (proto %d). Dropping (no local services).", r.ID, ipHeader.SrcIP.String(), ipHeader.Protocol)
-		// TODO: Handle packets destined for the router itself (e.g. ICMP Echo Reply)
+	// Check if the packet is destined for this router's TUN interface IP
+	if ipHeader.DstIP.Equal(r.TunDevice.GetIP()) {
+		if ipHeader.Protocol == ICMPProtocolNumber {
+			log.Printf("Router %s: Received ICMP packet for self from %s", r.ID, ipHeader.SrcIP.String())
+			r.handleICMPPacket(ipHeader, payload)
+		} else {
+			log.Printf("Router %s: Packet for self (not ICMP, proto %d) from %s. Dropping.", r.ID, ipHeader.Protocol, ipHeader.SrcIP.String())
+		}
 		return
 	}
 
@@ -541,37 +591,30 @@ func (r *Router) processIncomingPacket(fullPacket []byte) {
 			// However, our simple TUN model doesn't distinguish L2 broadcast domains well.
 			// For now, if it's for a directly connected network and not us, we assume it needs to be sent out of the TUN.
 			// This logic needs refinement for more complex topologies.
-			log.Printf("Router %s: Dst %s is on directly connected network %s. Writing to TUN %s (Original Dst %s).", r.ID, ipHeader.DstIP.String(), bestMatch.Network, r.TunDevice.Name, ipHeader.DstIP.String())
-			// The packet is already an IP packet, just write it back to TUN if dst is not self.
 			// This implies the other host is on the same L2 segment as our TUN.
-			_, err := r.TunDevice.WritePacket(fullPacket) // Send the original full packet
+			// For directly connected, if DstIP is not self, it means it's for another host on the same segment.
+			// The packet is already an IP packet, just write it back to TUN.
+			log.Printf("Router %s: Dst %s is on directly connected network %s. Writing to TUN %s (Original Dst %s).", r.ID, ipHeader.DstIP.String(), bestMatch.Network, r.TunDevice.Name, ipHeader.DstIP.String())
+			_, err := r.TunDevice.WritePacket(fullPacket)
 			if err != nil {
 				log.Printf("Router %s: Error writing packet to TUN %s for directly connected dst %s: %v", r.ID, r.TunDevice.Name, ipHeader.DstIP.String(), err)
 			}
 		} else {
-			// Forward to next hop router
-			r.neighborMutex.RLock()
-			nextHopNeighbor, found := r.Neighbors[bestMatch.NextHopRouterID] // Use NextHopRouterID
-			r.neighborMutex.RUnlock()
+			// Forward to next hop router via RouterManager
+			nextHopIPAddr := net.ParseIP(bestMatch.NextHop)
+			if nextHopIPAddr == nil {
+				log.Printf("Router %s: Invalid NextHop IP address '%s' in routing table for %s. Packet dropped.", r.ID, bestMatch.NextHop, ipHeader.DstIP.String())
+				return
+			}
 
-			if found {
-				log.Printf("Router %s: Forwarding packet from %s to %s via next hop %s (%s) on interface %s (neighbor's TUN: %s)", r.ID, ipHeader.SrcIP.String(), ipHeader.DstIP.String(), bestMatch.NextHop, nextHopNeighbor.IPAddress, r.TunDevice.Name, nextHopNeighbor.TunInterface)
-
-				// We need to send the original IP packet (fullPacket) out of *our* TUN device.
-				// The underlying OS and network stack will handle getting it to the next hop's IP (nextHopNeighbor.IPAddress)
-				// if it's on the same L2 segment as our TUN.
-				// IMPORTANT: This assumes the next hop is reachable directly over the TUN's L2 network.
-				// This model simplifies away the complexities of ARP, MAC addresses, and actual L2 forwarding details.
-
-				// The `fullPacket` is already addressed to the final destination.
-				// Our job is just to send it out the correct local interface (our TUN device)
-				// such that it reaches the L2 network where the next hop router resides.
-				_, err := r.TunDevice.WritePacket(fullPacket)
-				if err != nil {
-					log.Printf("Router %s: Error writing packet to TUN %s for forwarding to %s: %v", r.ID, r.TunDevice.Name, ipHeader.DstIP.String(), err)
-				}
-			} else {
-				log.Printf("Router %s: Next hop router %s for %s not found in neighbors. Packet dropped.", r.ID, bestMatch.NextHopRouterID, ipHeader.DstIP.String())
+			log.Printf("Router %s: Forwarding packet from %s to %s via RouterManager. NextHop IP: %s (RouterID: %s)", r.ID, ipHeader.SrcIP.String(), ipHeader.DstIP.String(), bestMatch.NextHop, bestMatch.NextHopRouterID)
+			if r.manager == nil {
+				log.Printf("Router %s: RouterManager reference is nil. Cannot relay packet.", r.ID)
+				return
+			}
+			relayed := r.manager.RelayPacket(r.ID, nextHopIPAddr, fullPacket)
+			if !relayed {
+				log.Printf("Router %s: Failed to relay packet via RouterManager to NextHop %s for Dst %s.", r.ID, bestMatch.NextHop, ipHeader.DstIP.String())
 			}
 		}
 	} else {
@@ -695,11 +738,23 @@ func (r *Router) floodLSU(lsu *LinkStateUpdate, skipInterface string) { // lsu i
 			continue
 		}
 
-		_, err = r.TunDevice.WritePacket(finalPacket)
-		if err != nil {
-			log.Printf("Router %s: Error flooding LSU to neighbor %s (%s) via TUN %s: %v", r.ID, neighborID, neighbor.IPAddress, r.TunDevice.Name, err)
+		// _, err = r.TunDevice.WritePacket(finalPacket)
+		// if err != nil {
+		// 	log.Printf("Router %s: Error flooding LSU to neighbor %s (%s) via TUN %s: %v", r.ID, neighborID, neighbor.IPAddress, r.TunDevice.Name, err)
+		// } else {
+		// 	// log.Printf("Router %s: Flooded LSU to %s (%s)", r.ID, neighborID, neighbor.IPAddress)
+		// }
+		if r.manager == nil {
+			log.Printf("Router %s: RouterManager reference is nil. Cannot relay LSU to neighbor %s (%s).", r.ID, neighborID, neighborIP.String())
+			continue
+		}
+		// RelayPacket expects the IP of the *next hop's TUN interface*.
+		// In this case, neighborIP is the TUN IP of the neighbor router we want to send the LSU to.
+		relayed := r.manager.RelayPacket(r.ID, neighborIP, finalPacket)
+		if !relayed {
+			log.Printf("Router %s: Failed to relay LSU to neighbor %s (%s) via RouterManager.", r.ID, neighborID, neighborIP.String())
 		} else {
-			// log.Printf("Router %s: Flooded LSU to %s (%s)", r.ID, neighborID, neighbor.IPAddress)
+			// log.Printf("Router %s: Relayed LSU to neighbor %s (%s) via RouterManager.", r.ID, neighborID, neighborIP.String())
 		}
 	}
 }
@@ -1078,6 +1133,81 @@ func calculateIPv4Checksum(headerBytes []byte) uint16 {
 	return uint16(^sum)
 }
 
+// calculateICMPChecksum calculates the ICMP checksum.
+func calculateICMPChecksum(icmpPacketBytes []byte) uint16 {
+	var sum uint32
+	length := len(icmpPacketBytes)
+	for i := 0; i < length-1; i += 2 {
+		sum += uint32(icmpPacketBytes[i])<<8 + uint32(icmpPacketBytes[i+1])
+	}
+	if length%2 == 1 {
+		sum += uint32(icmpPacketBytes[length-1]) << 8
+	}
+	for sum>>16 > 0 {
+		sum = (sum & 0xFFFF) + (sum >> 16)
+	}
+	return uint16(^sum)
+}
+
+// handleICMPPacket processes ICMP packets destined for the router.
+func (r *Router) handleICMPPacket(ipHdr *IPv4Header, icmpPayload []byte) {
+	if len(icmpPayload) < 8 { // Minimum ICMP Echo header size
+		log.Printf("Router %s: ICMP packet too short from %s", r.ID, ipHdr.SrcIP.String())
+		return
+	}
+
+	var icmpHdr ICMPHeader
+	icmpHdr.Type = icmpPayload[0]
+	icmpHdr.Code = icmpPayload[1]
+	// icmpHdr.Checksum = binary.BigEndian.Uint16(icmpPayload[2:4]) // Original checksum
+	icmpHdr.ID = binary.BigEndian.Uint16(icmpPayload[4:6])
+	icmpHdr.Seq = binary.BigEndian.Uint16(icmpPayload[6:8])
+	// icmpData := icmpPayload[8:]
+
+	if icmpHdr.Type == 8 { // Echo Request
+		log.Printf("Router %s: Received ICMP Echo Request (type 8, code %d) from %s, ID: %d, Seq: %d", r.ID, icmpHdr.Code, ipHdr.SrcIP.String(), icmpHdr.ID, icmpHdr.Seq)
+
+		// Prepare Echo Reply
+		replyICMPPayload := make([]byte, len(icmpPayload))
+		copy(replyICMPPayload, icmpPayload)
+		replyICMPPayload[0] = 0 // Type 0 for Echo Reply
+		// replyICMPPayload[1] = 0 // Code 0
+
+		// Zero out checksum field for calculation
+		replyICMPPayload[2] = 0
+		replyICMPPayload[3] = 0
+		replyChecksum := calculateICMPChecksum(replyICMPPayload)
+		binary.BigEndian.PutUint16(replyICMPPayload[2:4], replyChecksum)
+
+		replyIPHeader := &IPv4Header{
+			Version:     4,
+			IHL:         5,
+			TotalLength: uint16(20 + len(replyICMPPayload)), // 20 for IPv4 header
+			ID:          ipHdr.ID,                           // Can use original ID or new one
+			TTL:         64,
+			Protocol:    ICMPProtocolNumber,
+			Checksum:    0, // Kernel will calculate if 0, or we calculate it
+			SrcIP:       r.TunDevice.GetIP(),
+			DstIP:       ipHdr.SrcIP, // Send back to original source
+		}
+
+		finalPacket, err := constructIPPacket(replyIPHeader, replyICMPPayload)
+		if err != nil {
+			log.Printf("Router %s: Error constructing ICMP Echo Reply IP packet: %v", r.ID, err)
+			return
+		}
+
+		_, err = r.TunDevice.WritePacket(finalPacket)
+		if err != nil {
+			log.Printf("Router %s: Error sending ICMP Echo Reply to %s: %v", r.ID, ipHdr.SrcIP.String(), err)
+		} else {
+			log.Printf("Router %s: Sent ICMP Echo Reply to %s", r.ID, ipHdr.SrcIP.String())
+		}
+	} else {
+		log.Printf("Router %s: Received ICMP (type %d, code %d) from %s. Not an Echo Request, ignoring.", r.ID, icmpHdr.Type, icmpHdr.Code, ipHdr.SrcIP.String())
+	}
+}
+
 // Helper to parse an IP packet (simplified)
 func parseIPPacket(packet []byte) (*IPv4Header, []byte, error) {
 	if len(packet) < 20 { // Minimum IPv4 header size
@@ -1175,4 +1305,12 @@ func (r *Router) AddDirectlyConnectedRoute() {
 	}
 	r.RoutingTable[networkCIDR] = entry
 	log.Printf("Router %s: Added directly connected route: %s via %s", r.ID, networkCIDR, r.TunDevice.Name)
+}
+
+// InjectPacket allows the RouterManager to inject a packet directly into this router's processing logic,
+// bypassing the TUN device read loop. This is used for manager-facilitated inter-router communication.
+func (r *Router) InjectPacket(packet []byte, fromRouterID string) {
+	// It might be useful to log that this packet was injected rather than read from TUN.
+	log.Printf("Router %s: Packet INJECTED by manager from %s (simulating arrival). Length: %d", r.ID, fromRouterID, len(packet))
+	r.processIncomingPacket(packet) // Process it as if it came from the TUN device
 }
