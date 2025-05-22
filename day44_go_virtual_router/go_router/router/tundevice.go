@@ -78,20 +78,31 @@ func NewTUNDevice(name string, ipAddressCIDR string, mtu int) (*TUNDevice, error
 		}
 	case "darwin":
 		maskDotDecimal := fmt.Sprintf("%d.%d.%d.%d", ipNet.Mask[0], ipNet.Mask[1], ipNet.Mask[2], ipNet.Mask[3])
-		cmd = exec.Command("sudo", "ifconfig", actualIfceName, "inet", ip.String(), "netmask", maskDotDecimal)
-		if err := cmd.Run(); err != nil {
+		ip4 := ip.To4()
+		if ip4 == nil {
 			_ = ifce.Close()
-			return nil, fmt.Errorf("darwin: failed to set IP/netmask for %s: %w. Command: %s", actualIfceName, err, cmd.String())
+			return nil, fmt.Errorf("darwin: only IPv4 is supported for TUN device")
 		}
-		cmd = exec.Command("sudo", "ifconfig", actualIfceName, "mtu", fmt.Sprintf("%d", mtu))
-		if err := cmd.Run(); err != nil {
+		destIP := make(net.IP, len(ip4))
+		copy(destIP, ip4)
+		destIP[3]++ // 例: 10.0.1.2
+		cmd = exec.Command("ifconfig", actualIfceName, "inet", ip4.String(), destIP.String(), "netmask", maskDotDecimal)
+		output, err := cmd.CombinedOutput()
+		if err != nil {
 			_ = ifce.Close()
-			return nil, fmt.Errorf("darwin: failed to set MTU for %s: %w. Command: %s", actualIfceName, err, cmd.String())
+			return nil, fmt.Errorf("darwin: failed to set IP/netmask for %s: %w. Command: %s. Output: %s", actualIfceName, err, cmd.String(), string(output))
 		}
-		cmd = exec.Command("sudo", "ifconfig", actualIfceName, "up")
-		if err := cmd.Run(); err != nil {
+		cmd = exec.Command("ifconfig", actualIfceName, "mtu", fmt.Sprintf("%d", mtu))
+		output, err = cmd.CombinedOutput()
+		if err != nil {
 			_ = ifce.Close()
-			return nil, fmt.Errorf("darwin: failed to bring up %s: %w. Command: %s", actualIfceName, err, cmd.String())
+			return nil, fmt.Errorf("darwin: failed to set MTU for %s: %w. Command: %s. Output: %s", actualIfceName, err, cmd.String(), string(output))
+		}
+		cmd = exec.Command("ifconfig", actualIfceName, "up")
+		output, err = cmd.CombinedOutput()
+		if err != nil {
+			_ = ifce.Close()
+			return nil, fmt.Errorf("darwin: failed to bring up %s: %w. Command: %s. Output: %s", actualIfceName, err, cmd.String(), string(output))
 		}
 	default:
 		_ = ifce.Close()
@@ -189,14 +200,16 @@ func (t *TUNDevice) Close() error {
 	switch runtime.GOOS {
 	case "linux":
 		maskBits, _ := t.Mask.Size()
-		cmd := exec.Command("sudo", "ip", "addr", "del", fmt.Sprintf("%s/%d", t.IP.String(), maskBits), "dev", t.Name)
-		if errDel := cmd.Run(); errDel != nil {
-			log.Printf("linux: failed to delete IP address for %s: %v", t.Name, errDel)
+		cmd := exec.Command("ip", "addr", "del", fmt.Sprintf("%s/%d", t.IP.String(), maskBits), "dev", t.Name)
+		output, errDel := cmd.CombinedOutput()
+		if errDel != nil {
+			log.Printf("linux: failed to delete IP address for %s: %v. Output: %s", t.Name, errDel, string(output))
 		}
 	case "darwin":
-		cmd := exec.Command("sudo", "ifconfig", t.Name, "down")
-		if errDel := cmd.Run(); errDel != nil {
-			log.Printf("darwin: failed to bring down interface %s: %v", t.Name, errDel)
+		cmd := exec.Command("ifconfig", t.Name, "down")
+		output, errDel := cmd.CombinedOutput()
+		if errDel != nil {
+			log.Printf("darwin: failed to bring down interface %s: %v. Output: %s", t.Name, errDel, string(output))
 		}
 	default:
 		log.Printf("No specific OS cleanup command for %s on %s", t.Name, runtime.GOOS)
