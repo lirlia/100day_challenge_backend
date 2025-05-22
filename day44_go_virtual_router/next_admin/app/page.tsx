@@ -105,6 +105,10 @@ export default function HomePage() {
     }
   }, []);
 
+  // React Flowの型警告・再描画対策
+  const nodeTypes = React.useMemo(() => ({}), []);
+  const edgeTypes = React.useMemo(() => ({}), []);
+
   // Fetch routers from API and update React Flow nodes
   const fetchAndSetRouters = useCallback(async () => {
     try {
@@ -113,17 +117,18 @@ export default function HomePage() {
         throw new Error(`Failed to fetch routers: ${response.statusText}`);
       }
       const data: GoRouterInfo[] = await response.json();
+      console.log('Routers from API:', data); // デバッグ用
       const newNodes: Node<CustomRouterNodeData>[] = data.map((router, index) => ({
         id: router.id,
-        position: { x: (index % 5) * 150 + 50, y: Math.floor(index / 5) * 120 + 50 },
+        position: { x: 400, y: 300 + (index * 100) }, // 画面中央付近に縦並び
         data: {
-          // This is CustomRouterNodeData
           routerId: router.id,
           label: `${router.id} (${router.tunName || 'N/A'})`,
           ip: router.ip,
         },
-        // type: 'customRouterNode' // 必要であればノードタイプを指定
+        type: 'default',
       }));
+      console.log('newNodes:', newNodes); // デバッグ用
       setNodes(() => newNodes); // コールバック形式を維持
       setLogs((prev) => ['Fetched routers from API', ...prev].slice(-100));
     } catch (error) {
@@ -232,6 +237,8 @@ export default function HomePage() {
       setNewRouterId('');
       setNewRouterIpCIDR('');
       setNewRouterTunName('');
+      fetchAndSetRouters();
+      fetchAndSetConnections();
     } catch (error) {
       console.error('Error creating router:', error);
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -327,8 +334,9 @@ export default function HomePage() {
           <div className="flex-1 rounded-xl shadow-neu-inset-soft bg-slate-800" style={{ minHeight: '400px' }}>
             <div className="neumorphism-parent flex-grow min-h-[300px]">
               <h2 className="text-xl font-semibold text-sky-300 mb-3 p-1">Network Topology</h2>
-              <div className="neumorphism-inset h-[calc(100%-50px)] p-1">
+              <div className="neumorphism-inset h-[calc(100%-50px)] p-1" style={{ height: '500px', width: '100%' }}>
                 <ReactFlow
+                  style={{ width: '100%', height: '100%' }}
                   nodes={nodes}
                   edges={edges}
                   onNodesChange={onNodesChange}
@@ -336,16 +344,8 @@ export default function HomePage() {
                   onConnect={onConnect}
                   fitView
                   attributionPosition="top-right"
-                  nodeTypes={
-                    {
-                      /* TODO: Add custom node types if needed */
-                    }
-                  }
-                  edgeTypes={
-                    {
-                      /* TODO: Add custom edge types if needed */
-                    }
-                  }
+                  nodeTypes={nodeTypes}
+                  edgeTypes={edgeTypes}
                   deleteKeyCode={['Backspace', 'Delete']}
                   onNodesDelete={(deletedNodes) => {
                     for (const node of deletedNodes) {
