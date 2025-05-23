@@ -2,6 +2,12 @@ import Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
 
+// global に _db プロパティの型を定義
+declare global {
+  // eslint-disable-next-line no-var
+  var _db: Database.Database | undefined;
+}
+
 const DB_DIR = path.join(process.cwd(), 'db');
 const DB_PATH = path.join(DB_DIR, 'dev.db');
 
@@ -30,7 +36,7 @@ export function initializeSchema() {
       CREATE TABLE IF NOT EXISTS messages (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         senderId INTEGER NOT NULL,
-        recipientId INTEGER NOT NULL,
+        recipientId INTEGER,
         encryptedMessage TEXT NOT NULL, -- 暗号化されたメッセージ本文 (Base64エンコード)
         signature TEXT NOT NULL,        -- 送信者による署名 (Base64エンコード)
         iv TEXT NOT NULL,               -- 初期化ベクトル (AES-GCM用、Base64エンコード)
