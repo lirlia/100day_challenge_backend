@@ -7,7 +7,7 @@ import {
   loadPrivateKeysFromLocalStorage,
   exportPublicKeys,
   UserKeys,
-  RSA_OAEP_ALGORITHM,
+  RSA_OAEP_ALGORITHM, // これがインポートされていることを確認
   RSA_PSS_ALGORITHM,
   AES_GCM_ALGORITHM,
   importPublicKey,
@@ -58,6 +58,10 @@ export default function ChatPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [selectedMessageForModal, setSelectedMessageForModal] = useState<Message | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [attemptUserForDecryption, setAttemptUserForDecryption] = useState<User | null>(null);
+  const [decryptionAttemptResult, setDecryptionAttemptResult] = useState<string | null>(null);
 
   // Error state monitoring (デバッグ用)
   useEffect(() => {
@@ -216,8 +220,11 @@ export default function ChatPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : '登録プロセスでエラーが発生しました。');
       console.error('[handleRegister] Error:', err);
+      setIsRegistering(false);
+      return;
     }
     setIsRegistering(false);
+    console.log(`[handleRegister] Finished registration process for ${currentUser?.username || "newly registered user"}. isRegistering: false`);
   };
 
   const handleUserSelect = async (selectedUsername: string) => {
@@ -438,6 +445,49 @@ export default function ChatPage() {
     setIsSending(false);
   };
 
+  // モーダル制御関数 (追加)
+  const handleOpenModal = (message: Message) => {
+    setSelectedMessageForModal(message);
+    setIsModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setSelectedMessageForModal(null);
+    setAttemptUserForDecryption(null);
+    setDecryptionAttemptResult(null);
+  };
+
+  // 復号試行ハンドラ (追加)
+  const handleDecryptionAttempt = async () => {
+    if (!selectedMessageForModal || !attemptUserForDecryption) return;
+
+    setDecryptionAttemptResult('試行中...');
+    try {
+      const keys = await loadPrivateKeysFromLocalStorage(attemptUserForDecryption.username);
+      if (!keys || !keys.encryptKeyPair?.privateKey) {
+        setDecryptionAttemptResult(`${attemptUserForDecryption.username} の秘密鍵が見つかりません。`);
+        return;
+      }
+
+      const encryptedSymmetricKeyBuffer = base64ToArrayBuffer(selectedMessageForModal.encryptedSymmetricKey);
+
+      // crypto.subtle.decrypt を使用して復号を試みる
+      // 本来の decryptMessage は共通鍵とメッセージ本文両方を処理するが、ここでは共通鍵のみ
+      await crypto.subtle.decrypt(
+        RSA_OAEP_ALGORITHM, // これは _lib/crypto.ts からインポートが必要
+        keys.encryptKeyPair.privateKey,
+        encryptedSymmetricKeyBuffer
+      );
+      // もし上の行がエラーを投げずに成功した場合、それは問題（他のユーザーが復号できたことになる）
+      setDecryptionAttemptResult(`${attemptUserForDecryption.username} の秘密鍵で共通鍵を復号できてしまいました。(E2E暗号化の原則に反します)`);
+    } catch (e) {
+      // 復号に失敗するのは期待通り
+      console.info('Decryption attempt failed (expected for other users):', e);
+      setDecryptionAttemptResult(`${attemptUserForDecryption.username} の秘密鍵では、このメッセージの共通鍵を期待通り復号できませんでした。`);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-neumo-bg p-4 flex flex-col items-center">
       <header className="w-full max-w-4xl mb-8 text-center">
@@ -531,6 +581,12 @@ export default function ChatPage() {
                 <p className="text-sm whitespace-pre-wrap break-words">
                   {msg.decryptedText || '[メッセージ内容なし]'}
                 </p>
+                <button
+                  onClick={() => handleOpenModal(msg)}
+                  className="mt-1 text-xs text-blue-500 hover:text-blue-700 underline"
+                >
+                  詳細
+                </button>
                 <details className="text-xs mt-1 opacity-60 cursor-pointer">
                     <summary>詳細</summary>
                     <p>IV: {msg.iv.substring(0,10)}...</p>
@@ -570,6 +626,70 @@ export default function ChatPage() {
               {currentUser && recipient && !recipient.publicKey ? `相手 (${recipient.username}) の公開鍵が未設定のためメッセージを送信できません。` : 'あなたの秘密鍵がロードされていないか、相手が選択されていないか、相手の公開鍵が未設定のため、メッセージを送信できません。'}
             </p>
           )}
+        </div>
+      )}
+
+      {/* モーダル (追加) */}
+      {isModalOpen && selectedMessageForModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white p-6 rounded-lg shadow-neumo-outset max-w-lg w-full">
+            <h3 className="text-xl font-semibold text-neumo-text mb-4">メッセージ詳細 (ID: {selectedMessageForModal.id})</h3>
+
+            <p className="text-sm mb-2"><strong>送信者:</strong> {users.find(u => u.id === selectedMessageForModal.senderId)?.username || '不明'}</p>
+            <p className="text-sm mb-2"><strong>受信者:</strong> {users.find(u => u.id === selectedMessageForModal.recipientId)?.username || '不明'}</p>
+            <p className="text-sm mb-2 break-all"><strong>暗号化された共通鍵:</strong> {selectedMessageForModal.encryptedSymmetricKey}</p>
+            <p className="text-sm mb-2"><strong>IV:</strong> {selectedMessageForModal.iv}</p>
+            <p className="text-sm mb-4 break-all"><strong>暗号化メッセージ:</strong> {selectedMessageForModal.encryptedMessage}</p>
+            <p className="text-sm mb-4 break-all"><strong>署名:</strong> {selectedMessageForModal.signature}</p>
+
+            {/* ここに「他のユーザーとして復号試行」セクションを追加予定 */}
+            <div className="mt-6 border-t pt-4">
+              <h4 className="text-md font-semibold text-neumo-text mb-2">他のユーザーとして共通鍵の復号を試みる:</h4>
+              { currentUser && selectedMessageForModal && (
+                <select
+                  value={attemptUserForDecryption?.id || ''}
+                  onChange={(e) => {
+                    const selectedId = parseInt(e.target.value, 10);
+                    const userToAttempt = users.find(u =>
+                      u.id === selectedId &&
+                      u.id !== selectedMessageForModal.senderId &&
+                      u.id !== selectedMessageForModal.recipientId
+                    );
+                    setAttemptUserForDecryption(userToAttempt || null);
+                    setDecryptionAttemptResult(null); // ユーザー変更時に結果をリセット
+                  }}
+                  className="w-full p-2 border border-gray-300 rounded-md shadow-neumo-inset mb-2"
+                >
+                  <option value="">-- 試行するユーザーを選択 --</option>
+                  {users
+                    .filter(u => u.id !== selectedMessageForModal.senderId && u.id !== selectedMessageForModal.recipientId)
+                    .map(user => (
+                      <option key={user.id} value={user.id}>{user.username}</option>
+                  ))}
+                </select>
+              )}
+              {attemptUserForDecryption && (
+                <button
+                  onClick={handleDecryptionAttempt}
+                  className="px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 shadow-neumo-outset-sm w-full mb-2"
+                >
+                  {attemptUserForDecryption.username} として復号試行
+                </button>
+              )}
+              {decryptionAttemptResult && (
+                <p className={`text-sm p-2 rounded-md ${decryptionAttemptResult.includes('期待通り') ? 'bg-green-100 text-green-700' : decryptionAttemptResult.includes('試行中') ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>
+                  {decryptionAttemptResult}
+                </p>
+              )}
+            </div>
+
+            <button
+              onClick={handleCloseModal}
+              className="mt-4 px-4 py-2 bg-gray-300 text-neumo-text rounded-md hover:bg-gray-400 shadow-neumo-outset-sm"
+            >
+              閉じる
+            </button>
+          </div>
         </div>
       )}
     </div>

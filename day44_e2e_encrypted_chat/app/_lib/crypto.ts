@@ -29,6 +29,33 @@ export function arrayBufferToStr(buffer: ArrayBuffer): string {
   return decoder.decode(buffer);
 }
 
+// 固定ユーザーとそのダミー鍵ペア (デバッグ/テスト用)
+// 注意: これらの鍵はダミーであり、実際の暗号処理には使用できません。
+// 本来は事前に生成・エクスポート・Base64エンコードされた本物の鍵文字列を設定します。
+export const FIXED_USER_KEYS = {
+  UserA_fixed: {
+    username: 'UserA_fixed',
+    privateKey: {
+      encryptPrivKey: 'YQ==', // "a" の Base64 ダミー
+      signPrivKey: 'Yg==',    // "b" の Base64 ダミー
+    },
+    publicKey: { // DBに保存される公開鍵 (JSON文字列化される)
+      encryptPubKey: 'Yw==',  // "c" の Base64 ダミー
+      signPubKey: 'ZA==',     // "d" の Base64 ダミー
+    },
+  },
+  UserB_fixed: {
+    username: 'UserB_fixed',
+    privateKey: {
+      encryptPrivKey: 'ZQ==', // "e" の Base64 ダミー
+      signPrivKey: 'Zg==',    // "f" の Base64 ダミー
+    },
+    publicKey: {
+      encryptPubKey: 'Zw==',  // "g" の Base64 ダミー
+      signPubKey: 'aA==',     // "h" の Base64 ダミー
+    },
+  },
+};
 
 export const RSA_OAEP_ALGORITHM = {
   name: "RSA-OAEP",
@@ -190,7 +217,7 @@ export async function encryptMessage(
 // 復号
 export async function decryptMessage(
   encryptedSymmetricKey: ArrayBuffer,
-  iv: Uint8Array,
+  iv: ArrayBuffer,
   encryptedData: ArrayBuffer,
   myEncryptPrivateKey: CryptoKey
 ): Promise<string> {
@@ -243,20 +270,41 @@ export async function verifySignature(
   );
 }
 
-// 複合データ (暗号化された共通鍵 + 暗号化メッセージ + IV) のハッシュ値に署名するための準備
-// 署名はメッセージ全体に対して行うのが一般的だが、ここでは構成要素を結合して署名対象とする
+// 署名用データの準備 (一貫したバイト列表現)
 export function prepareDataForSigning(
-    encryptedSymmetricKey: ArrayBuffer,
-    iv: Uint8Array,
-    encryptedData: ArrayBuffer
+  encryptedSymmetricKey: ArrayBuffer,
+  iv: ArrayBuffer,
+  encryptedData: ArrayBuffer
 ): ArrayBuffer {
-    const keyBufferView = new Uint8Array(encryptedSymmetricKey);
-    const dataBufferView = new Uint8Array(encryptedData);
+  const keyBytes = new Uint8Array(encryptedSymmetricKey);
+  const ivBytes = new Uint8Array(iv);
+  const dataBytes = new Uint8Array(encryptedData);
 
-    const combined = new Uint8Array(keyBufferView.length + iv.length + dataBufferView.length);
-    combined.set(keyBufferView, 0);
-    combined.set(iv, keyBufferView.length);
-    combined.set(dataBufferView, keyBufferView.length + iv.length);
+  // 各データ長をUint32Arrayで表現 (4バイト固定長、リトルエンディアン)
+  const keyLengthBytes = new Uint8Array(new Uint32Array([keyBytes.byteLength]).buffer);
+  const ivLengthBytes = new Uint8Array(new Uint32Array([ivBytes.byteLength]).buffer);
+  const dataLengthBytes = new Uint8Array(new Uint32Array([dataBytes.byteLength]).buffer);
 
-    return combined.slice().buffer;
+  const combined = new Uint8Array(
+    keyLengthBytes.byteLength + keyBytes.byteLength +
+    ivLengthBytes.byteLength + ivBytes.byteLength +
+    dataLengthBytes.byteLength + dataBytes.byteLength
+  );
+
+  let offset = 0;
+  combined.set(keyLengthBytes, offset);
+  offset += keyLengthBytes.byteLength;
+  combined.set(keyBytes, offset);
+  offset += keyBytes.byteLength;
+
+  combined.set(ivLengthBytes, offset);
+  offset += ivLengthBytes.byteLength;
+  combined.set(ivBytes, offset);
+  offset += ivBytes.byteLength;
+
+  combined.set(dataLengthBytes, offset);
+  offset += dataLengthBytes.byteLength;
+  combined.set(dataBytes, offset);
+
+  return combined.buffer;
 }
