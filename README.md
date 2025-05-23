@@ -58,3 +58,5 @@ LLMで生成したコードを置いています。
 | Day41 | Browser Security Playground                                                | <video src="https://github.com/user-attachments/assets/e8d86176-9cec-4ee6-81b1-5b6e4ffce098" > |
 | Day42 | Raft NoSQL                                                                 | <video src="https://github.com/user-attachments/assets/c402dd6c-6659-47a1-82d1-be45089486af" > |
 | Day43 | 型推論システム                                                             | <video src="https://github.com/user-attachments/assets/02fdf306-5e92-4e34-abca-c34c3957339f" > |
+| Day44 | OSPF シミュレーター                                                        | <video src="" > |
+| Day45 | Sagaパターンによる分散トランザクション体験アプリ                           | <video src="https://github.com/user-attachments/assets/3475decb-cd43-43d2-8b9b-53f416bbd7c8" > |

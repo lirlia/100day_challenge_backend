@@ -50,3 +50,5 @@ alwaysApply: true
 | 41  | ブラウザセキュリティ・プレイグラウンド | Next.js, TypeScript, TailwindCSS, Middleware, Cookies, 主要HTTPセキュリティヘッダー (CSP, CORS, HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy, Permissions-Policy) のインタラクティブデモ |
 | 42  | Raft NoSQL (Go)    | Go, Raft (hashicorp/raft), BoltDB, FSM, CLI (cobra), 結果整合性 (Eventual Consistency), Last Write Wins, スナップショット/リストア, HTTP API, 3ノードクラスタ, 分散合意アルゴリズム |
 | 43  | 型推論エンジン (Go)           | Go, Hindley-Milner (Algorithm W), participle, html/template, 2カラムUI, CSS Grid |
+| 44 | OSPF シュミレーター | TBD |
+| 45  | Travel Booking Saga（分散トランザクションSAGA体験） | Next.js (App Router, TypeScript), Tailwind CSS, SQLite + better-sqlite3, SAGAパターン, タイムラインUI, 補償処理の段階的可視化, |
