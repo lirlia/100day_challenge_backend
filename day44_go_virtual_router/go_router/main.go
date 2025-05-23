@@ -100,6 +100,7 @@ type CreateRouterRequest struct {
 }
 
 func handleRoutersAPI(w http.ResponseWriter, r *http.Request) {
+	log.Printf("handleRoutersAPI: called. method=%s", r.Method)
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
@@ -111,7 +112,9 @@ func handleRoutersAPI(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
+		log.Printf("handleRoutersAPI: before manager.GetAllRoutersInfo()")
 		infos := manager.GetAllRoutersInfo() // Use new method from manager
+		log.Printf("handleRoutersAPI: after manager.GetAllRoutersInfo(). infos len=%d", len(infos))
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(infos)
 
