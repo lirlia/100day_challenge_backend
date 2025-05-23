@@ -289,6 +289,20 @@ func main() {
 	managerBroadcastChan := make(chan map[string]interface{}, 100) // Buffered channel
 	manager = router.NewRouterManager(managerBroadcastChan)
 
+	// ★ 起動時にルータ2台を自動生成し接続
+	r1, err := manager.CreateAndStartRouter("router1", "utun10", "10.0.1.1/24", 1500)
+	if err != nil {
+		log.Fatal("Failed to create router1: ", err)
+	}
+	r2, err := manager.CreateAndStartRouter("router2", "utun11", "10.0.2.1/24", 1500)
+	if err != nil {
+		log.Fatal("Failed to create router2: ", err)
+	}
+	_, err = manager.AddConnection(r1.ID, r2.ID)
+	if err != nil {
+		log.Fatal("Failed to connect router1 and router2: ", err)
+	}
+
 	// Start broadcast handler for WebSockets, passing the manager's output channel
 	go handleBroadcastMessages(managerBroadcastChan)
 
