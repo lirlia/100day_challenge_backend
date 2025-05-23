@@ -204,6 +204,16 @@ func (r *Router) Start() error {
 
 	// Add directly connected route
 	r.AddDirectlyConnectedRoute()
+
+	// 起動時に自分自身のLSUをLSUDBに登録
+	lsu := r.generateLSU()
+	if lsu != nil {
+		r.lsudbMutex.Lock()
+		r.LSUDB[r.ID] = lsu
+		log.Printf("Router %s: Start() LSUDB after initial self-register: %v", r.ID, dumpLSUDB(r.LSUDB))
+		r.lsudbMutex.Unlock()
+	}
+
 	log.Printf("Router %s started.", r.ID)
 	return nil
 }
@@ -307,7 +317,7 @@ func (r *Router) routingProtocolLoop() {
 			}
 		case <-spfTrigger: // This case might be triggered by LSU processing or neighbor changes
 			log.Printf("Router %s: SPF calculation triggered.", r.ID)
-			r.runSPF()
+			r.runSPF("routingProtocolLoop")
 		}
 	}
 }
@@ -334,16 +344,17 @@ func (r *Router) lsuGenerationLoop() {
 }
 
 func (r *Router) triggerLSUGeneration() {
-	// Potentially add more complex logic here, e.g., check for actual changes
 	log.Printf("Router %s: LSU generation triggered.", r.ID)
-	lsu := r.generateLSU() // generateLSU now returns *LinkStateUpdate
-	if lsu != nil {        // Check if LSU generation was successful
-		r.floodLSU(lsu, "")
+	lsu := r.generateLSU()
+	if lsu != nil {
+		// ロック付きで自分自身のLSUをLSUDBに登録
 		r.lsudbMutex.Lock()
-		r.LSUDB[r.ID] = lsu // lsu is *LinkStateUpdate, LSUDB stores *LinkStateUpdate
+		r.LSUDB[r.ID] = lsu
+		log.Printf("Router %s: triggerLSUGeneration LSUDB after self-register: %v", r.ID, dumpLSUDB(r.LSUDB))
 		r.lsudbMutex.Unlock()
+		r.floodLSU(lsu, "")
 		r.lastLSUGenerationTime = time.Now()
-		r.runSPF()
+		r.runSPF("triggerLSUGeneration")
 	}
 }
 
@@ -440,10 +451,9 @@ func (r *Router) handleHelloPacket(hello *HelloPacket, sourceIP net.IP) {
 	log.Printf("Router %s: Entered handleHelloPacket. Received Hello from RouterID: %s, SourceIP: %s, Interface: %s", r.ID, hello.Header.RouterID, sourceIP.String(), hello.Header.Interface)
 
 	r.neighborMutex.Lock()
-	defer r.neighborMutex.Unlock()
-
 	if hello.Header.RouterID == r.ID {
 		log.Printf("Router %s: Ignoring Hello from self.", r.ID)
+		r.neighborMutex.Unlock()
 		return // Ignore Hellos from self
 	}
 
@@ -459,15 +469,16 @@ func (r *Router) handleHelloPacket(hello *HelloPacket, sourceIP net.IP) {
 		}
 		r.Neighbors[hello.Header.RouterID] = neighbor
 		log.Printf("Router %s: New neighbor %s (%s) ADDED. Adjacency established. Triggering LSU/SPF.", r.ID, hello.Header.RouterID, sourceIP.String())
-		// When a new neighbor comes up, we need to regenerate our LSU and run SPF.
+		r.neighborMutex.Unlock()
 		go r.triggerLSUGeneration() // Run in goroutine to avoid deadlock on neighborMutex
-		// SPF will be triggered by LSU generation
+		return
 	} else {
 		log.Printf("Router %s: Neighbor %s found. Updating LastHelloTime.", r.ID, hello.Header.RouterID)
 		neighbor.LastHelloTime = time.Now()
 		neighbor.IPAddress = sourceIP.String()         // Update IP in case it changed (e.g. DHCP)
 		neighbor.TunInterface = hello.Header.Interface // Update neighbor's interface name
 		log.Printf("Router %s: Received Hello from existing neighbor %s (%s). Updated LastHelloTime.", r.ID, hello.Header.RouterID, sourceIP.String())
+		r.neighborMutex.Unlock()
 	}
 }
 
@@ -625,57 +636,42 @@ func (r *Router) processIncomingPacket(fullPacket []byte) {
 // generateLSU creates a Link State Update packet for this router.
 // Returns *LinkStateUpdate or nil if no links.
 func (r *Router) generateLSU() *LinkStateUpdate {
-	r.neighborMutex.RLock()
-	// It's important that RoutingTable (rtMutex) is not locked here if links are derived from it
-	// to avoid AB-BA deadlocks if runSPF locks rtMutex then neighborMutex.
-	// For now, links are from neighbors.
-
-	links := make([]Link, 0, len(r.Neighbors))
-	for neighborID, neighbor := range r.Neighbors {
-		if neighbor.AdjacencyEstablished { // Only include established neighbors
-			// Cost can be dynamic or fixed. For now, fixed at 1.
-			// Network for the link: This is tricky.
-			// If it's a point-to-point link, it might be the neighbor's IP /32 or a shared subnet.
-			// For simplicity, use neighbor's IP as a /32 link.
-			links = append(links, Link{
-				NeighborRouterID: neighborID,
-				Cost:             1,
-				Network:          neighbor.IPAddress + "/32", // Simplification
-			})
-		}
-	}
-	r.neighborMutex.RUnlock()
-
-	if len(links) == 0 && r.ID != "" { // Don't generate empty LSUs unless it's a lone router advertising itself
-		// Or, always generate an LSU even if no links, to show the router exists.
-		// Let's always generate one if router ID is set.
-	}
-
-	// Add link to self / own network if desired (e.g. for stub networks attached to this router)
-	// For now, only advertising links to neighbors.
-	// We could also advertise the router's own TUN IP/subnet as a link with cost 0.
+	links := []Link{}
+	// 自分のTUNネットワーク
 	_, tunNet, err := net.ParseCIDR(r.config.TunIPAddress)
 	if err == nil {
 		links = append(links, Link{
-			NeighborRouterID: r.ID, // Link to self essentially
+			NeighborRouterID: r.ID,
 			Cost:             0,
 			Network:          tunNet.String(),
 		})
 	}
+	// 全Neighborの/32
+	r.neighborMutex.RLock()
+	for neighborID, neighbor := range r.Neighbors {
+		neighborIP := net.ParseIP(neighbor.IPAddress)
+		if neighborIP != nil {
+			links = append(links, Link{
+				NeighborRouterID: neighborID,
+				Cost:             1,
+				Network:          neighborIP.String() + "/32",
+			})
+		}
+	}
+	r.neighborMutex.RUnlock()
+	log.Printf("Router %s: generateLSU links: %+v", r.ID, links)
 
-	// Create LSU
-	lsu := &LinkStateUpdate{ // Return pointer
+	lsu := &LinkStateUpdate{
 		Header: OSPFHeader{
 			Type:      PacketTypeLSU,
 			RouterID:  r.ID,
 			Interface: r.TunDevice.Name,
 		},
-		SequenceNumber: time.Now().UnixNano(), // Higher sequence number is newer
-		TTL:            64,                    // Max hops for LSU flooding
+		SequenceNumber: time.Now().UnixNano(),
+		TTL:            64,
 		Links:          links,
 		Timestamp:      time.Now(),
 	}
-	// log.Printf("Router %s: Generated LSU with Seq %d, %d links.", r.ID, lsu.SequenceNumber, len(lsu.Links))
 	return lsu
 }
 
@@ -765,19 +761,20 @@ func (r *Router) processIncomingLSU(newLSU *LinkStateUpdate, fromIPAddress strin
 		return
 	}
 
-	// log.Printf("Router %s: Processing incoming LSU. Originator: %s, Seq: %d, Received from: %s on %s", r.ID, newLSU.Header.RouterID, newLSU.SequenceNumber, fromIPAddress, receivedOnInterface)
+	log.Printf("Router %s: processIncomingLSU called. newLSU.Header.RouterID=%s, self r.ID=%s", r.ID, newLSU.Header.RouterID, r.ID)
 
 	// 1. Ignore if LSU originated from self
 	if newLSU.Header.RouterID == r.ID {
-		// log.Printf("Router %s: Discarding LSU originated by self.", r.ID)
+		log.Printf("Router %s: Discarding LSU originated by self (RouterID: %s)", r.ID, newLSU.Header.RouterID)
 		return
 	}
 
 	r.lsudbMutex.Lock()
 	existingLSU, found := r.LSUDB[newLSU.Header.RouterID]
+	log.Printf("Router %s: processIncomingLSU LSUDB before: %v", r.ID, dumpLSUDB(r.LSUDB))
 	r.lsudbMutex.Unlock()
 
-	// 2. If not found, or if newLSU is newer, accept it.
+	// 2. If not found, or if newLSU is newer, accept it。
 	isNewer := false
 	if !found {
 		isNewer = true
@@ -790,18 +787,19 @@ func (r *Router) processIncomingLSU(newLSU *LinkStateUpdate, fromIPAddress strin
 	}
 
 	if isNewer {
-		// log.Printf("Router %s: Accepted new/updated LSU from %s (Orig: %s, Seq: %d). Links: %d.", r.ID, fromIPAddress, newLSU.Header.RouterID, newLSU.SequenceNumber, len(newLSU.Links))
+		log.Printf("Router %s: LSU from %s is newer or not found. Registering to LSUDB.", r.ID, newLSU.Header.RouterID)
 		r.lsudbMutex.Lock()
 		r.LSUDB[newLSU.Header.RouterID] = newLSU // Store pointer
+		log.Printf("Router %s: processIncomingLSU LSUDB after: %v", r.ID, dumpLSUDB(r.LSUDB))
 		r.lsudbMutex.Unlock()
 
 		// 3. Flood to other neighbors
 		r.floodLSU(newLSU, receivedOnInterface) // Pass the interface it was received on to prevent flooding back
 
 		// 4. Trigger SPF calculation
-		r.runSPF() // This should ideally be non-blocking or carefully managed
+		r.runSPF("processIncomingLSU") // 呼び出し元を明示
 	} else {
-		// log.Printf("Router %s: Discarding older/same LSU from %s (Orig: %s, Existing Seq: %d, New Seq: %d).", r.ID, fromIPAddress, newLSU.Header.RouterID, existingLSU.SequenceNumber, newLSU.SequenceNumber)
+		log.Printf("Router %s: Discarding older/same LSU from %s (Existing Seq: %d, New Seq: %d)", r.ID, newLSU.Header.RouterID, existingLSU.SequenceNumber, newLSU.SequenceNumber)
 		// TODO: Send LSAck for duplicate if received from a different neighbor than the one that sent the accepted LSU
 	}
 }
@@ -857,27 +855,31 @@ func (pq *PriorityQueue) update(item *Item, cost int) {
 }
 
 // runSPF calculates the shortest paths using Dijkstra's algorithm and updates the routing table.
-func (r *Router) runSPF() {
+func (r *Router) runSPF(caller string) {
 	r.rtMutex.Lock()
 	defer r.rtMutex.Unlock()
 	r.lsudbMutex.RLock() // Lock LSUDB for reading during SPF
 	defer r.lsudbMutex.RUnlock()
 
-	log.Printf("Router [%s] Running SPF algorithm... (LSUDB size: %d)", r.ID, len(r.LSUDB))
+	log.Printf("Router [%s] Running SPF algorithm... (LSUDB size: %d) [called from: %s]", r.ID, len(r.LSUDB), caller)
+	for k, v := range r.LSUDB {
+		log.Printf("Router [%s] LSUDB entry: RouterID=%s, Links=%+v", r.ID, k, v.Links)
+	}
 	newRoutingTable := make(map[string]*RoutingEntry)
 
-	dist := make(map[string]int)          // Cost from r.ID to RouterID
-	prevRouter := make(map[string]string) // Previous RouterID in path from r.ID
-	// Store the actual next hop IP from this router (r.ID) to reach a given routerID
-	// This is the IP of our direct neighbor that is on the path to the target routerID.
-	firstHopToRouter := make(map[string]string) // RouterID -> IP of first hop neighbor from r.ID
-	pqItems := make(map[string]*Item)           // Map RouterID to its Item in PQ for easy update
-
-	// Initialize distances: 0 for self, infinity for others
-	for routerID := range r.LSUDB {
-		dist[routerID] = 1 << 30 // Effectively infinity
-	}
+	dist := make(map[string]int)
+	prevRouter := make(map[string]string)
+	firstHopToRouter := make(map[string]string)
 	dist[r.ID] = 0
+	// 直接隣接Neighborへの初期化
+	r.neighborMutex.RLock()
+	for neighborID, neighbor := range r.Neighbors {
+		dist[neighborID] = 1
+		firstHopToRouter[neighborID] = neighbor.IPAddress
+	}
+	r.neighborMutex.RUnlock()
+
+	pqItems := make(map[string]*Item)
 
 	pq := make(PriorityQueue, 0)
 	heap.Init(&pq)
@@ -998,22 +1000,19 @@ func (r *Router) runSPF() {
 		log.Printf("Router %s: Error parsing own TunIPAddress %s for SPF direct route: %v", r.ID, r.config.TunIPAddress, errSelf)
 	}
 
-	// 2. Add routes learned via OSPF (from LSUs of other routers)
-	for destRouterID, lsu := range r.LSUDB {
-		if destRouterID == r.ID { // Skip self LSU for generating routes to other networks via self
-			continue
-		}
-		costToDestRouter, reachable := dist[destRouterID]
-		if !reachable || costToDestRouter >= (1<<30) { // If not reachable or cost is infinity
-			continue
-		}
+	// dump dist, firstHopToRouter の内容
+	log.Printf("Router [%s] SPF: dist=%+v", r.ID, dist)
+	log.Printf("Router [%s] SPF: firstHopToRouter=%+v", r.ID, firstHopToRouter)
 
-		// Determine the first hop (our direct neighbor) on the path to destRouterID
-		// This requires tracing back from destRouterID using prevRouter until we hit r.ID or a direct neighbor of r.ID.
-		// The firstHopToRouter map should already contain the IP of the direct neighbor from r.ID to reach destRouterID.
+	// 2. Add routes learned via OSPF (from LSUs of all routers)
+	for destRouterID, lsu := range r.LSUDB {
+		costToDestRouter, reachable := dist[destRouterID]
+		if !reachable || costToDestRouter >= (1<<30) {
+			log.Printf("Router [%s] SPF: skip destRouterID=%s (reachable=%v, cost=%d)", r.ID, destRouterID, reachable, costToDestRouter)
+			continue
+		}
 		actualNextHopIP := firstHopToRouter[destRouterID]
 		actualNextHopRouterID := ""
-		// Find the router ID of this first hop neighbor
 		r.neighborMutex.RLock()
 		for nid, ninfo := range r.Neighbors {
 			if ninfo.IPAddress == actualNextHopIP {
@@ -1022,41 +1021,37 @@ func (r *Router) runSPF() {
 			}
 		}
 		r.neighborMutex.RUnlock()
-
+		log.Printf("Router [%s] SPF: destRouterID=%s, costToDestRouter=%d, actualNextHopIP=%s, actualNextHopRouterID=%s", r.ID, destRouterID, costToDestRouter, actualNextHopIP, actualNextHopRouterID)
 		if actualNextHopIP == "" || actualNextHopRouterID == "" {
-			// log.Printf("Router %s: SPF: Could not determine first hop IP/RouterID for destination router %s. Path: %s",r.ID, destRouterID, tracePath(prevRouter, destRouterID, r.ID))
+			log.Printf("Router [%s] SPF: skip destRouterID=%s due to missing next hop info", r.ID, destRouterID)
 			continue
 		}
-
-		// Add routes to networks advertised in this LSU
 		for _, link := range lsu.Links {
-			// A link in an LSU can be to another router or to a network.
-			// We are interested in links that represent networks attached to destRouterID.
-			// Our current Link struct has NeighborRouterID, Cost, Network.
-			// If link.NeighborRouterID == destRouterID, it means link.Network is a network attached to destRouterID with cost link.Cost from destRouterID.
-			if link.NeighborRouterID == destRouterID { // This identifies a stub network link in the LSU
+			if link.NeighborRouterID == destRouterID && isNetwork(link.Network) {
 				destNetworkCIDR := link.Network
 				totalCostToNetwork := costToDestRouter + link.Cost
-
-				// Check if we already have a route to this network or if this one is better
+				log.Printf("Router [%s] SPF: candidate route: destNetworkCIDR=%s, totalCostToNetwork=%d", r.ID, destNetworkCIDR, totalCostToNetwork)
 				if existingEntry, exists := newRoutingTable[destNetworkCIDR]; !exists || totalCostToNetwork < existingEntry.Metric {
 					newRoutingTable[destNetworkCIDR] = &RoutingEntry{
 						Network:         destNetworkCIDR,
 						NextHop:         actualNextHopIP,
 						NextHopRouterID: actualNextHopRouterID,
-						Interface:       r.TunDevice.Name, // All OSPF routes go out our TUN
+						Interface:       r.TunDevice.Name,
 						Metric:          totalCostToNetwork,
 						LearnedFrom:     "OSPF",
 						LastUpdated:     time.Now(),
 					}
+					log.Printf("Router [%s] SPF: route added: %s via %s (RouterID: %s) metric=%d", r.ID, destNetworkCIDR, actualNextHopIP, actualNextHopRouterID, totalCostToNetwork)
 				}
 			}
 		}
 	}
 
-	// Replace old routing table
 	r.RoutingTable = newRoutingTable
 	log.Printf("Router [%s] SPF run complete. Routing table updated (entries: %d).", r.ID, len(r.RoutingTable))
+	for dest, entry := range r.RoutingTable {
+		log.Printf("Router [%s] RoutingTable entry: Dst=%s, NextHop=%s, NextHopRouterID=%s, Iface=%s, Metric=%d, Learned=%s", r.ID, dest, entry.NextHop, entry.NextHopRouterID, entry.Interface, entry.Metric, entry.LearnedFrom)
+	}
 	r.dumpRoutingTable() // Call dumpRoutingTable to log the new table content
 
 	// Notify about routing table update
@@ -1277,6 +1272,9 @@ func (r *Router) dumpRoutingTable() {
 	r.rtMutex.RLock()
 	defer r.rtMutex.RUnlock()
 	log.Printf("Router %s: Routing Table (%d entries):", r.ID, len(r.RoutingTable))
+	if len(r.RoutingTable) == 0 {
+		log.Printf("Router %s: Routing table is EMPTY", r.ID)
+	}
 	for dest, entry := range r.RoutingTable {
 		log.Printf("  Dst: %s, NextHop: %s (Router: %s), Iface: %s, Metric: %d, Learned: %s",
 			dest, entry.NextHop, entry.NextHopRouterID, entry.Interface, entry.Metric, entry.LearnedFrom)
@@ -1313,4 +1311,24 @@ func (r *Router) InjectPacket(packet []byte, fromRouterID string) {
 	// It might be useful to log that this packet was injected rather than read from TUN.
 	log.Printf("Router %s: Packet INJECTED by manager from %s (simulating arrival). Length: %d", r.ID, fromRouterID, len(packet))
 	r.processIncomingPacket(packet) // Process it as if it came from the TUN device
+}
+
+// LSUDBの内容を全てdumpするユーティリティ
+func dumpLSUDB(m map[string]*LinkStateUpdate) string {
+	res := "["
+	for k, v := range m {
+		res += "{" + k + ": Links=" + fmt.Sprintf("%+v", v.Links) + "}, "
+	}
+	res += "]"
+	return res
+}
+
+// ネットワークアドレスかどうか判定するユーティリティ
+func isNetwork(network string) bool {
+	_, ipnet, err := net.ParseCIDR(network)
+	if err != nil {
+		return false
+	}
+	_, bits := ipnet.Mask.Size()
+	return bits == 32 || bits == 24 // /32または/24のみ経路として扱う
 }
