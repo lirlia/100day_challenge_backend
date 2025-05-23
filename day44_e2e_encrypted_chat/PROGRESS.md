@@ -1,89 +1,48 @@
-# Day44 - E2E暗号化チャット アプリケーション開発進捗
+# Day44 - 署名付きグループチャット 作業進捗
 
-## 作業計画
+## 計画フェーズ
 
-- [x] **Day44: プロジェクト初期化と基本設定 (1/8)**
-    - [x] `template` から `day44_e2e_encrypted_chat` へプロジェクトコピー。
-    - [x] `package.json` の `name` を `day44_e2e_encrypted_chat` に変更。
-    - [x] README.md にアプリ概要と上記設計を記載。
-    - [x] PROGRESS.md に作業工程を記載。
-    - [x] 基本レイアウト (`app/layout.tsx`) とトップページ (`app/page.tsx`) を作成 (ニューモーフィズム風の背景など)。
-    - [x] Tailwind CSS の設定でニューモーフィズムに必要な色や影を定義。
-    - [x] DBスキーマ (`lib/db.ts`) を定義し、`db/dev.db` を一度削除して再生成。
-    - [ ] テスト: `npm run dev` で起動し、基本レイアウトが表示されることを確認。DBファイルが生成されることを確認。
-    - [ ] コミット: `git commit -m "Day44: step 1/8 Project initialization and basic setup"`
+- [x] アプリケーションテーマ決定: E2E暗号化チャット (ニューモーフィズムデザイン)
+- [x] 初期仕様検討 (1対1チャット、RSA+AESハイブリッド暗号化、署名)
 
-- [ ] **Day44: ユーザー管理と鍵生成UI (2/8)**
-    - [ ] API: ユーザー登録 (`POST /api/users`)、ユーザー一覧取得 (`GET /api/users`)。
-    - [ ] クライアントサイド: `app/_lib/crypto.ts` に RSA-OAEP (暗号化用) および RSA-PSS (署名用) の鍵ペア生成関数を実装 (Web Crypto API)。
-    - [ ] UI: ユーザー名を入力して登録するフォーム。登録時に鍵ペアを生成し、公開鍵をサーバーに送信。秘密鍵は `localStorage` に保存 (ユーザー名と紐付けて)。
-    - [ ] UI: 登録済みユーザーを一覧表示し、選択してチャット相手を選べるようにする (初期段階ではチャット相手の選択のみ)。
-    - [ ] テスト: 複数ユーザーを登録し、公開鍵がDBに保存されること、秘密鍵がローカルストレージに保存されることを確認。
-    - [ ] コミット: `git commit -m "Day44: step 2/8 User management and key generation UI"`
+## 実装フェーズ
 
-- [ ] **Day44: 暗号化・復号・署名・検証ロジック実装 (3/8)**
-    - [ ] `app/_lib/crypto.ts` に以下の関数を実装:
-        - [ ] `encryptMessage(plaintext: string, publicKey: CryptoKey, iv: Uint8Array): Promise<{encryptedData: ArrayBuffer, iv: Uint8Array}>` (AES-GCM で共通鍵暗号化し、その共通鍵を RSA-OAEP で暗号化するハイブリッド暗号も検討。ここではまずシンプルにRSA-OAEPで直接暗号化、もしくは AES-GCM の共通鍵を相手の公開鍵で暗号化)
-        - [ ] `decryptMessage(encryptedData: ArrayBuffer, privateKey: CryptoKey, iv: Uint8Array): Promise<string>`
-        - [ ] `signMessage(data: ArrayBuffer, privateKey: CryptoKey): Promise<ArrayBuffer>` (RSA-PSS)
-        - [ ] `verifySignature(signature: ArrayBuffer, data: ArrayBuffer, publicKey: CryptoKey): Promise<boolean>`
-    - [ ] 文字列とArrayBuffer、Base64間の変換ユーティリティも用意。
-    - [ ] テスト: 各暗号化/復号、署名/検証関数が正しく動作することをユニットテスト的に確認 (ブラウザコンソールで)。
-    - [ ] コミット: `git commit -m "Day44: step 3/8 Implement encryption, decryption, signing, and verification logic"`
+1.  **プロジェクト初期セットアップ (1対1チャットベース)**
+    - [x] `template` から `day44_e2e_encrypted_chat` へコピー、`package.json` 更新
+    - [x] `README.md` (初期版), `PROGRESS.md` (当ファイル) 作成
+    - [x] Tailwind CSS ニューモーフィズム設定追加 (`tailwind.config.ts`, `app/globals.css`)
+    - [x] 基本レイアウト (`app/layout.tsx`), トップページ (`app/page.tsx`) 作成
+    - [x] DBスキーマ定義 (`lib/db.ts`: `users`, `messages` - `recipientId` NOT NULL)
+    - [x] DBファイル (`db/dev.db`) 再生成
 
-- [ ] **Day44: チャットメッセージ送受信API (E2E暗号化) (4/8)**
-    - [ ] API: メッセージ送信 (`POST /api/messages`): `senderId`, `recipientId`, `encryptedMessage`, `signature`, `iv` を受け取りDBに保存。
-    - [ ] API: 特定ユーザー間のメッセージ取得 (`GET /api/messages?userId1=X&userId2=Y`): 指定されたユーザー間のメッセージを時系列で取得。
-    - [ ] テスト: `curl` や Postman などで、暗号化・署名済みのダミーデータをAPIに送信し、DBに保存されることを確認。また、メッセージ取得APIが正しくデータを返すことを確認。
-    - [ ] コミット: `git commit -m "Day44: step 4/8 Implement E2E encrypted chat message API"`
+2.  **APIと暗号処理実装 (1対1チャットベース)**
+    - [x] ユーザーAPI (`app/api/users/route.ts`): GET (一覧), POST (登録、公開鍵保存)
+    - [x] 暗号ユーティリティ (`app/_lib/crypto.ts`): 鍵生成、エクスポート/インポート、localStorage保存/読込、ハイブリッド暗号化、署名
+    - [x] チャットページ (`app/chat/page.tsx`)実装開始: ユーザー登録、ユーザー選択、メッセージ送受信 (E2E暗号化、署名付)、ポーリング
 
-- [ ] **Day44: チャットUI実装 (メッセージ送受信) (5/8)**
-    - [ ] `app/(pages)/chat/page.tsx` を中心にUIを構築。
-    - [ ] 選択されたチャット相手の公開鍵を取得。
-    - [ ] メッセージ入力フィールド (`MessageInput.tsx`) からメッセージを送信する際:
-        - [ ] `encryptMessage` で暗号化。
-        - [ ] `signMessage` で署名。
-        - [ ] API (`POST /api/messages`) を呼び出し。
-    - [ ] メッセージ表示エリア (`MessageList.tsx`):
-        - [ ] API (`GET /api/messages`) からメッセージを取得 (ポーリングまたはWebSocket)。
-        - [ ] 受信メッセージを `decryptMessage` で復号。
-        - [ ] `verifySignature` で署名を検証。
-        - [ ] 復号・検証できたメッセージのみ表示。署名検証失敗時はエラー表示。
-    - [ ] テスト: 異なるユーザーとしてログイン（ユーザー切り替えUI経由）し、メッセージがE2E暗号化されて送受信できることを確認。DBの内容が暗号化されていることを確認。
-    - [ ] コミット: `git commit -m "Day44: step 5/8 Implement chat UI for sending and receiving messages"`
+3.  **Playwrightテスト試行とCSS問題対応**
+    - [x] Playwrightテストコード (`tests/chat.e2e.spec.ts`) と設定 (`playwright.config.ts`) 作成
+    - [x] Tailwind CSSカスタムクラス認識問題の調査と修正 (`app/globals.css`, `postcss.config.mjs`, `package.json` の `dev` スクリプト)
 
-- [ ] **Day44: リアルタイム更新 (WebSocketまたはポーリング) (6/8)**
-    - [ ] メッセージのリアルタイム更新を実装。
-        - [ ] WebSocket を使う場合: サーバー側でWebSocket接続を管理し、新しいメッセージを該当クライアントにプッシュ。
-        - [ ] ポーリングの場合: `MessageList.tsx` で定期的に `GET /api/messages` を呼び出す。
-    - [ ] Next.js の Route Handlers で WebSocket を扱うのは少し工夫がいるため、ここではよりシンプルなポーリングを優先的に実装し、時間が許せば WebSocket に挑戦。
-    - [ ] テスト: 新しいメッセージがリアルタイム（または準リアルタイム）で表示されることを確認。
-    - [ ] コミット: `git commit -m "Day44: step 6/8 Implement real-time updates (polling or WebSocket)"`
+4.  **仕様変更: グループチャット化と平文化**
+    - [x] DBスキーマ変更 (`lib/db.ts`): `messages.recipientId` を NULL 許容に変更、DB再生成
+    - [x] API修正 (`app/api/messages/route.ts`): GET (全メッセージ取得)、POST (`recipientId` を NULL で保存)
+    - [x] UI修正 (`app/chat/page.tsx`): E2E暗号化無効化 (平文化)、署名検証は維持、宛先選択UI削除、グループチャット用タイトルに変更
 
-- [ ] **Day44: UI/UX改善とエラーハンドリング (7/8)**
-    - [ ] ニューモーフィズムデザインの調整。
-    - [ ] 暗号化/復号処理中、署名検証中などのローディング表示。
-    - [ ] 鍵の不一致、署名検証失敗などのエラーメッセージをユーザーフレンドリーに表示。
-    - [ ] ユーザーが秘密鍵を紛失した場合の考慮（今回はデモなので「再登録してください」程度でOK）。
-    - [ ] 不要なファイルやコードの削除。
-    - [ ] テスト: 様々なエラーケースを試し、UIが適切に反応することを確認。
-    - [ ] コミット: `git commit -m "Day44: step 7/8 UI/UX improvements and error handling"`
+5.  **UI不具合修正と安定化**
+    - [x] ユーザー選択が機能しない問題の修正 (`app/chat/page.tsx` の表示条件緩和)
+    - [x] メッセージ署名検証失敗問題の修正 (`verifySignature` 引数順、データ一貫性確認デバッグ)
+    - [x] チャット送信時の画面ちらつき問題の修正 (`handleSendMessage` でAPIレスポンスを利用した即時更新)
+    - [x] アイドル時の画面ちらつき問題の修正 (ポーリング処理 `fetchMessages` での `setMessages` 呼び出し条件最適化、`useEffect` 依存配列見直し、`isFetchingMessages` の抑制)
+    - [x] デバッグ用 `console.log` の削除
 
-- [ ] **Day44: ドキュメント更新と最終確認 (8/8)**
-    - [ ] README.md に最終的な使い方、技術詳細を追記。
-    - [ ] PROGRESS.md の項目をすべてチェック。
-    - [ ] `.cursor/rules/knowledge.mdc` に今回のアプリ情報を追記。
-    - [ ] Playwright を用いた簡単なE2Eテストシナリオを作成し実行（手動でも可）。
-        - [ ] ユーザーAがユーザーBにメッセージを送信。
-        - [ ] ユーザーBがメッセージを正しく受信・復号できる。
-        - [ ] サーバーDBには平文メッセージが保存されていない。
-    - [ ] コミット: `git commit -m "Day44: step 8/8 Documentation and final review"`
+6.  **最終調整とドキュメント**
+    - [x] Playwrightテストの更新 (グループチャット仕様への追従)
+    - [x] `README.md` の更新 (現在の仕様に合わせて全面的に書き直し)
+    - [x] `PROGRESS.md` の更新 (当ファイル)
+    - [ ] `.cursor/rules/knowledge.mdc` の更新 (Day44の成果として追記)
 
+## 今後の可能性 (スコープ外)
 
-- [ ] 
-- [ ] 
-- [ ] 
-- [ ] 
-- [ ] 
-- [ ] 
-- [ ] 
+- グループチャットにおけるE2E暗号化の実現 (鍵共有など高度な技術が必要)
+- WebSocket等を利用したリアルタイム性の向上

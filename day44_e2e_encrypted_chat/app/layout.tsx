@@ -18,7 +18,7 @@ export default function RootLayout({
     <html lang="ja">
       <body className={`${inter.className} antialiased`}>
         <main className="min-h-screen flex flex-col items-center justify-center p-4 md:p-8">
-          {children}
+        {children}
         </main>
       </body>
     </html>

@@ -1,91 +1,65 @@
-# Day44 - E2E暗号化チャット (E2E Encrypted Chat)
+# Day44 - 署名付きグループチャット
 
-エンドツーエンドで暗号化されたメッセージを送受信できるチャットアプリケーションです。
-サーバーは暗号化されたメッセージを中継するだけで、内容を解読することはできません。
+## 概要
 
-**デザインテーマ:** ニューモーフィズム (Neumorphism)
+ユーザーが登録し、公開鍵・秘密鍵ペアをローカルで管理しつつ、グループチャットに参加できるアプリケーションです。
+メッセージは平文で送受信されますが、各メッセージには送信者のデジタル署名が付与され、受信側で検証されます。
+当初はE2E暗号化を目指していましたが、グループチャットの複雑性を考慮し、スコープを署名付き平文チャットに変更しました。
 
 ## 主な機能
 
-*   ユーザー登録と簡易ログイン (ユーザー名ベース)
-*   クライアントサイドでの鍵ペア生成 (RSA-OAEP/PSS + AES-GCM ハイブリッド暗号を想定)
-    *   公開鍵: サーバーに登録・共有
-    *   秘密鍵: ブラウザのローカルストレージに保存 (デモ用)
-*   メッセージ送信:
-    *   受信者の公開鍵で共通鍵を暗号化。
-    *   共通鍵でメッセージ本文を暗号化 (AES-GCM)。
-    *   送信者の秘密鍵で暗号化共通鍵と暗号化メッセージ全体に署名 (RSA-PSS)。
-*   メッセージ受信:
-    *   送信者の公開鍵で署名を検証。
-    *   自身の秘密鍵で共通鍵を復号。
-    *   復号した共通鍵でメッセージ本文を復号。
-*   チャット相手の選択機能
-*   メッセージのリアルタイム表示 (ポーリング)
+- ユーザー登録 (RSAキーペア生成、公開鍵サーバー保存)
+- ユーザー選択によるアカウント切り替え
+- グループチャットルームでのメッセージ送受信
+- メッセージへのRSA-PSS署名と検証
+- 5秒ごとのメッセージポーリングによる準リアルタイム更新
 
-## 技術スタック
+## デザイン
 
-*   Next.js (App Router)
-*   TypeScript
-*   SQLite (better-sqlite3)
-*   Web Crypto API
-*   Tailwind CSS
+- ニューモーフィズム
 
-## ディレクトリ構成 (抜粋)
+## 使用技術
 
-```
-day44_e2e_encrypted_chat/
-├── app/
-│   ├── api/
-│   │   ├── users/
-│   │   │   └── route.ts         // ユーザー登録、公開鍵登録・取得
-│   │   └── messages/
-│   │       └── route.ts         // メッセージ送信・受信 (暗号化済み)
-│   ├── (pages)/
-│   │   └── chat/
-│   │       ├── page.tsx         // チャットUI本体
-│   │       └── components/
-│   │           ├── UserSelection.tsx // ユーザー切り替えUI
-│   │           ├── MessageInput.tsx  // メッセージ入力欄
-│   │           └── MessageList.tsx   // メッセージ表示エリア
-│   ├── _lib/
-│   │   ├── crypto.ts        // Web Crypto API ラッパー
-│   │   └── userService.ts   // ユーザー関連クライアントロジック
-│   ├── layout.tsx
-│   └── page.tsx
-├── lib/
-│   ├── db.ts                // DB初期化、スキーマ定義
-│   └── types.ts             // 共通型定義
-├── prisma/
-│   └── dev.db
-...
-```
+- Next.js (App Router)
+- TypeScript
+- Tailwind CSS
+- better-sqlite3 (SQLite)
+- Web Crypto API
 
-## DBスキーマ
+## 起動方法
 
-*   `users` テーブル
-    *   `id` (INTEGER PRIMARY KEY AUTOINCREMENT)
-    *   `username` (TEXT UNIQUE NOT NULL)
-    *   `publicKey` (TEXT NOT NULL) - SPKI形式の公開鍵 (Base64)
-    *   `createdAt` (DATETIME DEFAULT CURRENT_TIMESTAMP)
-*   `messages` テーブル
-    *   `id` (INTEGER PRIMARY KEY AUTOINCREMENT)
-    *   `senderId` (INTEGER NOT NULL, FOREIGN KEY (users))
-    *   `recipientId` (INTEGER NOT NULL, FOREIGN KEY (users))
-    *   `encryptedMessage` (TEXT NOT NULL) - 暗号化されたメッセージ本文 (Base64)
-    *   `signature` (TEXT NOT NULL) - 送信者による署名 (Base64)
-    *   `iv` (TEXT NOT NULL) - 初期化ベクトル (AES-GCM用、Base64)
-    *   `createdAt` (DATETIME DEFAULT CURRENT_TIMESTAMP)
+1. リポジトリをクローンします。
+2. `day44_e2e_encrypted_chat` ディレクトリに移動します。
+   ```bash
+   cd day44_e2e_encrypted_chat
+   ```
+3. 必要なパッケージをインストールします。
+   ```bash
+   npm install
+   ```
+4. 開発サーバーを起動します。
+   ```bash
+   npm run dev
+   ```
+5. ブラウザで `http://localhost:3001/chat` を開きます。
 
-## セットアップと起動
+## 画面構成と使い方
 
-```bash
-# 依存関係のインストール
-npm install
-
-# 開発サーバー起動 (http://localhost:3001)
-npm run dev
-```
+1.  **ユーザー登録:**
+    *   トップページ (`/chat`) の「ユーザー管理」セクションで任意のユーザー名を入力し、「登録」ボタンをクリックします。
+    *   これにより、RSAの暗号化用・署名用のキーペアがブラウザ内で生成され、秘密鍵はlocalStorageに、公開鍵はサーバーのDBに保存されます。
+    *   登録が完了すると、完了を知らせるアラートが表示されます。
+2.  **ユーザー選択:**
+    *   「あなたのアカウント」ドロップダウンから、チャットに使用するアカウントを選択します。
+    *   選択すると、対応する秘密鍵がlocalStorageから読み込まれ、グループチャットルームが表示されます。
+3.  **メッセージ送受信:**
+    *   チャットルーム下部の入力欄にメッセージを入力し、「送信」ボタンをクリックします。
+    *   送信されたメッセージは、選択中ユーザーの署名用秘密鍵で署名された後、サーバーに送信されます。
+    *   チャットルームには、自分と他のユーザーのメッセージが表示されます。
+    *   メッセージは5秒ごとに自動でポーリングされ、新しいメッセージが画面に反映されます。
+    *   各メッセージには送信者名と送信時刻が表示されます。自分のメッセージは右側に、他人のメッセージは左側に表示されます。
+    *   メッセージ受信時には署名が検証され、もし検証に失敗した場合はメッセージ内容の先頭に `[署名検証失敗]` と表示されます（正常な操作では発生しないはずです）。
 
 ---
 
-&copy; 2024 ○○○ (あなたの名前または組織名)
+&copy; 2024 Your Name (or Project Name)

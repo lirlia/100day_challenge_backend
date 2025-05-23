@@ -9,12 +9,12 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        'neumo-bg': '#e0e0e0', // ベースの背景色 (明るいグレー)
-        'neumo-highlight': '#ffffff', // ハイライト色
-        'neumo-shadow-light': '#bababa', // 明るい影
-        'neumo-shadow-dark': '#a3a3a3',  // 暗い影 (よりコントラストを出すため少し濃く)
-        'neumo-text': '#757575', // テキストカラー
-        'neumo-accent': '#6d28d9', // アクセントカラー (例: 紫)
+        'neumo-bg': '#e0e0e0',
+        'neumo-highlight': '#ffffff',
+        'neumo-shadow-light': '#bababa',
+        'neumo-shadow-dark': '#a3a3a3',
+        'neumo-text': '#757575',
+        'neumo-accent': '#6d28d9',
       },
       boxShadow: {
         'neumo-inset': 'inset 6px 6px 12px #bababa, inset -6px -6px 12px #ffffff',

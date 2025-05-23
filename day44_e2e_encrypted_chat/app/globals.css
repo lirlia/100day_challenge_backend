@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+/* ここにカスタムCSSが必要なら追加 */
+
 body {
-  @apply bg-neumo-bg text-neumo-text;
+  @apply bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200 min-h-screen;
 }
