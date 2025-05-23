@@ -1,73 +1,44 @@
-# Day45 - 旅行予約Saga体験
+# Day45 - Travel Booking Saga
 
 ## 概要
-複数サービス（ホテル・航空券・レンタカー）を一括で予約できる旅行予約システムです。各サービスは独立したAPIで管理され、Sagaパターンで一連の予約フローを制御します。どれか一つでも失敗した場合は、すでに成功した予約を補償（キャンセル）します。
+分散トランザクションの代表的パターンである「SAGAパターン」を体験できる旅行予約デモアプリです。ホテル・航空券・レンタカーの3サービスを横断して予約し、途中で失敗した場合は補償処理（ロールバック）も体験できます。
+
+https://github.com/user-attachments/assets/3475decb-cd43-43d2-8b9b-53f416bbd7c8
+
+[100日チャレンジ day45](https://zenn.dev/gin_nazo/scraps/f5a030b83dede1)
 
 ## 主な機能
-- 旅行予約フォーム（旅行日程・人数など入力）
-- 予約進行状況タイムライン（各サービスの進捗・補償も見える）
-- 予約履歴一覧・詳細
-- ユーザー切替UI
-- Sagaパターンによる状態管理・補償処理
+- 旅行予約（ホテル・航空券・レンタカー）をSAGAパターンで順次実行
+- 各ステップの進行状況をタイムラインでリアルタイム表示
+- 失敗時は補償処理（キャンセル）が順次実行される様子を体験可能
+- 「全成功」「各サービス失敗」などのシミュレーションボタンで任意のパターンを体験
+- ログパネルで補償処理の進行も可視化
+- UIは明るい旅行サイト風デザイン
 
-## 予約フロー
-1. ユーザーが旅行予約を開始
-2. サーバー側で以下を順次実行
-    - ホテル予約API呼び出し
-    - 航空券予約API呼び出し
-    - レンタカー予約API呼び出し
-3. 途中で失敗した場合は、すでに予約済みのサービスを補償APIでキャンセル
-4. すべて成功した場合のみ「予約確定」
+## 使い方
+1. ユーザーIDと旅行プラン（JSON）を入力
+2. 「全成功シミュレート」または「各サービス失敗シミュレート」ボタンをクリック
+3. タイムラインで各予約の進行状況・補償処理の流れを体験
+4. 結果や詳細は下部のカードで確認
 
-## DB設計（イメージ）
-- users（ユーザー情報）
-- reservations（旅行予約全体、状態管理、ユーザー紐付け）
-- reservation_steps（各サービスごとの予約・補償状態、予約ID紐付け）
-    - type: hotel/flight/car
-    - status: pending/success/failure/compensating/compensated
-    - reservation_id: 外部サービスの予約番号（あれば）
+## 技術構成
+- Next.js (App Router, TypeScript)
+- Tailwind CSS（v4以降）
+- SQLite + better-sqlite3
+- Next.js Route HandlersでAPI実装
+- UIはレスポンシブ・モダンな旅行サイト風
 
-## API設計（イメージ）
-- POST `/api/reservations` … 旅行予約開始
-- GET `/api/reservations/:id` … 予約詳細・進行状況取得
-- POST `/api/reservations/:id/cancel` … 予約全体のキャンセル（補償処理）
-- 内部API（サーバー側で呼び出し）
-    - `/api/hotel/reserve` `/api/hotel/cancel`
-    - `/api/flight/reserve` `/api/flight/cancel`
-    - `/api/car/reserve` `/api/car/cancel`
+## デザイン方針
+- 白ベース＋淡いブルー/エメラルドのグラデーション
+- 明るいリゾート写真のヒーローイメージ
+- サービスごとにアイコン・色分け
+- タイムライン・ログもカード型で明るく
 
-## 学びポイント
-- Sagaパターンの状態管理（進行中/補償/完了）
-- 各サービスのAPI分離と補償処理
-- 状態遷移の可視化
-- エラー発生時のロールバック体験
-
-## ディレクトリ構成（予定）
-```
-day45_travel_saga/
-├── app/
-│   ├── api/
-│   │   ├── reservations/
-│   │   ├── hotel/
-│   │   ├── flight/
-│   │   └── car/
-│   ├── (pages)/
-│   │   ├── reservations/
-│   │   └── form/
-│   ├── _actions/
-│   ├── _lib/
-│   ├── layout.tsx
-│   ├── globals.css
-│   └── page.tsx
-├── lib/
-│   ├── db.ts
-│   └── types/
-├── db/
-│   └── dev.db
-├── PROGRESS.md
-├── README.md
-├── package.json
-└── ...
-```
+## 学べること
+- SAGAパターンの実践的な流れ
+- 分散トランザクションの補償処理
+- Next.js + SQLiteによるフルスタック開発
+- UI/UXで「体験」を重視した設計
 
 ---
+© 2025 TravelSaga Inc. All rights reserved.
