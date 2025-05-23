@@ -155,6 +155,7 @@ export default function TravelPage() {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [sagaId, setSagaId] = useState<string | null>(null);
   const [timelineStatus, setTimelineStatus] = useState<'success' | 'failed' | null>(null);
+  const [failPattern, setFailPattern] = useState<'none' | 'hotel' | 'flight' | 'car'>('none');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -199,6 +200,42 @@ export default function TravelPage() {
     }, 100);
   };
 
+  const handleSimulate = async (pattern: 'none' | 'hotel' | 'flight' | 'car') => {
+    setIsLoading(true);
+    setResponse(null);
+    setSagaId(null);
+    setFailPattern(pattern);
+
+    let forcedStepResults: any = {};
+    if (pattern === 'hotel') forcedStepResults = { hotel: 'fail' };
+    if (pattern === 'flight') forcedStepResults = { flight: 'fail' };
+    if (pattern === 'car') forcedStepResults = { car: 'fail' };
+
+    try {
+      let parsedTripDetails;
+      try {
+        parsedTripDetails = JSON.parse(tripDetails);
+      } catch (parseError) {
+        setResponse({ error: 'Invalid JSON format for Trip Details.' });
+        setIsLoading(false);
+        return;
+      }
+      const res = await fetch('/api/travel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, tripDetails: parsedTripDetails, forcedStepResults }),
+      });
+      const data: SagaResponse = await res.json();
+      setResponse(data);
+      if (data.sagaId) setSagaId(data.sagaId);
+    } catch (error) {
+      console.error('Error submitting travel request:', error);
+      setResponse({ error: 'An unexpected error occurred.' });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 text-white flex flex-col items-center py-10">
       <header className="mb-10">
@@ -209,7 +246,7 @@ export default function TravelPage() {
       </header>
 
       <main className="w-full max-w-2xl bg-slate-800 shadow-2xl rounded-lg p-8">
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={(e) => { e.preventDefault(); }} className="space-y-6">
           <div>
             <label htmlFor="userId" className="block text-sm font-medium text-emerald-300">
               User ID
@@ -240,20 +277,41 @@ export default function TravelPage() {
             />
           </div>
 
-          <button
-            type="submit"
-            disabled={isLoading}
-            className="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 focus:ring-offset-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-150"
-          >
-            {isLoading ? (
-              <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
-            ) : (
-              'Book Travel'
-            )}
-          </button>
+          {/* シミュレーションボタン群 */}
+          <div className="flex flex-wrap gap-4 justify-center mt-4">
+            <button
+              type="button"
+              disabled={isLoading}
+              onClick={() => handleSimulate('none')}
+              className={`px-4 py-2 rounded font-semibold transition-colors duration-150 ${failPattern === 'none' ? 'bg-emerald-600' : 'bg-slate-700 hover:bg-emerald-700'} text-white disabled:opacity-50`}
+            >
+              全成功シミュレート
+            </button>
+            <button
+              type="button"
+              disabled={isLoading}
+              onClick={() => handleSimulate('hotel')}
+              className={`px-4 py-2 rounded font-semibold transition-colors duration-150 ${failPattern === 'hotel' ? 'bg-red-600' : 'bg-slate-700 hover:bg-red-700'} text-white disabled:opacity-50`}
+            >
+              ホテル失敗シミュレート
+            </button>
+            <button
+              type="button"
+              disabled={isLoading}
+              onClick={() => handleSimulate('flight')}
+              className={`px-4 py-2 rounded font-semibold transition-colors duration-150 ${failPattern === 'flight' ? 'bg-red-600' : 'bg-slate-700 hover:bg-red-700'} text-white disabled:opacity-50`}
+            >
+              航空券失敗シミュレート
+            </button>
+            <button
+              type="button"
+              disabled={isLoading}
+              onClick={() => handleSimulate('car')}
+              className={`px-4 py-2 rounded font-semibold transition-colors duration-150 ${failPattern === 'car' ? 'bg-red-600' : 'bg-slate-700 hover:bg-red-700'} text-white disabled:opacity-50`}
+            >
+              レンタカー失敗シミュレート
+            </button>
+          </div>
         </form>
 
         {/* タイムラインUI */}
