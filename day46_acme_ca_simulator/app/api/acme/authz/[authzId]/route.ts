@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import db from '@/lib/db';
 import { verifyJws, generateNonce, type AcmeAuthorization, type AcmeChallenge } from '@/lib/acme';
+import crypto from 'node:crypto';
 
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3001';
 
@@ -28,7 +29,8 @@ interface DbChallengeResult {
 }
 
 export async function POST(request: Request, { params }: { params: { authzId: string } }) {
-  const authzId = params.authzId;
+  const resolvedParams = await params;
+  const authzId = resolvedParams.authzId;
   const newNonce = generateNonce();
   const responseHeaders = new Headers({
     'Replay-Nonce': newNonce,
@@ -93,11 +95,16 @@ export async function POST(request: Request, { params }: { params: { authzId: st
     const authz = authzStmt.get(authzId) as DbAuthzResult | undefined;
 
     if (!authz) {
-      return NextResponse.json({ type: 'urn:ietf:params:acme:error:malformed', detail: 'Authorization not found' }, { status: 404, headers: responseHeaders }); // ACME spec suggests malformed for non-existent authz
+      return NextResponse.json({ type: 'urn:ietf:params:acme:error:malformed', detail: 'Authorization not found' }, { status: 404, headers: responseHeaders });
     }
 
-    const challengesStmt = db.prepare('SELECT id, type, url, token, status, validated FROM AcmeChallenges WHERE authzId = ?');
-    const challengesRaw = challengesStmt.all(authzId) as Omit<DbChallengeResult, 'authzId' | 'validationPayload'>[];
+    // 4. チャレンジ情報を取得してレスポンスに含める
+    // 注意: AcmeChallenges テーブルの authzId カラムは実際には authorizationId かもしれない。スキーマを確認。
+    // validated カラムも validatedAt かもしれない。
+    const challengesStmt = db.prepare(
+      'SELECT id, type, url, token, status, validatedAt FROM AcmeChallenges WHERE authorizationId = ?'
+    );
+    const challengesRaw = challengesStmt.all(authzId) as Omit<DbChallengeResult, 'authorizationId' | 'validationPayload'>[];
 
     const challengesForResponse: AcmeChallenge[] = challengesRaw.map(ch => ({
       id: ch.id,

@@ -14,7 +14,7 @@ const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3001';
 
 // DB Result Types (subset of what might be needed)
 interface DbChallengeResult {
-  id: string; authzId: string; type: AcmeChallenge['type']; url: string; token: string; status: AcmeChallenge['status']; validated: string | null; validationPayload: string | null;
+  id: string; authorizationId: string; type: AcmeChallenge['type']; url: string; token: string; status: AcmeChallenge['status']; validated: string | null; validationPayload: string | null;
 }
 interface DbAuthzResult {
   id: string; orderId: string; identifierValue: string; status: AcmeAuthorization['status'];
@@ -26,6 +26,21 @@ interface DbAccountResult {
   id: string; jwk: string; // JSON string
 }
 
+// Type for the result of the detailed challenge query
+interface ChallengeInfoForValidation {
+  id: string;
+  authorizationId: string;
+  type: AcmeChallenge['type'];
+  url: string;
+  token: string;
+  status: AcmeChallenge['status'];
+  validatedAt: string | null;
+  validationPayload: string | null; // JSON string of error or other info
+  orderId: string;
+  identifierValue: string;
+  orderAccountId: string;
+  accountPublicKeyJwk: string; // JSON string of JWK
+}
 
 async function updateOrderStatus(orderId: string) {
   const orderAuthzsStmt = db.prepare('SELECT id, status FROM AcmeAuthorizations WHERE orderId = ?');
@@ -41,7 +56,7 @@ async function updateOrderStatus(orderId: string) {
 }
 
 async function updateAuthzStatus(authzId: string, orderId: string) {
-  const authzChallengesStmt = db.prepare('SELECT id, status FROM AcmeChallenges WHERE authzId = ?');
+  const authzChallengesStmt = db.prepare('SELECT id, status FROM AcmeChallenges WHERE authorizationId = ?');
   const challenges = authzChallengesStmt.all(authzId) as Pick<AcmeChallenge, 'id' | 'status'>[];
 
   if (challenges.every(ch => ch.status === 'valid')) {
@@ -56,7 +71,8 @@ async function updateAuthzStatus(authzId: string, orderId: string) {
 }
 
 export async function POST(request: Request, { params }: { params: { challengeId: string } }) {
-  const challengeId = params.challengeId;
+  const resolvedParams = await params; // Await params
+  const challengeId = resolvedParams.challengeId;
   const newNonce = generateNonce();
   const responseHeaders = new Headers({
     'Replay-Nonce': newNonce,
@@ -103,18 +119,20 @@ export async function POST(request: Request, { params }: { params: { challengeId
     return NextResponse.json({ type: 'urn:ietf:params:acme:error:malformed', detail: 'Could not extract accountId from kid' }, { status: 400, headers: responseHeaders });
   }
 
+  // 3. Challenge情報をDBから取得
+  // この時点でチャレンジのステータスは pending であるべき
   const challengeStmt = db.prepare(
-    `SELECT c.id, c.authzId, c.type, c.url, c.token, c.status, c.validationPayload,
+    `SELECT c.id, c.authorizationId, c.type, c.url, c.token, c.status, c.validatedAt, c.validationPayload,
             az.orderId, az.identifierValue,
             o.accountId as orderAccountId,
-            acc.jwk as accountJwkString
+            acc.publicKeyJwk as accountPublicKeyJwk
      FROM AcmeChallenges c
-     JOIN AcmeAuthorizations az ON c.authzId = az.id
+     JOIN AcmeAuthorizations az ON c.authorizationId = az.id
      JOIN AcmeOrders o ON az.orderId = o.id
      JOIN AcmeAccounts acc ON o.accountId = acc.id
      WHERE c.id = ?`
   );
-  const challengeInfo = challengeStmt.get(challengeId) as (DbChallengeResult & { orderId: string; identifierValue: string; orderAccountId: string; accountJwkString: string; }) | undefined;
+  const challengeInfo = challengeStmt.get(challengeId) as ChallengeInfoForValidation | undefined;
 
   if (!challengeInfo || challengeInfo.orderAccountId !== accountId) {
     return NextResponse.json({ type: 'urn:ietf:params:acme:error:unauthorized', detail: 'Challenge not found or not authorized for this account' }, { status: 401, headers: responseHeaders });
@@ -128,7 +146,7 @@ export async function POST(request: Request, { params }: { params: { challengeId
       return NextResponse.json({ type: 'urn:ietf:params:acme:error:unauthorized', detail: 'JWS verification failed' }, { status: 401, headers: responseHeaders });
   }
 
-  // 3. チャレンジ処理
+  // 4. チャレンジ処理
   if (challengeInfo.status !== 'pending') {
     // Return current state if not pending (e.g., already processing, valid, or invalid)
     responseHeaders.set('Content-Type', 'application/json');
@@ -147,7 +165,7 @@ export async function POST(request: Request, { params }: { params: { challengeId
     try {
       let isValid = false;
       if (challengeInfo.type === 'http-01') {
-        const accountJwk: Jwk = JSON.parse(challengeInfo.accountJwkString);
+        const accountJwk: Jwk = JSON.parse(challengeInfo.accountPublicKeyJwk);
         const expectedKeyAuth = await generateKeyAuthorization(challengeInfo.token, accountJwk);
 
         // Retrieve the client-provided validation content (simulated)
@@ -167,17 +185,17 @@ export async function POST(request: Request, { params }: { params: { challengeId
       // TODO: Implement other challenge types if needed (dns-01, etc.)
 
       const finalStatus = isValid ? 'valid' : 'invalid';
-      db.prepare("UPDATE AcmeChallenges SET status = ?, validated = ? WHERE id = ?")
+      db.prepare("UPDATE AcmeChallenges SET status = ?, validatedAt = ? WHERE id = ?")
         .run(finalStatus, new Date().toISOString(), challengeId);
       console.log(`Challenge ${challengeId} status to ${finalStatus}.`);
 
-      await updateAuthzStatus(challengeInfo.authzId, challengeInfo.orderId);
+      await updateAuthzStatus(challengeInfo.authorizationId, challengeInfo.orderId);
 
     } catch (validationError) {
       console.error(`Error during async validation of challenge ${challengeId}:`, validationError);
       db.prepare("UPDATE AcmeChallenges SET status = 'invalid', validationPayload = ? WHERE id = ?")
         .run(JSON.stringify({error: 'ValidationError', detail: (validationError as Error).message }), challengeId);
-      await updateAuthzStatus(challengeInfo.authzId, challengeInfo.orderId);
+      await updateAuthzStatus(challengeInfo.authorizationId, challengeInfo.orderId);
     }
   })(); // Fire-and-forget for simulation
 
@@ -186,14 +204,14 @@ export async function POST(request: Request, { params }: { params: { challengeId
   return NextResponse.json(challengeInfoToResponse(challengeInfo), { status: 200, headers: responseHeaders });
 }
 
-function challengeInfoToResponse(chInfo: DbChallengeResult & {orderId: string; identifierValue: string; orderAccountId: string; accountJwkString: string;}): AcmeChallenge {
+function challengeInfoToResponse(chInfo: ChallengeInfoForValidation): AcmeChallenge {
     return {
         id: chInfo.id,
         type: chInfo.type,
         url: chInfo.url,
         status: chInfo.status,
         token: chInfo.token,
-        validated: chInfo.validated || undefined,
+        validated: chInfo.validatedAt || undefined,
         // error: chInfo.validationPayload && chInfo.status === 'invalid' ? JSON.parse(chInfo.validationPayload) : undefined // More robust error parsing needed
     };
 }

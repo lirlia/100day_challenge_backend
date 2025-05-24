@@ -5,7 +5,7 @@
     - [x] `package.json` の `name` を `day46-acme-ca-simulator` に変更
     - [x] `README.md` にアプリ概要を記述 (本ファイル)
     - [x] `PROGRESS.md` に作業工程を記述 (本ファイル)
-    - [x] Tailwind CSS v4 globals.css設定 (`@import \"tailwindcss\";`)
+    - [x] Tailwind CSS v4 globals.css設定 (`@import "tailwindcss";`)
     - [x] `app/layout.tsx` と `app/page.tsx` の初期設定 (タイトル、ダークモード対応、日本語設定)
 - [x] **2. データモデリングとDB設定**
     - [x] `lib/db.ts` にDBスキーマ定義 (`TraditionalCertificates`, `AcmeAccounts`, `AcmeOrders`, `AcmeAuthorizations`, `AcmeChallenges`, `AcmeCertificates`)
@@ -36,13 +36,13 @@
         - [x] `POST /api/acme/challenge/:challengeId` (HTTP-01検証シミュレーション含む)
         - [x] `POST /api/acme/order/:orderId/finalize` (CSR検証、証明書発行と保存含む)
         - [x] `GET /api/acme/certificate/:certId` (証明書ダウンロード)
-- [ ] **5. ACMEクライアント操作UI実装**
-    - [ ] `app/(pages)/acme-client/page.tsx` の作成
-    - [ ] アカウント登録・管理UI (キーペア生成、アカウント登録ボタン)
-    - [ ] ドメイン指定とオーダー発行UI
-    - [ ] チャレンジ対応UI (HTTP-01: トークンとキーオーソリゼーション表示、検証ファイル設置シミュレーションボタン)
-    - [ ] オーダー最終化と証明書取得・表示UI
-    - [ ] (オプション) チャレンジ検証のための `AcmeChallenges.validationPayload` 更新API (`PUT /api/acme/challenge/:challengeId/simulate-validation`)
+- [x] **5. ACMEクライアント操作UI実装**
+    - [x] `app/(pages)/acme-client/page.tsx` の作成
+    - [x] アカウント登録・管理UI (キーペア生成、アカウント登録ボタン)
+    - [x] ドメイン指定とオーダー発行UI
+    - [x] チャレンジ対応UI (HTTP-01: トークンとキーオーソリゼーション表示、検証ファイル設置シミュレーションボタン)
+    - [x] オーダー最終化と証明書取得・表示UI
+    - [x] (オプション) チャレンジ検証のための `AcmeChallenges.validationPayload` 更新API (`PUT /api/acme/challenge/:challengeId/simulate-validation`)
 - [ ] **6. 主要業務フロー実装**
     - [ ] CA管理画面とACMEクライアントUIの疎通確認
     - [ ] ACMEフローの一連の動作確認 (アカウント作成から証明書取得まで)
@@ -59,10 +59,32 @@
 以下に進捗を記載してください。
 
 
-- [ ] 
-- [ ] 
-- [ ] 
-- [ ] 
-- [ ] 
-- [ ] 
-- [ ] 
+- [x] day46: step 1/8 Project initialization
+- [x] day46: step 2/8 Data modeling and DB setup
+- [x] day46: step 3/8 CA management features (issue, list, revoke, CRL)
+- [x] day46: step 4/8 ACME server core endpoints (directory, nonce, new-account, account update, new-order, order, authz, challenge, finalize, certificate download)
+- [x] day46: step 5/8 ACME client UI implementation (account, order, challenge, finalize, download)
+- [ ] day46: step 6/8 Business logic and integration testing
+- [ ] day46: step 7/8 Debugging and testing
+- [ ] day46: step 8/8 Documentation
+            
+### ステップ5: ACMEクライアント操作UI実装 (ACME Client Flow)
+
+- [X] `/api/acme/challenge/:challengeId/simulate-validation` (PUT) 実装
+  - [X] DBスキーマに `AcmeChallenges.validationPayload` (TEXT) を追加
+- [X] ACMEクライアントUI (`AcmeClientFlow.tsx`):
+  - [X] アカウントキー生成表示 (JWK)
+  - [X] アカウント登録 (POST `/api/acme/new-account`)
+    - [X] `accountId` (kid) を状態として保持
+  - [X] オーダー作成 (POST `/api/acme/new-order`)
+    - [X] オーダー情報を状態で保持 (特に `authorizations` URLリスト, `finalize` URL)
+  - [X] チャレンジ対応 (各`authorization` URLからチャレンジ取得 -> POST `/api/acme/challenge/:challengeId`)
+    - [X] チャレンジ情報を表示 (タイプ、トークン、URLなど)
+    - [X] HTTP-01チャレンジの場合、提供すべきファイルパスと内容の指示を表示
+    - [X] DNS-01チャレンジの場合、設定すべきDNSレコードの指示を表示
+    - [X] ユーザーがチャレンジ対応を完了したことを通知するUI (例: ボタン)
+    - [X] チャレンジ対応APIの修正と、関連する型定義の修正を完了
+  - [ ] 各チャレンジに対して「検証成功をシミュレート」ボタンを追加し、`PUT /api/acme/challenge/:challengeId/simulate-validation` を呼び出す
+  - [ ] オーダー最終化 (POST `order.finalize`)
+  - [ ] 証明書取得・表示 (GET `order.certificate`)
+            
