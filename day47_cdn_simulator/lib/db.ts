@@ -111,7 +111,7 @@ export const createOriginContent = (contentId: string, data: string, contentType
   const stmt = db.prepare('INSERT INTO origin_contents (content_id, data, content_type) VALUES (?, ?, ?)');
   try {
     const result = stmt.run(contentId, data, contentType);
-    return { id: result.lastInsertRowid, content_id: contentId, data, contentType };
+    return { id: result.lastInsertRowid, content_id: contentId, data, content_type: contentType };
   } catch (error: any) {
     console.error("Failed to create origin content:", error.message);
     if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
