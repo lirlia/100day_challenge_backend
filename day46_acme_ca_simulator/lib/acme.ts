@@ -65,8 +65,13 @@ export async function verifyJws(protectedHeader: any, payload: any, signature: s
   console.log('Protected Header:', protectedHeader);
   console.log('Payload:', payload);
 
-  if (!protectedHeader || !protectedHeader.jwk || !protectedHeader.nonce || !protectedHeader.url) {
-    console.error('JWS verification failed: Missing required protected header fields.');
+  if (!protectedHeader || !protectedHeader.nonce || !protectedHeader.url) {
+    console.error('JWS verification failed: Missing required protected header fields (nonce, url, and jwk/kid).');
+    return false;
+  }
+
+  if (!protectedHeader.jwk && !protectedHeader.kid) {
+    console.error('JWS verification failed: Missing jwk or kid in protected header.');
     return false;
   }
 
@@ -75,15 +80,9 @@ export async function verifyJws(protectedHeader: any, payload: any, signature: s
     return false;
   }
 
-  // In a real ACME server, you would use the `jwk` from the protected header
-  // (or `kid` for subsequent requests if an account is established) to verify the signature.
-  // For `new-account`, `jwk` is mandatory. For others, `kid` (account URL) is used.
-
-  // Example: If an accountId is provided (meaning it's not a new-account request),
-  // we might check if the protectedHeader.kid matches the accountId.
-  if (accountId && protectedHeader.kid !== `/api/acme/account/${accountId}`) {
-      console.error(`JWS verification failed: kid mismatch. Expected ${`/api/acme/account/${accountId}`}, got ${protectedHeader.kid}`);
-      return false;
+  if (accountId && protectedHeader.kid !== `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3001'}/api/acme/account/${accountId}`) {
+    console.error(`JWS verification failed: kid mismatch. Expected ${`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3001'}/api/acme/account/${accountId}`}, got ${protectedHeader.kid}`);
+    return false;
   }
 
   // Signature verification itself is complex and depends on the key type (RSA, EC)
@@ -99,10 +98,13 @@ export interface AcmeOrder {
   status: 'pending' | 'ready' | 'processing' | 'valid' | 'invalid';
   expires: string; // ISO date string
   identifiers: { type: 'dns'; value: string }[];
+  notBefore?: string; // 追加
+  notAfter?: string;  // 追加
   authorizations: string[]; // URLs to authorization objects
   finalize: string; // URL to finalize the order
   certificate?: string; // URL to the issued certificate (after fulfillment)
-  accountId: string; // Associated ACME account ID
+  error?: any; // 追加 (ACME Problem Details object)
+  // accountId: string; // ★この行を完全に削除または再度コメントアウト
   // ... other fields as needed
 }
 
@@ -117,6 +119,7 @@ export interface AcmeAuthorization {
 }
 
 export interface AcmeChallenge {
+  id: string; // 追加
   type: 'http-01' | 'dns-01' | 'tls-alpn-01';
   status: 'pending' | 'processing' | 'valid' | 'invalid';
   url: string; // URL to post challenge response
