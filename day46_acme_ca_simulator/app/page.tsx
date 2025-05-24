@@ -1,65 +1,6 @@
-'use client';
-
-import { useState, useEffect } from 'react';
 import Link from 'next/link';
 
-type User = {
-  id: number;
-  name: string;
-  createdAt: string;
-};
-
 export default function HomePage() {
-  const [users, setUsers] = useState<User[]>([]);
-  const [name, setName] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-
-  // ユーザー一覧を取得
-  const fetchUsers = async () => {
-    try {
-      setLoading(true);
-      const response = await fetch('/api/users');
-      const data = await response.json();
-      setUsers(data || []);
-    } catch (err) {
-      console.error('Error fetching users:', err);
-      setError('ユーザー情報の取得に失敗しました。');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // ユーザーを作成
-  const createUser = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!name.trim()) return;
-
-    try {
-      const response = await fetch('/api/users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name })
-      });
-
-      if (response.ok) {
-        setName('');
-        fetchUsers();
-      } else {
-        const errorData = await response.json();
-        setError(errorData.error || 'ユーザー作成に失敗しました。');
-      }
-    } catch (err) {
-      console.error('Error creating user:', err);
-      setError('ユーザー作成に失敗しました。');
-    }
-  };
-
-  // 初回マウント時にユーザー一覧を取得
-  useEffect(() => {
-    fetchUsers();
-  }, []);
-
   return (
     <div className="text-center">
       <h2 className="text-3xl font-semibold mb-8 text-cyan-300">ようこそ！</h2>
