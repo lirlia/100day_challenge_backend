@@ -60,6 +60,57 @@ Let's Encrypt に代表されるように、ACMEプロトコルはSSL/TLS証明�
 7.  **オーダー最終化**: クライアントはCSR (Certificate Signing Request) を作成し、CAの最終化URLに送信します。
 8.  **証明書ダウンロード**: オーダーが `valid` になると、CAは証明書を発行し、証明書ダウンロードURLを提供します。クライアントはそのURLから証明書をダウンロードします。
 
+### シーケンス図
+
+```mermaid
+sequenceDiagram
+    actor Client
+    participant Server as ACME Server
+
+    Client->>Server: 1. GET /api/acme/directory (ディレクトリ取得)
+    Server-->>Client: ディレクトリ情報 (エンドポイントURL集)
+
+    Note over Client: 2. アカウントキーペア生成 (ローカル)
+
+    Client->>Server: 3. POST /api/acme/new-account (アカウント登録)
+    Server-->>Client: アカウント情報 (ID、ステータス: valid)
+
+    Client->>Server: 4. POST /api/acme/new-order (証明書オーダー作成)
+    Server-->>Client: オーダー情報 (ID, ステータス: pending, authorizations URLリスト, finalize URL)
+
+    loop 各ドメインの認証 (authorizations)
+        Client->>Server: 5. GET /api/acme/authz/{authzId} (認証情報取得)
+        Server-->>Client: 認証情報 (ステータス: pending, challengesリスト[type: http-01, token, url])
+    end
+
+    Note over Client: 6. HTTP-01 チャレンジ準備 (ローカル)<br/>(例: /.well-known/acme-challenge/{token} にキーオーソリゼーションを配置する準備)
+
+    Client->>Server: 7. POST /api/acme/challenge/{challengeId} (チャレンジ応答)
+    Server-->>Client: チャレンジ情報 (ステータス: pending -> processing)
+
+    Note over Client,Server: (シミュレーターでは /api/acme/challenge/{challengeId}/simulate-validation で検証成功を擬似的に行う)
+
+    loop オーダーステータス確認 (ポーリング)
+        Client->>Server: 8. GET /api/acme/order/{orderId}
+        Server-->>Client: オーダー情報 (ステータス: pending or processing -> ready)
+        Note right of Client: ステータスが 'ready' になるまで繰り返す
+    end
+
+    Note over Client: 9. CSR (Certificate Signing Request) 生成 (ローカル)
+
+    Client->>Server: 10. POST /api/acme/order/{orderId}/finalize (オーダー最終化)
+    Server-->>Client: オーダー情報 (ステータス: processing -> valid, certificate URL)
+
+    loop 証明書発行確認 (ポーリング or 即時)
+        Client->>Server: 11. GET /api/acme/order/{orderId} (再度オーダー確認)
+        Server-->>Client: オーダー情報 (ステータス: valid, certificate URL が確定)
+        Note right of Client: certificate URLが利用可能になるまで
+    end
+
+    Client->>Server: 12. GET /api/acme/certificate/{certificateId} (証明書ダウンロード)
+    Server-->>Client: 証明書 (PEM形式)
+```
+
 ## 起動方法
 
 1.  リポジトリをクローンします。
