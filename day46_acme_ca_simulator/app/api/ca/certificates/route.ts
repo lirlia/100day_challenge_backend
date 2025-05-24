@@ -61,7 +61,7 @@ export async function GET() {
     // AcmeCertificatesにはcommonNameがないため、AcmeOrdersテーブルからドメイン名を取得する必要がある
     const acmeCertsStmt = db.prepare(`
       SELECT
-        ac.id, ac.orderId, ac.certificatePem, ac.serialNumber, ac.issuedAt, ac.expiresAt, ac.status, ao.domain as commonName
+        ac.id, ac.orderId, ac.certificatePem, ac.serialNumber, ac.issuedAt, ac.expiresAt, ac.status, json_extract(ao.identifiers, '$[0].value') as commonName
       FROM AcmeCertificates ac
       JOIN AcmeOrders ao ON ac.orderId = ao.id
       ORDER BY ac.issuedAt DESC

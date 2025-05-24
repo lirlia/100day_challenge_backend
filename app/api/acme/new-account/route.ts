@@ -74,7 +74,7 @@ export async function POST(request: Request) {
     const jwkString = JSON.stringify(jwk); // Store JWK as string
 
     // Check if account with this JWK already exists
-    const existingAccountStmt = db.prepare('SELECT id, status, contact, termsOfServiceAgreed FROM AcmeAccounts WHERE publicKeyJwk = ?');
+    const existingAccountStmt = db.prepare('SELECT id, status, contact, termsOfServiceAgreed FROM AcmeAccounts WHERE jwk = ?');
     const existingAccount = existingAccountStmt.get(jwkString) as Omit<AcmeAccountForResponse, 'kid' | 'orders' | 'jwk'> | undefined;
 
     if (existingAccount) {
@@ -100,7 +100,7 @@ export async function POST(request: Request) {
     const termsAgreed = payload.termsOfServiceAgreed === true; // Must be explicitly true
 
     const insertStmt = db.prepare(
-      'INSERT INTO AcmeAccounts (id, publicKeyJwk, contact, status, termsOfServiceAgreed, createdAt) VALUES (?, ?, ?, ?, ?, ?)'
+      'INSERT INTO AcmeAccounts (id, jwk, contact, status, termsOfServiceAgreed, initialIp, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?)'
     );
     insertStmt.run(
       newAccountId,
@@ -108,6 +108,7 @@ export async function POST(request: Request) {
       payload.contact ? JSON.stringify(payload.contact) : null,
       'valid',
       termsAgreed ? 1 : 0,
+      request.headers.get('x-forwarded-for') || 'unknown', // Simple IP logging
       new Date().toISOString()
     );
 

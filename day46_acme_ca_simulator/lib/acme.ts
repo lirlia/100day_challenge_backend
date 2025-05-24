@@ -13,8 +13,9 @@ export function generateNonce(): string {
   activeNonces.add(nonce);
   setTimeout(() => {
     activeNonces.delete(nonce);
+    console.log(`Nonce ${nonce} expired and removed. Active nonces: ${activeNonces.size} Contents: ${JSON.stringify(Array.from(activeNonces))}`);
   }, NONCE_LIFETIME);
-  console.log(`Generated nonce: ${nonce}, active nonces: ${activeNonces.size}`);
+  console.log(`Generated nonce: ${nonce}, active nonces: ${activeNonces.size} Contents: ${JSON.stringify(Array.from(activeNonces))}`);
   return nonce;
 }
 
@@ -25,12 +26,13 @@ export function generateNonce(): string {
  * @returns True if the nonce is valid and was consumed, false otherwise.
  */
 export function validateAndConsumeNonce(nonce: string): boolean {
+  console.log(`Validating nonce: ${nonce}. Current activeNonces: ${JSON.stringify(Array.from(activeNonces))}`);
   if (activeNonces.has(nonce)) {
     activeNonces.delete(nonce);
-    console.log(`Consumed nonce: ${nonce}, active nonces: ${activeNonces.size}`);
+    console.log(`Consumed nonce: ${nonce}, active nonces: ${activeNonces.size} Contents: ${JSON.stringify(Array.from(activeNonces))}`);
     return true;
   }
-  console.warn(`Invalid or expired nonce received: ${nonce}`);
+  console.warn(`Invalid or expired nonce received: ${nonce}. Current activeNonces: ${JSON.stringify(Array.from(activeNonces))}`);
   return false;
 }
 
@@ -119,7 +121,7 @@ export interface AcmeAuthorization {
 }
 
 export interface AcmeChallenge {
-  id: string; // 追加
+  id: string; // Challenge ID, like one from DB
   type: 'http-01' | 'dns-01' | 'tls-alpn-01';
   status: 'pending' | 'processing' | 'valid' | 'invalid';
   url: string; // URL to post challenge response
@@ -137,15 +139,37 @@ export interface AcmeChallenge {
  * @returns The key authorization string.
  */
 export async function generateKeyAuthorization(token: string, accountJwk: Jwk): Promise<string> {
-  // Calculate thumbprint of JWK (simplified, a real one needs specific ordering and no whitespace)
-  // For simulation, we'll just hash a stringified version. A proper implementation uses RFC 7638.
-  const jwkString = JSON.stringify({
-    e: accountJwk.e,
-    kty: accountJwk.kty,
-    n: accountJwk.n,
-    // For EC keys, it would be crv, x, y
-  });
-  const hash = crypto.createHash('sha256').update(jwkString).digest();
-  const thumbprint = hash.toString('base64url');
+  let canonicalJwkForThumbprint: any;
+
+  if (accountJwk.kty === 'EC') {
+    if (!accountJwk.crv || !accountJwk.x || !accountJwk.y) {
+      throw new Error('Invalid EC JWK: missing crv, x, or y.');
+    }
+    canonicalJwkForThumbprint = {
+      crv: accountJwk.crv,
+      kty: accountJwk.kty,
+      x: accountJwk.x,
+      y: accountJwk.y,
+    };
+  } else if (accountJwk.kty === 'RSA') {
+    if (!accountJwk.e || !accountJwk.n) {
+      throw new Error('Invalid RSA JWK: missing e or n.');
+    }
+    canonicalJwkForThumbprint = {
+      e: accountJwk.e,
+      kty: accountJwk.kty,
+      n: accountJwk.n,
+    };
+  } else {
+    throw new Error(`Unsupported JWK type for thumbprint: ${accountJwk.kty}`);
+  }
+
+  // Order of members MUST be lexicographical for the thumbprint calculation
+  const sortedCanonicalJwkString = JSON.stringify(
+    Object.fromEntries(Object.entries(canonicalJwkForThumbprint).sort(([keyA], [keyB]) => keyA.localeCompare(keyB)))
+  );
+
+  const hash = crypto.createHash('sha256').update(sortedCanonicalJwkString).digest();
+  const thumbprint = hash.toString('base64url'); // Node.js crypto uses 'base64url' directly
   return `${token}.${thumbprint}`;
 }

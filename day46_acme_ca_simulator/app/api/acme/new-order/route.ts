@@ -63,8 +63,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ type: 'urn:ietf:params:acme:error:malformed', detail: 'Could not extract accountId from kid' }, { status: 400, headers: responseHeaders });
   }
 
-  const accountStmt = db.prepare('SELECT id, jwk, status FROM AcmeAccounts WHERE id = ?');
-  const account = accountStmt.get(accountId) as { id: string; jwk: string; status: string } | undefined;
+  const accountStmt = db.prepare('SELECT id, publicKeyJwk, status FROM AcmeAccounts WHERE id = ?');
+  const account = accountStmt.get(accountId) as { id: string; publicKeyJwk: string; status: string } | undefined;
   if (!account || account.status !== 'valid') {
     return NextResponse.json({ type: 'urn:ietf:params:acme:error:unauthorized', detail: 'Account not found or not valid' }, { status: 401, headers: responseHeaders });
   }
@@ -138,7 +138,7 @@ export async function POST(request: Request) {
         const currentChallengeId = ch.type === 'http-01' ? challengeIdHttp01 : crypto.randomUUID(); // IDを割り当て
         const currentChallengeUrl = `${BASE_URL}/api/acme/challenge/${currentChallengeId}`;
         const insertChallengeStmt = db.prepare(
-            'INSERT INTO AcmeChallenges (id, authzId, type, url, token, status, validationPayload) VALUES (?, ?, ?, ?, ?, ?, ?)'
+            'INSERT INTO AcmeChallenges (id, authorizationId, type, url, token, status, validationPayload) VALUES (?, ?, ?, ?, ?, ?, ?)'
         );
         insertChallengeStmt.run(currentChallengeId, authzId, ch.type, currentChallengeUrl, ch.token, 'pending', null);
         challengesForResponse.push({ ...ch, id: currentChallengeId, url: currentChallengeUrl });

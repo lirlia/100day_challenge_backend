@@ -19,7 +19,8 @@ interface DbOrderResult {
 }
 
 export async function POST(request: Request, { params }: { params: { orderId: string } }) {
-  const orderId = params.orderId;
+  const awaitedParams = await params;
+  const { orderId } = awaitedParams;
   const newNonce = generateNonce();
   const responseHeaders = new Headers({
     'Replay-Nonce': newNonce,
