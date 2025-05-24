@@ -52,3 +52,4 @@ alwaysApply: true
 | 43  | 型推論エンジン (Go)           | Go, Hindley-Milner (Algorithm W), participle, html/template, 2カラムUI, CSS Grid |
 | 44 | OSPF シュミレーター | TBD |
 | 45  | Travel Booking Saga（分散トランザクションSAGA体験） | Next.js (App Router, TypeScript), Tailwind CSS, SQLite + better-sqlite3, SAGAパターン, タイムラインUI, 補償処理の段階的可視化, |
+| 46  | ACME CA Simulator | Next.js, TypeScript, Tailwind CSS, better-sqlite3, ACME Protocol (RFC 8555) |

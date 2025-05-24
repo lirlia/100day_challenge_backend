@@ -60,3 +60,4 @@ LLMで生成したコードを置いています。
 | Day43 | 型推論システム                                                             | <video src="https://github.com/user-attachments/assets/02fdf306-5e92-4e34-abca-c34c3957339f" > |
 | Day44 | E2E暗号化チャット                                                          | <video src="https://github.com/user-attachments/assets/fd234947-321b-45e3-9da8-433d4728df8e" > |
 | Day45 | Sagaパターンによる分散トランザクション体験アプリ                           | <video src="https://github.com/user-attachments/assets/3475decb-cd43-43d2-8b9b-53f416bbd7c8" > |
+| Day46 | ACME CA Simulator                                                          | <video src="https://github.com/user-attachments/assets/b8832653-33da-4511-bfcf-f7aaa3526f91" > |

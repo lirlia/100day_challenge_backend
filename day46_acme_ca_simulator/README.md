@@ -3,6 +3,10 @@
 これは、ACME (Automated Certificate Management Environment) プロトコル (RFC 8555) の主要なフローを体験するためのシミュレーションアプリケーションです。
 認証局 (CA) サーバーのAPIと、証明書発行をリクエストするクライアントのUIを提供します。
 
+https://github.com/user-attachments/assets/b8832653-33da-4511-bfcf-f7aaa3526f91
+
+[100日チャレンジ day46](https://zenn.dev/gin_nazo/scraps/a7269d7c6a528f)
+
 ## 概要
 
 Let's Encrypt に代表されるように、ACMEプロトコルはSSL/TLS証明書の取得と更新を自動化するための標準的な方法です。
