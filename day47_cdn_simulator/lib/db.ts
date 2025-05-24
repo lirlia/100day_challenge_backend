@@ -121,6 +121,31 @@ export const createOriginContent = (contentId: string, data: string, contentType
   }
 };
 
-// --- Add more DB interaction functions as needed for other tables ---
+// --- Edge Server Management ---
+export const getAllEdgeServers = () => {
+  const stmt = db.prepare('SELECT id, server_id, region, cache_capacity, default_ttl, created_at FROM edge_servers');
+  return stmt.all();
+};
+
+export const createEdgeServer = (serverId: string, region: string, cacheCapacity: number, defaultTtl: number) => {
+  const stmt = db.prepare('INSERT INTO edge_servers (server_id, region, cache_capacity, default_ttl) VALUES (?, ?, ?, ?)');
+  try {
+    const result = stmt.run(serverId, region, cacheCapacity, defaultTtl);
+    return { id: result.lastInsertRowid, server_id: serverId, region, cache_capacity: cacheCapacity, default_ttl: defaultTtl };
+  } catch (error: any) {
+    console.error("Failed to create edge server:", error.message);
+    if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+      throw new Error(`Edge Server ID '${serverId}' already exists.`);
+    }
+    throw error;
+  }
+};
+
+export const deleteEdgeServerByServerId = (serverId: string) => {
+  // Note: Associated cache items are deleted by ON DELETE CASCADE
+  const stmt = db.prepare('DELETE FROM edge_servers WHERE server_id = ?');
+  const result = stmt.run(serverId);
+  return result.changes;
+};
 
 console.log(`SQLite database initialized at ${DB_PATH}`);
