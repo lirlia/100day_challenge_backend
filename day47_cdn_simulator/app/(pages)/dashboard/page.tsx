@@ -1,3 +1,10 @@
+import OriginContentsManager from './components/OriginContentsManager';
+import EdgeServerManager from './components/EdgeServerManager';
+// Placeholder imports for other components to be added later
+// import RequestSimulator from './components/RequestSimulator';
+// import VisualizationLog from './components/VisualizationLog';
+// import StatsDisplay from './components/StatsDisplay';
+
 export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-neumorphism-bg text-neumorphism-text p-4 md:p-8">
@@ -12,40 +19,30 @@ export default function DashboardPage() {
 
       <main className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <section className="lg:col-span-2 space-y-8">
-          {/* Origin Contents Manager and Edge Server Manager will go here */}
-          <div className="bg-neumorphism-bg p-6 rounded-lg shadow-neumorphism-soft">
-            <h2 className="text-2xl font-semibold mb-4">Origin Contents</h2>
-            {/* Placeholder for OriginContentsManager */}
-            <p className="text-sm text-neumorphism-soft-text">オリジンサーバーのコンテンツ管理エリアです。</p>
-          </div>
-          <div className="bg-neumorphism-bg p-6 rounded-lg shadow-neumorphism-soft">
-            <h2 className="text-2xl font-semibold mb-4">Edge Servers</h2>
-            {/* Placeholder for EdgeServerManager */}
-            <p className="text-sm text-neumorphism-soft-text">エッジサーバーの設定エリアです。</p>
-          </div>
+          <OriginContentsManager />
+          <EdgeServerManager />
         </section>
 
         <aside className="lg:col-span-1 space-y-8">
-          {/* Request Simulator, Visualization Log, and Stats Display will go here */}
-          <div className="bg-neumorphism-bg p-6 rounded-lg shadow-neumorphism-soft">
-            <h2 className="text-2xl font-semibold mb-4">Request Simulator</h2>
+          <div className="bg-neumorphism-bg p-6 rounded-lg shadow-neumorphism-soft dark:bg-neumorphism-bg-dark dark:shadow-neumorphism-soft-dark">
+            <h2 className="text-2xl font-semibold mb-4 text-neumorphism-accent">Request Simulator</h2>
             {/* Placeholder for RequestSimulator */}
-            <p className="text-sm text-neumorphism-soft-text">リクエストをシミュレートするエリアです。</p>
+            <p className="text-sm text-neumorphism-soft-text">リクエストをシミュレートするエリアです。 (Coming soon)</p>
           </div>
-          <div className="bg-neumorphism-bg p-6 rounded-lg shadow-neumorphism-soft">
-            <h2 className="text-2xl font-semibold mb-4">Visualization Log</h2>
+          <div className="bg-neumorphism-bg p-6 rounded-lg shadow-neumorphism-soft dark:bg-neumorphism-bg-dark dark:shadow-neumorphism-soft-dark">
+            <h2 className="text-2xl font-semibold mb-4 text-neumorphism-accent">Visualization Log</h2>
             {/* Placeholder for VisualizationLog */}
-            <p className="text-sm text-neumorphism-soft-text">配信プロセスのログ表示エリアです。</p>
+            <p className="text-sm text-neumorphism-soft-text">配信プロセスのログ表示エリアです。 (Coming soon)</p>
           </div>
-          <div className="bg-neumorphism-bg p-6 rounded-lg shadow-neumorphism-soft">
-            <h2 className="text-2xl font-semibold mb-4">Statistics</h2>
+          <div className="bg-neumorphism-bg p-6 rounded-lg shadow-neumorphism-soft dark:bg-neumorphism-bg-dark dark:shadow-neumorphism-soft-dark">
+            <h2 className="text-2xl font-semibold mb-4 text-neumorphism-accent">Statistics</h2>
             {/* Placeholder for StatsDisplay */}
-            <p className="text-sm text-neumorphism-soft-text">統計情報の表示エリアです。</p>
+            <p className="text-sm text-neumorphism-soft-text">統計情報の表示エリアです。 (Coming soon)</p>
           </div>
         </aside>
       </main>
 
-      <footer className="mt-16 pt-8 border-t border-neumorphism-border text-center">
+      <footer className="mt-16 pt-8 border-t border-neumorphism-border dark:border-gray-700 text-center">
         <p className="text-sm text-neumorphism-soft-text">
           &copy; {new Date().getFullYear()} CDN Simulator. All rights reserved.
         </p>
