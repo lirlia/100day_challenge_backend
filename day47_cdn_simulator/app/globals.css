@@ -1,67 +1,49 @@
 @import "tailwindcss";
 
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* --background: #ffffff; */
+  /* --foreground: #171717; */
+  --neumorphism-bg-color: #e0e5ec; /* Light mode background from tailwind config */
+  --neumorphism-text-color: #5a6370; /* Light mode text from tailwind config */
+
+  --neumorphism-bg-dark-color: #2c3036; /* Dark mode background */
+  --neumorphism-text-dark-color: #c0c8d4; /* Dark mode text */
 }
 
+/*
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
+*/
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    /* --background: #0a0a0a; */
+    /* --foreground: #ededed; */
+    --neumorphism-bg-color: var(--neumorphism-bg-dark-color);
+    --neumorphism-text-color: var(--neumorphism-text-dark-color);
   }
 }
 
 body {
-  @apply bg-neumorphism-bg text-neumorphism-text;
+  /* @apply bg-neumorphism-bg text-neumorphism-text; */
+  background-color: var(--neumorphism-bg-color);
+  color: var(--neumorphism-text-color);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
 }
 
 /* Dark mode styles (add if needed, or handle via Tailwind dark: variants) */
+/*
 .dark body {
   @apply bg-neumorphism-bg-dark text-neumorphism-text-dark;
 }
+*/
 
-/* Add some base styling for neumorphic elements if desired */
-.neumorphic-button {
-  @apply px-6 py-3 rounded-neumorphism text-neumorphism-accent font-semibold shadow-neumorphism-convex active:shadow-neumorphism-concave transition-all duration-150 ease-in-out;
-  background-color: var(--neumorphism-bg, #e0e5ec);
-}
-
-.neumorphic-button:hover {
-  /* Slightly adjust shadow or color on hover if needed */
-  @apply shadow-neumorphism-soft;
-}
-
-.dark .neumorphic-button {
-   @apply shadow-neumorphism-convex-dark active:shadow-neumorphism-concave-dark;
-   background-color: var(--neumorphism-bg-dark, #2c3036);
-}
-
-.dark .neumorphic-button:hover {
-  @apply shadow-neumorphism-soft-dark;
-}
-
-.neumorphic-card {
-  @apply bg-neumorphism-bg p-6 rounded-neumorphism shadow-neumorphism-soft;
-}
-
-.dark .neumorphic-card {
-  @apply bg-neumorphism-bg-dark shadow-neumorphism-soft-dark;
-}
-
-.neumorphic-input {
-  @apply w-full px-4 py-3 rounded-neumorphism bg-neumorphism-bg text-neumorphism-text shadow-neumorphism-input focus:outline-none focus:ring-2 focus:ring-neumorphism-accent transition-all duration-150 ease-in-out;
-  border: 1px solid transparent; /* Ensure consistent height with bordered inputs */
-}
-
-.dark .neumorphic-input {
-  @apply bg-neumorphism-bg-dark text-neumorphism-text-dark shadow-neumorphism-input-dark;
-}
+/* カスタムコンポーネントスタイルはここで一旦終了 */
