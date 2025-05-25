@@ -6,7 +6,11 @@ import NeumorphicCard from '@/components/ui/NeumorphicCard';
 import NeumorphicButton from '@/components/ui/NeumorphicButton';
 import NeumorphicInput, { NeumorphicTextarea, NeumorphicSelect } from '@/components/ui/NeumorphicFormControls';
 
-export default function OriginContentsManager() {
+interface OriginContentsManagerProps {
+  onContentsChanged: () => void; // Callback to notify parent of changes
+}
+
+export default function OriginContentsManager({ onContentsChanged }: OriginContentsManagerProps) {
   const [contents, setContents] = useState<OriginContent[]>([]);
   const [newContentId, setNewContentId] = useState('');
   const [newData, setNewData] = useState('');
@@ -53,7 +57,8 @@ export default function OriginContentsManager() {
       }
       setNewContentId('');
       setNewData('');
-      fetchContents();
+      await fetchContents();
+      onContentsChanged();
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -72,7 +77,8 @@ export default function OriginContentsManager() {
         const errData = await response.json();
         throw new Error(errData.details || `Failed to delete content: ${response.statusText}`);
       }
-      fetchContents();
+      await fetchContents();
+      onContentsChanged();
     } catch (err: any) {
       setError(err.message);
     } finally {

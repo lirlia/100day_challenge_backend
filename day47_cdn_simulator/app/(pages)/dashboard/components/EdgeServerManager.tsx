@@ -7,7 +7,11 @@ import NeumorphicCard from '@/components/ui/NeumorphicCard';
 import NeumorphicButton from '@/components/ui/NeumorphicButton';
 import NeumorphicInput, { NeumorphicSelect } from '@/components/ui/NeumorphicFormControls';
 
-export default function EdgeServerManager() {
+interface EdgeServerManagerProps {
+  onServersChanged: () => void; // Callback to notify parent of changes
+}
+
+export default function EdgeServerManager({ onServersChanged }: EdgeServerManagerProps) {
   const [servers, setServers] = useState<EdgeServer[]>([]);
   const [newServerId, setNewServerId] = useState('');
   const [newRegion, setNewRegion] = useState(REGIONS[0]?.id || '');
@@ -62,10 +66,8 @@ export default function EdgeServerManager() {
         throw new Error(errData.details || `Failed to add server: ${response.statusText}`);
       }
       setNewServerId('');
-      // setNewRegion(REGIONS[0]?.id || ''); // Optional reset
-      // setNewCacheCapacity('100');
-      // setNewDefaultTtl('3600');
-      fetchServers();
+      await fetchServers();
+      onServersChanged();
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -84,7 +86,8 @@ export default function EdgeServerManager() {
         const errData = await response.json();
         throw new Error(errData.details || `Failed to delete server: ${response.statusText}`);
       }
-      fetchServers();
+      await fetchServers();
+      onServersChanged();
     } catch (err: any) {
       setError(err.message);
     } finally {
