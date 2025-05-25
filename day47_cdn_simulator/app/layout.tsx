@@ -19,7 +19,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ja" className="">
-      <body className={`${inter.variable} font-sans antialiased bg-neumorphism-bg text-neumorphism-text`}>
+      <body className={`${inter.variable} font-sans antialiased`}>
         {children}
       </body>
     </html>
