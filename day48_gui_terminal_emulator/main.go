@@ -1,63 +1,119 @@
 package main
 
 import (
-	"fmt"
-	"io"
 	"log"
-	"os"
+	"os" // os.Exit を使うために残します
+
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/app"
+	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/widget"
 
 	"github.com/lirlia/100day_challenge_backend/day48_gui_terminal_emulator/pty_handler"
 	// "golang.org/x/term" // For raw mode, if needed later
 )
 
+var ptyMaster *os.File // ptyのマスターファイルをグローバルで保持 (後でpty_handlerに隠蔽検討)
+
 func main() {
-	ptmx, err := pty_handler.StartPty()
-	if err != nil {
-		log.Fatalf("Failed to start pty: %v", err)
+	// Fyneアプリケーションを作成
+	a := app.New()
+	w := a.NewWindow("Day 48: Go Terminal Emulator")
+
+	// ターミナル出力表示用のラベル (初期はTextGridが望ましいが、まずはLabelで)
+	outputLabel := widget.NewLabel("Terminal output will appear here...")
+	outputLabel.Wrapping = fyne.TextWrapWord         // テキストが折り返されるように設定
+	outputScroll := container.NewScroll(outputLabel) // スクロール可能にする
+	outputScroll.SetMinSize(fyne.NewSize(600, 400))  // 表示エリアの最小サイズを設定
+
+	// コマンド入力用のエントリー
+	inputEntry := widget.NewEntry()
+	inputEntry.SetPlaceHolder("Enter command here...")
+
+	inputEntry.OnSubmitted = func(text string) {
+		log.Printf("Command submitted: %s", text)
+		if ptyMaster != nil {
+			_, err := ptyMaster.Write([]byte(text + "\n")) // コマンドの後に改行を追加
+			if err != nil {
+				log.Printf("Failed to write to pty: %v", err)
+				// ここでユーザーにエラーを通知するUI処理を追加することもできる
+			}
+		} else {
+			log.Println("PTY not started, cannot send command.")
+		}
+		inputEntry.SetText("") // 入力フィールドをクリア
 	}
-	defer ptmx.Close()
 
-	fmt.Println("PTY started. Type 'exit' or Ctrl+D to quit.")
+	// レイアウトコンテナ
+	content := container.NewBorder(nil, inputEntry, nil, nil, outputScroll)
 
-	// // 標準入力の端末モードをRAWモードに設定（オプション、よりインタラクティブにするため）
-	// // Fyneを使う場合は不要になる可能性が高い
-	// oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
-	// if err != nil {
-	// 	log.Printf("Failed to set stdin to raw mode: %v. Proceeding without raw mode.", err)
-	// } else {
-	// 	defer term.Restore(int(os.Stdin.Fd()), oldState)
-	// }
+	w.SetContent(content)
+	w.Resize(fyne.NewSize(800, 600)) // ウィンドウの初期サイズ
 
-	// ptyからの出力を標準出力へ
-	go func() {
-		_, err := io.Copy(os.Stdout, ptmx)
-		if err != nil {
-			// EOFは正常終了なのでログレベルを調整
-			if err == io.EOF {
-				log.Println("PTY output stream closed (EOF).")
-			} else {
-				log.Printf("Error copying from pty to stdout: %v", err)
+	// PTYの初期化と出力の読み取り (goroutineで)
+	var errPty error
+	ptyMaster, errPty = pty_handler.StartPty()
+	if errPty != nil {
+		log.Fatalf("Failed to start pty: %v", errPty)
+		// GUIにエラー表示するならここ
+		outputLabel.SetText("Failed to start PTY: " + errPty.Error())
+	} else {
+		// ptyが正常に開始された場合のみクローズ処理を登録
+		defer ptyMaster.Close()
+		go func() {
+			buffer := make([]byte, 4096)
+			for {
+				n, err := ptyMaster.Read(buffer)
+				if err != nil {
+					// GUIがクローズされるとptyMaster.Readがエラーを返すことがある
+					// (例: file already closed). アプリケーション終了時のエラーは無視するか、
+					// より丁寧にハンドリングする。
+					log.Printf("Error reading from pty: %v", err) // EOFもエラーとしてログ
+					// GUIスレッドでUIを更新する必要がある
+					a.SendNotification(&fyne.Notification{
+						Title:   "PTY Error",
+						Content: "Error reading from PTY: " + err.Error(),
+					})
+					// outputLabel.SetText(outputLabel.Text + "\nError reading from PTY: " + err.Error()) // 直接更新はスレッドセーフではない
+					// ランタイムパニックを避けるため、読み取りを停止
+					return
+				}
+				if n > 0 {
+					// currentText := outputLabel.Text
+					// if currentText == "Terminal output will appear here..." {
+					// 	currentText = ""
+					// }
+					// FyneのUI更新はメインスレッドで行う必要がある
+					// ただし、Labelに大量のテキストを追記し続けるのはパフォーマンスに問題がある可能性がある
+					// TextGridや他のより効率的なウィジェットを検討すべき
+					// newText := currentText + string(buffer[:n])
+
+					// あまりにも長くなりすぎないように、ある程度の行数/文字数で切り捨てる処理も検討
+					// if len(newText) > 20000 { // 例: 20000文字で制限
+					// 	newText = newText[len(newText)-20000:]
+					// }
+
+					// メインスレッドでUIを更新するためにapp.RunOnMainを使用する
+					// ただし、SendNotificationやWindowのメソッドはスレッドセーフなものもある。
+					// LabelのSetTextはメインスレッドから呼ぶ必要がある
+
+					// outputLabel.SetText(newText) // これは goroutine から直接呼ぶとクラッシュの可能性
+					// outputLabel.Refresh() // Refreshも同様
+
+					// より安全な方法としてチャネル経由でメインスレッドにデータを渡すか、
+					// またはFyneのデータバインディング機能を利用する。
+					// ここでは暫定的に表示は行うが、クラッシュリスクあり。
+					// TODO: スレッドセーフなUI更新方法に修正する
+
+					//  a.RunLater(func() { // Fyne v2.4以前の古いAPI or 存在しないAPI
+					//  	outputLabel.SetText(newText)
+					//  })
+					log.Printf("[PTY Output]: %s", string(buffer[:n])) // GUI更新の代わりにログ出力
+				}
 			}
-		}
-	}()
+		}()
+	}
 
-	// 標準入力からの入力をptyへ
-	go func() {
-		_, err := io.Copy(ptmx, os.Stdin)
-		if err != nil {
-			// EOFは正常終了なのでログレベルを調整
-			if err == io.EOF {
-				log.Println("Stdin stream closed (EOF), stopping copy to pty.")
-			} else {
-				log.Printf("Error copying from stdin to pty: %v", err)
-			}
-		}
-	}()
-
-	// プログラムが終了しないように待機 (実際のGUIアプリではイベントループがこれを担当)
-	// このCUIテストでは、シェルが終了すると上記のio.CopyがEOFを返してgoroutineが終了し、
-	// main関数も終了する。
-	// シェルが終了するまで待つために、どちらかのio.Copyが完了するのを待つか、
-	// もしくは子プロセスの終了を待つのがより堅牢だが、ここではシンプルにする。
-	select {}
+	w.ShowAndRun() // ウィンドウを表示し、イベントループを開始
+	log.Println("Fyne app stopped.")
 }
