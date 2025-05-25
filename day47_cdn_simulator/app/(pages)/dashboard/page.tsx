@@ -6,6 +6,7 @@ import EdgeServerManager from './components/EdgeServerManager';
 import RequestSimulator from './components/RequestSimulator';
 import VisualizationLog from './components/VisualizationLog';
 import EdgeServerCacheView from './components/EdgeServerCacheView';
+import StatsDisplay from './components/StatsDisplay';
 import type { OriginContent, EdgeServer, RequestLog, SimulationResult, EdgeServerWithCache } from '@/app/_lib/types';
 
 export default function DashboardPage() {
@@ -15,6 +16,7 @@ export default function DashboardPage() {
   // State for simulation results and views
   const [requestLogs, setRequestLogs] = useState<RequestLog[]>([]);
   const [edgeServersWithCache, setEdgeServersWithCache] = useState<EdgeServerWithCache[]>([]);
+  const [statsKey, setStatsKey] = useState(0); // For re-triggering StatsDisplay fetch
 
   // --- Fetching initial data for managers & simulator ---
   const fetchAllOriginContents = useCallback(async () => {
@@ -54,8 +56,8 @@ export default function DashboardPage() {
         )
       );
     }
-    // Potentially re-fetch all edge server cache states if a generic update is needed
-    // For now, cdn-logic.ts should provide the specific updated server
+    // Trigger StatsDisplay to re-fetch
+    setStatsKey(prevKey => prevKey + 1);
   };
 
   return (
@@ -74,12 +76,12 @@ export default function DashboardPage() {
         <section className="lg:col-span-2 space-y-8">
           {/* Pass reload functions to managers so they can update the shared state */}
           <OriginContentsManager
-            key={originContents.length} // Re-render on content change to pass updated list to simulator
-            onContentsChanged={fetchAllOriginContents}
+            key={`ocm-${originContents.length}`}
+            onContentsChanged={() => { fetchAllOriginContents(); setStatsKey(k => k + 1); }}
           />
           <EdgeServerManager
-            key={edgeServers.length} // Re-render on server change
-            onServersChanged={fetchAllEdgeServers}
+            key={`esm-${edgeServers.length}`}
+            onServersChanged={() => { fetchAllEdgeServers(); setStatsKey(k => k + 1); }}
           />
            <RequestSimulator
             edgeServers={edgeServers}
@@ -92,6 +94,7 @@ export default function DashboardPage() {
         <aside className="lg:col-span-1 space-y-8">
           <VisualizationLog logs={requestLogs} edgeServers={edgeServers} />
           <EdgeServerCacheView edgeServersWithCache={edgeServersWithCache} />
+          <StatsDisplay key={`stats-${statsKey}`} />
 
           <div className="bg-neumorphism-bg p-6 rounded-lg shadow-neumorphism-soft dark:bg-neumorphism-bg-dark dark:shadow-neumorphism-soft-dark">
             <h2 className="text-2xl font-semibold mb-4 text-neumorphism-accent">Statistics</h2>
