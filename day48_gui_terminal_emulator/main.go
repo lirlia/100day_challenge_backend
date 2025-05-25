@@ -7,6 +7,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/widget"
 
 	"github.com/lirlia/100day_challenge_backend/day48_gui_terminal_emulator/pty_handler"
@@ -20,8 +21,11 @@ func main() {
 	a := app.New()
 	w := a.NewWindow("Day 48: Go Terminal Emulator")
 
-	// ターミナル出力表示用のラベル (初期はTextGridが望ましいが、まずはLabelで)
-	outputLabel := widget.NewLabel("Terminal output will appear here...")
+	// ターミナル出力表示用のデータバインディングとラベル
+	outputBinding := binding.NewString()
+	outputBinding.Set("Terminal output will appear here...")
+
+	outputLabel := widget.NewLabelWithData(outputBinding)
 	outputLabel.Wrapping = fyne.TextWrapWord         // テキストが折り返されるように設定
 	outputScroll := container.NewScroll(outputLabel) // スクロール可能にする
 	outputScroll.SetMinSize(fyne.NewSize(600, 400))  // 表示エリアの最小サイズを設定
@@ -33,15 +37,18 @@ func main() {
 	inputEntry.OnSubmitted = func(text string) {
 		log.Printf("Command submitted: %s", text)
 		if ptyMaster != nil {
-			_, err := ptyMaster.Write([]byte(text + "\n")) // コマンドの後に改行を追加
+			_, err := ptyMaster.Write([]byte(text + "\n"))
 			if err != nil {
 				log.Printf("Failed to write to pty: %v", err)
-				// ここでユーザーにエラーを通知するUI処理を追加することもできる
+				currentVal, _ := outputBinding.Get()
+				outputBinding.Set(currentVal + "\nFailed to write to PTY: " + err.Error())
 			}
 		} else {
 			log.Println("PTY not started, cannot send command.")
+			currentVal, _ := outputBinding.Get()
+			outputBinding.Set(currentVal + "\nPTY not started, cannot send command.")
 		}
-		inputEntry.SetText("") // 入力フィールドをクリア
+		inputEntry.SetText("")
 	}
 
 	// レイアウトコンテナ
@@ -56,7 +63,7 @@ func main() {
 	if errPty != nil {
 		log.Fatalf("Failed to start pty: %v", errPty)
 		// GUIにエラー表示するならここ
-		outputLabel.SetText("Failed to start PTY: " + errPty.Error())
+		outputBinding.Set("Failed to start PTY: " + errPty.Error())
 	} else {
 		// ptyが正常に開始された場合のみクローズ処理を登録
 		defer ptyMaster.Close()
@@ -65,50 +72,27 @@ func main() {
 			for {
 				n, err := ptyMaster.Read(buffer)
 				if err != nil {
+					log.Printf("Error reading from pty: %v", err)
+					currentVal, _ := outputBinding.Get()
+					outputBinding.Set(currentVal + "\nError reading from PTY: " + err.Error())
 					// GUIがクローズされるとptyMaster.Readがエラーを返すことがある
-					// (例: file already closed). アプリケーション終了時のエラーは無視するか、
-					// より丁寧にハンドリングする。
-					log.Printf("Error reading from pty: %v", err) // EOFもエラーとしてログ
-					// GUIスレッドでUIを更新する必要がある
+					// アプリケーション終了時のエラーはログ出力後、goroutineを終了
 					a.SendNotification(&fyne.Notification{
 						Title:   "PTY Error",
-						Content: "Error reading from PTY: " + err.Error(),
+						Content: "PTY stream closed or error: " + err.Error(),
 					})
-					// outputLabel.SetText(outputLabel.Text + "\nError reading from PTY: " + err.Error()) // 直接更新はスレッドセーフではない
-					// ランタイムパニックを避けるため、読み取りを停止
-					return
+					return // goroutineを終了
 				}
 				if n > 0 {
-					// currentText := outputLabel.Text
-					// if currentText == "Terminal output will appear here..." {
-					// 	currentText = ""
-					// }
-					// FyneのUI更新はメインスレッドで行う必要がある
-					// ただし、Labelに大量のテキストを追記し続けるのはパフォーマンスに問題がある可能性がある
-					// TextGridや他のより効率的なウィジェットを検討すべき
-					// newText := currentText + string(buffer[:n])
-
-					// あまりにも長くなりすぎないように、ある程度の行数/文字数で切り捨てる処理も検討
-					// if len(newText) > 20000 { // 例: 20000文字で制限
-					// 	newText = newText[len(newText)-20000:]
-					// }
-
-					// メインスレッドでUIを更新するためにapp.RunOnMainを使用する
-					// ただし、SendNotificationやWindowのメソッドはスレッドセーフなものもある。
-					// LabelのSetTextはメインスレッドから呼ぶ必要がある
-
-					// outputLabel.SetText(newText) // これは goroutine から直接呼ぶとクラッシュの可能性
-					// outputLabel.Refresh() // Refreshも同様
-
-					// より安全な方法としてチャネル経由でメインスレッドにデータを渡すか、
-					// またはFyneのデータバインディング機能を利用する。
-					// ここでは暫定的に表示は行うが、クラッシュリスクあり。
-					// TODO: スレッドセーフなUI更新方法に修正する
-
-					//  a.RunLater(func() { // Fyne v2.4以前の古いAPI or 存在しないAPI
-					//  	outputLabel.SetText(newText)
-					//  })
-					log.Printf("[PTY Output]: %s", string(buffer[:n])) // GUI更新の代わりにログ出力
+					processedString := pty_handler.StripAnsiSequences(string(buffer[:n]))
+					currentVal, _ := outputBinding.Get()
+					if currentVal == "Terminal output will appear here..." {
+						outputBinding.Set(processedString)
+					} else {
+						outputBinding.Set(currentVal + processedString)
+					}
+					// TODO: 表示テキストが長くなりすぎないように制御する (例: リングバッファや行数制限)
+					// outputScroll.ScrollToBottom() // 自動スクロールは別途対応が必要
 				}
 			}
 		}()

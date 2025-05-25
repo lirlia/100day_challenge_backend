@@ -3,6 +3,7 @@ package pty_handler
 import (
 	"os"
 	"os/exec"
+	"regexp"
 
 	"github.com/creack/pty"
 )
@@ -10,11 +11,14 @@ import (
 // StartPty は新しいptyを開始し、デフォルトシェルをそのptyに接続します。
 // 成功した場合はptyのマスターファイルとエラーを返します。
 func StartPty() (*os.File, error) {
-	// デフォルトシェルを取得 (例: /bin/bash, /bin/zsh)
-	shell := os.Getenv("SHELL")
-	if shell == "" {
-		shell = "/bin/sh" // フォールバック
-	}
+	// デフォルトシェルを /bin/sh に固定
+	shell := "/bin/sh"
+
+	// // デフォルトシェルを取得 (例: /bin/bash, /bin/zsh)
+	// shell := os.Getenv("SHELL")
+	// if shell == "" {
+	// 	shell = "/bin/sh" // フォールバック
+	// }
 
 	cmd := exec.Command(shell)
 
@@ -25,6 +29,13 @@ func StartPty() (*os.File, error) {
 	}
 
 	return ptmx, nil
+}
+
+var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
+
+// StripAnsiSequences は文字列からANSIエスケープシーケンスを除去します。
+func StripAnsiSequences(str string) string {
+	return ansiRegex.ReplaceAllString(str, "")
 }
 
 // 今後の実装のためにコメントアウト
