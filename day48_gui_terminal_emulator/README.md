@@ -3,6 +3,10 @@
 Go言語とFyneライブラリを使用して、基本的なGUIターミナルエミュレータを作成します。
 このプロジェクトの主な目的は、pty (pseudo-terminal) の仕組みを理解し、GUIアプリケーションとの連携を学ぶことです。
 
+https://github.com/user-attachments/assets/4fe828dd-65aa-40b8-bc8c-396d95548a1a
+
+[100日チャレンジ day48](https://zenn.dev/gin_nazo/scraps/adf657bcf499cb)
+
 ## 主な機能 (目標)
 
 - ユーザーがコマンドを入力できるGUIインターフェース。

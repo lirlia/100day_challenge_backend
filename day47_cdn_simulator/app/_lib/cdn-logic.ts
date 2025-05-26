@@ -46,7 +46,7 @@ export async function simulateRequest(clientRegion: RegionId, contentIdToRequest
   if (!edgeServer || edgeServer.default_ttl === 0) { // No suitable edge or edge server has caching disabled
     requestLogPartial.delivered_from_origin = true;
     const log = db.prepare('INSERT INTO request_logs (client_region, content_id_requested, served_by_edge_server_id, cache_hit, delivered_from_origin) VALUES (?, ?, ?, ?, ?)')
-                  .run(requestLogPartial.client_region, requestLogPartial.content_id_requested, requestLogPartial.served_by_edge_server_id, false, true).lastInsertRowid;
+                  .run(requestLogPartial.client_region, requestLogPartial.content_id_requested, edgeServer ? Number(edgeServer.id) : null, false, true).lastInsertRowid;
     return {
       message: `Served '${contentIdToRequest}' directly from origin. ${!edgeServer ? 'No suitable edge server.' : 'Edge server caching disabled.'}`,
       clientRegion,
@@ -64,16 +64,16 @@ export async function simulateRequest(clientRegion: RegionId, contentIdToRequest
   const cachedItemStmt = db.prepare(
     'SELECT * FROM edge_cache_items WHERE edge_server_id_ref = ? AND original_content_id = ? AND expires_at > ?'
   );
-  let cachedItem = cachedItemStmt.get(edgeServer.id, contentIdToRequest, nowISO) as EdgeCacheItem | undefined;
+  let cachedItem = cachedItemStmt.get(Number(edgeServer.id), contentIdToRequest, nowISO) as EdgeCacheItem | undefined;
 
   if (cachedItem) { // Cache HIT
-    db.prepare('UPDATE edge_cache_items SET last_accessed_at = ? WHERE id = ?').run(nowISO, cachedItem.id);
+    db.prepare('UPDATE edge_cache_items SET last_accessed_at = ? WHERE id = ?').run(nowISO, Number(cachedItem.id));
     requestLogPartial.cache_hit = true;
     requestLogPartial.delivered_from_origin = false; // Served from cache
     const log = db.prepare('INSERT INTO request_logs (client_region, content_id_requested, served_by_edge_server_id, cache_hit, delivered_from_origin) VALUES (?, ?, ?, ?, ?)')
-                  .run(requestLogPartial.client_region, requestLogPartial.content_id_requested, edgeServer.id, true, false).lastInsertRowid;
+                  .run(requestLogPartial.client_region, requestLogPartial.content_id_requested, Number(edgeServer.id), true, false).lastInsertRowid;
 
-    const updatedEdgeCacheItems = db.prepare('SELECT * FROM edge_cache_items WHERE edge_server_id_ref = ? ORDER BY last_accessed_at DESC').all(edgeServer.id) as EdgeCacheItem[];
+    const updatedEdgeCacheItems = db.prepare('SELECT * FROM edge_cache_items WHERE edge_server_id_ref = ? ORDER BY last_accessed_at DESC').all(Number(edgeServer.id)) as EdgeCacheItem[];
 
     return {
       message: `Cache HIT for '${contentIdToRequest}' on edge server '${edgeServer.server_id}'.`,
@@ -89,14 +89,14 @@ export async function simulateRequest(clientRegion: RegionId, contentIdToRequest
     requestLogPartial.delivered_from_origin = true; // Fetching from origin
     let evictedItem: EdgeCacheItem | null = null;
 
-    const currentCacheItems = db.prepare('SELECT * FROM edge_cache_items WHERE edge_server_id_ref = ?').all(edgeServer.id) as EdgeCacheItem[];
+    const currentCacheItems = db.prepare('SELECT * FROM edge_cache_items WHERE edge_server_id_ref = ?').all(Number(edgeServer.id)) as EdgeCacheItem[];
 
     if (currentCacheItems.length >= edgeServer.cache_capacity) {
       // LRU eviction: find the least recently used item
       const lruItemStmt = db.prepare('SELECT * FROM edge_cache_items WHERE edge_server_id_ref = ? ORDER BY last_accessed_at ASC LIMIT 1');
-      evictedItem = lruItemStmt.get(edgeServer.id) as EdgeCacheItem | undefined || null;
+      evictedItem = lruItemStmt.get(Number(edgeServer.id)) as EdgeCacheItem | undefined || null;
       if (evictedItem) {
-        db.prepare('DELETE FROM edge_cache_items WHERE id = ?').run(evictedItem.id);
+        db.prepare('DELETE FROM edge_cache_items WHERE id = ?').run(Number(evictedItem.id));
       }
     }
 
@@ -105,13 +105,13 @@ export async function simulateRequest(clientRegion: RegionId, contentIdToRequest
     const newCacheEntryStmt = db.prepare(
       'INSERT INTO edge_cache_items (edge_server_id_ref, content_id_ref, original_content_id, cached_at, last_accessed_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)'
     );
-    const newCacheResult = newCacheEntryStmt.run(edgeServer.id, originContent.id, originContent.content_id, nowISO, nowISO, expiresAt);
-    const newCachedItem = db.prepare('SELECT * FROM edge_cache_items WHERE id = ?').get(newCacheResult.lastInsertRowid) as EdgeCacheItem;
+    const newCacheResult = newCacheEntryStmt.run(Number(edgeServer.id), Number(originContent.id), originContent.content_id, nowISO, nowISO, expiresAt);
+    const newCachedItem = db.prepare('SELECT * FROM edge_cache_items WHERE id = ?').get(Number(newCacheResult.lastInsertRowid)) as EdgeCacheItem;
 
     const log = db.prepare('INSERT INTO request_logs (client_region, content_id_requested, served_by_edge_server_id, cache_hit, delivered_from_origin) VALUES (?, ?, ?, ?, ?)')
-                  .run(requestLogPartial.client_region, requestLogPartial.content_id_requested, edgeServer.id, false, true).lastInsertRowid;
+                  .run(requestLogPartial.client_region, requestLogPartial.content_id_requested, Number(edgeServer.id), false, true).lastInsertRowid;
 
-    const updatedEdgeCacheItemsAfterMiss = db.prepare('SELECT * FROM edge_cache_items WHERE edge_server_id_ref = ? ORDER BY last_accessed_at DESC').all(edgeServer.id) as EdgeCacheItem[];
+    const updatedEdgeCacheItemsAfterMiss = db.prepare('SELECT * FROM edge_cache_items WHERE edge_server_id_ref = ? ORDER BY last_accessed_at DESC').all(Number(edgeServer.id)) as EdgeCacheItem[];
 
     return {
       message: `Cache MISS for '${contentIdToRequest}' on '${edgeServer.server_id}'. Fetched from origin and cached. ${evictedItem ? `Evicted '${evictedItem.original_content_id}'.` : ''}`,

@@ -61,3 +61,5 @@ LLMで生成したコードを置いています。
 | Day44 | E2E暗号化チャット                                                          | <video src="https://github.com/user-attachments/assets/fd234947-321b-45e3-9da8-433d4728df8e" > |
 | Day45 | Sagaパターンによる分散トランザクション体験アプリ                           | <video src="https://github.com/user-attachments/assets/3475decb-cd43-43d2-8b9b-53f416bbd7c8" > |
 | Day46 | ACME CA Simulator                                                          | <video src="https://github.com/user-attachments/assets/b8832653-33da-4511-bfcf-f7aaa3526f91" > |
+| Day47 | CDN Simulator                                                             | <video src="" > |
+| Day48 | Pty Terminal                                                     | <video src="https://github.com/user-attachments/assets/4fe828dd-65aa-40b8-bc8c-396d95548a1a" > |

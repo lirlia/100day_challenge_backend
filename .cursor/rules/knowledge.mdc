@@ -54,3 +54,4 @@ alwaysApply: true
 | 45  | Travel Booking Saga（分散トランザクションSAGA体験） | Next.js (App Router, TypeScript), Tailwind CSS, SQLite + better-sqlite3, SAGAパターン, タイムラインUI, 補償処理の段階的可視化, |
 | 46  | ACME CA Simulator | Next.js, TypeScript, Tailwind CSS, better-sqlite3, ACME Protocol (RFC 8555) |
 | 47  | CDN シミュレータ               | Next.js, TypeScript, SQLite, better-sqlite3, TailwindCSS (Neumorphism), CDNロジック (LRU, TTL), リアルタイム更新UI |
+| 48  | GUIターミナルエミュレータ         | Go, creack/pty, 擬似端末(pty)制御, exec, ANSIエスケープシーケンス処理, ターミナルエミュレーション |

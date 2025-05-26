@@ -15,12 +15,12 @@ export default function NeumorphicButton({
   as: Component = 'button',
   ...props
 }: NeumorphicButtonProps) {
-  const baseStyle = "font-semibold rounded-neumorphism transition-all duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-neumorphism-bg-dark";
+  const baseStyle = "font-semibold rounded-neumorphism transition-all duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-neumorphism-bg-dark shadow-neumorphism-convex active:shadow-neumorphism-concave hover:shadow-neumorphism-soft";
 
   const variantStyles = {
-    default: "bg-neumorphism-bg text-neumorphism-text shadow-neumorphism-convex active:shadow-neumorphism-concave hover:shadow-neumorphism-soft dark:bg-neumorphism-bg-dark dark:text-neumorphism-text-dark dark:shadow-neumorphism-convex-dark dark:active:shadow-neumorphism-concave-dark dark:hover:shadow-neumorphism-soft-dark focus:ring-neumorphism-accent",
-    accent: "bg-neumorphism-accent text-white shadow-neumorphism-convex active:shadow-neumorphism-concave hover:bg-opacity-90 dark:shadow-neumorphism-convex-dark dark:active:shadow-neumorphism-concave-dark focus:ring-neumorphism-accent",
-    danger: "bg-red-500 text-white shadow-neumorphism-convex active:shadow-neumorphism-concave hover:bg-red-600 dark:shadow-neumorphism-convex-dark dark:active:shadow-neumorphism-concave-dark focus:ring-red-700",
+    default: "bg-neumorphism-bg text-neumorphism-text border border-neumorphism-border/60 hover:bg-white/60 dark:bg-neumorphism-bg-dark dark:text-neumorphism-text-dark dark:border-neumorphism-border/30 focus:ring-neumorphism-accent",
+    accent: "bg-neumorphism-accent text-white border border-neumorphism-accent hover:bg-neumorphism-accent/90 focus:ring-neumorphism-accent",
+    danger: "bg-red-500 text-white border border-red-500 hover:bg-red-600 focus:ring-red-700",
   };
 
   const sizeStyles = {
