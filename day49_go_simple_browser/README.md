@@ -1,9 +1,13 @@
-# Day49: Go言語 ミニブラウザ (阿部寛のホームページ対応版)
+# Day49: Go言語 ミニブラウザ
 
 ## 概要
 
 Go言語とFyneライブラリを使用して、シンプルなGUIベースのミニブラウザを作成しました。
 特に、1990年代後半から2000年代初頭のウェブサイトでよく見られたフレームセット構造を持つ、阿部寛さんの公式ホームページ (http://abehiroshi.la.coocan.jp/) を正しく表示することを目標としました。
+
+https://github.com/user-attachments/assets/a5e1e683-0a12-4652-aeab-172b59dd3ec1
+
+[100日チャレンジ day49](https://zenn.dev/gin_nazo/scraps/370bf54c6769e8)
 
 ## 主な機能
 

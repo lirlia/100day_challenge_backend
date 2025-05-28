@@ -63,4 +63,4 @@ LLMで生成したコードを置いています。
 | Day46 | ACME CA Simulator                                                          | <video src="https://github.com/user-attachments/assets/b8832653-33da-4511-bfcf-f7aaa3526f91" > |
 | Day47 | CDN Simulator                                                              | <video src="https://github.com/user-attachments/assets/40abc594-b347-4375-8626-a6a2b0d8500c" > |
 | Day48 | Pty Terminal                                                               | <video src="https://github.com/user-attachments/assets/4fe828dd-65aa-40b8-bc8c-396d95548a1a" > |
-| Day49 | Go言語 ミニブラウザ (阿部寛のホームページ対応版)                           | <video src="https://github.com/user-attachments/assets/pending" >動画は後ほど追加</video>      |
+| Day49 | Go言語 ミニブラウザ                                                        | <video src="https://github.com/user-attachments/assets/a5e1e683-0a12-4652-aeab-172b59dd3ec1" > |
