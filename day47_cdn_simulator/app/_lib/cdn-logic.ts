@@ -61,6 +61,9 @@ export async function simulateRequest(clientRegion: RegionId, contentIdToRequest
   const now = new Date();
   const nowISO = now.toISOString();
 
+  // First, clean up expired cache items for this edge server
+  db.prepare('DELETE FROM edge_cache_items WHERE edge_server_id_ref = ? AND expires_at <= ?').run(Number(edgeServer.id), nowISO);
+
   const cachedItemStmt = db.prepare(
     'SELECT * FROM edge_cache_items WHERE edge_server_id_ref = ? AND original_content_id = ? AND expires_at > ?'
   );
@@ -109,7 +112,7 @@ export async function simulateRequest(clientRegion: RegionId, contentIdToRequest
     const newCachedItem = db.prepare('SELECT * FROM edge_cache_items WHERE id = ?').get(Number(newCacheResult.lastInsertRowid)) as EdgeCacheItem;
 
     const log = db.prepare('INSERT INTO request_logs (client_region, content_id_requested, served_by_edge_server_id, cache_hit, delivered_from_origin) VALUES (?, ?, ?, ?, ?)')
-                  .run(requestLogPartial.client_region, requestLogPartial.content_id_requested, Number(edgeServer.id), false, true).lastInsertRowid;
+                  .run(String(requestLogPartial.client_region), String(requestLogPartial.content_id_requested), Number(edgeServer.id), requestLogPartial.cache_hit ? 1 : 0, requestLogPartial.delivered_from_origin ? 1 : 0).lastInsertRowid;
 
     const updatedEdgeCacheItemsAfterMiss = db.prepare('SELECT * FROM edge_cache_items WHERE edge_server_id_ref = ? ORDER BY last_accessed_at DESC').all(Number(edgeServer.id)) as EdgeCacheItem[];
 
