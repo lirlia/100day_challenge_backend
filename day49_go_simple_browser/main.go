@@ -26,7 +26,7 @@ type Browser struct {
 func main() {
 	// Fyneアプリケーション作成
 	myApp := app.New()
-	myWindow := myApp.NewWindow("Go Mini Browser - 阿部寛サイト対応版")
+	myWindow := myApp.NewWindow("Day49 - Go Mini Browser")
 	myWindow.Resize(fyne.NewSize(1200, 800))
 
 	// ブラウザ構造体初期化
@@ -44,7 +44,7 @@ func main() {
 func (b *Browser) createUI() {
 	// URL入力欄
 	b.urlEntry = widget.NewEntry()
-	b.urlEntry.SetText("http://abehiroshi.la.coocan.jp/")
+	b.urlEntry.SetText("https://www.york.ac.uk/teaching/cws/wws/webpage1.html")
 	b.urlEntry.SetPlaceHolder("URLを入力してください")
 
 	// 読み込みボタン
@@ -61,16 +61,16 @@ func (b *Browser) createUI() {
 	b.scrollContainer = container.NewScroll(b.contentContainer)
 	b.scrollContainer.SetMinSize(fyne.NewSize(1150, 700))
 
-	// ステータスバー
-	statusBar := container.NewHBox(
-		widget.NewLabel("ステータス:"),
-		b.statusLabel,
-	)
+	// // ステータスバー
+	// statusBar := container.NewHBox(
+	// 	widget.NewLabel("ステータス:"),
+	// 	b.statusLabel,
+	// )
 
 	// 全体レイアウト
 	mainLayout := container.NewBorder(
 		topBar,            // 上部
-		statusBar,         // 下部
+		nil,               // 下部
 		nil,               // 左
 		nil,               // 右
 		b.scrollContainer, // 中央
@@ -114,7 +114,7 @@ func (b *Browser) loadURL() {
 	title := parser.GetTextContent(parser.FindElement(doc, "title"))
 	if title != "" {
 		b.window.SetTitle(fmt.Sprintf("Go Mini Browser - %s", title))
-		b.addContent(widget.NewCard("🌐 ページタイトル", "", widget.NewLabel(title)))
+		// b.addContent(widget.NewCard("🌐 ページタイトル", "", widget.NewLabel(title)))
 	}
 
 	// フレームセット構造をチェック
@@ -125,7 +125,7 @@ func (b *Browser) loadURL() {
 	} else {
 		// 通常のHTMLページとしてレンダリング
 		b.setStatus("📄 コンテンツをレンダリング中...")
-		b.renderMainContent(doc)
+		b.renderMainContent(doc, url)
 	}
 
 	b.setStatus("✅ 読み込み完了")
@@ -134,11 +134,17 @@ func (b *Browser) loadURL() {
 func (b *Browser) processFrameset(doc *html.Node, baseURL string) {
 	// フレームセット情報を表示
 	framesetNode := parser.FindElement(doc, "frameset")
-	if framesetNode != nil {
-		widgets := renderer.RenderHTML(framesetNode)
-		for _, widget := range widgets {
-			b.addContent(widget)
-		}
+	if framesetNode == nil {
+		b.addContent(widget.NewLabel("⚠️ フレームセットが見つかりませんでした"))
+		return
+	}
+
+	// フレームセット情報のヘッダー
+	// b.addContent(widget.NewLabel("🌐 === フレームセット構造検出 ==="))
+
+	cols := parser.GetAttribute(framesetNode, "cols")
+	if cols != "" {
+		// b.addContent(widget.NewLabel("📐 カラム比率: " + cols))
 	}
 
 	// すべてのフレームを取得
@@ -148,35 +154,101 @@ func (b *Browser) processFrameset(doc *html.Node, baseURL string) {
 		return
 	}
 
-	// 各フレームのコンテンツを順次読み込み
-	for _, frame := range frames {
-		frameSrc := parser.GetAttribute(frame, "src")
-		frameName := parser.GetAttribute(frame, "name")
+	// 2つのフレーム（左と右）を想定
+	if len(frames) >= 2 {
+		leftFrame := frames[0]
+		rightFrame := frames[1]
 
-		if frameSrc == "" {
-			continue
+		// 左フレーム（メニュー）と右フレーム（メイン）のコンテンツを取得
+		leftContent := b.getFrameContent(baseURL, leftFrame)
+		rightContent := b.getFrameContent(baseURL, rightFrame)
+
+		// 左右分割レイアウトを作成
+		b.createFrameLayout(leftContent, rightContent)
+	} else {
+		// フレームが1つまたは3つ以上の場合は従来の処理
+		for _, frame := range frames {
+			frameSrc := parser.GetAttribute(frame, "src")
+			frameName := parser.GetAttribute(frame, "name")
+
+			if frameSrc == "" {
+				continue
+			}
+
+			frameURL, err := network.ResolveURL(baseURL, frameSrc)
+			if err != nil {
+				b.addContent(widget.NewLabel(fmt.Sprintf("❌ URL変換エラー: %v", err)))
+				continue
+			}
+
+			frameHeader := fmt.Sprintf("📋 === フレームコンテンツ: %s ===", frameName)
+			if frameName == "" {
+				frameHeader = fmt.Sprintf("📋 === フレームコンテンツ: %s ===", frameSrc)
+			}
+			b.addContent(widget.NewLabel(frameHeader))
+
+			b.loadFrameContent(frameURL)
+			b.addContent(widget.NewSeparator())
 		}
-
-		// 相対URLを絶対URLに変換
-		frameURL, err := network.ResolveURL(baseURL, frameSrc)
-		if err != nil {
-			b.addContent(widget.NewLabel(fmt.Sprintf("❌ URL変換エラー: %v", err)))
-			continue
-		}
-
-		// フレーム情報のヘッダー表示
-		frameHeader := fmt.Sprintf("📋 === フレームコンテンツ: %s ===", frameName)
-		if frameName == "" {
-			frameHeader = fmt.Sprintf("📋 === フレームコンテンツ: %s ===", frameSrc)
-		}
-		b.addContent(widget.NewLabel(frameHeader))
-
-		// フレームコンテンツを取得・表示
-		b.loadFrameContent(frameURL)
-
-		// フレーム間の区切り線
-		b.addContent(widget.NewSeparator())
 	}
+}
+
+// getFrameContent はフレームのコンテンツを取得してウィジェットのスライスとして返します
+func (b *Browser) getFrameContent(baseURL string, frame *html.Node) []fyne.CanvasObject {
+	frameSrc := parser.GetAttribute(frame, "src")
+	// frameName := parser.GetAttribute(frame, "name") // nameはデバッグ用に残しても良い
+
+	if frameSrc == "" {
+		return []fyne.CanvasObject{widget.NewLabel("❌ フレームソースが見つかりません")}
+	}
+
+	frameURL, err := network.ResolveURL(baseURL, frameSrc)
+	if err != nil {
+		return []fyne.CanvasObject{widget.NewLabel(fmt.Sprintf("❌ URL変換エラー: %v", err))}
+	}
+
+	// フレームHTMLを取得
+	frameHTML, err := network.FetchURL(frameURL)
+	if err != nil {
+		return []fyne.CanvasObject{widget.NewLabel(fmt.Sprintf("❌ フレーム読み込みエラー: %v", err))}
+	}
+
+	// フレームHTMLをパース
+	frameDoc, err := parser.ParseHTML(frameHTML)
+	if err != nil {
+		return []fyne.CanvasObject{widget.NewLabel(fmt.Sprintf("❌ フレームHTMLパースエラー: %v", err))}
+	}
+
+	var widgets []fyne.CanvasObject
+	// HTMLをウィジェットに変換 (baseURLとしてframeURLを渡す)
+	frameWidgets := renderer.RenderHTML(frameDoc, frameURL)
+	widgets = append(widgets, frameWidgets...)
+
+	return widgets
+}
+
+// createFrameLayout は左右分割レイアウトを作成します
+func (b *Browser) createFrameLayout(leftContent, rightContent []fyne.CanvasObject) {
+	// 左側コンテナ（メニュー）
+	leftContainer := container.NewVBox(leftContent...)
+	leftScroll := container.NewScroll(leftContainer)
+	leftScroll.SetMinSize(fyne.NewSize(250, 600)) // 左側は固定幅
+
+	// 右側コンテナ（メインコンテンツ）
+	rightContainer := container.NewVBox(rightContent...)
+	rightScroll := container.NewScroll(rightContainer)
+	rightScroll.SetMinSize(fyne.NewSize(850, 600)) // 右側はより広く
+
+	// 左右分割レイアウト作成
+	splitContainer := container.NewHSplit(leftScroll, rightScroll)
+	splitContainer.Offset = 0.2 // 左側を20%、右側を80%の比率に設定
+
+	// フレームレイアウトの説明を追加
+	// b.addContent(widget.NewLabel(""))
+	// b.addContent(widget.NewCard("🖼️ フレームレイアウト", "左：メニュー | 右：メインコンテンツ", widget.NewLabel("")))
+
+	// 分割レイアウトを追加
+	b.addContent(splitContainer)
 }
 
 func (b *Browser) loadFrameContent(frameURL string) {
@@ -195,12 +267,12 @@ func (b *Browser) loadFrameContent(frameURL string) {
 	}
 
 	// フレームコンテンツをレンダリング
-	b.renderMainContent(frameDoc)
+	b.renderMainContent(frameDoc, frameURL)
 }
 
-func (b *Browser) renderMainContent(doc *html.Node) {
+func (b *Browser) renderMainContent(doc *html.Node, baseURL string) {
 	// HTMLをFyneウィジェットに変換
-	widgets := renderer.RenderHTML(doc)
+	widgets := renderer.RenderHTML(doc, baseURL)
 
 	if len(widgets) == 0 {
 		b.addContent(widget.NewLabel("⚠️ 表示可能なコンテンツが見つかりませんでした"))

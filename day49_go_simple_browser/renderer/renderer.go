@@ -1,8 +1,14 @@
 package renderer
 
 import (
+	"bytes"
 	"fmt"
+	"image"
 	"image/color"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
+	"log"
 	"strconv"
 	"strings"
 
@@ -12,59 +18,56 @@ import (
 	"fyne.io/fyne/v2/widget"
 	"golang.org/x/net/html"
 
+	"github.com/lirlia/100day_challenge_backend/day49_go_simple_browser/network"
 	"github.com/lirlia/100day_challenge_backend/day49_go_simple_browser/parser"
 )
 
 // RenderHTML は DOMツリーを受け取り、Fyneウィジェットのスライスに変換します。
-func RenderHTML(root *html.Node) []fyne.CanvasObject {
+func RenderHTML(root *html.Node, baseURL string) []fyne.CanvasObject {
 	var widgets []fyne.CanvasObject
-
-	// <body> タグを探す（Frameset構造の場合は適宜調整）
 	bodyNode := parser.FindElement(root, "body")
 	if bodyNode == nil {
-		// <frameset> 構造の場合や <body> が見つからない場合は、全体から要素を抽出
 		bodyNode = root
 	}
-
-	// body要素内をレンダリング
-	renderNodeImproved(bodyNode, &widgets)
-
+	renderNodeImproved(bodyNode, &widgets, baseURL)
 	return widgets
 }
 
 // renderNodeImproved は改良されたレンダリング関数です。
-func renderNodeImproved(node *html.Node, widgets *[]fyne.CanvasObject) {
+func renderNodeImproved(node *html.Node, widgets *[]fyne.CanvasObject, baseURL string) {
 	if node == nil {
 		return
 	}
 
 	switch node.Type {
 	case html.ElementNode:
-		renderElementImproved(node, widgets)
-	case html.TextNode:
-		// テキストノードは個別に処理せず、親要素でまとめて処理
-	}
-
-	// ブロックレベル要素以外の場合のみ子要素を再帰処理
-	if !isBlockElement(node.Data) {
+		// まず要素自体をレンダリングしようと試みる (要素タイプに応じてウィジェットが追加される)
+		renderElementImproved(node, widgets, baseURL)
+		// その後、すべての子要素に対して再帰的に処理
 		for child := node.FirstChild; child != nil; child = child.NextSibling {
-			renderNodeImproved(child, widgets)
+			renderNodeImproved(child, widgets, baseURL)
+		}
+	case html.TextNode:
+		// テキストノードは、親要素のレンダリング時に extractTextContent を介して処理されるか、
+		// または親がコンテナ的な要素で直接テキストを描画しない場合にここで描画される。
+		// ここでは、孤立したテキストノード（例えば、<body>直下など）を処理する。
+		if node.Parent != nil && (node.Parent.Type == html.DocumentNode || node.Parent.Data == "body" || node.Parent.Data == "html") {
+			trimmedData := strings.TrimSpace(node.Data)
+			if trimmedData != "" {
+				*widgets = append(*widgets, widget.NewLabel(trimmedData))
+			}
+		}
+	case html.DocumentNode:
+		for child := node.FirstChild; child != nil; child = child.NextSibling {
+			renderNodeImproved(child, widgets, baseURL)
 		}
 	}
 }
 
-// isBlockElement はブロックレベル要素かどうかを判定します。
-func isBlockElement(tagName string) bool {
-	blockElements := map[string]bool{
-		"div": true, "p": true, "h1": true, "h2": true, "h3": true, "h4": true, "h5": true, "h6": true,
-		"table": true, "tr": true, "td": true, "th": true, "center": true, "br": true,
-		"frameset": true, "frame": true,
-	}
-	return blockElements[strings.ToLower(tagName)]
-}
-
 // renderElementImproved は改良されたHTML要素レンダリング関数です。
-func renderElementImproved(node *html.Node, widgets *[]fyne.CanvasObject) {
+func renderElementImproved(node *html.Node, widgets *[]fyne.CanvasObject, baseURL string) {
+	// 各要素ハンドラは、自身のテキスト表示や特殊なレイアウトを担当。
+	// 子要素の一般的な再帰処理は呼び出し元の renderNodeImproved が行う。
 	switch strings.ToLower(node.Data) {
 	case "h1", "h2", "h3", "h4", "h5", "h6":
 		renderHeadingImproved(node, widgets)
@@ -79,53 +82,45 @@ func renderElementImproved(node *html.Node, widgets *[]fyne.CanvasObject) {
 	case "center":
 		renderCenterImproved(node, widgets)
 	case "table":
-		renderTableImproved(node, widgets)
+		renderTableImproved(node, widgets, baseURL) // テーブルは自身の子(tr)の処理を含む
 	case "img":
-		renderImageImproved(node, widgets)
+		renderImageImproved(node, widgets, baseURL)
 	case "frameset":
-		renderFramesetImproved(node, widgets)
+		renderFramesetImproved(node, widgets) // フレームセットは自身の子(frame)の処理を含む
 	case "frame":
-		renderFrameImproved(node, widgets)
+		// frameタグ自体は表示せず、内容はmain.goで読み込まれるのでここでは何もしない
 	case "ul", "ol":
-		renderListImproved(node, widgets)
+		renderListImproved(node, widgets, baseURL) // リストは自身の子(li)の処理を含む
 	case "li":
 		renderListItemImproved(node, widgets)
+	case "body", "html", "head", "div", "span":
+		// これらのコンテナ要素は特別なウィジェットを生成しない。
+		// 子要素の処理は呼び出し元のrenderNodeImprovedに任せる。
+		break
 	default:
-		// その他の要素（div, span等）はテキスト内容を抽出
-		text := extractTextContent(node)
-		if strings.TrimSpace(text) != "" {
-			*widgets = append(*widgets, widget.NewLabel(text))
-		}
+		// 未対応タグや、上記以外でテキストを持つ可能性があるタグは、直接のテキストを描画
+		// ただし、多くの場合、専用ハンドラを持つべき要素（p, h1など）で処理される。
+		// text := extractTextContent(node) // この呼び出しは重複の可能性あり、慎重に
+		// if strings.TrimSpace(text) != "" {
+		// 	*widgets = append(*widgets, widget.NewLabel(text))
+		// }
 	}
 }
 
-// extractTextContent はノードからテキスト内容を抽出し、適切にフォーマットします。
+// extractTextContent はノード直下の子テキストノードの内容を連結して返します。
 func extractTextContent(node *html.Node) string {
-	if node.Type == html.TextNode {
-		return node.Data
+	if node == nil {
+		return ""
 	}
-
 	var textBuilder strings.Builder
 	for child := node.FirstChild; child != nil; child = child.NextSibling {
 		if child.Type == html.TextNode {
 			textBuilder.WriteString(child.Data)
-		} else if child.Type == html.ElementNode {
-			// インライン要素の場合はテキストを続ける
-			if !isBlockElement(child.Data) {
-				textBuilder.WriteString(extractTextContent(child))
-			}
 		}
 	}
-
-	// 余分な空白を正規化
-	text := textBuilder.String()
-	text = strings.ReplaceAll(text, "\n", " ")
-	text = strings.ReplaceAll(text, "\t", " ")
-	// 連続する空白を1つにまとめる
-	for strings.Contains(text, "  ") {
-		text = strings.ReplaceAll(text, "  ", " ")
-	}
-	return strings.TrimSpace(text)
+	// HTMLエンティティのデコードなどはここでは行わず、元テキストに近い形で返す
+	// 必要に応じて呼び出し側でさらに処理を行う
+	return strings.TrimSpace(textBuilder.String())
 }
 
 // renderHeadingImproved は改良された見出しレンダリング関数です。
@@ -229,44 +224,108 @@ func renderCenterImproved(node *html.Node, widgets *[]fyne.CanvasObject) {
 }
 
 // renderTableImproved は改良されたテーブルレンダリング関数です。
-func renderTableImproved(node *html.Node, widgets *[]fyne.CanvasObject) {
+func renderTableImproved(node *html.Node, widgets *[]fyne.CanvasObject, baseURL string) {
 	*widgets = append(*widgets, widget.NewLabel(""))
-	*widgets = append(*widgets, widget.NewLabel("┌─ Table ─┐"))
 
 	// テーブル内の各行を処理
 	for child := node.FirstChild; child != nil; child = child.NextSibling {
 		if child.Type == html.ElementNode && strings.ToLower(child.Data) == "tr" {
-			renderTableRowImproved(child, widgets)
+			renderTableRowImproved(child, widgets, baseURL)
 		}
 	}
 
-	*widgets = append(*widgets, widget.NewLabel("└─────────┘"))
 	*widgets = append(*widgets, widget.NewLabel(""))
 }
 
 // renderTableRowImproved は改良されたテーブル行レンダリング関数です。
-func renderTableRowImproved(node *html.Node, widgets *[]fyne.CanvasObject) {
-	var rowCells []string
+func renderTableRowImproved(node *html.Node, widgets *[]fyne.CanvasObject, baseURL string) {
+	var rowWidgets []fyne.CanvasObject
 
-	// 行内のセルを収集
+	// 行内のセルを処理
 	for child := node.FirstChild; child != nil; child = child.NextSibling {
 		if child.Type == html.ElementNode && (strings.ToLower(child.Data) == "td" || strings.ToLower(child.Data) == "th") {
-			cellText := extractTextContent(child)
-			if cellText != "" {
-				rowCells = append(rowCells, cellText)
+			cellWidget := renderTableCellImproved(child, baseURL)
+			if cellWidget != nil {
+				rowWidgets = append(rowWidgets, cellWidget)
 			}
 		}
 	}
 
-	// セルをパイプ区切りで表示
-	if len(rowCells) > 0 {
-		rowText := "│ " + strings.Join(rowCells, " │ ") + " │"
-		*widgets = append(*widgets, widget.NewLabel(rowText))
+	// セルを横並びで配置
+	if len(rowWidgets) > 0 {
+		rowContainer := container.NewHBox(rowWidgets...)
+		*widgets = append(*widgets, rowContainer)
 	}
 }
 
+// renderTableCellImproved は改良されたテーブルセルレンダリング関数です。
+func renderTableCellImproved(node *html.Node, baseURL string) fyne.CanvasObject {
+	// セル内のコンテンツを詳細に処理
+	return renderCellContent(node, baseURL)
+}
+
+// renderCellContent はセル内容を詳細にレンダリングします
+func renderCellContent(node *html.Node, baseURL string) fyne.CanvasObject {
+	// セル内にfontタグがある場合の特別処理
+	for child := node.FirstChild; child != nil; child = child.NextSibling {
+		if child.Type == html.ElementNode && strings.ToLower(child.Data) == "font" {
+			text := extractTextContent(child)
+			if text != "" {
+				colorAttr := parser.GetAttribute(child, "color")
+				sizeAttr := parser.GetAttribute(child, "size")
+
+				if colorAttr != "" {
+					if c := parseColor(colorAttr); c != nil {
+						richText := canvas.NewText(text, c)
+						richText.TextSize = 14
+
+						// サイズ属性の処理
+						if sizeAttr != "" {
+							if size, err := strconv.Atoi(sizeAttr); err == nil {
+								switch {
+								case size <= 1:
+									richText.TextSize = 10
+								case size == 2:
+									richText.TextSize = 12
+								case size == 3:
+									richText.TextSize = 14
+								case size == 4:
+									richText.TextSize = 16
+								case size == 5:
+									richText.TextSize = 18
+								case size >= 6:
+									richText.TextSize = 24
+								}
+							}
+						}
+
+						// セルに適切なパディングを追加
+						return container.NewHBox(
+							widget.NewLabel("  "), // 左パディング
+							richText,
+							widget.NewLabel("  "), // 右パディング
+						)
+					}
+				}
+			}
+		}
+	}
+
+	// 通常のテキスト処理
+	text := extractTextContent(node)
+	if text != "" {
+		return container.NewHBox(
+			widget.NewLabel("  "), // 左パディング
+			widget.NewLabel(text),
+			widget.NewLabel("  "), // 右パディング
+		)
+	}
+
+	return widget.NewLabel("")
+}
+
 // renderListImproved はリストレンダリング関数です。
-func renderListImproved(node *html.Node, widgets *[]fyne.CanvasObject) {
+func renderListImproved(node *html.Node, widgets *[]fyne.CanvasObject, baseURL string) {
 	*widgets = append(*widgets, widget.NewLabel(""))
 
 	// リスト項目を処理
@@ -281,10 +340,56 @@ func renderListImproved(node *html.Node, widgets *[]fyne.CanvasObject) {
 
 // renderListItemImproved はリスト項目レンダリング関数です。
 func renderListItemImproved(node *html.Node, widgets *[]fyne.CanvasObject) {
-	text := extractTextContent(node)
-	if text != "" {
-		*widgets = append(*widgets, widget.NewLabel("• "+text))
+	// li要素内の子要素を直接レンダリング
+	var itemWidgets []fyne.CanvasObject
+	for child := node.FirstChild; child != nil; child = child.NextSibling {
+		renderNodeImproved(child, &itemWidgets, "") // baseURLはここでは不要
 	}
+
+	if len(itemWidgets) > 0 {
+		// 先頭に "● " を追加 (スペースで間隔調整)
+		// 実際の●の色付けはFyneの標準機能では難しいため、ここでは黒点とする
+		bullet := widget.NewLabel("● ")
+
+		// itemWidgets の最初のウィジェットがテキスト系かチェックし、可能ならHBoxで横に並べる
+		if len(itemWidgets) == 1 {
+			singleItem := itemWidgets[0]
+			// fyne.CanvasObject を widget.Label や canvas.Text にキャスト可能か確認
+			// 残念ながら、Fyneの型システムでは直接キャストや型判別が難しい場合がある
+			// ここではシンプルにHBoxで並べてみる
+			*widgets = append(*widgets, container.NewHBox(bullet, singleItem))
+		} else {
+			// 複数のウィジェットがある場合は、●の後に縦に並べる
+			*widgets = append(*widgets, bullet)
+			*widgets = append(*widgets, itemWidgets...)
+		}
+	} else {
+		text := extractTextContent(node)
+		if text != "" {
+			*widgets = append(*widgets, widget.NewLabel("● "+text))
+		}
+	}
+}
+
+// findFirstLink はノード内の最初のリンク要素を探します
+func findFirstLink(node *html.Node) *html.Node {
+	if node == nil {
+		return nil
+	}
+
+	// 現在のノードがリンクの場合
+	if node.Type == html.ElementNode && strings.ToLower(node.Data) == "a" {
+		return node
+	}
+
+	// 子ノードを再帰的に検索
+	for child := node.FirstChild; child != nil; child = child.NextSibling {
+		if link := findFirstLink(child); link != nil {
+			return link
+		}
+	}
+
+	return nil
 }
 
 // renderLinkImproved は改良されたリンクレンダリング関数です。
@@ -292,32 +397,119 @@ func renderLinkImproved(node *html.Node, widgets *[]fyne.CanvasObject) {
 	href := parser.GetAttribute(node, "href")
 	text := extractTextContent(node)
 	if text == "" {
-		text = href
+		for child := node.FirstChild; child != nil; child = child.NextSibling {
+			if child.Type == html.ElementNode {
+				tempText := extractTextContent(child)
+				if tempText != "" {
+					text = tempText
+					break
+				}
+			}
+		}
+		if text == "" {
+			text = href
+		}
 	}
 
-	if href != "" {
-		link := widget.NewHyperlink(text, nil)
-		*widgets = append(*widgets, link)
-	} else {
-		*widgets = append(*widgets, widget.NewLabel(text))
+	// 色属性の取得を試みる
+	var textColor color.Color
+	// まず<a>タグ自身のcolor属性をチェック
+	colorAttrA := parser.GetAttribute(node, "color")
+	if colorAttrA != "" {
+		if c := parseColor(colorAttrA); c != nil {
+			textColor = c
+		}
+	}
+
+	// 次に、子要素の<font>タグのcolor属性をチェック (より内側の指定を優先)
+	fontNode := parser.FindElement(node, "font")
+	if fontNode != nil {
+		colorAttrFont := parser.GetAttribute(fontNode, "color")
+		if colorAttrFont != "" {
+			if c := parseColor(colorAttrFont); c != nil {
+				textColor = c // fontタグの色で上書き
+			}
+		}
+	}
+
+	if href != "" { // リンクありの場合
+		if textColor != nil {
+			// 色付き、太字のテキスト (リンク機能なし)
+			coloredBoldLabel := canvas.NewText(text, textColor)
+			coloredBoldLabel.TextStyle = fyne.TextStyle{Bold: true}
+			coloredBoldLabel.TextSize = 14
+			*widgets = append(*widgets, coloredBoldLabel)
+		} else {
+			// 色なし、太字のハイパーリンク (FyneのHyperlinkはスタイル変更不可)
+			// 表示テキストの太字化もHyperlinkではできないため、通常のLabelで代用も検討したが、リンク機能がなくなる。
+			// ここではFyne標準のHyperlinkとし、スタイルは諦める。
+			link := widget.NewHyperlink(text, nil)
+			// link.TextStyle = fyne.TextStyle{Bold: true} // これは効果がない
+			*widgets = append(*widgets, link)
+		}
+	} else { // リンクなしの場合 (<a>タグだがhrefがない、または単なるテキスト)
+		if textColor != nil {
+			// 色付き、太字のテキスト
+			coloredBoldLabel := canvas.NewText(text, textColor)
+			coloredBoldLabel.TextStyle = fyne.TextStyle{Bold: true}
+			coloredBoldLabel.TextSize = 14
+			*widgets = append(*widgets, coloredBoldLabel)
+		} else {
+			// 色なし、太字のラベル
+			boldLabel := widget.NewLabel(text)
+			boldLabel.TextStyle = fyne.TextStyle{Bold: true}
+			*widgets = append(*widgets, boldLabel)
+		}
 	}
 }
 
 // renderImageImproved は改良された画像レンダリング関数です。
-func renderImageImproved(node *html.Node, widgets *[]fyne.CanvasObject) {
+func renderImageImproved(node *html.Node, widgets *[]fyne.CanvasObject, baseURL string) {
 	src := parser.GetAttribute(node, "src")
 	alt := parser.GetAttribute(node, "alt")
 
-	if alt == "" {
-		alt = "Image"
+	if src == "" {
+		*widgets = append(*widgets, widget.NewLabel(fmt.Sprintf("🖼️ [画像: ソースなし, alt: %s]", alt)))
+		return
 	}
 
-	placeholder := fmt.Sprintf("🖼️ [%s]", alt)
-	if src != "" {
-		placeholder += fmt.Sprintf(" (%s)", src)
+	// 相対URLを絶対URLに解決
+	imageAbsURL, err := network.ResolveURL(baseURL, src)
+	if err != nil {
+		log.Printf("画像URL解決エラー (%s, %s): %v", baseURL, src, err)
+		*widgets = append(*widgets, widget.NewLabel(fmt.Sprintf("🖼️ [画像URL解決エラー: %s, alt: %s]", src, alt)))
+		return
 	}
 
-	*widgets = append(*widgets, widget.NewLabel(placeholder))
+	imageData, err := network.FetchImage(imageAbsURL)
+	if err != nil {
+		log.Printf("画像取得エラー (%s): %v", imageAbsURL, err)
+		*widgets = append(*widgets, widget.NewLabel(fmt.Sprintf("🖼️ [画像取得エラー: %s, alt: %s]", src, alt)))
+		return
+	}
+
+	img, _, err := image.Decode(bytes.NewReader(imageData))
+	if err != nil {
+		log.Printf("画像デコードエラー (%s): %v", imageAbsURL, err)
+		*widgets = append(*widgets, widget.NewLabel(fmt.Sprintf("🖼️ [画像デコードエラー: %s, alt: %s]", src, alt)))
+		return
+	}
+
+	fyneImg := canvas.NewImageFromImage(img)
+	fyneImg.FillMode = canvas.ImageFillContain
+	// 画像サイズを適切に設定 (例: 横幅300px、縦はアスペクト比維持)
+	// TODO: HTMLのwidth/height属性を考慮する
+	originalWidth := float32(img.Bounds().Dx())
+	originalHeight := float32(img.Bounds().Dy())
+	maxWidth := float32(300)
+	if originalWidth > maxWidth {
+		scale := maxWidth / originalWidth
+		fyneImg.SetMinSize(fyne.NewSize(maxWidth, originalHeight*scale))
+	} else {
+		fyneImg.SetMinSize(fyne.NewSize(originalWidth, originalHeight))
+	}
+
+	*widgets = append(*widgets, fyneImg)
 }
 
 // renderFramesetImproved は改良されたフレームセットレンダリング関数です。
@@ -334,22 +526,6 @@ func renderFramesetImproved(node *html.Node, widgets *[]fyne.CanvasObject) {
 		*widgets = append(*widgets, widget.NewLabel("📐 行: "+rows))
 	}
 	*widgets = append(*widgets, widget.NewLabel(""))
-}
-
-// renderFrameImproved は改良されたフレームレンダリング関数です。
-func renderFrameImproved(node *html.Node, widgets *[]fyne.CanvasObject) {
-	src := parser.GetAttribute(node, "src")
-	name := parser.GetAttribute(node, "name")
-
-	frameInfo := "📄 フレーム: "
-	if name != "" {
-		frameInfo += name + " "
-	}
-	if src != "" {
-		frameInfo += "(" + src + ")"
-	}
-
-	*widgets = append(*widgets, widget.NewLabel(frameInfo))
 }
 
 // parseColor は色文字列をcolor.Colorに変換します。
@@ -404,3 +580,35 @@ func parseColor(colorStr string) color.Color {
 
 	return nil // パース失敗
 }
+
+// renderFrameImproved は改良されたフレームレンダリング関数です。
+// この関数は main.go 側でフレーム内容を直接処理するため、レンダラ側では不要になりました。
+/*
+func renderFrameImproved(node *html.Node, widgets *[]fyne.CanvasObject) {
+	src := parser.GetAttribute(node, "src")
+	name := parser.GetAttribute(node, "name")
+
+	frameInfo := "📄 フレーム: "
+	if name != "" {
+		frameInfo += name + " "
+	}
+	if src != "" {
+		frameInfo += "(" + src + ")"
+	}
+
+	*widgets = append(*widgets, widget.NewLabel(frameInfo))
+}
+*/
+
+// isBlockElement はブロックレベル要素かどうかを判定します。
+// この関数は renderNodeImproved の新しいロジックでは直接使用されません。
+/*
+func isBlockElement(tagName string) bool {
+	blockElements := map[string]bool{
+		"div": true, "p": true, "h1": true, "h2": true, "h3": true, "h4": true, "h5": true, "h6": true,
+		"table": true, "tr": true, "td": true, "th": true, "center": true, "br": true,
+		"frameset": true, "frame": true,
+	}
+	return blockElements[strings.ToLower(tagName)]
+}
+*/
