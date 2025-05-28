@@ -27,7 +27,7 @@ export default function VisualizationLog({ logs, edgeServers }: VisualizationLog
       {logs.length === 0 ? (
         <p className="text-neumorphism-soft-text">No request logs yet. Run a simulation to see logs here.</p>
       ) : (
-        <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
+        <div className="space-y-3 max-h-[1175px] overflow-y-auto pr-2">
           {logs.slice().reverse().map((log) => (
             <div key={log.id} className="text-xs p-3 bg-neumorphism-bg shadow-neumorphism-concave dark:bg-neumorphism-bg-dark dark:shadow-neumorphism-concave-dark rounded-neumorphism">
               <p className="font-semibold">
