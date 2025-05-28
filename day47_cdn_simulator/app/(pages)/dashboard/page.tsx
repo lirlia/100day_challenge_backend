@@ -79,11 +79,11 @@ export default function DashboardPage() {
             key={`ocm-${originContents.length}`}
             onContentsChanged={() => { fetchAllOriginContents(); setStatsKey(k => k + 1); }}
           />
-          <EdgeServerManager
+          {/* <EdgeServerManager
             key={`esm-${edgeServers.length}`}
             onServersChanged={() => { fetchAllEdgeServers(); setStatsKey(k => k + 1); }}
-          />
-           <RequestSimulator
+          /> */}
+          <RequestSimulator
             edgeServers={edgeServers}
             originContents={originContents}
             onSimulationComplete={handleSimulationComplete}
@@ -93,13 +93,13 @@ export default function DashboardPage() {
         {/* Column 3: Visualization & Stats */}
         <aside className="lg:col-span-1 space-y-8">
           <VisualizationLog logs={requestLogs} edgeServers={edgeServers} />
-          <EdgeServerCacheView edgeServersWithCache={edgeServersWithCache} />
-          <StatsDisplay key={`stats-${statsKey}`} />
+          {/* <EdgeServerCacheView edgeServersWithCache={edgeServersWithCache} />
+          <StatsDisplay key={`stats-${statsKey}`} /> */}
 
-          <div className="bg-neumorphism-bg p-6 rounded-lg shadow-neumorphism-soft dark:bg-neumorphism-bg-dark dark:shadow-neumorphism-soft-dark">
+          {/* <div className="bg-neumorphism-bg p-6 rounded-lg shadow-neumorphism-soft dark:bg-neumorphism-bg-dark dark:shadow-neumorphism-soft-dark">
             <h2 className="text-2xl font-semibold mb-4 text-neumorphism-accent">Statistics</h2>
             <p className="text-sm text-neumorphism-soft-text">統計情報の表示エリアです。 (Coming soon)</p>
-          </div>
+          </div> */}
         </aside>
       </main>
 

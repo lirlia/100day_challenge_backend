@@ -148,16 +148,16 @@ export default function OriginContentsManager({ onContentsChanged }: OriginConte
                 <div>
                   <p className="font-medium">ID: {content.content_id}</p>
                   <p className="text-xs text-neumorphism-soft-text">Type: {content.content_type}</p>
-                  <p className="text-xs text-neumorphism-soft-text truncate max-w-xs md:max-w-md lg:max-w-lg">Data: {content.data.length > 100 ? `${content.data.substring(0,100)}...` : content.data}</p>
+                  <p className="text-xs text-neumorphism-soft-text truncate max-w-xs md:max-w-md lg:max-w-lg">Data: {content.data.length > 100 ? `${content.data.substring(0, 100)}...` : content.data}</p>
                 </div>
-                <NeumorphicButton
+                {/* <NeumorphicButton
                   variant="danger"
                   size="sm"
                   onClick={() => handleDeleteContent(content.content_id)}
                   disabled={isLoading}
                 >
                   Delete
-                </NeumorphicButton>
+                </NeumorphicButton> */}
               </li>
             ))}
           </ul>
