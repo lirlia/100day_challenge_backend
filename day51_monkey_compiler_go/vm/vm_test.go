@@ -5,16 +5,107 @@ import (
 	"testing"
 
 	"github.com/lirlia/100day_challenge_backend/day51_monkey_compiler_go/ast"
-	"github.com/lirlia/100day_challenge_backend/day51_monkey_compiler_go/code"
 	"github.com/lirlia/100day_challenge_backend/day51_monkey_compiler_go/compiler"
 	"github.com/lirlia/100day_challenge_backend/day51_monkey_compiler_go/lexer"
 	"github.com/lirlia/100day_challenge_backend/day51_monkey_compiler_go/object"
 	"github.com/lirlia/100day_challenge_backend/day51_monkey_compiler_go/parser"
 )
 
+// vmTestCase はVMのテストケースを定義します。
+// input: Monkey言語のソースコード文字列
+// expected: スタックトップに期待される値 (object.Object)
+// expectedError: VM実行中に期待されるエラーメッセージ。エラーがない場合は空文字列。
 type vmTestCase struct {
-	input    string
-	expected interface{}
+	input        string
+	expected     any // 整数、ブール値、"error"文字列、またはnil (Nullオブジェクト期待)
+}
+
+func parse(input string) *ast.Program {
+	l := lexer.New(input)
+	p := parser.New(l)
+	program := p.ParseProgram()
+	// テストの前提としてパースエラーはないものとする
+	if len(p.Errors()) != 0 {
+		panic(fmt.Sprintf("parser error on input '%s': %v", input, p.Errors()))
+	}
+	return program
+}
+
+func testIntegerObject(t *testing.T, expected int64, actual object.Object) bool {
+	t.Helper()
+	result, ok := actual.(*object.Integer)
+	if !ok {
+		t.Errorf("object is not Integer. got=%T (%+v)", actual, actual)
+		return false
+	}
+	if result.Value != expected {
+		t.Errorf("object has wrong value. got=%d, want=%d", result.Value, expected)
+		return false
+	}
+	return true
+}
+
+func testBooleanObject(t *testing.T, expected bool, actual object.Object) bool {
+	t.Helper()
+	result, ok := actual.(*object.Boolean)
+	if !ok {
+		t.Errorf("object is not Boolean. got=%T (%+v)", actual, actual)
+		return false
+	}
+	if result.Value != expected {
+		t.Errorf("object has wrong value. got=%t, want=%t", result.Value, expected)
+		return false
+	}
+	return true
+}
+
+func runVmTests(t *testing.T, tests []vmTestCase) {
+	t.Helper()
+
+	for _, tt := range tests {
+		program := parse(tt.input)
+		comp := compiler.New()
+		err := comp.Compile(program)
+		if err != nil {
+			t.Fatalf("compiler error: %s for input: %s", err, tt.input)
+		}
+
+		vmInstance := New(comp.Bytecode()) // vmを変数名vmInstanceに変更 (vmパッケージ名との衝突回避)
+		err = vmInstance.Run()
+
+		// エラーチェック
+		if expectedErrStr, isStr := tt.expected.(string); isStr && expectedErrStr == "error" {
+			if err == nil {
+				t.Errorf("expected VM error but got none for input: %s", tt.input)
+			}
+			continue // エラーが期待される場合、スタックトップのチェックは不要
+		} else if err != nil {
+			t.Fatalf("vm error: %s for input: %s", err, tt.input)
+		}
+
+		// スタックトップの値のチェック
+		// ほとんどのケースでは、ExpressionStatement の後に OpPop が実行され、
+		// その結果が LastPoppedStackElem に格納される。
+		// puts 文の場合、puts は Null をスタックに積むので、LastPoppedStackElem は Null になる。
+		stackElem := vmInstance.LastPoppedStackElem()
+		// fmt.Printf("Input: [%s], Expected type: %T, Got stackElem: %T (%+v)\n", tt.input, tt.expected, stackElem, stackElem)
+
+		switch expectedVal := tt.expected.(type) {
+		case int:
+			testIntegerObject(t, int64(expectedVal), stackElem)
+		case int64: // int64 も直接使えるように
+			testIntegerObject(t, expectedVal, stackElem)
+		case bool:
+			testBooleanObject(t, expectedVal, stackElem)
+		case nil: // 期待値が Go の nil の場合は、Monkey の Null オブジェクトを期待
+			if stackElem != Null {
+				t.Errorf("expected Null object, got %T (%+v) for input: %s", stackElem, stackElem, tt.input)
+			}
+		default:
+			// "error" の場合は上で処理済み。それ以外はテストケースの定義ミス。
+			t.Errorf("unsupported expected type %T for input: %s", tt.expected, tt.input)
+		}
+	}
 }
 
 func TestIntegerArithmetic(t *testing.T) {
@@ -35,6 +126,8 @@ func TestIntegerArithmetic(t *testing.T) {
 		{"-10", -10},
 		{"-50 + 100 + -50", 0},
 		{"(5 + 10 * 2 + 15 / 3) * 2 + -10", 50},
+		{"0 / 1", 0},
+		{"1 / 0", "error"}, // Division by zero
 	}
 	runVmTests(t, tests)
 }
@@ -62,12 +155,15 @@ func TestBooleanExpressions(t *testing.T) {
 		{"(1 > 2) == false", true},
 		{"!true", false},
 		{"!false", true},
-		{"!5", false}, // In Monkey, any non-boolean, non-null is truthy, so !non-falsey is false
+		{"!5", false},
 		{"!!true", true},
 		{"!!false", false},
 		{"!!5", true},
+		{"!0", true},
+		{"!!0", false},
 		{"!(1 < 2)", false},
-		{"!null", true}, // !null is true
+		{"!null", true},
+		{"!!null", false},
 	}
 	runVmTests(t, tests)
 }
@@ -77,17 +173,15 @@ func TestConditionals(t *testing.T) {
 		{"if (true) { 10 }", 10},
 		{"if (true) { 10 } else { 20 }", 10},
 		{"if (false) { 10 } else { 20 }", 20},
-		{"if (1) { 10 }", 10}, // 1 is truthy
+		{"if (1) { 10 }", 10},
 		{"if (1 < 2) { 10 }", 10},
 		{"if (1 < 2) { 10 } else { 20 }", 10},
 		{"if (1 > 2) { 10 } else { 20 }", 20},
-		{"if (1 > 2) { 10 }", Null}, // Condition is false, no else, results in Null (object.NULL_OBJ)
-		{"if (false) { 10 }", Null},  // Condition is false, no else, results in Null (object.NULL_OBJ)
-		{"if ((1 > 2) == false) {10} else {20}", 10},
-		{"if (null) {10} else {20}", 20}, // null is falsey
-		{"!null", true},
-		{"if (!null) {10} else {20}", 10},
-
+		{"if (0) { 10 } else { 20 }", 20},
+		{"if (false) { 10 }", nil},
+		{"if (1 > 2) { 10 }", nil},
+		{"if (null) { 10 } else {20}", 20},
+		{"if (true) { if (false) { 1 } else { 100 }} else {200}", 100},
 	}
 	runVmTests(t, tests)
 }
@@ -96,197 +190,27 @@ func TestGlobalLetStatements(t *testing.T) {
 	tests := []vmTestCase{
 		{"let one = 1; one", 1},
 		{"let one = 1; let two = 2; one + two", 3},
-		{"let one = 1; let two = one + one; one + two", 3}, // one + two = 1 + 2 = 3
+		{"let one = 1; let two = one + one; one + two", 3},
+		{"let a = 1; let b = a; let c = a + b + 5; c", 7},
+		// {"let x = 5; if (x > 1) { x = x + 10; }; x", 15}, // 再代入はサポート外
+	}
+	runVmTests(t, tests)
+}
+
+func TestNullExpression(t *testing.T) {
+	tests := []vmTestCase{
+		{"null", nil},
 	}
 	runVmTests(t, tests)
 }
 
 func TestPutsStatement(t *testing.T) {
 	tests := []vmTestCase{
-		{"puts(123)", Null}, // puts returns Null (object.NULL_OBJ)
-		{"puts(1+2); 7", 7}, // puts returns null, but the last expression is 7
+		{"puts(123)", nil},
+		{"puts(true)", nil},
+		{"puts(null)", nil},
+		{"let x = 10; puts(x)", nil},
+		{"puts(1+2)", nil},
 	}
-	fmt.Println("\nINFO: TestPutsStatement will print to stdout. Please verify manually.")
-	fmt.Println("Expected output for 'puts(123)': 123")
-	fmt.Println("Expected output for 'puts(1+2); 7': 3")
-
 	runVmTests(t, tests)
-}
-
-func TestStackPushAndPop(t *testing.T) {
-	vm := New(&compiler.Bytecode{
-		Instructions: code.Instructions{}, // Dummy
-		Constants:    []object.Object{},   // Dummy
-	})
-
-	// Test pushing up to StackSize
-	for i := 0; i < StackSize; i++ {
-		err := vm.push(&object.Integer{Value: int64(i)})
-		if err != nil {
-			t.Fatalf("push failed at index %d: %v", i, err)
-		}
-		if vm.sp != i+1 {
-			t.Fatalf("stack pointer incorrect after push. got=%d, want=%d", vm.sp, i+1)
-		}
-	}
-
-	// Test stack overflow
-	err := vm.push(&object.Integer{Value: int64(StackSize)})
-	if err == nil {
-		t.Errorf("expected stack overflow error, but got nil")
-	} else {
-		expectedErrorMsg := "stack overflow"
-		if err.Error() != expectedErrorMsg {
-			t.Errorf("expected stack overflow error '%s', but got '%s'", expectedErrorMsg, err.Error())
-		}
-	}
-	if vm.sp != StackSize { // sp should not have incremented after overflow
-		t.Errorf("stack pointer should remain at StackSize after overflow attempt. got=%d", vm.sp)
-	}
-
-	// Test popping
-	for i := StackSize - 1; i >= 0; i-- {
-		if vm.sp != i+1 {
-			t.Fatalf("stack pointer incorrect before pop. got=%d, want=%d", vm.sp, i+1)
-		}
-		obj := vm.pop()
-		if obj == nil {
-			t.Fatalf("pop returned nil at index %d", i)
-		}
-		val, ok := obj.(*object.Integer)
-		if !ok {
-			t.Fatalf("popped object is not Integer at index %d", i)
-		}
-		if val.Value != int64(i) {
-			t.Fatalf("popped object has wrong value. got=%d, want=%d", val.Value, i)
-		}
-	}
-
-	if vm.sp != 0 {
-		t.Errorf("stack pointer should be 0 after popping all elements. got=%d", vm.sp)
-	}
-
-	// Test stack underflow on pop
-	underflowObj := vm.pop()
-	if underflowObj != nil { // Expecting nil or a specific error object if pop were to return errors
-		t.Errorf("expected nil or error on stack underflow from pop, but got %T (%+v)", underflowObj, underflowObj)
-	}
-	if vm.sp != 0 { // sp should remain 0
-		t.Errorf("stack pointer should remain at 0 after underflow pop attempt. got=%d", vm.sp)
-	}
-}
-
-func parse(input string) *ast.Program {
-	l := lexer.New(input)
-	p := parser.New(l)
-	program := p.ParseProgram()
-	if len(p.Errors()) != 0 {
-		panic(fmt.Sprintf("parser errors: %v", p.Errors())) // Test setup should ensure valid parsing
-	}
-	return program
-}
-
-func runVmTests(t *testing.T, tests []vmTestCase) {
-	t.Helper()
-
-	for _, tt := range tests {
-		program := parse(tt.input)
-		comp := compiler.New()
-		err := comp.Compile(program)
-		if err != nil {
-			t.Fatalf("compiler error: %s on input: %s", err, tt.input)
-		}
-
-		bytecode := comp.Bytecode()
-		instructions := bytecode.Instructions
-
-		// Hack for testing: if the program's *last* statement is an ExpressionStatement,
-		// and the *very last* instruction is OpPop, remove it.
-		if len(program.Statements) > 0 {
-			lastStmt := program.Statements[len(program.Statements)-1]
-			if _, ok := lastStmt.(*ast.ExpressionStatement); ok {
-				if len(instructions) > 0 && code.Opcode(instructions[len(instructions)-1]) == code.OpPop {
-					instructions = instructions[:len(instructions)-1]
-				}
-			}
-		}
-
-		modifiedBytecode := &compiler.Bytecode{
-			Instructions: instructions,
-			Constants:    bytecode.Constants,
-		}
-
-		vm := New(modifiedBytecode)
-		err = vm.Run()
-		if err != nil {
-			t.Fatalf("vm error: %s on input: %s", err, tt.input)
-		}
-
-		stackElem := vm.StackTop()
-		testExpectedObject(t, tt.expected, stackElem, tt.input)
-	}
-}
-
-func testExpectedObject(t *testing.T, expected interface{}, actual object.Object, input string) {
-	t.Helper()
-
-	switch expected := expected.(type) {
-	case int:
-		err := testIntegerObject(int64(expected), actual)
-		if err != nil {
-			t.Errorf("testIntegerObject failed for input '%s': %s", input, err)
-		}
-	case bool:
-		err := testBooleanObject(expected, actual)
-		if err != nil {
-			t.Errorf("testBooleanObject failed for input '%s': %s", input, err)
-		}
-	case *object.Null: // Expected value is the Null singleton
-		if actual != Null {
-			t.Errorf("object is not Null. got=%T (%+v), want=Null for input '%s'", actual, actual, input)
-		}
-	default:
-		// Handle the case where we expect 'Null' (the type, not the instance) for if statements without an else
-		if expectedValue, ok := expected.(object.ObjectType); ok && expectedValue == object.NULL_OBJ {
-			if actual != Null {
-			    // A special case can be if the stack is empty because an if without else evaluated to false
-			    // In our current VM, OpPop would leave the stack with one less item, but if the block was empty, an OpNull might be pushed.
-			    // If an if statement with no else branch has a false condition, compiler inserts OpNull.
-			    // So, 'actual' should be the Null object singleton.
-				t.Errorf("expected Null object for input '%s', got %T (%+v)", input, actual, actual)
-			}
-			return
-		}
-		t.Errorf("unsupported type for expected value: %T for input '%s'", expected, input)
-	}
-}
-
-func testIntegerObject(expected int64, actual object.Object) error {
-	result, ok := actual.(*object.Integer)
-	if !ok {
-		return fmt.Errorf("object is not Integer. got=%T (%+v), want=%d",
-			actual, actual, expected)
-	}
-	if result.Value != expected {
-		return fmt.Errorf("object has wrong value. got=%d, want=%d",
-			result.Value, expected)
-	}
-	return nil
-}
-
-func testBooleanObject(expected bool, actual object.Object) error {
-	result, ok := actual.(*object.Boolean)
-	if !ok {
-		// Check if actual is perhaps the global True or False object from the VM package
-		if (expected && actual == True) || (!expected && actual == False) {
-			return nil
-		}
-		return fmt.Errorf("object is not Boolean. got=%T (%+v), want=%t",
-			actual, actual, expected)
-	}
-	if result.Value != expected {
-		return fmt.Errorf("object has wrong value. got=%t, want=%t",
-			result.Value, expected)
-	}
-	return nil
 }

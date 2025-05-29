@@ -39,23 +39,27 @@ const (
 	RBRACE = "}"
 
 	// キーワード
-	LET    = "LET"
-	TRUE   = "TRUE"
-	FALSE  = "FALSE"
-	IF     = "IF"
-	ELSE   = "ELSE"
-	RETURN = "RETURN"
-	PUTS   = "PUTS"
+	// FUNCTION = "FUNCTION" // 削除
+	LET = "LET"
+	TRUE    = "TRUE"
+	FALSE   = "FALSE"
+	IF      = "IF"
+	ELSE    = "ELSE"
+	// RETURN   = "RETURN" // 削除
+	NULL = "NULL"
+	// PUTS     = "PUTS" // 削除
 )
 
 var keywords = map[string]TokenType{
-	"let":    LET,
-	"true":   TRUE,
-	"false":  FALSE,
-	"if":     IF,
-	"else":   ELSE,
-	"return": RETURN,
-	"puts":   PUTS,
+	// "fn":     FUNCTION, // 削除
+	"let":   LET,
+	"true":  TRUE,
+	"false": FALSE,
+	"if":    IF,
+	"else":  ELSE,
+	// "return": RETURN, // 削除
+	"null":  NULL,
+	// "puts":   PUTS, // 削除
 }
 
 func LookupIdent(ident string) TokenType {

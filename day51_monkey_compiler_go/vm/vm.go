@@ -11,7 +11,7 @@ import (
 const (
 	StackSize   = 2048
 	GlobalsSize = 65536
-	MaxFrames   = 1024 // 今回は puts のみなので実質1フレーム
+	// MaxFrames   = 1024 // フレーム管理は行わないため不要
 )
 
 var (
@@ -21,54 +21,29 @@ var (
 )
 
 type VM struct {
-	constants []object.Object
-	// instructions code.Instructions // コンパイル結果の instructions は bytecode.Instructions に含まれる
+	constants   []object.Object
+	instructions code.Instructions
 
 	stack []object.Object
 	sp    int // スタックポインタ: 常にスタックの次の空きスロットを指す。スタックトップは stack[sp-1]
 
 	globals []object.Object
 
-	frames      []*Frame
-	framesIndex int
-
-	// lastPoppedStackElem object.Object // テスト用にポップされた最後の要素を保持する場合に使用
-}
-
-type Frame struct {
-	ip           int // 命令ポインタ
-	instructions code.Instructions
-}
-
-func NewFrame(instructions code.Instructions) *Frame {
-	return &Frame{
-		instructions: instructions,
-		ip:           -1, // 最初のインクリメントで0になるように
-	}
-}
-
-func (f *Frame) Instructions() code.Instructions {
-	return f.instructions
+	// REPLなどで最後のポップされた要素を検査するために使用
+	lastPoppedStackElem object.Object
 }
 
 func New(bytecode *compiler.Bytecode) *VM {
-	mainFrame := NewFrame(bytecode.Instructions)
-	frames := make([]*Frame, MaxFrames)
-	frames[0] = mainFrame
+	return &VM{
+		constants:    bytecode.Constants,
+		instructions: bytecode.Instructions,
 
-	vm := &VM{
-		constants: bytecode.Constants,
-		// instructions: bytecode.Instructions,
+		stack:        make([]object.Object, StackSize),
+		sp:           0,
 
-		stack: make([]object.Object, StackSize),
-		sp:    0,
-
-		globals: make([]object.Object, GlobalsSize),
-
-		frames:      frames,
-		framesIndex: 1, // mainFrame が frames[0] にあるため、次のフレームは frames[1] から
+		globals:      make([]object.Object, GlobalsSize),
+		// フレーム関連の初期化は削除
 	}
-	return vm
 }
 
 func NewWithGlobalsStore(bytecode *compiler.Bytecode, s []object.Object) *VM {
@@ -77,49 +52,12 @@ func NewWithGlobalsStore(bytecode *compiler.Bytecode, s []object.Object) *VM {
 	return vm
 }
 
-func (vm *VM) currentFrame() *Frame {
-	return vm.frames[vm.framesIndex-1]
-}
-
-func (vm *VM) pushFrame(f *Frame) {
-	if vm.framesIndex >= MaxFrames {
-		// エラーハンドリング: フレームスタックオーバーフロー
-		// 今回は単純化のためpanicやエラーログに留める
-		panic("frame stack overflow")
-	}
-	vm.frames[vm.framesIndex] = f
-	vm.framesIndex++
-}
-
-func (vm *VM) popFrame() *Frame {
-	if vm.framesIndex <= 0 { // 最後のフレームはポップできない or ベースフレームは常に残るべき
-		// エラーハンドリング
-		panic("frame stack underflow or attempt to pop base frame")
-	}
-	vm.framesIndex--
-	return vm.frames[vm.framesIndex]
-}
-
 func (vm *VM) StackTop() object.Object {
 	if vm.sp == 0 {
 		return nil
 	}
 	return vm.stack[vm.sp-1]
 }
-
-// LastPoppedStackElem はテストケースで最後にポップされた要素を取得するメソッドです。
-// VM の実行結果（スタックトップの要素）を取得する目的とは異なります。
-// 実行結果を取得するには、Run() の後に StackTop() を呼び出すか、
-// Run() が最後のスタック要素を返すように変更します。
-// 今回のテストケースでは、Run() の後に StackTop() を使ってアサーションします。
-// そのため、このメソッドは現在の実装では不要かもしれません。
-/*
-func (vm *VM) LastPoppedStackElem() object.Object {
-	// このフィールドは現在VM構造体にはありません。
-	// return vm.lastPoppedStackElem
-	return nil // Placeholder
-}
-*/
 
 func (vm *VM) push(o object.Object) error {
 	if vm.sp >= StackSize {
@@ -132,14 +70,11 @@ func (vm *VM) push(o object.Object) error {
 
 func (vm *VM) pop() object.Object {
 	if vm.sp == 0 {
-		// VM内部のロジックでsp=0の状態でpopが呼ばれるのは通常バグ。
-		// panic("stack underflow") // より攻撃的なエラー処理
-		return nil // またはエラーオブジェクトを返す
+		return Null
 	}
 	o := vm.stack[vm.sp-1]
 	vm.sp--
-	// vm.stack[vm.sp] = nil // GCのためにクリアする場合 (オプション)
-	// vm.lastPoppedStackElem = o // テスト用に保持する場合
+	vm.lastPoppedStackElem = o
 	return o
 }
 
@@ -148,24 +83,15 @@ func (vm *VM) Run() error {
 	var ins code.Instructions
 	var op code.Opcode
 
-	for vm.currentFrame().ip < len(vm.currentFrame().Instructions())-1 {
-		vm.currentFrame().ip++
-
-		ip = vm.currentFrame().ip
-		ins = vm.currentFrame().Instructions()
-
-		if ip >= len(ins) { // 安全チェック：ipが命令の範囲外に出ないように
-			return fmt.Errorf("instruction pointer out of bounds: ip=%d, len(ins)=%d", ip, len(ins))
-		}
-		op = code.Opcode(ins[ip])
+	// フレーム管理がなくなったため、vm.instructions を直接参照
+	for ip < len(vm.instructions) {
+		op = code.Opcode(vm.instructions[ip])
+		ins = vm.instructions
 
 		switch op {
 		case code.OpConstant:
 			constIndex := code.ReadUint16(ins[ip+1:])
-			vm.currentFrame().ip += 2
-			if int(constIndex) >= len(vm.constants) {
-				return fmt.Errorf("invalid constant index: %d", constIndex)
-			}
+			ip += 2
 			err := vm.push(vm.constants[constIndex])
 			if err != nil {
 				return err
@@ -201,131 +127,81 @@ func (vm *VM) Run() error {
 				return err
 			}
 		case code.OpPop:
-			vm.pop() // OpPopは評価結果を捨てるので、返り値は不要
+			popped := vm.pop()
+			vm.lastPoppedStackElem = popped
 		case code.OpJump:
 			jumpPos := int(code.ReadUint16(ins[ip+1:]))
-			vm.currentFrame().ip = jumpPos - 1 // ループの最後でインクリメントされるため -1
+			ip = jumpPos - 1
 		case code.OpJumpNotTruthy:
 			jumpPos := int(code.ReadUint16(ins[ip+1:]))
-			vm.currentFrame().ip += 2 // jumpPosを読むためにipを進める
-
+			ip += 2
 			condition := vm.pop()
-			if condition == nil { // popが失敗した場合（スタックが空など）
-				return fmt.Errorf("stack underflow when evaluating condition for OpJumpNotTruthy")
-			}
 			if !vm.isTruthy(condition) {
-				vm.currentFrame().ip = jumpPos - 1
-			}
-
-		case code.OpSetGlobal:
-			globalIndex := code.ReadUint16(ins[ip+1:])
-			vm.currentFrame().ip += 2
-			valToSet := vm.pop()
-			if valToSet == nil { // popが失敗した場合
-				return fmt.Errorf("stack underflow when setting global variable")
-			}
-			if int(globalIndex) >= len(vm.globals) {
-				return fmt.Errorf("global index out of bounds: %d", globalIndex)
-			}
-			vm.globals[globalIndex] = valToSet
-		case code.OpGetGlobal:
-			globalIndex := code.ReadUint16(ins[ip+1:])
-			vm.currentFrame().ip += 2
-			if int(globalIndex) >= len(vm.globals) {
-				return fmt.Errorf("global index out of bounds: %d", globalIndex)
-			}
-			val := vm.globals[globalIndex]
-			if val == nil {
-				// 未定義のグローバル変数を参照しようとした場合。
-				// Monkey言語ではエラーにするか、nil (Nullオブジェクト) を返すか。
-				// ここではNullをプッシュする方針も考えられるが、エラーの方が厳密。
-				// return fmt.Errorf("undefined global variable at index %d", globalIndex)
-				// Monkeyでは未定義変数はエラーなので、それを模倣する。
-				// ただし、コンパイラが未定義変数を検出するので、ここまで到達するのは稀。
-				// もし到達した場合、初期化されていないグローバル領域を参照している可能性。
-				// ここではNullをプッシュして進めることもできるが、より安全なのはエラー。
-				// 今回は、初期化されていない場合は nil (Goのnil) のままなので、それを push する。
-				// オブジェクトシステムとしては object.Null を使うべき。
-				return vm.push(Null) // 未定義グローバルはNullとして扱う (REPLでの挙動に近い)
-			}
-			err := vm.push(val)
-			if err != nil {
-				return err
+				ip = jumpPos - 1
 			}
 		case code.OpNull:
 			err := vm.push(Null)
 			if err != nil {
 				return err
 			}
+		case code.OpSetGlobal:
+			globalIndex := code.ReadUint16(ins[ip+1:])
+			ip += 2
+			vm.globals[globalIndex] = vm.pop()
+		case code.OpGetGlobal:
+			globalIndex := code.ReadUint16(ins[ip+1:])
+			ip += 2
+			val := vm.globals[globalIndex]
+			if val == nil {
+				err := vm.push(Null)
+				if err != nil {
+					return err
+				}
+			} else {
+				err := vm.push(val)
+				if err != nil {
+					return err
+				}
+			}
 		case code.OpCallBuiltin:
-			// numArgs := int(ins[ip+1]) // 1バイトのオペランド
-			// vm.currentFrame().ip += 1   // オペランド分ipを進める
-			// オペランドの読み込みは ReadOperands を使うべきだが、今回は1バイト固定なので直接読む
-			if ip+1 >= len(ins) {
-				return fmt.Errorf("operand missing for OpCallBuiltin")
-			}
-			numArgs := int(ins[ip+1])
-			vm.currentFrame().ip++
+			numArgs := int(code.ReadUint8(ins[ip+1:]))
+			ip += 1
 
-
-			// 現在は 'puts' のみサポート
-			// 将来的には組み込み関数のインデックスもオペランドに含める
-			// builtinIndex := ins[ip+1] (仮)
-			// numArgs := ins[ip+2] (仮)
-			// vm.currentFrame().ip += 2 (仮)
-
-			if numArgs != 1 { // puts は引数1つ
-				return fmt.Errorf("wrong number of arguments for puts: got=%d, want=1", numArgs)
+			if numArgs != 1 {
+				return fmt.Errorf("builtin 'puts' expects 1 argument, got %d", numArgs)
 			}
 
-			// 引数をスタックから取得 (ただし、まだpopしない)
-			// 実際には、引数の数だけループしてargsスライスに集めるのが一般的
-			if vm.sp < numArgs {
-				return fmt.Errorf("stack underflow for builtin call arguments")
-			}
-			arg := vm.stack[vm.sp-numArgs] // 引数はスタックの sp-numArgs から sp-1 の間にある
+			// 引数はスタックの vm.sp - numArgs から vm.sp - 1 にある
+			// puts の場合、引数は vm.stack[vm.sp-1] にある
+			arg := vm.stack[vm.sp-1] // スタックトップの引数を読む (ポップはまだ)
 
-			// putsの実装
-			// fmt.Println(arg.Inspect()) // どんなオブジェクトでも表示できるようにInspectを使うのが堅牢
-
-			// Monkeyのputsは値を表示し、nullを返す仕様
-			// 表示処理
 			switch actualArg := arg.(type) {
 			case *object.Integer:
-				fmt.Println(actualArg.Value)
+				fmt.Printf("%d\n", actualArg.Value)
 			case *object.Boolean:
-				fmt.Println(actualArg.Value)
-			// Stringは現在サポート外だが、もしあれば
-			// case *object.String:
-			// 	fmt.Println(actualArg.Value)
+				fmt.Printf("%t\n", actualArg.Value)
 			case *object.Null:
-				fmt.Println("null")
+				fmt.Printf("null\n")
+			case *object.Error:
+				fmt.Printf("ERROR: %s\n", actualArg.Message)
 			default:
-				// その他の型や、エラーオブジェクトなどもInspectで表示
-				fmt.Println(arg.Inspect())
+				return fmt.Errorf("unsupported type for puts: %s (%T)", actualArg.Inspect(), actualArg)
 			}
 
-			// 引数をスタックから消費
-			// OpCallBuiltinの直前に、引数評価のOpPopがあるはずなので、ここでは不要？
-			// いや、コンパイラは引数評価のコードを生成し、最後にOpCallBuiltinを出す。
-			// その時点で引数の値はスタックに積まれている。
-			// 組み込み関数がそれらを消費する。
-			vm.sp -= numArgs // 引数を消費
+			// puts 実行後、引数をスタックから消費する
+			vm.sp = vm.sp - numArgs
 
-			// putsはnullを返すので、nullをスタックにプッシュ
+			// puts は概念的に Null を返すので、スタックに Null を積む
+			// これにより、後続の OpPop がこの Null を消費できる
 			err := vm.push(Null)
 			if err != nil {
 				return err
 			}
 
-
 		default:
-			def, err := code.Lookup(byte(op))
-			if err != nil {
-				return fmt.Errorf("opcode %d not found in definitions: %w", op, err)
-			}
-			return fmt.Errorf("opcode %s (%d) not yet implemented", def.Name, op)
+			return fmt.Errorf("unknown opcode %d (%s)", op, op.String())
 		}
+		ip++
 	}
 	return nil
 }
@@ -334,39 +210,35 @@ func (vm *VM) executeBinaryOperation(op code.Opcode) error {
 	right := vm.pop()
 	left := vm.pop()
 
-	if left == nil || right == nil {
-		return fmt.Errorf("stack underflow during binary operation")
-	}
-
 	leftType := left.Type()
 	rightType := right.Type()
 
 	if leftType == object.INTEGER_OBJ && rightType == object.INTEGER_OBJ {
-		return vm.executeBinaryIntegerOperation(op, left.(*object.Integer), right.(*object.Integer))
+		return vm.executeBinaryIntegerOperation(op, left, right)
 	}
-	// boolean同士の演算は通常ない (+, -, *, / など)
-	// もしサポートするならここで分岐
-	// if leftType == object.BOOLEAN_OBJ && rightType == object.BOOLEAN_OBJ { ... }
 
-	return fmt.Errorf("unsupported types for binary operation %s: %s %s", code.Opcode(op), leftType, rightType)
+	return fmt.Errorf("unsupported types for binary operation: %s %s", leftType, rightType)
 }
 
-func (vm *VM) executeBinaryIntegerOperation(op code.Opcode, left, right *object.Integer) error {
+func (vm *VM) executeBinaryIntegerOperation(op code.Opcode, left, right object.Object) error {
+	leftValue := left.(*object.Integer).Value
+	rightValue := right.(*object.Integer).Value
 	var result int64
+
 	switch op {
 	case code.OpAdd:
-		result = left.Value + right.Value
+		result = leftValue + rightValue
 	case code.OpSub:
-		result = left.Value - right.Value
+		result = leftValue - rightValue
 	case code.OpMul:
-		result = left.Value * right.Value
+		result = leftValue * rightValue
 	case code.OpDiv:
-		if right.Value == 0 {
+		if rightValue == 0 {
 			return fmt.Errorf("division by zero")
 		}
-		result = left.Value / right.Value
+		result = leftValue / rightValue
 	default:
-		return fmt.Errorf("unknown integer operator: %d (%s)", op, code.Opcode(op))
+		return fmt.Errorf("unknown integer operator: %d", op)
 	}
 	return vm.push(&object.Integer{Value: result})
 }
@@ -375,56 +247,35 @@ func (vm *VM) executeComparison(op code.Opcode) error {
 	right := vm.pop()
 	left := vm.pop()
 
-	if left == nil || right == nil {
-		return fmt.Errorf("stack underflow during comparison")
-	}
-
-	// 整数同士の比較
 	if left.Type() == object.INTEGER_OBJ && right.Type() == object.INTEGER_OBJ {
-		return vm.executeIntegerComparison(op, left.(*object.Integer), right.(*object.Integer))
+		return vm.executeIntegerComparison(op, left, right)
 	}
 
-	// ブール同士の比較 (==, != のみ)
-	if left.Type() == object.BOOLEAN_OBJ && right.Type() == object.BOOLEAN_OBJ {
-		leftVal := left.(*object.Boolean).Value
-		rightVal := right.(*object.Boolean).Value
-		switch op {
-		case code.OpEqual:
-			return vm.push(nativeBoolToBooleanObject(leftVal == rightVal))
-		case code.OpNotEqual:
-			return vm.push(nativeBoolToBooleanObject(leftVal != rightVal))
-		// OpGreaterThan, OpLessThanはブールには適用不可
-		default:
-			return fmt.Errorf("unknown operator for booleans: %s (%s %s)", op, left.Type(), right.Type())
-		}
-	}
-
-	// その他の型の比較 (例: null == null は true になるべきだが、現在の OpEqual/OpNotEqual はポインタ比較)
-	// null 同士、または boolean と null の比較など、より詳細な型チェックが必要な場合がある。
-	// ここでは、同じ型のオブジェクトインスタンス（True, False, Null）の比較を特別扱いする
 	switch op {
 	case code.OpEqual:
-		return vm.push(nativeBoolToBooleanObject(left == right)) // シングルトンなのでポインタ比較でOK
+		return vm.push(nativeBoolToBooleanObject(right == left))
 	case code.OpNotEqual:
-		return vm.push(nativeBoolToBooleanObject(left != right)) // シングルトンなのでポインタ比較でOK
+		return vm.push(nativeBoolToBooleanObject(right != left))
+	default:
+		return fmt.Errorf("unsupported types for comparison operator %s: %s %s", op.String(), left.Type(), right.Type())
 	}
-
-	return fmt.Errorf("unsupported types for comparison %s: %s %s",
-		op, left.Type(), right.Type())
 }
 
-func (vm *VM) executeIntegerComparison(op code.Opcode, left, right *object.Integer) error {
+func (vm *VM) executeIntegerComparison(op code.Opcode, left, right object.Object) error {
+	leftValue := left.(*object.Integer).Value
+	rightValue := right.(*object.Integer).Value
+
 	switch op {
 	case code.OpEqual:
-		return vm.push(nativeBoolToBooleanObject(left.Value == right.Value))
+		return vm.push(nativeBoolToBooleanObject(leftValue == rightValue))
 	case code.OpNotEqual:
-		return vm.push(nativeBoolToBooleanObject(left.Value != right.Value))
+		return vm.push(nativeBoolToBooleanObject(leftValue != rightValue))
 	case code.OpGreaterThan:
-		return vm.push(nativeBoolToBooleanObject(left.Value > right.Value))
+		return vm.push(nativeBoolToBooleanObject(leftValue > rightValue))
 	case code.OpLessThan:
-		return vm.push(nativeBoolToBooleanObject(left.Value < right.Value))
+		return vm.push(nativeBoolToBooleanObject(leftValue < rightValue))
 	default:
-		return fmt.Errorf("unknown integer comparison operator: %s", op)
+		return fmt.Errorf("unknown integer comparison operator: %d (%s)", op, op.String())
 	}
 }
 
@@ -437,22 +288,44 @@ func nativeBoolToBooleanObject(input bool) *object.Boolean {
 
 func (vm *VM) executeBangOperator() error {
 	operand := vm.pop()
-	if operand == nil {
-		return fmt.Errorf("stack underflow for bang operator")
-	}
-
-	// isTruthy に基づいて反転させるのが一貫性がある
-	if vm.isTruthy(operand) {
+	switch operand {
+	case True:
 		return vm.push(False)
+	case False:
+		return vm.push(True)
+	case Null:
+		return vm.push(True)
+	default:
+		if intVal, ok := operand.(*object.Integer); ok {
+			if intVal.Value == 0 { // !0 is true
+				return vm.push(True)
+			}
+			return vm.push(False) // !non-zero-integer is false
+		}
+		return vm.push(False) // !other-types (e.g. Error) is false, consistent with isTruthy
 	}
-	return vm.push(True)
+}
+
+// isTruthy はMonkey言語の条件評価における真偽を決定します。
+// - false, null は偽 (falsey)
+// - 整数 0 は偽 (falsey)
+// - それ以外は全て真 (truthy)
+func (vm *VM) isTruthy(obj object.Object) bool {
+	switch val := obj.(type) {
+	case *object.Boolean:
+		return val.Value // Trueならtrue, Falseならfalse
+	case *object.Null:
+		return false
+	case *object.Integer:
+		return val.Value != 0 // 0ならfalse, それ以外ならtrue
+	default:
+		// その他の型（エラーオブジェクトなど、もしあれば）は真として扱う
+		return true
+	}
 }
 
 func (vm *VM) executeMinusOperator() error {
 	operand := vm.pop()
-	if operand == nil {
-		return fmt.Errorf("stack underflow for minus operator")
-	}
 	if operand.Type() != object.INTEGER_OBJ {
 		return fmt.Errorf("unsupported type for negation: %s", operand.Type())
 	}
@@ -460,16 +333,17 @@ func (vm *VM) executeMinusOperator() error {
 	return vm.push(&object.Integer{Value: -value})
 }
 
-// isTruthy はMonkey言語の真偽値評価ルールに従います。
-// false と null のみが偽で、それ以外は真です。数値の0も真です。
-func (vm *VM) isTruthy(obj object.Object) bool {
-	switch obj {
-	case False:
-		return false
-	case Null:
-		return false
-	default:
-		// Integer(0) も true
-		return true
+func (vm *VM) LastPoppedStackElem() object.Object {
+	// REPLはRun()の後にこのメソッドを呼び出して最後の評価結果を取得する
+	// OpPopで終わった場合は lastPoppedStackElem に値がある
+	// そうでなくスタックに値が残っている場合はスタックトップが結果
+	if vm.lastPoppedStackElem != nil {
+		// この値は次のRunの前にクリアされるべきだが、
+		// REPLが毎回新しいVMを作るなら問題ない
+		return vm.lastPoppedStackElem
 	}
+	if vm.sp > 0 {
+		return vm.stack[vm.sp-1]
+	}
+	return Null // スタックが空で、最後にポップされた要素もない場合
 }

@@ -29,7 +29,7 @@ var precedences = map[token.TokenType]int{
 	token.MINUS:    SUM,
 	token.SLASH:    PRODUCT,
 	token.ASTERISK: PRODUCT,
-	token.LPAREN:   CALL, // puts() の呼び出しのため
+	token.LPAREN:   CALL,
 }
 
 type (
@@ -64,7 +64,6 @@ func New(l *lexer.Lexer) *Parser {
 	p.registerPrefix(token.NULL, p.parseNullLiteral)
 	p.registerPrefix(token.LPAREN, p.parseGroupedExpression)
 	p.registerPrefix(token.IF, p.parseIfExpression)
-	p.registerPrefix(token.PUTS, p.parsePutsExpression) // puts を前置として登録
 
 	p.infixParseFns = make(map[token.TokenType]infixParseFn)
 	p.registerInfix(token.PLUS, p.parseInfixExpression)
@@ -75,9 +74,8 @@ func New(l *lexer.Lexer) *Parser {
 	p.registerInfix(token.NOT_EQ, p.parseInfixExpression)
 	p.registerInfix(token.LT, p.parseInfixExpression)
 	p.registerInfix(token.GT, p.parseInfixExpression)
-	p.registerInfix(token.LPAREN, p.parseCallExpression) // Puts の呼び出し
+	p.registerInfix(token.LPAREN, p.parseCallExpression)
 
-	// 2つのトークンを読み込む。curToken と peekToken の両方がセットされる。
 	p.nextToken()
 	p.nextToken()
 
@@ -117,8 +115,6 @@ func (p *Parser) parseStatement() ast.Statement {
 	switch p.curToken.Type {
 	case token.LET:
 		return p.parseLetStatement()
-	case token.RETURN:
-		return p.parseReturnStatement()
 	default:
 		return p.parseExpressionStatement()
 	}
@@ -148,24 +144,10 @@ func (p *Parser) parseLetStatement() *ast.LetStatement {
 	return stmt
 }
 
-func (p *Parser) parseReturnStatement() *ast.ReturnStatement {
-	stmt := &ast.ReturnStatement{Token: p.curToken}
-	p.nextToken()
-
-	stmt.ReturnValue = p.parseExpression(LOWEST)
-
-	if p.peekTokenIs(token.SEMICOLON) {
-		p.nextToken()
-	}
-
-	return stmt
-}
-
 func (p *Parser) parseExpressionStatement() *ast.ExpressionStatement {
 	stmt := &ast.ExpressionStatement{Token: p.curToken}
 	stmt.Expression = p.parseExpression(LOWEST)
 
-	// 式文の後のセミコロンは任意
 	if p.peekTokenIs(token.SEMICOLON) {
 		p.nextToken()
 	}
@@ -180,13 +162,6 @@ func (p *Parser) noPrefixParseFnError(t token.TokenType) {
 func (p *Parser) parseExpression(precedence int) ast.Expression {
 	prefix := p.prefixParseFns[p.curToken.Type]
 	if prefix == nil {
-		// 'puts' のようなキーワードが式の先頭に来る場合のエラーメッセージを改善
-		if p.curToken.Type == token.PUTS {
-			// これは実際には parsePutsExpression で処理されるべきだが、
-			// もし prefixParseFns に登録されていなければここに来る可能性がある
-			// ここでは CallExpression として処理を試みる
-			return p.parseCallExpression(&ast.Identifier{Token: p.curToken, Value: p.curToken.Literal})
-		}
 		p.noPrefixParseFnError(p.curToken.Type)
 		return nil
 	}
@@ -298,27 +273,11 @@ func (p *Parser) parseBlockStatement() *ast.BlockStatement {
 	return block
 }
 
-// puts(arg1, arg2, ...) のための特別なパーサー
-func (p *Parser) parsePutsExpression() ast.Expression {
-	// この関数は token.PUTS が prefixParseFns に登録されている場合に呼び出される
-	// curToken は PUTS であるはず
-	ident := &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}
-	// LPAREN が続くことを期待
-	if !p.expectPeek(token.LPAREN) {
-		return nil // エラーは expectPeek 内で記録される
-	}
-	// parseCallExpression に処理を委譲
-	return p.parseCallExpression(ident)
-}
-
-
 func (p *Parser) parseCallExpression(function ast.Expression) ast.Expression {
-	// curToken は LPAREN であるはず (parsePutsExpression から呼ばれるか、通常の関数呼び出しの場合)
 	exp := &ast.CallExpression{Token: p.curToken, Function: function}
 	exp.Arguments = p.parseExpressionList(token.RPAREN)
 	return exp
 }
-
 
 func (p *Parser) parseExpressionList(end token.TokenType) []ast.Expression {
 	list := []ast.Expression{}
@@ -339,7 +298,6 @@ func (p *Parser) parseExpressionList(end token.TokenType) []ast.Expression {
 	return list
 }
 
-
 func (p *Parser) curTokenIs(t token.TokenType) bool {
 	return p.curToken.Type == t
 }
@@ -352,10 +310,9 @@ func (p *Parser) expectPeek(t token.TokenType) bool {
 	if p.peekTokenIs(t) {
 		p.nextToken()
 		return true
-	} else {
-		p.peekError(t)
-		return false
 	}
+	p.peekError(t)
+	return false
 }
 
 func (p *Parser) peekPrecedence() int {
