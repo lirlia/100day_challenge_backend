@@ -61,13 +61,13 @@
 - [x] テスト実行と確認
 - [x] Git コミット
 
-### 10/10: REPL の実装と全体統合
-- [ ] `repl/repl.go` - REPL の実装 (コンパイラとVMを使用)
-- [ ] `main.go` - REPL 起動処理
-- [ ] 手動での動作確認
-- [ ] README の更新
-- [ ] `knowledge.mdc` の更新
-- [ ] 最終コミット
+### 10/10: REPL の実装と全体統合 ✅
+- [x] `repl/repl.go` - REPL の実装 (コンパイラとVMを使用)
+- [x] `main.go` - REPL 起動処理
+- [x] 手動での動作確認
+- [x] README の更新
+- [x] `knowledge.mdc` の更新
+- [x] 最終コミット
 
 ## 実装ログ
 
