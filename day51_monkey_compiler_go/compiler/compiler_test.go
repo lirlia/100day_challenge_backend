@@ -312,6 +312,32 @@ func TestPutsStatement(t *testing.T) {
 	runCompilerTests(t, tests)
 }
 
+func TestInputStatement(t *testing.T) {
+	tests := []compilerTestCase{
+		{
+			input:             `input()`,
+			expectedConstants: []interface{}{},
+			expectedInstructions: []code.Instructions{
+				code.Make(code.OpCallBuiltin, 0),
+				code.Make(code.OpPop),
+			},
+		},
+		{
+			input:             `let name = input(); puts(name);`,
+			expectedConstants: []interface{}{},
+			expectedInstructions: []code.Instructions{
+				code.Make(code.OpCallBuiltin, 0),  // input()
+				code.Make(code.OpSetGlobal, 0),    // let name =
+				code.Make(code.OpGetGlobal, 0),    // name
+				code.Make(code.OpCallBuiltin, 1),  // puts(name)
+				code.Make(code.OpPop),
+			},
+		},
+	}
+
+	runCompilerTests(t, tests)
+}
+
 func TestStringExpressions(t *testing.T) {
 	tests := []compilerTestCase{
 		{

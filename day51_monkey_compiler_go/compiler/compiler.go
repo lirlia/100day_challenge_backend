@@ -186,6 +186,11 @@ func (c *Compiler) Compile(node ast.Node) error {
 				}
 			}
 			c.emit(code.OpCallBuiltin, len(node.Arguments))
+		} else if node.Function.TokenLiteral() == "input" {
+			if len(node.Arguments) != 0 {
+				return fmt.Errorf("input function expects 0 arguments, got %d", len(node.Arguments))
+			}
+			c.emit(code.OpCallBuiltin, 0)
 		} else {
 			return fmt.Errorf("unsupported function call: %s", node.Function.TokenLiteral())
 		}
@@ -236,10 +241,10 @@ func (c *Compiler) lastInstructionIs(op code.Opcode) bool {
 }
 
 func (c *Compiler) removeLastPop() {
-	if c.lastInstructionIs(code.OpPop) { // 追加：OpPopであることを確認
-	    c.instructions = c.instructions[:c.lastInstruction.Position]
-	    c.lastInstruction = c.previousInstruction
-    }
+	if c.lastInstructionIs(code.OpPop) {
+		c.instructions = c.instructions[:c.lastInstruction.Position]
+		c.lastInstruction = c.previousInstruction
+	}
 }
 
 func (c *Compiler) changeOperand(opPos int, operand int) {
@@ -249,10 +254,6 @@ func (c *Compiler) changeOperand(opPos int, operand int) {
 }
 
 func (c *Compiler) replaceInstruction(pos int, newInstruction []byte) {
-	// 古い命令の長さを特定する必要があるが、Opcode定義からわかる
-	// 簡単のため、ここでは新しい命令が古い命令と同じ長さであることを仮定するか、
-	// より堅牢にするには古い命令の長さを計算する。
-	// 今回のケース(OpJumpNotTruthy, OpJump)はオペランド長が固定なので、直接置き換え可能。
 	for i := 0; i < len(newInstruction); i++ {
 		c.instructions[pos+i] = newInstruction[i]
 	}

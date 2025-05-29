@@ -1,7 +1,10 @@
 package vm
 
 import (
+	"bufio"
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/lirlia/100day_challenge_backend/day51_monkey_compiler_go/code"
 	"github.com/lirlia/100day_challenge_backend/day51_monkey_compiler_go/compiler"
@@ -171,28 +174,48 @@ func (vm *VM) Run() error {
 				return fmt.Errorf("not enough arguments on stack: expected %d, got %d", numArgs, vm.sp)
 			}
 
-			args := vm.stack[vm.sp-numArgs : vm.sp]
-			vm.sp = vm.sp - numArgs
-
-			// puts の実装
-			for _, arg := range args {
-				switch obj := arg.(type) {
-				case *object.Integer:
-					fmt.Println(obj.Value)
-				case *object.Boolean:
-					fmt.Println(obj.Value)
-				case *object.String:
-					fmt.Println(obj.Value)
-				case *object.Null:
-					fmt.Println("null")
-				default:
-					fmt.Printf("%s\n", obj.Inspect())
+			if numArgs == 0 {
+				// input() 関数の場合（引数なし）
+				fmt.Print("Input: ")
+				scanner := bufio.NewScanner(os.Stdin)
+				if scanner.Scan() {
+					input := strings.TrimSpace(scanner.Text())
+					err := vm.push(&object.String{Value: input})
+					if err != nil {
+						return err
+					}
+				} else {
+					// 入力エラーまたはEOF
+					err := vm.push(&object.String{Value: ""})
+					if err != nil {
+						return err
+					}
 				}
-			}
+			} else {
+				// puts() 関数の場合（引数あり）
+				args := vm.stack[vm.sp-numArgs : vm.sp]
+				vm.sp = vm.sp - numArgs
 
-			err := vm.push(Null)
-			if err != nil {
-				return err
+				// puts の実装
+				for _, arg := range args {
+					switch obj := arg.(type) {
+					case *object.Integer:
+						fmt.Println(obj.Value)
+					case *object.Boolean:
+						fmt.Println(obj.Value)
+					case *object.String:
+						fmt.Println(obj.Value)
+					case *object.Null:
+						fmt.Println("null")
+					default:
+						fmt.Printf("%s\n", obj.Inspect())
+					}
+				}
+
+				err := vm.push(Null)
+				if err != nil {
+					return err
+				}
 			}
 
 		default:
