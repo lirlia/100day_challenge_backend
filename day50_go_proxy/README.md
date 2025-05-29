@@ -2,6 +2,10 @@
 
 これは、100日チャレンジのDay50で作成した、Go言語による高機能HTTP/HTTPSフォワードプロキシサーバーです。HTTP通信に加え、HTTPS通信に対してもMan-in-the-Middle (MITM) 方式でトラフィックを復号し、インテリジェント・キャッシングを行います。
 
+https://github.com/user-attachments/assets/5e55ea58-6ce7-4095-a91d-0abf74d7c35b
+
+[100日チャレンジ day50](https://zenn.dev/gin_nazo/scraps/7fccf9623851aa)
+
 ## 主な機能
 
 - **HTTP/1.1 フォワードプロキシ:** 通常のHTTPリクエストを中継します。
