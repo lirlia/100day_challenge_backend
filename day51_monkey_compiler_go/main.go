@@ -38,11 +38,14 @@ func main() {
 }
 
 func executeFile(filePath string) {
-	data, err := os.ReadFile(filePath) // Go 1.16+
+	// fmt.Fprintf(os.Stderr, "[DEBUG] executeFile called with filePath: %s\n", filePath)
+	data, err := os.ReadFile(filePath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error reading file %s: %s\n", filePath, err)
+		// fmt.Fprintf(os.Stderr, "[DEBUG] Error reading file %s: %s\n", filePath, err)
 		os.Exit(1)
 	}
+	// fmt.Fprintf(os.Stderr, "[DEBUG] Successfully read file. Data length: %d\n", len(data))
+	// fmt.Fprintf(os.Stderr, "[DEBUG] File content: %s\n", string(data)) // 内容が長い可能性があるので注意
 
 	l := lexer.New(string(data))
 	p := parser.New(l)
