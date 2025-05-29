@@ -64,3 +64,4 @@ LLMで生成したコードを置いています。
 | Day47 | CDN Simulator                                                              | <video src="https://github.com/user-attachments/assets/40abc594-b347-4375-8626-a6a2b0d8500c" > |
 | Day48 | Pty Terminal                                                               | <video src="https://github.com/user-attachments/assets/4fe828dd-65aa-40b8-bc8c-396d95548a1a" > |
 | Day49 | Go言語 ミニブラウザ                                                        | <video src="https://github.com/user-attachments/assets/a5e1e683-0a12-4652-aeab-172b59dd3ec1" > |
+| Day50 | 自作プロキシ                                                                | <video src="https://github.com/user-attachments/assets/5e55ea58-6ce7-4095-a91d-0abf74d7c35b" > |
