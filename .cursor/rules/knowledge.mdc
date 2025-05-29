@@ -57,3 +57,4 @@ alwaysApply: true
 | 48  | GUIターミナルエミュレータ         | Go, creack/pty, 擬似端末(pty)制御, exec, ANSIエスケープシーケンス処理, ターミナルエミュレーション |
 | 49  | Go言語 ミニブラウザ             | Go, Fyne, net/http, golang.org/x/net/html, Shift_JIS対応, フレームセット対応 |
 | 50  | HTTP/HTTPS フォワードプロキシ (インテリジェントキャッシュ付き) | Go, SQLite, HTTP/HTTPS Proxy, MITM, 動的証明書生成, キャッシュ (Cache-Control, Expires) |
+| 51  | Monkey 言語コンパイラ & VM | Go, 字句解析, 構文解析, AST, バイトコード, スタックベースVM, REPL |

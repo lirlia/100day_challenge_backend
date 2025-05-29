@@ -32,11 +32,14 @@ const (
 	// デリミタ
 	COMMA     = ","
 	SEMICOLON = ";"
+	COLON     = ":" // For future use (e.g., hash maps)
 
 	LPAREN = "("
 	RPAREN = ")"
 	LBRACE = "{"
 	RBRACE = "}"
+
+	STRING = "STRING" // Added for string literals
 
 	// キーワード
 	// FUNCTION = "FUNCTION" // 削除

@@ -6,15 +6,15 @@ puts(score);
 puts("あなたの出席率:");
 puts(attendance_rate);
 
-if (score >= 80) {
-  if (attendance_rate >= 90) {
+if (score > 79) {
+  if (attendance_rate > 89) {
     puts("素晴らしい成績です！A評価！");
   } else {
     puts("良い成績ですが、出席率も頑張りましょう。B+評価。");
   }
 } else {
-  if (score >= 60) {
-    if (attendance_rate >= 80) {
+  if (score > 59) {
+    if (attendance_rate > 79) {
       puts("まずまずの成績です。B評価。");
     } else {
       puts("もう少し頑張りましょう。C評価。");

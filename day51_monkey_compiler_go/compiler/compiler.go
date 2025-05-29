@@ -56,22 +56,25 @@ func (c *Compiler) Compile(node ast.Node) error {
 				return err
 			}
 		}
-	case *ast.BlockStatement:
-		for _, s := range node.Statements {
-			err := c.Compile(s)
-			if err != nil {
-				return err
-			}
-		}
 	case *ast.ExpressionStatement:
 		err := c.Compile(node.Expression)
 		if err != nil {
 			return err
 		}
-		// 式文の結果はスタックに残っている必要があるので、Popする
 		c.emit(code.OpPop)
-
 	case *ast.InfixExpression:
+		if node.Operator == "<" {
+			err := c.Compile(node.Right)
+			if err != nil {
+				return err
+			}
+			err = c.Compile(node.Left)
+			if err != nil {
+				return err
+			}
+			c.emit(code.OpGreaterThan)
+			return nil
+		}
 		err := c.Compile(node.Left)
 		if err != nil {
 			return err
@@ -80,7 +83,6 @@ func (c *Compiler) Compile(node ast.Node) error {
 		if err != nil {
 			return err
 		}
-
 		switch node.Operator {
 		case "+":
 			c.emit(code.OpAdd)
@@ -92,14 +94,12 @@ func (c *Compiler) Compile(node ast.Node) error {
 			c.emit(code.OpDiv)
 		case ">":
 			c.emit(code.OpGreaterThan)
-		case "<":
-			c.emit(code.OpLessThan)
 		case "==":
 			c.emit(code.OpEqual)
 		case "!=":
 			c.emit(code.OpNotEqual)
 		default:
-			return fmt.Errorf("unknown operator: %s", node.Operator)
+			return fmt.Errorf("unknown operator %s", node.Operator)
 		}
 	case *ast.PrefixExpression:
 		err := c.Compile(node.Right)
@@ -112,30 +112,28 @@ func (c *Compiler) Compile(node ast.Node) error {
 		case "-":
 			c.emit(code.OpMinus)
 		default:
-			return fmt.Errorf("unknown operator: %s", node.Operator)
+			return fmt.Errorf("unknown operator %s", node.Operator)
 		}
-
 	case *ast.IntegerLiteral:
 		integer := &object.Integer{Value: node.Value}
 		c.emit(code.OpConstant, c.addConstant(integer))
-
+	case *ast.StringLiteral:
+		str := &object.String{Value: node.Value}
+		c.emit(code.OpConstant, c.addConstant(str))
 	case *ast.Boolean:
 		if node.Value {
 			c.emit(code.OpTrue)
 		} else {
 			c.emit(code.OpFalse)
 		}
-
 	case *ast.NullLiteral:
 		c.emit(code.OpNull)
-
 	case *ast.IfExpression:
 		err := c.Compile(node.Condition)
 		if err != nil {
 			return err
 		}
 		jumpNotTruthyPos := c.emit(code.OpJumpNotTruthy, 9999)
-
 		err = c.Compile(node.Consequence)
 		if err != nil {
 			return err
@@ -143,14 +141,9 @@ func (c *Compiler) Compile(node ast.Node) error {
 		if c.lastInstructionIs(code.OpPop) {
 			c.removeLastPop()
 		}
-
-		// Emit OpJump first
 		jumpPos := c.emit(code.OpJump, 9999)
-
-		// OpJumpNotTruthy should jump to start of Alternative/OpNull block
-		c.changeOperand(jumpNotTruthyPos, len(c.instructions))
-
-		// Now emit Alternative or OpNull
+		jumpNotTruthyAddress := len(c.instructions)
+		c.changeOperand(jumpNotTruthyPos, jumpNotTruthyAddress)
 		if node.Alternative == nil {
 			c.emit(code.OpNull)
 		} else {
@@ -162,39 +155,40 @@ func (c *Compiler) Compile(node ast.Node) error {
 				c.removeLastPop()
 			}
 		}
-
-		// OpJump (from Consequence) should jump to *after* Alternative/OpNull block
-		c.changeOperand(jumpPos, len(c.instructions))
-
+		jumpAddress := len(c.instructions)
+		c.changeOperand(jumpPos, jumpAddress)
+	case *ast.BlockStatement:
+		for _, s := range node.Statements {
+			err := c.Compile(s)
+			if err != nil {
+				return err
+			}
+		}
 	case *ast.LetStatement:
-		symbol := c.symbolTable.Define(node.Name.Value)
 		err := c.Compile(node.Value)
 		if err != nil {
 			return err
 		}
+		symbol := c.symbolTable.Define(node.Name.Value)
 		c.emit(code.OpSetGlobal, symbol.Index)
-
 	case *ast.Identifier:
 		symbol, ok := c.symbolTable.Resolve(node.Value)
 		if !ok {
 			return fmt.Errorf("undefined variable %s", node.Value)
 		}
 		c.emit(code.OpGetGlobal, symbol.Index)
-
-	case *ast.CallExpression: // puts 専用
-		if node.Function.TokenLiteral() != "puts" {
+	case *ast.CallExpression:
+		if node.Function.TokenLiteral() == "puts" {
+			for _, arg := range node.Arguments {
+				err := c.Compile(arg)
+				if err != nil {
+					return err
+				}
+			}
+			c.emit(code.OpCallBuiltin, len(node.Arguments))
+		} else {
 			return fmt.Errorf("unsupported function call: %s", node.Function.TokenLiteral())
 		}
-		// 引数を評価
-		for _, arg := range node.Arguments {
-			err := c.Compile(arg)
-			if err != nil {
-				return err
-			}
-		}
-		// OpCallBuiltin は引数の数をオペランドに取るので、実際の引数の数を渡す
-		c.emit(code.OpCallBuiltin, len(node.Arguments)) // 引数の数をオペランドとして渡す
-
 	}
 	return nil
 }

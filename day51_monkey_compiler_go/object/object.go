@@ -5,10 +5,12 @@ import "fmt"
 type ObjectType string
 
 const (
-	INTEGER_OBJ = "INTEGER"
-	BOOLEAN_OBJ = "BOOLEAN"
-	NULL_OBJ    = "NULL"
-	ERROR_OBJ   = "ERROR"
+	INTEGER_OBJ     = "INTEGER"
+	BOOLEAN_OBJ     = "BOOLEAN"
+	NULL_OBJ        = "NULL"
+	BUILTIN_OBJ     = "BUILTIN"
+	STRING_OBJ      = "STRING"
+	ERROR_OBJ       = "ERROR"
 )
 
 type Object interface {
@@ -66,3 +68,10 @@ func (ins Instructions) String() string {
 	}
 	return out
 }
+
+type String struct {
+	Value string
+}
+
+func (s *String) Inspect() string  { return s.Value }
+func (s *String) Type() ObjectType { return STRING_OBJ }

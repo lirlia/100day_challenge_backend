@@ -164,35 +164,32 @@ func (vm *VM) Run() error {
 				}
 			}
 		case code.OpCallBuiltin:
-			numArgs := int(code.ReadUint8(ins[ip+1:]))
+			numArgs := int(code.ReadUint8(vm.instructions[ip+1:]))
 			ip += 1
 
-			if numArgs != 1 {
-				return fmt.Errorf("builtin 'puts' expects 1 argument, got %d", numArgs)
+			if vm.sp < numArgs {
+				return fmt.Errorf("not enough arguments on stack: expected %d, got %d", numArgs, vm.sp)
 			}
 
-			// 引数はスタックの vm.sp - numArgs から vm.sp - 1 にある
-			// puts の場合、引数は vm.stack[vm.sp-1] にある
-			arg := vm.stack[vm.sp-1] // スタックトップの引数を読む (ポップはまだ)
-
-			switch actualArg := arg.(type) {
-			case *object.Integer:
-				fmt.Printf("%d\n", actualArg.Value)
-			case *object.Boolean:
-				fmt.Printf("%t\n", actualArg.Value)
-			case *object.Null:
-				fmt.Printf("null\n")
-			case *object.Error:
-				fmt.Printf("ERROR: %s\n", actualArg.Message)
-			default:
-				return fmt.Errorf("unsupported type for puts: %s (%T)", actualArg.Inspect(), actualArg)
-			}
-
-			// puts 実行後、引数をスタックから消費する
+			args := vm.stack[vm.sp-numArgs : vm.sp]
 			vm.sp = vm.sp - numArgs
 
-			// puts は概念的に Null を返すので、スタックに Null を積む
-			// これにより、後続の OpPop がこの Null を消費できる
+			// puts の実装
+			for _, arg := range args {
+				switch obj := arg.(type) {
+				case *object.Integer:
+					fmt.Println(obj.Value)
+				case *object.Boolean:
+					fmt.Println(obj.Value)
+				case *object.String:
+					fmt.Println(obj.Value)
+				case *object.Null:
+					fmt.Println("null")
+				default:
+					fmt.Printf("%s\n", obj.Inspect())
+				}
+			}
+
 			err := vm.push(Null)
 			if err != nil {
 				return err
@@ -213,11 +210,14 @@ func (vm *VM) executeBinaryOperation(op code.Opcode) error {
 	leftType := left.Type()
 	rightType := right.Type()
 
-	if leftType == object.INTEGER_OBJ && rightType == object.INTEGER_OBJ {
+	switch {
+	case leftType == object.INTEGER_OBJ && rightType == object.INTEGER_OBJ:
 		return vm.executeBinaryIntegerOperation(op, left, right)
+	case leftType == object.STRING_OBJ && rightType == object.STRING_OBJ:
+		return vm.executeBinaryStringOperation(op, left, right)
+	default:
+		return fmt.Errorf("unsupported types for binary operation: %T %T", left, right)
 	}
-
-	return fmt.Errorf("unsupported types for binary operation: %s %s", leftType, rightType)
 }
 
 func (vm *VM) executeBinaryIntegerOperation(op code.Opcode, left, right object.Object) error {
@@ -241,6 +241,17 @@ func (vm *VM) executeBinaryIntegerOperation(op code.Opcode, left, right object.O
 		return fmt.Errorf("unknown integer operator: %d", op)
 	}
 	return vm.push(&object.Integer{Value: result})
+}
+
+func (vm *VM) executeBinaryStringOperation(op code.Opcode, left, right object.Object) error {
+	if op != code.OpAdd {
+		return fmt.Errorf("unknown string operator: %d", op)
+	}
+
+	leftVal := left.(*object.String).Value
+	rightVal := right.(*object.String).Value
+
+	return vm.push(&object.String{Value: leftVal + rightVal})
 }
 
 func (vm *VM) executeComparison(op code.Opcode) error {

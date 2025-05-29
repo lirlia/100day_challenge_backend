@@ -59,6 +59,20 @@ func testBooleanObject(t *testing.T, expected bool, actual object.Object) bool {
 	return true
 }
 
+func testStringObject(t *testing.T, expected string, actual object.Object) bool {
+	t.Helper()
+	result, ok := actual.(*object.String)
+	if !ok {
+		t.Errorf("object is not String. got=%T (%+v)", actual, actual)
+		return false
+	}
+	if result.Value != expected {
+		t.Errorf("object has wrong value. got=%q, want=%q", result.Value, expected)
+		return false
+	}
+	return true
+}
+
 func runVmTests(t *testing.T, tests []vmTestCase) {
 	t.Helper()
 
@@ -97,6 +111,12 @@ func runVmTests(t *testing.T, tests []vmTestCase) {
 			testIntegerObject(t, expectedVal, stackElem)
 		case bool:
 			testBooleanObject(t, expectedVal, stackElem)
+		case string:
+			if expectedVal == "error" {
+				// エラーケースは上で処理済み
+				continue
+			}
+			testStringObject(t, expectedVal, stackElem)
 		case nil: // 期待値が Go の nil の場合は、Monkey の Null オブジェクトを期待
 			if stackElem != Null {
 				t.Errorf("expected Null object, got %T (%+v) for input: %s", stackElem, stackElem, tt.input)
@@ -212,5 +232,15 @@ func TestPutsStatement(t *testing.T) {
 		{"let x = 10; puts(x)", nil},
 		{"puts(1+2)", nil},
 	}
+	runVmTests(t, tests)
+}
+
+func TestStringExpressions(t *testing.T) {
+	tests := []vmTestCase{
+		{`"monkey"`, "monkey"},
+		{`"mon" + "key"`, "monkey"},
+		{`"mon" + "key" + "banana"`, "monkeybanana"},
+	}
+
 	runVmTests(t, tests)
 }

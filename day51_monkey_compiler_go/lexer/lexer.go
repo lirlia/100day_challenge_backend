@@ -39,6 +39,7 @@ func (l *Lexer) NextToken() token.Token {
 	l.skipWhitespace()
 
 	switch l.ch {
+	// Multi-character tokens first
 	case '=':
 		if l.peekChar() == '=' {
 			ch := l.ch
@@ -48,10 +49,6 @@ func (l *Lexer) NextToken() token.Token {
 		} else {
 			tok = newToken(token.ASSIGN, l.ch)
 		}
-	case '+':
-		tok = newToken(token.PLUS, l.ch)
-	case '-':
-		tok = newToken(token.MINUS, l.ch)
 	case '!':
 		if l.peekChar() == '=' {
 			ch := l.ch
@@ -61,6 +58,11 @@ func (l *Lexer) NextToken() token.Token {
 		} else {
 			tok = newToken(token.BANG, l.ch)
 		}
+	// Single-character operators
+	case '+':
+		tok = newToken(token.PLUS, l.ch)
+	case '-':
+		tok = newToken(token.MINUS, l.ch)
 	case '/':
 		tok = newToken(token.SLASH, l.ch)
 	case '*':
@@ -69,6 +71,7 @@ func (l *Lexer) NextToken() token.Token {
 		tok = newToken(token.LT, l.ch)
 	case '>':
 		tok = newToken(token.GT, l.ch)
+	// Single-character delimiters
 	case ';':
 		tok = newToken(token.SEMICOLON, l.ch)
 	case ',':
@@ -81,6 +84,13 @@ func (l *Lexer) NextToken() token.Token {
 		tok = newToken(token.LBRACE, l.ch)
 	case '}':
 		tok = newToken(token.RBRACE, l.ch)
+	case ':':
+		tok = newToken(token.COLON, l.ch)
+	// String literals
+	case '"':
+		tok.Type = token.STRING
+		tok.Literal = l.readString()
+	// EOF
 	case 0:
 		tok.Literal = ""
 		tok.Type = token.EOF
@@ -88,11 +98,11 @@ func (l *Lexer) NextToken() token.Token {
 		if isLetter(l.ch) {
 			tok.Literal = l.readIdentifier()
 			tok.Type = token.LookupIdent(tok.Literal)
-			return tok // readIdentifier() が readChar() を呼び出すので、ここで early return
+			return tok // readIdentifier() calls readChar(), so early return here
 		} else if isDigit(l.ch) {
 			tok.Type = token.INT
 			tok.Literal = l.readNumber()
-			return tok // readNumber() が readChar() を呼び出すので、ここで early return
+			return tok // readNumber() calls readChar(), so early return here
 		} else {
 			tok = newToken(token.ILLEGAL, l.ch)
 		}
@@ -120,6 +130,17 @@ func (l *Lexer) readNumber() string {
 	position := l.position
 	for isDigit(l.ch) {
 		l.readChar()
+	}
+	return l.input[position:l.position]
+}
+
+func (l *Lexer) readString() string {
+	position := l.position + 1
+	for {
+		l.readChar()
+		if l.ch == '"' || l.ch == 0 {
+			break
+		}
 	}
 	return l.input[position:l.position]
 }
