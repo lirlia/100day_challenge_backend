@@ -1,0 +1,16 @@
+proxy:
+  port: 8080
+  # host: "localhost" # 必要であればコメント解除
+  # ca_cert_path: "ca.crt"
+  # ca_key_path: "ca.key"
+# logging:
+#   level: "info" # debug, info, warn, error
+#   file: "proxy.log" # stdout も可能
+
+cache:
+  enabled: true
+  sqlite_path: "db/cache.db"
+  default_ttl_seconds: 3600
+  max_size_mb: 100
+# acl: # (もしアクセス制御機能を実装する場合)
+#   rules_file: "config/acl_rules.yml"

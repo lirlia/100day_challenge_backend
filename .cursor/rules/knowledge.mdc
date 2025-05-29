@@ -55,3 +55,5 @@ alwaysApply: true
 | 46  | ACME CA Simulator | Next.js, TypeScript, Tailwind CSS, better-sqlite3, ACME Protocol (RFC 8555) |
 | 47  | CDN シミュレータ               | Next.js 15, TypeScript, SQLite, better-sqlite3, TailwindCSS v4 (Neumorphism), CDNロジック (LRU, TTL), エッジサーバー地理的分散, キャッシュヒット率統計, リアルタイム更新UI, SQLiteバインド型安全化 |
 | 48  | GUIターミナルエミュレータ         | Go, creack/pty, 擬似端末(pty)制御, exec, ANSIエスケープシーケンス処理, ターミナルエミュレーション |
+| 50  | HTTP/HTTPS フォワードプロキシ (インテリジェントキャッシュ付き) | Go, SQLite, HTTP/HTTPS Proxy, MITM, 動的証明書生成, キャッシュ (Cache-Control, Expires) |
+| 51  | DocBase 月別記事数CLI         | Go, DocBase API, net/http, flag, CLI                                                        |

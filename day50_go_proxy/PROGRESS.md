@@ -1,0 +1,27 @@
+# Day50: Go Proxy 進捗
+
+- [x] プロジェクト初期化
+- [x] 設定ファイルの準備
+- [x] 基本的なHTTPフォワードプロキシ機能の実装
+- [x] HTTPS (CONNECTメソッド) 対応 (初期のトンネリング実装)
+- [x] テスト (curl - HTTP/HTTPSトンネリング)
+- [x] 挑戦的機能の選択 (B: インテリジェント・キャッシング)
+- [x] HTTPリクエストに対するインテリジェント・キャッシング機能の実装
+  - [x] 設定ファイルの更新 (キャッシュ関連)
+  - [x] DBスキーマ設計と初期化 (cache.db)
+  - [x] キャッシュ書き込みロジック (HTTPレスポンス)
+  - [x] キャッシュ読み込み・鮮度検証ロジック (HTTPレスポンス)
+  - [x] HTTPハンドラへのキャッシュロジック組み込み
+  - [x] HTTPキャッシュ機能テスト
+- [x] HTTPS (CONNECTメソッド) のMITM (Man-in-the-Middle) 化によるキャッシング対応
+  - [x] CA証明書・秘密鍵の生成
+  - [x] 設定ファイルへのCA証明書パス追加 (`config.go`, `config.yml`)
+  - [x] 証明書マネージャー (`cert_manager.go`) の実装 (動的証明書生成・署名・キャッシュ)
+  - [x] `main.go` での CertManager 初期化
+  - [x] HTTPSハンドラ (`https_handler.go`) の改修 (TLS終端、リクエスト処理、キャッシュ呼び出し)
+  - [x] ユーティリティ関数追加・修正 (`utils.go`, `cache.go`)
+  - [x] ビルドとテスト (curl --cacert でHTTPSキャッシング動作確認)
+- [ ] 最終テストとドキュメント整備
+  - [x] README.md 更新 (MITM化に伴うセットアップ、テスト方法の追記)
+  - [x] PROGRESS.md の最終確認
+  - [x] .cursor/rules/knowledge.mdc 更新

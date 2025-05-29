@@ -1,0 +1,16 @@
+proxy:
+  port: 8080
+  # host: "localhost" # 必要であればコメント解除
+# logging:
+#   level: "info" # debug, info, warn, error
+#   file: "proxy.log" # stdout も可能
+
+cache:
+  enabled: true
+  # type: "sqlite" # 現時点では sqlite のみサポート
+  sqlite_path: "db/cache.db"
+  default_ttl_seconds: 3600 # デフォルトのキャッシュ有効期間 (秒)
+  max_size_mb: 100 # キャッシュDBの最大サイズ (MB) - 超過時の挙動は別途検討 (例: LRU削除)
+
+# acl: # (もしアクセス制御機能を実装する場合)
+#   rules_file: "config/acl_rules.yml"
