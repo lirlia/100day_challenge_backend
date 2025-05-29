@@ -49,11 +49,11 @@
 - [x] テスト実行と確認
 - [x] Git コミット
 
-### 8/10: コンパイラの実装とテスト - 変数束縛と puts
-- [ ] `compiler/compiler.go` - let文、識別子参照、puts関数のコンパイル
-- [ ] `compiler/compiler_test.go` - 対応するテストケース
-- [ ] テスト実行と確認
-- [ ] Git コミット
+### 8/10: コンパイラの実装とテスト - 変数束縛と puts ✅
+- [x] `compiler/compiler.go` - let文、識別子参照、puts関数のコンパイル (ステップ7で実装済)
+- [x] `compiler/compiler_test.go` - 対応するテストケース (ステップ7で実装済)
+- [x] テスト実行と確認
+- [x] Git コミット
 
 ### 9/10: 仮想マシン (VM) の実装とテスト
 - [ ] `vm/vm.go` - VM構造体、スタック、Run メソッド、各オペコードの処理
