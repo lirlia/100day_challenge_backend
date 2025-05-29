@@ -12,28 +12,28 @@
 - [x] `README.md` - プロジェクト概要ドキュメント作成
 - [x] `PROGRESS.md` - この作業進捗ファイル作成
 
-### 2/10: 字句解析器 (Lexer) の実装とテスト
-- [ ] `lexer/lexer.go` - 字句解析器の実装
-- [ ] `lexer/lexer_test.go` - 字句解析器のテストケース
-- [ ] テスト実行と確認
-- [ ] Git コミット
+### 2/10: 字句解析器 (Lexer) の実装とテスト ✅
+- [x] `lexer/lexer.go` - 字句解析器の実装
+- [x] `lexer/lexer_test.go` - 字句解析器のテストケース
+- [x] テスト実行と確認
+- [x] Git コミット
 
-### 3/10: AST ノードの拡充
-- [ ] `ast/ast_test.go` - AST関連のテスト (主にString()メソッドなど)
-- [ ] テスト実行と確認
-- [ ] Git コミット
+### 3/10: AST ノードの拡充 ✅
+- [x] `ast/ast_test.go` - AST関連のテスト (主にString()メソッドなど)
+- [x] テスト実行と確認
+- [x] Git コミット
 
-### 4/10: 構文解析器 (Parser) の実装とテスト - 基本部分
-- [ ] `parser/parser.go` - パーサー構造体、let文、return文、式文の解析ロジック
-- [ ] `parser/parser_test.go` - 対応するテストケース
-- [ ] テスト実行と確認
-- [ ] Git コミット
+### 4/10: 構文解析器 (Parser) の実装とテスト - 基本部分 ✅
+- [x] `parser/parser.go` - パーサー構造体、let文、return文、式文の解析ロジック
+- [x] `parser/parser_test.go` - 対応するテストケース
+- [x] テスト実行と確認
+- [x] Git コミット
 
-### 5/10: 構文解析器 (Parser) の実装とテスト - 式の解析
-- [ ] `parser/parser.go` - 前置・中置演算子、真偽値、グループ化された式、if式、puts呼び出しの解析ロジック
-- [ ] `parser/parser_test.go` - 対応するテストケース
-- [ ] テスト実行と確認
-- [ ] Git コミット
+### 5/10: 構文解析器 (Parser) の実装とテスト - 式の解析 ✅
+- [x] `parser/parser.go` - 前置・中置演算子、真偽値、グループ化された式、if式、puts呼び出しの解析ロジック (ステップ4で統合)
+- [x] `parser/parser_test.go` - 対応するテストケース (ステップ4で統合)
+- [x] テスト実行と確認
+- [x] Git コミット
 
 ### 6/10: バイトコード (Opcode) 定義と命令生成
 - [ ] `code/code.go` - オペコードの定義、命令フォーマット、Make関数
