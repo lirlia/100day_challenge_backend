@@ -46,6 +46,14 @@ func (ins Instructions) fmtInstruction(def *Definition, operands []int) string {
 	return fmt.Sprintf("ERROR: unhandled operandCount for %s\n", def.Name)
 }
 
+func (op Opcode) String() string {
+	def, err := Lookup(byte(op)) // Lookup expects a byte
+	if err != nil {
+		return "UNKNOWN_OPCODE"
+	}
+	return def.Name
+}
+
 type Opcode byte
 
 const (
@@ -66,6 +74,7 @@ const (
 	OpEqual
 	OpNotEqual
 	OpGreaterThan // ">" のみサポート (より大きいか)
+	OpLessThan    // "<" を追加
 
 	// 前置演算子
 	OpMinus // - (マイナス)
@@ -106,6 +115,7 @@ var definitions = map[Opcode]*Definition{
 	OpEqual:         {"OpEqual", []int{}},
 	OpNotEqual:      {"OpNotEqual", []int{}},
 	OpGreaterThan:   {"OpGreaterThan", []int{}},
+	OpLessThan:      {"OpLessThan", []int{}},     // OpLessThanの定義を追加
 	OpMinus:         {"OpMinus", []int{}},
 	OpBang:          {"OpBang", []int{}},
 	OpPop:           {"OpPop", []int{}},
@@ -167,4 +177,12 @@ func ReadOperands(def *Definition, ins Instructions) ([]int, int) {
 		offset += width
 	}
 	return operands, offset
+}
+
+func ReadUint16(ins Instructions) uint16 {
+	return binary.BigEndian.Uint16(ins)
+}
+
+func ReadUint8(ins Instructions) uint8 {
+	return uint8(ins[0])
 }

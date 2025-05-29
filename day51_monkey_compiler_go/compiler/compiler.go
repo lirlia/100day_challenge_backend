@@ -80,6 +80,7 @@ func (c *Compiler) Compile(node ast.Node) error {
 		if err != nil {
 			return err
 		}
+
 		switch node.Operator {
 		case "+":
 			c.emit(code.OpAdd)
@@ -91,11 +92,8 @@ func (c *Compiler) Compile(node ast.Node) error {
 			c.emit(code.OpDiv)
 		case ">":
 			c.emit(code.OpGreaterThan)
-		case "<": // < は > とオペランドを入れ替えて OpGreaterThan を使う
-			// 再コンパイルは避け、既存の命令列を操作するのは複雑なので、
-			// ここではエラーとしておくか、あるいは別のOpcodeを用意する
-			// 簡単のため、エラーとしておく
-			return fmt.Errorf("unsupported operator: %s", node.Operator)
+		case "<":
+			c.emit(code.OpLessThan)
 		case "==":
 			c.emit(code.OpEqual)
 		case "!=":
@@ -127,6 +125,9 @@ func (c *Compiler) Compile(node ast.Node) error {
 		} else {
 			c.emit(code.OpFalse)
 		}
+
+	case *ast.NullLiteral:
+		c.emit(code.OpNull)
 
 	case *ast.IfExpression:
 		err := c.Compile(node.Condition)

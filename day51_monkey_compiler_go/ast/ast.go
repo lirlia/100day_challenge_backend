@@ -120,6 +120,15 @@ func (i *Identifier) expressionNode()      {}
 func (i *Identifier) TokenLiteral() string { return i.Token.Literal }
 func (i *Identifier) String() string       { return i.Value }
 
+// NullLiteral represents the null keyword
+type NullLiteral struct {
+	Token token.Token // The token.NULL token
+}
+
+func (nl *NullLiteral) expressionNode()      {}
+func (nl *NullLiteral) TokenLiteral() string { return nl.Token.Literal }
+func (nl *NullLiteral) String() string       { return nl.Token.Literal } // Should be "null"
+
 // IntegerLiteral は整数リテラルを表す
 type IntegerLiteral struct {
 	Token token.Token // INT トークン
