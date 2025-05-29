@@ -41,14 +41,13 @@
 - [x] テスト実行と確認
 - [x] Git コミット
 
-### 7/10: コンパイラの実装とテスト - 基本式とシンボルテーブル
-- [ ] `compiler/symbol_table.go` - シンボルテーブル (グローバルスコープのみ)
-- [ ] `compiler/symbol_table_test.go` - シンボルテーブルのテスト
-- [ ] `compiler/compiler.go` - コンパイラ構造体、整数・真偽値リテラル、二項演算子、前置演算子、if式のコンパイル
-- [ ] `object/object.go` - バイトコードを保持するオブジェクト追加
-- [ ] `compiler/compiler_test.go` - 対応するテストケース
-- [ ] テスト実行と確認
-- [ ] Git コミット
+### 7/10: コンパイラの実装とテスト - 基本式とシンボルテーブル ✅
+- [x] `compiler/symbol_table.go` - シンボルテーブル (グローバルスコープのみ)
+- [x] `compiler/symbol_table_test.go` - シンボルテーブルのテスト
+- [x] `compiler/compiler.go` - コンパイラ構造体、整数・真偽値リテラル、二項演算子、前置演算子、if式のコンパイル (BlockStatement対応)
+- [x] `compiler/compiler_test.go` - 対応するテストケース
+- [x] テスト実行と確認
+- [x] Git コミット
 
 ### 8/10: コンパイラの実装とテスト - 変数束縛と puts
 - [ ] `compiler/compiler.go` - let文、識別子参照、puts関数のコンパイル
