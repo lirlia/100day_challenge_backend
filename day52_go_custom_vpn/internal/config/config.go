@@ -19,6 +19,7 @@ type ServerConfig struct {
 	ListenAddress      string   `json:"listen_address"`       // 例: "0.0.0.0:12345" (UDP)
 	TunnelName         string   `json:"tunnel_name"`          // 例: "tun0"
 	TunnelAddress      string   `json:"tunnel_address"`       // 例: "10.0.1.1/24" (サーバーのTUN IP)
+	TunnelPeerAddress  string   `json:"tunnel_peer_address"`  // 追加: macOSのutun用 対向のIP 例: "10.0.1.2"
 	TunnelMTU          int      `json:"tunnel_mtu"`           // 例: 1400
 	AllowedClientPeers []string `json:"allowed_client_peers"` // 接続を許可するクライアントの物理IP:ポートのリスト 例: ["192.168.1.100:0"] (ポート0は任意)
 	// 現状、クライアントは1つのみを想定。複数クライアント対応時には、
@@ -31,11 +32,12 @@ type ServerConfig struct {
 // 設定ファイルから読み込まれます。
 type ClientConfig struct {
 	// GeneralConfig
-	ServerAddress   string `json:"server_address"`    // 例: "vpn.example.com:12345" (VPNサーバーの物理アドレス:ポート)
-	TunnelName      string `json:"tunnel_name"`       // 例: "tun0"
-	TunnelAddress   string `json:"tunnel_address"`    // 例: "10.0.1.2/24" (クライアントのTUN IP)
-	TunnelMTU       int    `json:"tunnel_mtu"`        // 例: 1400
-	ServerVirtualIP string `json:"server_virtual_ip"` // サーバーのTUN側IP。このIPへのルートがTUN経由で設定されるべき。例 "10.0.1.1"
+	ServerAddress     string `json:"server_address"`      // 例: "vpn.example.com:12345" (VPNサーバーの物理アドレス:ポート)
+	TunnelName        string `json:"tunnel_name"`         // 例: "tun0"
+	TunnelAddress     string `json:"tunnel_address"`      // 例: "10.0.1.2/24" (クライアントのTUN IP)
+	TunnelPeerAddress string `json:"tunnel_peer_address"` // 追加: macOSのutun用 対向のIP 例: "10.0.1.1"
+	TunnelMTU         int    `json:"tunnel_mtu"`          // 例: 1400
+	ServerVirtualIP   string `json:"server_virtual_ip"`   // サーバーのTUN側IP。このIPへのルートがTUN経由で設定されるべき。例 "10.0.1.1"
 	// AllTrafficViaVPN bool   `json:"all_traffic_via_vpn"` // trueの場合、デフォルトルートをVPN経由にする (未実装)
 	SharedKey string `json:"shared_key"` // 事前共有鍵 (PSK)
 }

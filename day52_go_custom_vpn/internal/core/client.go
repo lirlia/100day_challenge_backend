@@ -43,9 +43,10 @@ func (c *VPNClient) Start() error {
 
 	// 1. TUNデバイスの初期化
 	tunCfg := network.TunConfig{
-		Name:    c.config.TunnelName,
-		Address: c.config.TunnelAddress, // クライアントのTUN IP
-		MTU:     c.config.TunnelMTU,
+		Name:        c.config.TunnelName,
+		Address:     c.config.TunnelAddress,     // クライアントのTUN IP
+		PeerAddress: c.config.TunnelPeerAddress, // サーバーのTUN IP (utun用)
+		MTU:         c.config.TunnelMTU,
 	}
 	var err error
 	c.tunIfce, err = network.NewTUN(tunCfg)

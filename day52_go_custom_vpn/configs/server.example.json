@@ -2,6 +2,7 @@
     "listen_address": "0.0.0.0:12345",
     "tunnel_name": "tun0",
     "tunnel_address": "10.0.1.1/24",
+    "tunnel_peer_address": "10.0.1.2",
     "tunnel_mtu": 1400,
     "allowed_client_peers": [
         "127.0.0.1:0"

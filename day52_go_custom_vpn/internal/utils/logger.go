@@ -6,15 +6,17 @@ import (
 )
 
 var (
-	InfoLogger  *log.Logger
-	ErrorLogger *log.Logger
-	DebugLogger *log.Logger // デバッグログ用。本番では無効化することも検討
+	InfoLogger    *log.Logger
+	WarningLogger *log.Logger
+	ErrorLogger   *log.Logger
+	DebugLogger   *log.Logger // デバッグログ用。本番では無効化することも検討
 )
 
 func init() {
 	// TODO: ログレベルを設定ファイルから読み込めるようにする
 	// TODO: ログ出力をファイルに切り替えられるようにする
 	InfoLogger = log.New(os.Stdout, "INFO: ", log.Ldate|log.Ltime|log.Lshortfile)
+	WarningLogger = log.New(os.Stdout, "WARN: ", log.Ldate|log.Ltime|log.Lshortfile)
 	ErrorLogger = log.New(os.Stderr, "ERROR: ", log.Ldate|log.Ltime|log.Lshortfile)
 	DebugLogger = log.New(os.Stdout, "DEBUG: ", log.Ldate|log.Ltime|log.Lshortfile)
 
@@ -32,6 +34,10 @@ func init() {
 // 以下は便利なラッパー関数 (オプション)
 func Info(format string, v ...interface{}) {
 	InfoLogger.Printf(format, v...)
+}
+
+func Warning(format string, v ...interface{}) {
+	WarningLogger.Printf(format, v...)
 }
 
 func Error(format string, v ...interface{}) {

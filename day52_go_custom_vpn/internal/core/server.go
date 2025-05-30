@@ -45,9 +45,10 @@ func (s *VPNServer) Start() error {
 
 	// 1. TUNデバイスの初期化
 	tunCfg := network.TunConfig{
-		Name:    s.config.TunnelName,
-		Address: s.config.TunnelAddress, // サーバーのTUN IP
-		MTU:     s.config.TunnelMTU,
+		Name:        s.config.TunnelName,
+		Address:     s.config.TunnelAddress,     // サーバーのTUN IP
+		PeerAddress: s.config.TunnelPeerAddress, // クライアントのTUN IP (utun用)
+		MTU:         s.config.TunnelMTU,
 	}
 	var err error
 	s.tunIfce, err = network.NewTUN(tunCfg)
