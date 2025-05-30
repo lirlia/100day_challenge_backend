@@ -7,6 +7,10 @@
 Go言語を使用してMonkeyプログラミング言語のコンパイラとスタックベースの仮想マシン(VM)を実装するプロジェクトです。
 オリジナルのMonkey言語からいくつかの機能を簡略化し、コンパイラとVMの基本的な仕組みを学ぶことに焦点を当てています。
 
+https://github.com/user-attachments/assets/9ec9351d-ca48-4cb2-a4a0-49767800a1a4
+
+[100日チャレンジ day51](https://zenn.dev/gin_nazo/scraps/5e526a218e3f8c)
+
 ## 主な学習ポイント
 
 - プログラミング言語のコンパイラとVMの内部構造
