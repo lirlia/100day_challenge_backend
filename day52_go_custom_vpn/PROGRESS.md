@@ -8,9 +8,9 @@
 - [x] `README.md` と `PROGRESS.md` の初期設定
 
 ## フェーズ2: TUNデバイスとUDP通信の基本実装
-- [ ] `songgao/water` ライブラリの追加
-- [ ] TUNデバイス操作関数の実装 (`internal/network/tun.go`)
-- [ ] UDPソケット通信関数の実装 (`internal/network/udp.go`)
+- [x] `songgao/water` ライブラリの追加
+- [x] TUNデバイス操作関数の実装 (`internal/network/tun.go`)
+- [x] UDPソケット通信関数の実装 (`internal/network/udp.go`)
 
 ## フェーズ3: VPNコアロジック (暗号化なし、設定ファイルベース)
 - [ ] 設定管理の実装 (`internal/config/config.go`, `configs/`)
