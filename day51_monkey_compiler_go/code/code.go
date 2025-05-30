@@ -96,6 +96,7 @@ const (
 
 	// 組み込み関数呼び出し (puts 専用)
 	OpCallBuiltin // オペランド: 引数の数 (1バイト) - putsは1引数のみ想定
+	OpCallAtoi    // オペランド: 引数の数 (1バイト) - atoi専用
 	OpReturnValue // (今回はreturn文はVMレベルでは特別扱いしないため、もし使うなら)
 )
 
@@ -125,6 +126,7 @@ var definitions = map[Opcode]*Definition{
 	OpGetGlobal:     {"OpGetGlobal", []int{2}},     // 2バイト (グローバル変数インデックス)
 	OpNull:          {"OpNull", []int{}},
 	OpCallBuiltin:   {"OpCallBuiltin", []int{1}},   // 1バイト (引数の数)
+	OpCallAtoi:      {"OpCallAtoi", []int{1}},      // 1バイト (引数の数)
 	OpReturnValue:   {"OpReturnValue", []int{}},
 }
 

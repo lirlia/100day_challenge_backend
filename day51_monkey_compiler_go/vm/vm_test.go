@@ -244,3 +244,16 @@ func TestStringExpressions(t *testing.T) {
 
 	runVmTests(t, tests)
 }
+
+func TestAtoiFunction(t *testing.T) {
+	tests := []vmTestCase{
+		{`atoi("123")`, 123},
+		{`atoi("0")`, 0},
+		{`atoi("999")`, 999},
+		{`atoi("-42")`, -42},
+		{`atoi("invalid")`, 0}, // 変換失敗時は0を返す
+		{`atoi("")`, 0},        // 空文字列も0を返す
+	}
+
+	runVmTests(t, tests)
+}

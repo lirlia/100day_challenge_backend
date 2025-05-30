@@ -191,6 +191,15 @@ func (c *Compiler) Compile(node ast.Node) error {
 				return fmt.Errorf("input function expects 0 arguments, got %d", len(node.Arguments))
 			}
 			c.emit(code.OpCallBuiltin, 0)
+		} else if node.Function.TokenLiteral() == "atoi" {
+			if len(node.Arguments) != 1 {
+				return fmt.Errorf("atoi function expects 1 argument, got %d", len(node.Arguments))
+			}
+			err := c.Compile(node.Arguments[0])
+			if err != nil {
+				return err
+			}
+			c.emit(code.OpCallAtoi, 1)
 		} else {
 			return fmt.Errorf("unsupported function call: %s", node.Function.TokenLiteral())
 		}

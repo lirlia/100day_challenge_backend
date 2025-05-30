@@ -1,11 +1,11 @@
 puts("成績評価システムへようこそ！");
 puts("あなたのスコアを入力してください（0-100）:");
 let score_str = input();
-let score = 75;
+let score = atoi(score_str);
 
 puts("出席率を入力してください（0-100）:");
 let attendance_str = input();
-let attendance_rate = 90;
+let attendance_rate = atoi(attendance_str);
 
 puts("入力されたスコア: " + score_str);
 puts("入力された出席率: " + attendance_str);

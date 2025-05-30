@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/lirlia/100day_challenge_backend/day51_monkey_compiler_go/code"
@@ -192,7 +193,7 @@ func (vm *VM) Run() error {
 					}
 				}
 			} else {
-				// puts() 関数の場合（引数あり）
+				// puts() 関数の場合
 				args := vm.stack[vm.sp-numArgs : vm.sp]
 				vm.sp = vm.sp - numArgs
 
@@ -216,6 +217,39 @@ func (vm *VM) Run() error {
 				if err != nil {
 					return err
 				}
+			}
+
+		case code.OpCallAtoi:
+			numArgs := int(code.ReadUint8(vm.instructions[ip+1:]))
+			ip += 1
+
+			if vm.sp < numArgs {
+				return fmt.Errorf("not enough arguments on stack: expected %d, got %d", numArgs, vm.sp)
+			}
+
+			if numArgs != 1 {
+				return fmt.Errorf("atoi expects exactly 1 argument, got %d", numArgs)
+			}
+
+			arg := vm.stack[vm.sp-1]
+			vm.sp--
+
+			// atoi() の処理: 文字列を整数に変換
+			if strObj, ok := arg.(*object.String); ok {
+				if intVal, err := strconv.ParseInt(strObj.Value, 10, 64); err == nil {
+					err := vm.push(&object.Integer{Value: intVal})
+					if err != nil {
+						return err
+					}
+				} else {
+					// 変換失敗時は 0 を返す
+					err := vm.push(&object.Integer{Value: 0})
+					if err != nil {
+						return err
+					}
+				}
+			} else {
+				return fmt.Errorf("atoi expects string argument, got %T", arg)
 			}
 
 		default:

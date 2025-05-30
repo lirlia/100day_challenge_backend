@@ -363,6 +363,31 @@ func TestStringExpressions(t *testing.T) {
 	runCompilerTests(t, tests)
 }
 
+func TestAtoiStatement(t *testing.T) {
+	tests := []compilerTestCase{
+		{
+			input:             `atoi("123")`,
+			expectedConstants: []interface{}{"123"},
+			expectedInstructions: []code.Instructions{
+				code.Make(code.OpConstant, 0),
+				code.Make(code.OpCallAtoi, 1),
+				code.Make(code.OpPop),
+			},
+		},
+		{
+			input:             `let num = atoi("456");`,
+			expectedConstants: []interface{}{"456"},
+			expectedInstructions: []code.Instructions{
+				code.Make(code.OpConstant, 0),
+				code.Make(code.OpCallAtoi, 1),
+				code.Make(code.OpSetGlobal, 0),
+			},
+		},
+	}
+
+	runCompilerTests(t, tests)
+}
+
 func runCompilerTests(t *testing.T, tests []compilerTestCase) {
 	t.Helper()
 
