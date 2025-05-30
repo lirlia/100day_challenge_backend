@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/lirlia/100day_challenge_backend/day52_go_custom_vpn/internal/config"
 	"github.com/lirlia/100day_challenge_backend/day52_go_custom_vpn/internal/network"
@@ -169,8 +170,18 @@ func (s *VPNServer) udpToTun() {
 			utils.InfoLogger.Println("udpToTun: stopping...")
 			return
 		default:
+			if s.udpConn != nil {
+				err := s.udpConn.SetReadDeadline(time.Now().Add(1 * time.Second))
+				if err != nil {
+					utils.ErrorLogger.Printf("udpToTun: Failed to set read deadline: %v", err)
+				}
+			}
+
 			n, remoteAddr, err := s.udpConn.ReadFromUDP(buffer)
 			if err != nil {
+				if ne, ok := err.(net.Error); ok && ne.Timeout() {
+					continue
+				}
 				if ne, ok := err.(*net.OpError); ok && (ne.Err.Error() == "use of closed network connection" || ne.Err.Error() == "invalid argument") {
 					utils.InfoLogger.Println("udpToTun: UDP connection closed, stopping.")
 					return
