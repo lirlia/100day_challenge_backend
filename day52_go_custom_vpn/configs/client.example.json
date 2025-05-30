@@ -1,0 +1,8 @@
+{
+    "server_address": "127.0.0.1:12345",
+    "tunnel_name": "tun0",
+    "tunnel_address": "10.0.1.2/24",
+    "tunnel_mtu": 1400,
+    "server_virtual_ip": "10.0.1.1",
+    "shared_key": "ThisIsASecretKey123!@#"
+}

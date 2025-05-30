@@ -31,8 +31,7 @@ func NewTUN(cfg TunConfig) (*water.Interface, error) {
 	config := water.Config{
 		DeviceType: water.TUN,
 		PlatformSpecificParams: water.PlatformSpecificParams{
-			Name:    cfg.Name,
-			Persist: false, // アプリケーション終了時にデバイスを削除
+			Name: cfg.Name,
 		},
 	}
 

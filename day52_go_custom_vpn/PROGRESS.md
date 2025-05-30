@@ -13,9 +13,9 @@
 - [x] UDPソケット通信関数の実装 (`internal/network/udp.go`)
 
 ## フェーズ3: VPNコアロジック (暗号化なし、設定ファイルベース)
-- [ ] 設定管理の実装 (`internal/config/config.go`, `configs/`)
-- [ ] VPNサーバー コアロジックの実装 (`internal/core/server.go`, `cmd/vpnserver/main.go`)
-- [ ] VPNクライアント コアロジックの実装 (`internal/core/client.go`, `cmd/vpnclient/main.go`)
+- [x] 設定管理の実装 (`internal/config/config.go`, `configs/`)
+- [x] VPNサーバー コアロジックの実装 (`internal/core/server.go`, `cmd/vpnserver/main.go`)
+- [x] VPNクライアント コアロジックの実装 (`internal/core/client.go`, `cmd/vpnclient/main.go`)
 - [ ] 動作テスト (暗号化なし、ping疎通確認)
 
 ## フェーズ4: 暗号化の実装
