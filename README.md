@@ -66,3 +66,4 @@ LLMで生成したコードを置いています。
 | Day49 | Go言語 ミニブラウザ                                                        | <video src="https://github.com/user-attachments/assets/a5e1e683-0a12-4652-aeab-172b59dd3ec1" > |
 | Day50 | 自作プロキシ                                                               | <video src="https://github.com/user-attachments/assets/5e55ea58-6ce7-4095-a91d-0abf74d7c35b" > |
 | Day51 | Monkey 言語コンパイラ & VM (Go)                                            | <video src="https://github.com/user-attachments/assets/9ec9351d-ca48-4cb2-a4a0-49767800a1a4" > |
+| Day52 | MMO RPG                                                                    | <video src="https://github.com/user-attachments/assets/88c96a9a-b3af-4ff6-97f6-743227b3faf7" > |

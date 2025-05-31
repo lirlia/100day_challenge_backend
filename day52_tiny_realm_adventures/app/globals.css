@@ -1,21 +1,27 @@
 @import "tailwindcss";
 
 @layer base {
+  html {
+    image-rendering: pixelated;
+    image-rendering: -moz-crisp-edges;
+    image-rendering: crisp-edges;
+    -ms-interpolation-mode: nearest-neighbor;
+  }
   body {
-    font-family: 'VT323', monospace; /* ピクセル風フォント */
-    image-rendering: pixelated; /* 画像をシャープに */
-    image-rendering: -moz-crisp-edges; /* Firefox用 */
-    image-rendering: crisp-edges; /* Webkit用 */
-    -ms-interpolation-mode: nearest-neighbor; /* IE用 */
+    font-family: 'VT323', monospace;
+    /* 基本的な背景色と文字色はTailwindのユーティリティクラスで設定することを推奨 */
+    /* 例: <body className="bg-gray-900 text-white"> in layout.tsx */
   }
 
-  /* その他のベーススタイル */
-  input[type="text"],
-  button {
-    font-family: inherit; /* bodyのフォントを継承 */
+  input,
+  button,
+  select,
+  textarea {
+    font-family: inherit; /* フォーム要素もフォントを継承 */
   }
 }
 
+/*
 :root {
   --background: #ffffff;
   --foreground: #171717;
@@ -40,3 +46,4 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+*/

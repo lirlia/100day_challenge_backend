@@ -10,7 +10,7 @@ import PlayerHUD from '@/components/PlayerHUD';
 import ChatWindow from '@/components/ChatWindow';
 import InteractionModal from '@/components/InteractionModal';
 
-const POLLING_INTERVAL_MS = 3000; // 3秒
+const POLLING_INTERVAL_MS = 5000; // 5秒に変更
 const PLAYER_DATA_KEY = 'currentPlayer';
 
 export default function GamePage() {
@@ -22,7 +22,7 @@ export default function GamePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [lastError, setLastError] = useState<string | null>(null); // エラー表示用
 
-  const updatePlayerState = (newPlayerData: Partial<PlayerClientData>) => {
+  const updatePlayerState = useCallback((newPlayerData: Partial<PlayerClientData>) => {
     setPlayer(prev => {
         if (!prev) {
             const fullNewPlayer = newPlayerData as PlayerClientData;
@@ -37,7 +37,7 @@ export default function GamePage() {
         sessionStorage.setItem(PLAYER_DATA_KEY, JSON.stringify(updated));
         return updated;
     });
-  };
+  }, []); // useCallbackでメモ化し、依存配列を空にする
 
   // ワールドデータとチャットデータのポーリング・初期ロード
   const fetchGameData = useCallback(async (showError = true) => {
