@@ -243,6 +243,11 @@ export default function GamePage() {
         <h1 className="text-lg sm:text-xl md:text-2xl font-bold text-yellow-400 tracking-wider">
           タイニーレルム冒険譚
         </h1>
+        {player && (
+          <p className="text-sm text-gray-300 hidden md:block">
+            ようこそ、<span className="font-semibold text-yellow-300">{player.name}</span> さん！
+          </p>
+        )}
         <button
           onClick={() => { sessionStorage.removeItem(PLAYER_DATA_KEY); router.push('/'); }}
           className="bg-red-600 hover:bg-red-700 text-white font-semibold py-1 px-2 md:py-1.5 md:px-3 rounded text-xs sm:text-sm transition-colors"
