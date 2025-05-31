@@ -13,10 +13,15 @@ export async function POST(
   request: Request,
   { params }: { params: { playerId: string } }
 ) {
+  const awaitedParams = await params; // params を await する
+  console.log(`[Move API Pre-Try] Received request for playerId: ${awaitedParams?.playerId}`);
   try {
+    console.log(`[Move API In-Try] Attempting to parse body for playerId: ${awaitedParams?.playerId}`);
     const body = await request.json() as MoveRequestBody;
+    console.log(`[Move API Post-Body-Parse] Body parsed for playerId: ${awaitedParams?.playerId}, Body: ${JSON.stringify(body)}`);
     const { direction } = body;
-    const playerId = parseInt(params.playerId, 10);
+    // ★★★ ここが awaitedParams.playerId になっていることを確認 ★★★
+    const playerId = parseInt(awaitedParams.playerId, 10);
 
     if (isNaN(playerId)) {
       return NextResponse.json({ error: 'Invalid player ID' }, { status: 400 });
@@ -47,8 +52,10 @@ export async function POST(
     // 移動先のタイル情報を取得
     const targetTile = db.prepare('SELECT x, y, tile_type, is_passable FROM game_map_tiles WHERE x = ? AND y = ?').get(newX, newY) as { x:number, y:number, tile_type:string, is_passable:number } | undefined;
 
+    console.log(`[Move API] PlayerId: ${playerId}, Current: (${player.x},${player.y}), Target: (${newX},${newY}), Tile: ${JSON.stringify(targetTile)}`);
+
     if (!targetTile || targetTile.is_passable === 0) { // is_passable は 0 or 1
-      return NextResponse.json({ error: 'Cannot move into an obstacle', player }, { status: 400 });
+      return NextResponse.json({ error: 'Cannot move into an obstacle', player, targetTileInfo: targetTile }, { status: 400 });
     }
 
     const now = new Date().toISOString();
@@ -61,6 +68,7 @@ export async function POST(
   } catch (error) {
     console.error('Error in player move:', error);
     if (error instanceof SyntaxError) {
+        console.error('[Move API] SyntaxError parsing request body:', error);
         return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
     }
     return NextResponse.json({ error: 'Failed to process player move' }, { status: 500 });

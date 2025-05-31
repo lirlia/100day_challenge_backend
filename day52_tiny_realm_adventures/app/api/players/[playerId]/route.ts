@@ -6,7 +6,8 @@ export async function GET(
   { params }: { params: { playerId: string } }
 ) {
   try {
-    const playerId = parseInt(params.playerId, 10);
+    const awaitedParams = await params;
+    const playerId = parseInt(awaitedParams.playerId, 10);
 
     if (isNaN(playerId)) {
       return NextResponse.json({ error: 'Invalid player ID' }, { status: 400 });
@@ -40,7 +41,8 @@ export async function GET(
     });
 
   } catch (error) {
-    console.error(`Error fetching player data for ID ${params.playerId}:`, error);
+    const awaitedParams = await params;
+    console.error(`Error fetching player data for ID ${awaitedParams?.playerId}:`, error);
     return NextResponse.json({ error: 'Failed to fetch player data' }, { status: 500 });
   }
 }
