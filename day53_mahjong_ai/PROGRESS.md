@@ -30,20 +30,20 @@
     - [x] Test `/api/game/new` and `/api/game/action` with `curl`.
     - [x] Integrate and test core Yaku/Score logic (`yaku.ts`, `score.ts`) via `analyzeHandShanten` in `hand.ts` using `hand.test.ts`.
 - [ ] **Step 5: UI Implementation (Basic Game Screen)**
-    - [ ] Create main React component for the Mahjong table (`app/page.tsx` or a dedicated component).
-    - [ ] Create sub-components:
-        - [ ] Player's hand display.
-        - [ ] CPU's (opponent's) hand display (tiles face down, count visible).
-        - [ ] Player's river (discarded tiles).
-        - [ ] CPU's river.
-        - [ ] Dora indicator display.
-        - [ ] Yama (deck) display (remaining tile count).
-        - [ ] Scoreboard / Game info display (current turn, round, player scores).
-        - [ ] Tile component (`components/mahjong/TileDisplay.tsx`).
-        - [ ] Action buttons (e.g., Discard, Riichi, Tsumo, Ron - initially just Discard).
-    - [ ] Style components using Tailwind CSS with a Claymorphism theme.
-    - [ ] Fetch initial game state from `/api/game/new` on page load.
-    - [ ] Implement player tile discard action (calls `/api/game/action`).
+    - [x] Create main React component for the Mahjong table (`app/page.tsx`).
+    - [x] Style components using Tailwind CSS with a Claymorphism theme (`globals.css`, `page.tsx`).
+    - [x] Fetch initial game state from `/api/game/new` on page load.
+    - [x] Implement player tile discard action (calls `/api/game/action`).
+    - [x] Create sub-components:
+        - [x] Tile component (`components/mahjong/TileDisplay.tsx` - currently in `page.tsx`).
+        - [ ] Player's hand display (in `page.tsx`).
+        - [ ] CPU's (opponent's) hand display (tiles face down, count visible) (in `page.tsx`).
+        - [ ] Player's river (discarded tiles) (in `page.tsx`).
+        - [ ] CPU's river (in `page.tsx`).
+        - [ ] Dora indicator display (in `page.tsx`).
+        - [ ] Yama (deck) display (remaining tile count) (in `page.tsx`).
+        - [ ] Scoreboard / Game info display (current turn, round, player scores) (in `page.tsx`).
+        - [ ] Action buttons (e.g., Discard) (in `page.tsx`).
 - [ ] **Step 6: Mahjong Core Logic (Yaku & Score - Refinement)**
     - [ ] Refine Yaku detection in `lib/mahjong/yaku.ts` (Pinfu, Iipeikou, etc.).
     - [ ] Refine score calculation in `lib/mahjong/score.ts` (detailed Fu calculation for melds, waits, pair types).
