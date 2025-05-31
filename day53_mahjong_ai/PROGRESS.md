@@ -28,16 +28,16 @@
     - [x] *テスト*: `curl` でAPIを叩き、ゲームが開始できること、プレイヤーが打牌できること、CPUが自動で打牌することを確認。
     - [x] *コミット*: `day53: step 4/8 API実装 - ゲーム開始と基本アクション`
 - [ ] **Step 5/8: UI実装: 基本的なゲーム画面**
-    - [ ] `app/(pages)/page.tsx`: APIを呼び出し、ゲーム盤面を表示するメインコンポーネント。
-    - [ ] `components/Tile.tsx`: 牌をクレイモーフィズムスタイルで表示。
-    - [ ] `components/PlayerHand.tsx`: プレイヤーの手牌を表示し、クリックで打牌選択可能にする。
-    - [ ] `components/CpuHand.tsx`: CPUの手牌 (裏向き or 開発中は表向き)。
-    - [ ] `components/River.tsx`: プレイヤーとCPUの捨て牌を表示。
-    - [ ] `components/MahjongTable.tsx`: 全体をまとめる卓コンポーネント。
-    - [ ] `components/ScoreBoard.tsx`: 仮の点数表示。
-    - [ ] クレイモーフィズムを意識したCSSを `globals.css` および各コンポーネントに適用。
-    - [ ] *テスト*: ブラウザで画面が表示され、手牌から牌を捨てられることを確認。CPUの捨て牌が反映されることを確認。
-    - [ ] *コミット*: `day53: step 5/8 UI実装 - 基本的なゲーム画面 (クレイモーフィズム適用)`
+    - [x] `app/page.tsx`: APIを呼び出し、ゲーム盤面 (手牌、河、点数、ドラ等) を表示するメインコンポーネントを作成。ゲーム開始、牌選択、打牌操作を実装。
+    - [x] `components/Tile.tsx`: 牌をクレイモーフィズムスタイルで表示するコンポーネントを作成。選択状態やクリック可否に応じたスタイル変更も実装。
+    - [x] `components/PlayerHand.tsx`: (page.tsx内にロジック実装済)
+    - [x] `components/CpuHand.tsx`: (page.tsx内にロジック実装済)
+    - [x] `components/River.tsx`: (page.tsx内にロジック実装済)
+    - [x] `components/MahjongTable.tsx`: (page.tsxが兼ねる)
+    - [x] `components/ScoreBoard.tsx`: (page.tsx内に簡易表示実装済)
+    - [x] クレイモーフィズムを意識したCSSを `globals.css` (clay-element) および各コンポーネント (インラインTailwind) に適用。
+    - [x] *テスト*: ブラウザで画面が表示され、ゲーム開始、手牌から牌を捨てられること、CPUの打牌と盤面更新を確認。
+    - [x] *コミット*: `day53: step 5/8 UI実装 - 基本的なゲーム画面 (クレイモーフィズム適用)`
 - [ ] **Step 6/8: 麻雀コアロジック: 役判定と点数計算**
     - [ ] `lib/mahjong/yaku.ts`: 主要な役 (立直、断幺九、役牌、平和、一盃口、混全帯幺九、七対子、混一色、清一色、国士無双など) の判定ロジック。ドラ、裏ドラ、赤ドラ(今回はなし)の扱い。
     - [ ] `lib/mahjong/score.ts`: 和了形と役に基づいて符計算と点数計算を行う。親/子の点数、満貫・跳満・倍満・三倍満・役満の扱い。
