@@ -11,10 +11,12 @@
     "check": "biome check --apply ."
   },
   "dependencies": {
+    "@types/uuid": "^10.0.0",
     "better-sqlite3": "^11.1.2",
     "next": "15.3.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "uuid": "^11.1.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
