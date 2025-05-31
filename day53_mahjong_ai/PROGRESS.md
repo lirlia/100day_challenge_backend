@@ -1,68 +1,64 @@
 ## Day53: CPU対戦付き二人麻雀 (最強AI) - 進捗
 
-- [x] **Step 1/8: プロジェクト初期化**
-    - [x] `template` をコピーして `day53_mahjong_ai` を作成。
-    - [x] `package.json` の `name` を `day53_mahjong_ai` に変更。
-    - [x] `README.md` の内容を更新。
-    - [x] `PROGRESS.md` を作成し、作業ステップを記述。
-    - [x] 基本レイアウト `app/layout.tsx` と `app/page.tsx` の雛形作成。
-    - [x] `globals.css` にTailwindCSSの基本的な設定。
-    - [x] *テスト*: `npm run dev` で起動確認。
-    - [x] *コミット*: `day53: step 1/8 プロジェクト初期化と基本設定`
-- [x] **Step 2/8: 麻雀コアロジック: 牌と山の準備**
-    - [x] `lib/mahjong/tiles.ts`: 牌の種類 (萬子、索子、筒子、字牌) と各牌の定義。牌の比較関数などユーティリティ。
-    - [x] `lib/mahjong/yama.ts`: 山の生成 (136枚)、シャッフル、配牌、ツモ、嶺上牌、ドラ表示などのロジック。
-    - [x] *テスト*: 山が正しく生成され、シャッフルされること。配牌が各プレイヤーに正しく配られること。ツモができること。(簡易テストスクリプトで確認)
-    - [x] *コミット*: `day53: step 2/8 麻雀コアロジック - 牌と山の準備`
-- [x] **Step 3/8: 麻雀コアロジック: 手牌管理と向聴数計算**
-    - [x] `lib/mahjong/hand.ts`: 手牌の表現 (ソートされた牌の配列)。牌の追加・削除。
-    - [x] 向聴数計算ロジック: 面子・塔子の判定、国士無双・七対子の判定を含め、手牌が和了まであと何枚必要かを計算。
-    - [x] 和了判定の基礎: 与えられた手牌が和了形（4面子1雀頭）になっているか判定する (役はまだ考慮しない)。
-    - [x] *テスト*: 様々な手牌パターンでの向聴数計算の正確性。和了形の判定。(簡易テストスクリプトで確認)
-    - [x] *コミット*: `day53: step 3/8 麻雀コアロジック - 手牌管理と向聴数計算`
-- [x] **Step 4/8: API実装: ゲーム開始と基本アクション**
-    - [x] `lib/mahjong/game_state.ts`: ゲーム全体の進行状態 (局、本場、供託、プレイヤー/CPUの手牌・河・点数、現在のターン、山、ドラなど) を管理する型定義と初期状態生成関数を作成。
-    - [x] `lib/mahjong/game_store.ts`: インメモリでゲーム状態を保持・管理するストアを作成。
-    - [x] `app/api/game/new/route.ts (GET)`: 新しいゲームセッションを開始し、初期盤面情報 (配牌、親、ドラなど) を返すAPIを実装。
-    - [x] `app/api/game/action/route.ts (POST)`: プレイヤーの打牌アクションを受け付け、ゲーム状態を更新。CPUのツモと打牌まで自動で行い (CPUはランダム打牌)、盤面情報を返すAPIを実装。
-    - [x] *テスト*: `curl` でAPIを叩き、ゲームが開始できること、プレイヤーが打牌できること、CPUが自動で打牌することを確認。
-    - [x] *コミット*: `day53: step 4/8 API実装 - ゲーム開始と基本アクション`
-- [ ] **Step 5/8: UI実装: 基本的なゲーム画面**
-    - [x] `app/page.tsx`: APIを呼び出し、ゲーム盤面 (手牌、河、点数、ドラ等) を表示するメインコンポーネントを作成。ゲーム開始、牌選択、打牌操作を実装。
-    - [x] `components/Tile.tsx`: 牌をクレイモーフィズムスタイルで表示するコンポーネントを作成。選択状態やクリック可否に応じたスタイル変更も実装。
-    - [x] `components/PlayerHand.tsx`: (page.tsx内にロジック実装済)
-    - [x] `components/CpuHand.tsx`: (page.tsx内にロジック実装済)
-    - [x] `components/River.tsx`: (page.tsx内にロジック実装済)
-    - [x] `components/MahjongTable.tsx`: (page.tsxが兼ねる)
-    - [x] `components/ScoreBoard.tsx`: (page.tsx内に簡易表示実装済)
-    - [x] クレイモーフィズムを意識したCSSを `globals.css` (clay-element) および各コンポーネント (インラインTailwind) に適用。
-    - [x] *テスト*: ブラウザで画面が表示され、ゲーム開始、手牌から牌を捨てられること、CPUの打牌と盤面更新を確認。
-    - [x] *コミット*: `day53: step 5/8 UI実装 - 基本的なゲーム画面 (クレイモーフィズム適用)`
-- [ ] **Step 6/8: 麻雀コアロジック: 役判定と点数計算**
-    - [ ] `lib/mahjong/yaku.ts`: 主要な役 (立直、断幺九、役牌、平和、一盃口、混全帯幺九、七対子、混一色、清一色、国士無双など) の判定ロジック。ドラ、裏ドラ、赤ドラ(今回はなし)の扱い。
-    - [ ] `lib/mahjong/score.ts`: 和了形と役に基づいて符計算と点数計算を行う。親/子の点数、満貫・跳満・倍満・三倍満・役満の扱い。
-    - [ ] `lib/mahjong/hand.ts` の和了判定を拡張し、役と点数も返すようにする。
-    - [ ] *テスト*: 様々な和了形と手牌で役判定と点数計算が正しく行われることを確認する単体テスト。
-    - [ ] *コミット*: `day53: step 6/8 麻雀コアロジック - 役判定と点数計算`
-- [ ] **Step 7/8: CPU AI とゲームフローの高度化**
-    - [ ] `lib/mahjong/cpu_ai.ts`:
-        - [ ] 打牌選択ロジックの強化: 向聴数に加え、手役の可能性、待ちの良さ、危険牌評価（相手のリーチや副露に対するベタオリ判断など）を組み込む。
-        - [ ] 副露判断 (ポン・チー・カン): するかしないかの判断基準を実装。
-        - [ ] リーチ判断: リーチするかダマにするかの判断基準を実装。
-    - [ ] `app/api/game/action/route.ts`:
-        - [ ] ポン、チー、カン、リーチ、ツモ和了、ロン和了のアクションを処理できるように拡張。
-        - [ ] 流局 (山切れ) の処理、テンパイ判定、ノーテン罰符の処理。
-        - [ ] 連荘・親流れの処理。ゲーム終了判定 (東風戦終了など)。
-    - [ ] `components/ActionButtons.tsx`: ポン、チー、カン、リーチ、ロン、ツモなどのアクションボタンを状況に応じて表示・制御。
-    - [ ] *テスト*: CPUが状況に応じて賢い選択をするか（ある程度）。副露、リーチ、和了が正しく処理されるか。ゲームが最後まで進行し、点数移動が正しく行われるか。Playwrightで数パターンのゲームフローをテスト。
-    - [ ] *コミット*: `day53: step 7/8 CPU AIとゲームフローの高度化、アクション実装`
-- [ ] **Step 8/8: 仕上げとドキュメント**
-    - [ ] UIの微調整、デザインの最終仕上げ。
-    - [ ] エラーハンドリングの強化。
-    - [ ] `README.md` に遊び方、実装した役一覧、CPUの強さについてなどを追記。
-    - [ ] `.cursor/rules/knowledge.mdc` を更新。
-    - [ ] *テスト*: 全体的な動作確認。
-    - [ ] *コミット*: `day53: step 8/8 最終調整とドキュメント更新`
+### Project Progress
+
+- [x] **Step 1: Project Initialization**
+    - [x] Copy `template` to `day53_mahjong_ai`.
+    - [x] Update `package.json` (name: `day53_mahjong_ai`).
+    - [x] Update `README.md` with project plan.
+    - [x] Create and update `PROGRESS.md`.
+    - [x] Create basic `app/layout.tsx` and `app/page.tsx`.
+    - [x] Update `app/globals.css` for Tailwind v4 and Claymorphism basics.
+    - [x] Fix Linter errors (reinstall `node_modules`).
+    - [x] Start dev server: `npm run dev -- --port 3001`.
+- [x] **Step 2: Mahjong Core Logic (Tiles & Yama)** (`lib/mahjong/tiles.ts`, `lib/mahjong/yama.ts`)
+    - [x] Define tile suits, honor types, `Tile` interface, all 34 tile prototypes.
+    - [x] Implement utility functions (`compareTiles`, `tileFromString`, `tilesToStrings`, `isSameTile`).
+    - [x] Implement `Yama` interface, `createYama` (136 tiles, shuffled, Wanpai, Dora indicator).
+    - [x] Implement `dealInitialHands`, `drawTile`, `drawRinshanTile`, `getDoraFromIndicator`, `getCurrentDora`.
+    - [x] Test with `test-mahjong-core.ts` (deleted after use).
+- [x] **Step 3: Mahjong Core Logic (Hand & Shanten)** (`lib/mahjong/hand.ts`)
+    - [x] Implement hand management (`addTileToHand`, `removeTileFromHand`, `countTiles`)
+    - [x] Implement basic win condition checks (`isBasicAgari`, `isChiitoitsu`, `isKokushiMusou`)
+    - [x] Implement simplified Shanten calculation (`analyzeHandShanten`) for win, Kokushi tenpai, Chiitoi tenpai, and basic 13-tile tenpai.
+    - [x] Test with `test-mahjong-hand.ts` (deleted after use).
+- [x] **Step 4: API Implementation (Game Start & Basic Actions)**
+    - [x] Define game state (`lib/mahjong/game_state.ts`: `PlayerID`, `GamePhase`, `PlayerState`, `GameState`, `createInitialGameState`).
+    - [x] Create `/api/game/new` (GET) endpoint: initialize game, yama, hands, dora, store in-memory.
+    - [x] Create `/api/game/action` (POST) endpoint: handle player `discard`, basic CPU turn (draw & random discard), player's next draw, update state.
+    - [x] Implement shared in-memory game store (`lib/mahjong/game_store.ts`).
+    - [x] Test `/api/game/new` and `/api/game/action` with `curl`.
+    - [x] Integrate and test core Yaku/Score logic (`yaku.ts`, `score.ts`) via `analyzeHandShanten` in `hand.ts` using `hand.test.ts`.
+- [ ] **Step 5: UI Implementation (Basic Game Screen)**
+    - [ ] Create main React component for the Mahjong table (`app/page.tsx` or a dedicated component).
+    - [ ] Create sub-components:
+        - [ ] Player's hand display.
+        - [ ] CPU's (opponent's) hand display (tiles face down, count visible).
+        - [ ] Player's river (discarded tiles).
+        - [ ] CPU's river.
+        - [ ] Dora indicator display.
+        - [ ] Yama (deck) display (remaining tile count).
+        - [ ] Scoreboard / Game info display (current turn, round, player scores).
+        - [ ] Tile component (`components/mahjong/TileDisplay.tsx`).
+        - [ ] Action buttons (e.g., Discard, Riichi, Tsumo, Ron - initially just Discard).
+    - [ ] Style components using Tailwind CSS with a Claymorphism theme.
+    - [ ] Fetch initial game state from `/api/game/new` on page load.
+    - [ ] Implement player tile discard action (calls `/api/game/action`).
+- [ ] **Step 6: Mahjong Core Logic (Yaku & Score - Refinement)**
+    - [ ] Refine Yaku detection in `lib/mahjong/yaku.ts` (Pinfu, Iipeikou, etc.).
+    - [ ] Refine score calculation in `lib/mahjong/score.ts` (detailed Fu calculation for melds, waits, pair types).
+    - [ ] Add more test cases to `hand.test.ts` for complex Yaku and scoring.
+- [ ] **Step 7: CPU AI & Advanced Game Flow**
+    - [ ] Enhance CPU discard logic (beyond random discard).
+    - [ ] Implement Riichi decision for CPU.
+    - [ ] Implement Meld decisions for CPU (Pon, Chi, Kan).
+    - [ ] Implement full game flow logic in API and client (Pon, Chi, Kan, Riichi, Tsumo/Ron calls, draws, round/game end conditions).
+    - [ ] Update UI to reflect advanced game actions and states.
+- [ ] **Step 8: Final Touches & Documentation**
+    - [ ] UI Polish and UX improvements.
+    - [ ] Comprehensive error handling.
+    - [ ] Update `README.md` with final app description and how to play.
+    - [ ] Update `.cursor/rules/knowledge.mdc`.
 
 以下に進捗を記載してください。
 
