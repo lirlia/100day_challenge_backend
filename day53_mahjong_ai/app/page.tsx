@@ -1,27 +1,28 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { GameState, PlayerID, PlayerState, GamePhase } from '../lib/mahjong/game_state';
+import { GameState, PlayerID, PlayerState, GamePhase, ActionType, TileInRiver } from '../lib/mahjong/game_state';
 import { Tile as TileType, isSameTile, compareTiles } from '../lib/mahjong/tiles';
 import { Meld } from '../lib/mahjong/hand';
-import { TileDisplay } from '../components/tile-display'; // New component import
-import { GameResultModal } from '../components/game-result-modal'; // モーダルをインポート
+import TileDisplay from '@/components/mahjong/TileDisplay';
+import PlayerHand from '@/components/mahjong/PlayerHand';
+import { GameResultModal } from '../components/game-result-modal';
 
 export default function MahjongGamePage() {
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [selectedTile, setSelectedTile] = useState<TileType | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [actionError, setActionError] = useState<string | null>(null); // For action-specific errors
+  const [actionError, setActionError] = useState<string | null>(null);
   const [showResultModal, setShowResultModal] = useState<boolean>(false);
   const [showKanSelectionModal, setShowKanSelectionModal] = useState<boolean>(false);
   const [possibleKans, setPossibleKans] = useState<{
     type: 'ankan' | 'kakan';
-    tile?: TileType; // ankan の場合、カンする牌の代表 (例: 1m)
-    meld?: Meld; // kakan の場合、加槓する既存の面子
+    tile?: TileType;
+    meld?: Meld;
   }[]>([]);
 
-  const currentPlayerId: PlayerID = PlayerID.Player;
+  const currentPlayerId: PlayerID = 'player';
 
   useEffect(() => {
     const fetchNewGame = async () => {
@@ -46,8 +47,8 @@ export default function MahjongGamePage() {
   }, []);
 
   const handleTileSelect = (tile: TileType) => {
-    if (gameState?.turn === currentPlayerId) {
-      setSelectedTile(prev => (prev?.id === tile.id ? null : tile)); // Toggle selection
+    if (gameState?.currentTurn === currentPlayerId) {
+      setSelectedTile(prev => (prev?.id === tile.id ? null : tile));
     }
   };
 
@@ -71,9 +72,11 @@ export default function MahjongGamePage() {
       }
       const data: GameState = await response.json();
       setGameState(data);
-      setSelectedTile(null); // Clear selection after action
-      if ([GamePhase.PlayerWon, GamePhase.CPUWon, GamePhase.Draw, GamePhase.GameOver].includes(data.phase)) {
-        setShowResultModal(true);
+      setSelectedTile(null);
+      if ([GamePhase.PLAYER_TURN, GamePhase.CPU_TURN, GamePhase.ROUND_ENDED, GamePhase.GAME_OVER].includes(data.phase)) {
+        if (data.phase === GamePhase.GAME_OVER || (data.phase === GamePhase.ROUND_ENDED && data.winner !== null)) {
+            setShowResultModal(true);
+        }
       }
     } catch (err) {
       console.error("Error submitting action:", err);
@@ -85,16 +88,15 @@ export default function MahjongGamePage() {
 
   const handleDiscard = async () => {
     if (!selectedTile) return;
-    await submitAction({ type: 'discard', tile: selectedTile });
+    await submitAction({ type: ActionType.Discard, tile: selectedTile });
   };
 
   const handleRiichi = async () => {
-    // TODO: リーチ可能な牌を選択させるUI (打牌と同時)
-    if (!selectedTile) { // 打牌する牌が選択されている必要がある
+    if (!selectedTile) {
         setActionError("リーチするには、まず捨てる牌を選んでください。");
         return;
     }
-    if (!playerState) { // playerStateの存在チェック
+    if (!playerState) {
         setActionError("プレイヤーの状態が取得できません。");
         return;
     }
@@ -102,28 +104,23 @@ export default function MahjongGamePage() {
         setActionError("点数が足りないためリーチできません (1000点必要)。");
         return;
     }
-    await submitAction({ type: 'riichi', tile: selectedTile });
+    await submitAction({ type: ActionType.Riichi, tile: selectedTile });
   };
 
   const handleTsumoAgari = async () => {
-    await submitAction({ type: 'tsumo_agari' });
+    await submitAction({ type: ActionType.TsumoAgari });
   };
 
   const handleRon = async () => {
-    // ロンは相手の打牌に対してなので、このUIからの直接実行は通常ないはずだが、CPU実装によっては必要かも
-    // または、フリテンでないかのチェックなどをクライアントで行う場合に使う
-    await submitAction({ type: 'ron' });
+    await submitAction({ type: ActionType.Ron });
   };
 
   const handleKan = async () => {
-    // TODO: カンする牌（暗槓なら手牌から4枚、加槓ならポンした牌と手牌1枚）を選択させるUI
-    // 適切な牌が選択されているかチェック
-    if (!selectedTile) { // 例: 暗槓のために最初の1枚目を選択
-        setActionError("カンする牌を選択してください。");
+    if (!selectedTile) {
+        setActionError("カンする牌を選択してください。(現状は選択牌で仮カン)");
         return;
     }
-    // 仮で選択牌で暗槓を試みる (API側で詳細判定)
-    await submitAction({ type: 'kan', tile: selectedTile });
+    await submitAction({ type: ActionType.Kan, tile: selectedTile, meldType: 'ankan' });
   };
 
   if (isLoading && !gameState) return <div className="p-4 text-center clay-area text-lg">新しいゲームを読み込んでいます...</div>;
@@ -135,16 +132,20 @@ export default function MahjongGamePage() {
 
   if (!playerState || !cpuState) return <div className="p-4 text-center clay-area text-lg">プレイヤーまたはCPUの状態がありません。</div>;
 
+  const sortHand = (hand: TileType[]) => {
+    return [...hand].sort(compareTiles);
+  };
+
   const displayRound = (round: number) => {
-    const wind = Math.ceil(round / 4) <= 1 ? '東' : '南';
+    const windVal = Math.ceil(round / 4) <= 1 ? '東' : '南';
     const number = round % 4 === 0 ? 4 : round % 4;
-    return `${wind}${number}`;
+    return `${windVal}${number}`;
   }
 
-  const canRiichi = playerState.canRiichi && gameState.turn === currentPlayerId; // 仮の条件
-  const canTsumoAgari = playerState.canTsumoAgari && gameState.turn === currentPlayerId; // 仮の条件
-  const canRon = playerState.canRon; // 相手の打牌に対してなので、表示条件は別途検討
-  const canKan = playerState.canKan && gameState.turn === currentPlayerId; // 仮の条件
+  const canRiichi = playerState.canRiichi && gameState.currentTurn === 'player' && playerState.hand.length === 14;
+  const canTsumoAgari = playerState.canTsumoAgari && gameState.currentTurn === 'player' && playerState.hand.length === 14;
+  const canRon = playerState.canRon && gameState.currentTurn === 'player';
+  const canKan = playerState.canKan && gameState.currentTurn === 'player' && playerState.hand.length === 14;
 
   const startNewGame = async () => {
     setShowResultModal(false);
@@ -172,69 +173,108 @@ export default function MahjongGamePage() {
       <header className="mb-4 w-full max-w-5xl clay-area rounded-lg p-3">
         <h1 className="text-3xl sm:text-4xl font-bold text-center text-yellow-300 clay-text-title mb-2">Day 53 - 麻雀 AI 対戦</h1>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm sm:text-base">
-          <div className="clay-info-box">Round: {displayRound(gameState.round)}局 / 全{gameState.totalRounds}局 {gameState.honba}本場</div>
-          <div className="clay-info-box">Score: P {playerState.score} | C {cpuState.score}</div>
-          <div className="clay-info-box flex items-center justify-center">Dora: {gameState.dora.length > 0 ? <TileDisplay tile={gameState.dora[0]} size="small" isPlayable={false}/> : 'N/A'}</div>
-          <div className="clay-info-box">Yama: {gameState.yama.tiles.length}</div>
+          <div className="clay-info-box">{displayRound(gameState.round)}局 {gameState.honba}本場</div>
+          <div className="clay-info-box">P: {playerState.score} | CPU: {cpuState.score}</div>
+          <div className="clay-info-box flex items-center justify-center">ドラ: {gameState.dora.length > 0 ? <TileDisplay tile={gameState.dora[0]} className="w-8 h-12 sm:w-10 sm:h-16 text-sm"/> : 'N/A'}</div>
+          <div className="clay-info-box">山: {gameState.yama.tiles.length} / {gameState.riichiSticks}本</div>
         </div>
       </header>
 
       {/* CPU Area */}
       <div className="w-full max-w-5xl mb-4 p-3 clay-area rounded-lg">
-        <h2 className="text-xl mb-2 font-semibold">CPU ({PlayerID.CPU})</h2>
-        <div className="flex flex-wrap mb-2 min-h-[56px]">
-          {Array(cpuState.hand.length).fill(0).map((_, i) => (
-            <TileDisplay key={`cpu-hand-${i}`} tile={null} isHidden={true} size="medium" />
+        <h2 className="text-xl mb-2 font-semibold text-gray-300">CPU ('cpu') {gameState.currentTurn === 'cpu' && <span className="text-yellow-400 clay-text-accent">(思考中...)</span>}</h2>
+        <div className="flex flex-wrap justify-center items-end gap-1 p-2 bg-gray-800/30 shadow-clay-inset rounded-lg min-h-[88px] mb-2">
+          {Array(cpuState.hand.length).fill(null).map((_, i) => (
+            <TileDisplay key={`cpu-hand-hidden-${i}`} tile={null} className="w-10 h-16 sm:w-12 sm:h-20"/>
           ))}
         </div>
-        <div className="flex flex-wrap min-h-[68px] bg-green-800/50 p-1 rounded-md border border-green-600">
-          {cpuState.river.map((tile, i) => <TileDisplay key={`cpu-river-${tile.id}-${i}`} tile={tile} size="small" isPlayable={false}/>)}
+        <p className="text-xs text-gray-400 mb-1">CPUの河:</p>
+        <div className="flex flex-wrap gap-1 min-h-[52px] bg-green-800/50 p-1 rounded-md border border-green-600/50">
+          {cpuState.river.map((discard: TileInRiver, i) => (
+            <TileDisplay key={`cpu-river-${discard.id}-${i}`} tile={discard} className="w-8 h-12 sm:w-10 sm:h-16 text-xs"/>
+          ))}
         </div>
+         {cpuState.melds.length > 0 && (
+          <div className="mt-2">
+            <p className="text-xs text-gray-400 mb-1">CPUの鳴き:</p>
+            <div className="flex flex-wrap gap-2">
+              {cpuState.melds.map((meld, i) => (
+                <div key={`cpu-meld-${i}`} className="flex gap-0.5 p-1 bg-gray-700/50 rounded">
+                  {meld.tiles.map((tile, ti) => (
+                    <TileDisplay key={`cpu-meld-${i}-tile-${ti}`} tile={tile} className="w-8 h-12 sm:w-10 sm:h-16 text-xs"/>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Player Area */}
       <div className="w-full max-w-5xl p-3 clay-area rounded-lg">
-        <h2 className="text-xl mb-2 font-semibold">Player ({currentPlayerId}) {gameState.turn === currentPlayerId && <span className="text-yellow-300 clay-text-accent">(あなたのターン)</span>}</h2>
-        <div className="flex flex-wrap justify-center min-h-[88px] bg-green-800/50 p-2 rounded-md border border-green-600 mb-3">
-          {playerState.hand.sort(compareTiles).map((tile) => (
-            <TileDisplay
-              key={`player-hand-${tile.id}`}
-              tile={tile}
-              onClick={handleTileSelect}
-              isSelected={selectedTile?.id === tile.id}
-              isPlayable={gameState.turn === currentPlayerId}
-              size="medium"
-            />
+        <h2 className="text-xl mb-2 font-semibold">あなた ('{currentPlayerId}') {gameState.currentTurn === 'player' && <span className="text-yellow-300 clay-text-accent">(あなたのターン)</span>}</h2>
+
+        <PlayerHand
+          hand={sortHand(playerState.hand)}
+          lastDraw={playerState.lastDraw}
+          onTileSelect={handleTileSelect}
+          selectedTile={selectedTile}
+          canDiscard={gameState.currentTurn === 'player' && playerState.hand.length === 14}
+        />
+
+        {playerState.melds.length > 0 && (
+          <div className="mt-3 mb-2">
+            <p className="text-xs text-gray-400 mb-1">あなたの鳴き:</p>
+            <div className="flex flex-wrap justify-center gap-2">
+              {playerState.melds.map((meld, i) => (
+                <div key={`player-meld-${i}`} className="flex gap-0.5 p-1 bg-gray-700/50 rounded">
+                  {meld.tiles.map((tile, ti) => (
+                    <TileDisplay key={`player-meld-${i}-tile-${ti}`} tile={tile} className="w-10 h-16"/>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <p className="text-xs text-gray-400 mt-3 mb-1">あなたの河:</p>
+        <div className="flex flex-wrap gap-1 min-h-[52px] bg-green-800/50 p-1 rounded-md border border-green-600/50 mb-3">
+          {playerState.river.map((discard: TileInRiver, i) => (
+            <TileDisplay key={`player-river-${discard.id}-${i}`} tile={discard} className="w-8 h-12 sm:w-10 sm:h-16 text-xs"/>
           ))}
         </div>
-        <div className="flex flex-wrap min-h-[68px] bg-green-800/50 p-1 rounded-md border border-green-600 mb-3">
-          {playerState.river.map((tile, i) => <TileDisplay key={`player-river-${tile.id}-${i}`} tile={tile} size="small" isPlayable={false}/>)}
-        </div>
 
-        {actionError && <div className="text-red-400 bg-red-900/50 p-2 rounded-md mb-2 text-sm">{actionError}</div>}
+        {actionError && <div className="text-red-400 bg-red-900/50 p-2 rounded-md mb-3 text-sm">エラー: {actionError}</div>}
+        {gameState.lastActionMessage && <div className="text-blue-300 bg-blue-900/50 p-2 rounded-md mb-3 text-sm">情報: {gameState.lastActionMessage}</div>}
 
-        {gameState.turn === currentPlayerId && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+        {gameState.currentTurn === 'player' && playerState.hand.length === 14 && (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mt-3">
             <button
               type="button"
               onClick={handleDiscard}
-              disabled={!selectedTile || isLoading}
-              className="clay-button action-button discard-button"
+              disabled={!selectedTile || isLoading || playerState.hand.length !== 14}
+              className="clay-button action-button discard-button enabled:hover:bg-red-700 disabled:opacity-50"
             >
-              {isLoading && selectedTile ? '捨牌中...' : `捨牌 (${selectedTile ? selectedTile.id : '?'})`}
+              {isLoading && selectedTile ? '捨牌中...' : `捨牌 (${selectedTile ? selectedTile.name : '選択'})`}
             </button>
-            <button type="button" onClick={handleRiichi} disabled={!canRiichi || isLoading || !selectedTile} className="clay-button action-button riichi-button">{isLoading ? "処理中..." : "リーチ"}</button>
-            <button type="button" onClick={handleTsumoAgari} disabled={!canTsumoAgari || isLoading} className="clay-button action-button tsumoagari-button">{isLoading ? "処理中..." : "ツモ"}</button>
-            {/* <button type="button" onClick={handleRon} disabled={!canRon || isLoading} className="clay-button action-button ron-button">{isLoading ? "処理中..." : "ロン"}</button> */}
-            <button type="button" onClick={handleKan} disabled={!canKan || isLoading || !selectedTile} className="clay-button action-button kan-button">{isLoading ? "処理中..." : "カン"}</button>
+            <button type="button" onClick={handleRiichi} disabled={!canRiichi || isLoading || !selectedTile} className="clay-button action-button riichi-button enabled:hover:bg-yellow-600 disabled:opacity-50">{isLoading && canRiichi ? "処理中..." : "リーチ"}</button>
+            <button type="button" onClick={handleTsumoAgari} disabled={!canTsumoAgari || isLoading} className="clay-button action-button tsumoagari-button enabled:hover:bg-green-500 disabled:opacity-50">{isLoading && canTsumoAgari ? "処理中..." : "ツモ和了"}</button>
+            <button type="button" onClick={handleKan} disabled={!canKan || isLoading || !selectedTile} className="clay-button action-button kan-button enabled:hover:bg-blue-600 disabled:opacity-50">{isLoading && canKan ? "処理中..." : "カン"}</button>
           </div>
+        )}
+
+        {gameState.currentTurn === 'player' && playerState.hand.length === 13 && (playerState.canRon || playerState.canPon || playerState.canKan) && (
+             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mt-3">
+                {playerState.canRon &&
+                    <button type="button" onClick={handleRon} disabled={isLoading} className="clay-button action-button ron-button enabled:hover:bg-pink-600 disabled:opacity-50">{isLoading ? "処理中..." : "ロン"}</button>}
+             </div>
         )}
       </div>
 
       {showResultModal && gameState && (
         <GameResultModal
           gameState={gameState}
-          onClose={() => setShowResultModal(false)} // onClose は現状使わないが念のため
+          onClose={() => setShowResultModal(false)}
           onNewGame={startNewGame}
         />
       )}
