@@ -55,6 +55,7 @@ export interface PlayerState {
   canRon?: boolean; // 相手の打牌に対してロン可能か
   canKan?: boolean; // カン可能か (暗槓、加槓、大明槓のいずれか)
   canPon?: boolean; // ポン可能か
+  tileToPon?: Tile; // ポン可能な場合の対象牌
   melds: Meld[];      // 副露した面子
   justKaned?: boolean; // カン直後のツモか (嶺上開花判定用)
   lastDraw?: Tile;      // 最後にツモった牌
@@ -226,6 +227,14 @@ function updateActionFlagsForPlayer(playerState: PlayerState, gameState: GameSta
   const playerWind = (gameState.oya === PlayerID.Player && gameState.turn === PlayerID.Player) || (gameState.oya === PlayerID.CPU && gameState.turn === PlayerID.CPU) ? HonorType.TON : HonorType.NAN;
   const roundWind = HonorType.TON; // 二人麻雀の場風は常に東
 
+  // アクションフラグを初期化
+  playerState.canTsumoAgari = false;
+  playerState.canRon = false;
+  playerState.canRiichi = false;
+  playerState.canKan = false;
+  playerState.canPon = false;
+  playerState.tileToPon = undefined;
+
   const completedHandForAnalysis = isTsumo ? playerState.hand : [...playerState.hand, agariTile];
 
   const analysis = analyzeHandShanten(
@@ -253,58 +262,56 @@ function updateActionFlagsForPlayer(playerState: PlayerState, gameState: GameSta
     else playerState.canRon = false;
   }
 
-  playerState.canRiichi = isTsumo && analysis.shanten === 0 && !playerState.isRiichi && playerState.melds.every(m => !m.isOpen) && playerState.score >= 1000;
-
-  // 暗槓の判定 (手牌に同じ牌が4枚あるか)
-  let canAnkan = false;
-  // リーチ中でも、待ちが変わらない暗槓は可能。ただし、この判定は複雑なので、
-  // ここでは「リーチ中は暗槓不可」としておくか、より詳細な分析が必要。
-  // 今回は簡易的に「リーチ中も暗槓は可能」としてしまう (手牌構成が変わるが、役の計算時に影響)
-  // ただし、analyzeHandShantenで待ち牌リストを取得し、それが変わらないかチェックするのが理想
-  if (isTsumo) { // ツモ時のみカンを考慮 (手番なので)
-    const counts = new Map<string, number>();
-    for (const tile of playerState.hand) {
-      counts.set(tile.id, (counts.get(tile.id) || 0) + 1);
-    }
-    for (const [tileId, count] of counts.entries()) {
-      if (count === 4) {
-        // リーチ中の場合、このカンで待ちが変わるかどうかのチェックが必要。
-        // 非常に簡略化して、リーチ中は暗槓はできないものとして扱う。
-        // より正確には、カンしても役や待ちが変わらない場合のみ許可。
-        // 今回は、リーチ後の暗槓は許可しない方向で進める。（以前のロジックに戻す）
-        if (!playerState.isRiichi) {
-            canAnkan = true;
-            break;
-        }
-      }
-    }
-  }
-  // TODO: 加槓の判定 (ポンした刻子と同じ牌を手牌に持っているか)
-  let canKakan = false;
-  if (isTsumo && !playerState.isRiichi) { // 加槓もリーチ中は不可（通常）
-    for (const meld of playerState.melds) {
-      if (meld.type === 'koutsu' && meld.isOpen) { // 開いた刻子（ポン）であること
-        const tileInHand = playerState.hand.find(t => isSameTile(t, meld.tiles[0]));
-        if (tileInHand) {
-          canKakan = true;
-          break;
-        }
-      }
-    }
-  }
-
-  // TODO: 大明槓の判定は相手の打牌時なのでここでは false
-  playerState.canKan = canAnkan || canKakan; // 現状は暗槓と加槓のみツモ時に判定
-
-  // ポンの判定 (相手の捨て牌に対して)
-  if (!isTsumo && agariTile) { // isTsumo が false = 相手の捨て牌に対するアクション
-    const ponTargetTile = agariTile;
-    const countInHand = playerState.hand.filter(t => isSameTile(t, ponTargetTile)).length;
-    // ポンはリーチ中は不可とするのが一般的
-    playerState.canPon = countInHand >= 2 && !playerState.isRiichi;
+  // リーチ可能かの判定 (ツモ時のみ)
+  if (isTsumo) {
+    playerState.canRiichi = analysis.shanten === 0 &&
+                            !playerState.isRiichi &&
+                            playerState.melds.every(m => !m.isOpen) &&
+                            playerState.score >= 1000 &&
+                            playerState.hand.length === 14; // リーチはツモ後14枚の状態で判断
   } else {
-    playerState.canPon = false; // ツモ時や対象牌がない場合はポン不可
+    playerState.canRiichi = false; // 打牌に対してはリーチ不可
   }
+
+  // カン可能かの判定 (ツモ時のみ、かつリーチ中でない場合)
+  if (isTsumo && !playerState.isRiichi && playerState.hand.length === 14) {
+    // 暗槓: 手牌に同じ牌が4枚
+    const counts = new Map<string, number>();
+    playerState.hand.forEach(tile => counts.set(tile.id, (counts.get(tile.id) || 0) + 1));
+    for (const count of counts.values()) {
+      if (count === 4) {
+        playerState.canKan = true;
+        break;
+      }
+    }
+    // 加槓: 既にポンしている刻子に1枚加える
+    if (!playerState.canKan) {
+      for (const meld of playerState.melds) {
+        if (meld.type === 'koutsu' && meld.isOpen) { // ポンした刻子
+          if (playerState.hand.find(tileInHand => isSameTile(tileInHand, meld.tiles[0]))) {
+            playerState.canKan = true;
+            break;
+          }
+        }
+      }
+    }
+  } else {
+    playerState.canKan = false;
+  }
+
+  // ポン可能かの判定 (相手の打牌時のみ、かつリーチ中でない場合)
+  // agariTile が相手の捨て牌に相当する
+  if (!isTsumo && !playerState.isRiichi && agariTile) {
+    const sameTileCountInHand = playerState.hand.filter(tileInHand => isSameTile(tileInHand, agariTile)).length;
+    if (sameTileCountInHand >= 2) {
+      playerState.canPon = true;
+      playerState.tileToPon = agariTile;
+    }
+  }
+
+  // TODO: 大明槓の判定 (相手の打牌に対して)
+  // ここで playerState.canKan も更新しうる
+
 }
 
 function proceedToNextRoundOrEndGame(currentState: GameState): GameState {
