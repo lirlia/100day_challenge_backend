@@ -1,6 +1,6 @@
 import { Tile, isSameTile, compareTiles, HonorType, TileSuit } from './tiles';
 import { Yama, createYama, dealInitialHands, drawTile, getCurrentDora, drawRinshanTile, revealKanDora, getCurrentUraDora } from './yama';
-import { analyzeHandShanten, Meld, HandPattern, AgariInfo, AgariContext, removeTileFromHand as removeTileFromPlayerHand, isKyuushuuKyuuhai } from './hand'; // removeTileFromHand をインポート
+import { analyzeHandShanten, Meld, HandPattern, AgariInfo, AgariContext, removeTileFromHand as removeTileFromPlayerHand, isKyuushuuKyuuhai, removeAllTilesFromHand } from './hand'; // removeAllTilesFromHand をインポート
 import type { AgariContext as OldAgariContext } from './hand'; // AgariContext 型をインポート
 
 export enum PlayerID {
@@ -910,56 +910,49 @@ export function processAction(currentState: GameState, playerId: PlayerID, actio
       break;
 
     case ActionType.Pon:
-      if (!opponentPlayer.lastDiscard || !action.targetTile || !isSameTile(opponentPlayer.lastDiscard, action.targetTile)) {
-        nextState.lastActionMessage = "エラー: ポン対象の牌が正しくありません。相手の直前の捨て牌と一致しません。";
+      if (!action.targetTile) {
+        console.error("Pon action without targetTile", action);
+        nextState.lastActionMessage = "エラー: ポン対象の牌が指定されていません。";
         break;
       }
-      const targetPonTile = action.targetTile; // 相手の捨て牌
+      const tileToPon = action.targetTile;
 
-      const handTilesForPon = actingPlayer.hand.filter(t => isSameTile(t, targetPonTile));
-      if (handTilesForPon.length < 2) {
-        nextState.lastActionMessage = "エラー: ポンするための牌が手牌に足りません。";
-        break;
-      }
-      if (actingPlayer.isRiichi) {
-        nextState.lastActionMessage = "エラー: リーチ中にポンはできません。";
+      const sameTilesInHand = actingPlayer.hand.filter(t => isSameTile(t, tileToPon));
+      if (sameTilesInHand.length < 2) {
+        console.error("Pon action but not enough tiles in hand", actingPlayer.hand, tileToPon);
+        nextState.lastActionMessage = "エラー: ポンできる牌が手牌にありません。";
+        // この場合、canPonフラグが誤って立っていた可能性。UIに戻ってプレイヤーに通知すべき。
+        // サーバー側では大きな状態変更はせず、エラーメッセージのみ返すのが適切か。
+        // あるいは、UI側のcanPon判定とサーバー側の手牌状況の不整合なので、gameStateをそのまま返す。
         break;
       }
 
-      // ポン成功
-      const ponMeld: Meld = {
+      // 鳴く牌と鳴かれる牌をソートして面子を作る (表示順のため)
+      // tileToPon は相手の捨て牌。sameTilesInHand[0] と sameTilesInHand[1] が自分の手牌から出す牌。
+      const meldTiles = [sameTilesInHand[0], sameTilesInHand[1], tileToPon].sort(compareTiles);
+
+      actingPlayer.hand = removeAllTilesFromHand(actingPlayer.hand, [sameTilesInHand[0], sameTilesInHand[1]]);
+      actingPlayer.melds.push({
         type: 'koutsu',
-        tiles: [handTilesForPon[0], handTilesForPon[1], targetPonTile].sort(compareTiles),
+        tiles: meldTiles,
         isOpen: true,
         fromWho: opponentPlayerId,
-      };
-      actingPlayer.melds.push(ponMeld);
-
-      let removedCount = 0;
-      actingPlayer.hand = actingPlayer.hand.filter(t => {
-        if (removedCount < 2 && isSameTile(t, targetPonTile)) {
-          removedCount++;
-          return false;
-        }
-        return true;
       });
-      actingPlayer.hand.sort(compareTiles);
 
+      nextState.turn = playerId; // ポンしたプレイヤーのターン
       actingPlayer.justKaned = false;
-      opponentPlayer.canRon = false; // ポンされたらロンはできない
-      opponentPlayer.canPon = false; // 連続して相手はポンできない
-      opponentPlayer.canKan = false; // 大明槓の機会も失う
+      nextState.lastActionMessage = `${playerId === PlayerID.Player ? "あなた" : "CPU"}が ${tileToPon.id} をポンしました。打牌してください。`;
 
-      nextState.turn = playerId;
-      nextState.lastActionMessage = `${playerId === PlayerID.Player ? "あなた" : "CPU"}が ${opponentPlayerId === PlayerID.Player ? "あなた" : "CPU"} の ${targetPonTile.id} をポンしました。打牌してください。`;
-
-      // ポン後のアクションフラグ (打牌のみ可能、カンなどは次のツモ後)
+      // ポン後は打牌のみ可能。他のアクションフラグはリセット。
+      actingPlayer.canPon = false;
+      actingPlayer.tileToPon = undefined;
+      actingPlayer.canRon = false;
       actingPlayer.canRiichi = false;
       actingPlayer.canTsumoAgari = false;
-      actingPlayer.canRon = false;
-      actingPlayer.canPon = false;
-      actingPlayer.canKan = false; // ポン直後のカンは一旦考えない (UIシンプル化のため)
-      // 実際には打牌前に暗槓・加槓の判定をしても良いが、今回は省略
+      actingPlayer.canKan = false; // ポン直後のカンは通常ないので一旦false。加槓のチェックは別途必要。
+
+      // analyzeHandShanten を呼び出して canKan (加槓) を再評価することもできるが、
+      // ポン -> 即打牌を基本とする。加槓は打牌前に別途選択。
       break;
   }
 
