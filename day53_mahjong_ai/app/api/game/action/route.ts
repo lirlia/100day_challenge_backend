@@ -119,7 +119,60 @@ function getCpuDiscard(cpuHand: Tile[], gameState: GameState): Tile {
       return kabeCandidates[Math.floor(Math.random() * kabeCandidates.length)];
     }
 
-    // TODO: 字牌の安全度なども考慮
+    // 4. 字牌の安全度評価
+    const safeJihaiCandidates: { tile: Tile, safetyRank: number }[] = [];
+    // allVisibleTiles は壁のセクションで定義済み
+
+    const ownPlayerWind = gameState.oya === PlayerID.CPU ? HonorType.TON : HonorType.NAN; // CPUの自風
+    const roundWind = HonorType.TON; // 二人麻雀では場風は常に東
+
+    for (const tile of cpuHand) {
+      if (tile.suit === TileSuit.JIHAI) {
+        const honorValue = tile.value as HonorType;
+        let safetyRank = 0; // 高いほど安全
+
+        const visibleCount = allVisibleTiles.filter(t => t.suit === TileSuit.JIHAI && t.value === honorValue).length;
+
+        if (opponentRiver.includes(tile.id)) { // 現物は最高ランク (既に上で処理されるが念のため)
+          safetyRank = 100;
+        } else if (visibleCount >= 3) { // 3枚以上見え
+          safetyRank = 50;
+        } else if (visibleCount === 2) { // 2枚見え
+          safetyRank = 30;
+        } else if (visibleCount === 1) { // 1枚見え
+          // 役牌かどうかでランク調整
+          if (honorValue === HonorType.HAKU || honorValue === HonorType.HATSU || honorValue === HonorType.CHUN) {
+            safetyRank = 5; // 1枚見えの三元牌
+          } else if (honorValue === ownPlayerWind || honorValue === roundWind) {
+            safetyRank = 8; // 1枚見えの役風牌
+          } else {
+            safetyRank = 15; // 1枚見えのオタ風
+          }
+        } else { // 生牌 (visibleCount === 0)
+          if (honorValue === HonorType.HAKU || honorValue === HonorType.HATSU || honorValue === HonorType.CHUN) {
+            safetyRank = 1;
+          } else if (honorValue === ownPlayerWind || honorValue === roundWind) {
+            safetyRank = 2;
+          } else {
+            safetyRank = 10; // 生牌のオタ風は比較的マシ
+          }
+        }
+        safeJihaiCandidates.push({ tile, safetyRank });
+      }
+    }
+
+    if (safeJihaiCandidates.length > 0) {
+      safeJihaiCandidates.sort((a, b) => b.safetyRank - a.safetyRank); // 安全度高い順
+      // ある程度の安全ランク以上のものだけを選ぶ (例: ランク10以上)
+      const sufficientlySafeJihai = safeJihaiCandidates.filter(c => c.safetyRank >= 10);
+      if (sufficientlySafeJihai.length > 0) {
+        // 最も安全なランクの牌の中からランダムに選ぶ
+        const highestRank = sufficientlySafeJihai[0].safetyRank;
+        const topRankedJihai = sufficientlySafeJihai.filter(c => c.safetyRank === highestRank);
+        return topRankedJihai[Math.floor(Math.random() * topRankedJihai.length)].tile;
+      }
+    }
+
   }
 
   // 常に14枚手牌で分析 (ツモ後打牌前の想定)
