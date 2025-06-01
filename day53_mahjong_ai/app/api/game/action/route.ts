@@ -1,119 +1,77 @@
 import { NextResponse, NextRequest } from "next/server";
-import { GameState, PlayerID, GamePhase } from "../../../../lib/mahjong/game_state";
+import { GameState, PlayerID, GamePhase, GameAction, ActionType, processAction } from "../../../../lib/mahjong/game_state";
 import { Tile, tilesFromStrings, tileFromString, isSameTile } from "../../../../lib/mahjong/tiles";
-import { drawTile, getCurrentDora } from "../../../../lib/mahjong/yama";
+import { drawTile as drawTileFromYamaOriginal, getCurrentDora, drawRinshanTile, Yama } from "../../../../lib/mahjong/yama";
 import { analyzeHandShanten, removeTileFromHand, addTileToHand } from "../../../../lib/mahjong/hand";
-import { getActiveGame, setActiveGame } from "../../../../lib/mahjong/game_store";
+import { getGame, saveGame } from "../../../../lib/mahjong/game_store";
 
-// CPUの打牌ロジック (超簡易版: ランダムに捨てる)
-function getCpuDiscard(cpuHand: Tile[], gameState: GameState): Tile {
-  // TODO: もっと賢いAIを実装する (向聴数ベースなど)
-  if (cpuHand.length === 0) throw new Error("CPU hand is empty, cannot discard.");
-  // ひとまずランダムに1枚選択 (ツモ切りでない手牌から)
-  const nonTsumogiriHand = cpuHand.filter(t => !t.isTsumogiri);
-  if (nonTsumogiriHand.length > 0) {
-    return nonTsumogiriHand[Math.floor(Math.random() * nonTsumogiriHand.length)];
+// drawTileFromYama のラッパーを作成して、シグネチャの不一致を吸収
+function drawTileWrapper(yama: Yama): { tile: Tile | null; updatedYama: Yama } {
+  return drawTileFromYamaOriginal(yama);
+}
+
+const YAOCHUUHAI_IDS = ["1m", "9m", "1s", "9s", "1p", "9p", "ton", "nan", "sha", "pei", "haku", "hatsu", "chun"];
+
+function getCpuDiscard(hand: Tile[], gameState: GameState): Tile {
+  if (hand.length === 0) {
+    console.error("CPU hand is empty, cannot discard.");
+    throw new Error("CPU hand is empty.");
   }
-  return cpuHand[Math.floor(Math.random() * cpuHand.length)]; // 全てツモ切りならランダム
+
+  // 1. 安全そうなヤオ九牌を探す (孤立しているもの)
+  const isolatedYaochuuhai = hand.filter(tile =>
+    YAOCHUUHAI_IDS.includes(tile.id) &&
+    hand.filter(t => Math.abs(t.value - tile.value) <= 2 && t.suit === tile.suit).length === 1 // 周りに他の牌がない
+  );
+  if (isolatedYaochuuhai.length > 0) {
+    return isolatedYaochuuhai[Math.floor(Math.random() * isolatedYaochuuhai.length)];
+  }
+
+  // 2. 単純なヤオ九牌
+  const yaochuuhai = hand.filter(tile => YAOCHUUHAI_IDS.includes(tile.id));
+  if (yaochuuhai.length > 0) {
+    return yaochuuhai[Math.floor(Math.random() * yaochuuhai.length)];
+  }
+
+  // 3. 上記がなければランダム
+  return hand[Math.floor(Math.random() * hand.length)];
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { gameId, actionType, tileId } = body;
+    const { gameId, playerId, action } = body as { gameId: string; playerId: PlayerID; action: GameAction };
 
-    if (!gameId || !actionType) {
-      return NextResponse.json({ error: "Missing gameId or actionType" }, { status: 400 });
+    if (!gameId || !playerId || !action || !action.type) {
+      return NextResponse.json({ message: 'Invalid request parameters' }, { status: 400 });
     }
 
-    let gameState = getActiveGame(gameId);
-    if (!gameState) {
-      return NextResponse.json({ error: "Game not found" }, { status: 404 });
+    let game = getGame(gameId);
+    if (!game) {
+      return NextResponse.json({ message: 'Game not found' }, { status: 404 });
     }
 
-    // プレイヤーの打牌処理
-    if (actionType === "discard" && gameState.turn === PlayerID.Player && tileId) {
-      const discardedTile = tileFromString(tileId);
-      if (!discardedTile) {
-        return NextResponse.json({ error: "Invalid tileId for discard" }, { status: 400 });
-      }
-
-      // プレイヤーの手牌から捨て牌を削除
-      const playerHandAfterDiscard = removeTileFromHand(gameState.player.hand, discardedTile);
-      if (playerHandAfterDiscard.length === gameState.player.hand.length) { // 牌が見つからなかった
-        return NextResponse.json({ error: "Tile not found in player hand" }, { status: 400 });
-      }
-      gameState.player.hand = playerHandAfterDiscard;
-      gameState.player.river.push({ ...discardedTile, isTsumogiri: false }); // isTsumogiri はツモ牌をそのまま捨てた場合true
-      gameState.lastActionMessage = `プレイヤーが ${discardedTile.name} を捨てました。`;
-      console.log(`[Game Action] ${gameId}: Player discarded ${discardedTile.id}`);
-
-      // TODO: 他プレイヤーがロンできるかチェック (PlayerActionWaitフェーズへ移行)
-
-      // CPUのターンへ
-      gameState.turn = PlayerID.CPU;
-      gameState.phase = GamePhase.CPUTurnStart;
-      gameState.turnCount++;
-
-      // CPUのツモ処理
-      const { tile: cpuTsumoTile, updatedYama: yamaAfterCpuTsumo } = drawTile(gameState.yama);
-      if (!cpuTsumoTile) {
-        // 流局処理 (TODO)
-        gameState.phase = GamePhase.RoundEnd;
-        gameState.lastActionMessage = "流局しました (山切れ)";
-        console.log(`[Game Action] ${gameId}: Round end - Yama empty`);
-        setActiveGame(gameId, gameState);
-        return NextResponse.json(gameState);
-      }
-      gameState.yama = yamaAfterCpuTsumo;
-      gameState.cpu.hand = addTileToHand(gameState.cpu.hand, { ...cpuTsumoTile, isTsumogiri: true });
-      console.log(`[Game Action] ${gameId}: CPU drew ${cpuTsumoTile.id}`);
-
-      // TODO: CPUがツモ和了できるかチェック
-
-      // CPUの打牌処理
-      const cpuDiscard = getCpuDiscard(gameState.cpu.hand, gameState);
-      gameState.cpu.hand = removeTileFromHand(gameState.cpu.hand, cpuDiscard);
-      gameState.cpu.river.push(cpuDiscard);
-      gameState.lastActionMessage = `CPUが ${cpuDiscard.name} を捨てました。`;
-      console.log(`[Game Action] ${gameId}: CPU discarded ${cpuDiscard.id}`);
-
-      // TODO: プレイヤーがロン・ポン・チー・カンできるかチェック (PlayerActionWaitフェーズへ移行)
-
-      // プレイヤーのターンへ
-      gameState.turn = PlayerID.Player;
-      gameState.phase = GamePhase.PlayerTurnStart;
-      // gameState.turnCount++; // 打牌ごとにカウントなので、ここでは増やさない
-
-      // プレイヤーのツモ処理
-      const { tile: playerTsumoTile, updatedYama: yamaAfterPlayerTsumo } = drawTile(gameState.yama);
-      if (!playerTsumoTile) {
-        // 流局処理 (TODO)
-        gameState.phase = GamePhase.RoundEnd;
-        gameState.lastActionMessage = "流局しました (山切れ)";
-        console.log(`[Game Action] ${gameId}: Round end - Yama empty`);
-        setActiveGame(gameId, gameState);
-        return NextResponse.json(gameState);
-      }
-      gameState.yama = yamaAfterPlayerTsumo;
-      gameState.player.hand = addTileToHand(gameState.player.hand, { ...playerTsumoTile, isTsumogiri: true });
-      gameState.phase = GamePhase.PlayerDiscardWait; // プレイヤーの打牌待ち
-      console.log(`[Game Action] ${gameId}: Player drew ${playerTsumoTile.id}`);
-
-      // TODO: プレイヤーがツモ和了・カンできるかチェック
-
-      setActiveGame(gameId, gameState);
-      return NextResponse.json(gameState);
-
-    } else {
-      return NextResponse.json({ error: "Invalid action or not your turn" }, { status: 400 });
+    // プレイヤーのターンか確認 (アクションによっては不要な場合もある)
+    if (game.turn !== playerId && ![ActionType.Ron].includes(action.type)) { // ロンは相手の打牌に対するアクション
+      // TODO: カンも相手の打牌に対して可能な場合がある (大明槓)
+      // return NextResponse.json({ message: 'Not your turn' }, { status: 403 });
+      console.warn(`Action attempted by ${playerId} but current turn is ${game.turn}. Action: ${action.type}`);
+      // 一旦許容して進めるが、厳密にはエラーにすべきケースもある
     }
+
+    // ゲームロジックの処理を processAction に委譲
+    try {
+      game = processAction(game, playerId, action);
+    } catch (e: any) {
+      console.error("Error processing action in game_state:", e);
+      return NextResponse.json({ message: e.message || "Error processing action logic" }, { status: 400 }); // 400 for logical errors
+    }
+
+    saveGame(game);
+    return NextResponse.json(game);
 
   } catch (error) {
-    console.error("Error processing game action:", error);
-    if (error instanceof Error) {
-        return NextResponse.json({ error: "Failed to process game action: " + error.message }, { status: 500 });
-    }
-    return NextResponse.json({ error: "Failed to process game action" }, { status: 500 });
+    console.error("Error in game action API:", error);
+    return NextResponse.json({ message: error instanceof Error ? error.message : 'Internal server error' }, { status: 500 });
   }
 }

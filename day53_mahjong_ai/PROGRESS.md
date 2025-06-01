@@ -44,10 +44,17 @@
         - [ ] Yama (deck) display (remaining tile count) (in `page.tsx`).
         - [ ] Scoreboard / Game info display (current turn, round, player scores) (in `page.tsx`).
         - [ ] Action buttons (e.g., Discard) (in `page.tsx`).
-- [ ] **Step 6: Mahjong Core Logic (Yaku & Score - Refinement)**
-    - [ ] Refine Yaku detection in `lib/mahjong/yaku.ts` (Pinfu, Iipeikou, etc.).
-    - [ ] Refine score calculation in `lib/mahjong/score.ts` (detailed Fu calculation for melds, waits, pair types).
-    - [ ] Add more test cases to `hand.test.ts` for complex Yaku and scoring.
+- [X] **Step 6: Mahjong Core Logic (Yaku & Score - Refinement)**
+    - [X] `lib/mahjong/yaku.ts`: 平和(Pinfu)の判定ロジックを追加
+    - [X] `lib/mahjong/yaku.ts`: 一盃口(Iipeikou)の判定ロジックを追加
+    - [X] `lib/mahjong/hand.test.ts`: 平和と一盃口のテストケースを追加・パス
+    - [X] `lib/mahjong/yaku.ts`: 三色同順(Sanshoku Doujun)の判定ロジックを追加
+    - [X] `lib/mahjong/yaku.ts`: 一気通貫(Ikkitsuukan)の判定ロジックを追加
+    - [X] `lib/mahjong/hand.test.ts`: 三色同順と一気通貫のテストケースを追加
+    - [X] `lib/mahjong/hand.ts`: `analyzeHandShanten`, `isBasicAgari`, `extractMeldsAndJantou` を修正し、鳴き面子を考慮
+    - [X] `lib/mahjong/hand.test.ts`: 全テストケースの `handTiles` をアガリ牌を含まない枚数に修正
+    - [X] `lib/mahjong/yaku.ts`: デバッグログを削除
+    - [X] `lib/mahjong/hand.test.ts`: 「役牌(白)のみ」テストケースの手牌を修正し、全テストケースがパス
 - [ ] **Step 7: CPU AI & Advanced Game Flow**
     - [ ] Enhance CPU discard logic (beyond random discard).
     - [ ] Implement Riichi decision for CPU.

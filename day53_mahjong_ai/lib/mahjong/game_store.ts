@@ -3,15 +3,15 @@ import { GameState } from "./game_state";
 // インメモリでゲーム状態を保持
 const activeGames: Map<string, GameState> = new Map();
 
-export function getActiveGame(gameId: string): GameState | undefined {
+export function getGame(gameId: string): GameState | undefined {
   return activeGames.get(gameId);
 }
 
-export function setActiveGame(gameId: string, gameState: GameState): void {
-  activeGames.set(gameId, gameState);
+export function saveGame(game: GameState): void {
+  activeGames.set(game.gameId, game);
 }
 
-export function removeActiveGame(gameId: string): void {
+export function removeGame(gameId: string): void {
   activeGames.delete(gameId);
 }
 

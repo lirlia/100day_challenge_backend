@@ -26,11 +26,12 @@ export enum HonorType {
 // 牌のインターフェース
 export interface Tile {
   suit: TileSuit;      // 種類 (m, s, p, z)
-  value: number;       // 数値 (1-9) または字牌の種類 (HonorType)
+  value: number | HonorType;       // 数値 (1-9) または字牌の種類 (HonorType)
   id: string;          // ユニークなID (例: '1m', '5s', 'ton', 'haku')
   name: string;        // 表示名 (例: '一萬', '五索', '東', '白')
   isRed: boolean;      // 赤ドラかどうか (今回はfalse固定)
   isTsumogiri?: boolean; // ツモ切りかどうか (捨て牌の時に使用)
+  isRedDora?: boolean; // 赤ドラ牌かどうか (オプション)
 }
 
 // 数牌 (1-9)

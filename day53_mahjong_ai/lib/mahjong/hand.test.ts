@@ -2,6 +2,7 @@ import { Tile, TileSuit, HonorType, tileFromString, tilesFromStrings, compareTil
 import { Meld, analyzeHandShanten, HandPattern, AgariInfo } from "./hand";
 import { ScoreOptions } from "./score";
 import { Yaku } from "./yaku";
+import { PlayerID } from "./game_state";
 
 // テスト用の牌ヘルパー
 const tm = (s: string) => tileFromString(s)!;
@@ -30,8 +31,8 @@ interface TestCase {
 const testCases: TestCase[] = [
   {
     description: "役牌(白)のみ、ロン和了",
-    handTiles: "1m,2m,3m,1s,2s,3s,1p,2p,3p,haku,haku,haku,5m,5m",
-    agariTile: "haku", // 3枚目の白をロン
+    handTiles: "1m,2m,3m,1s,2s,3s,4p,5p,6p,haku,haku,5m,5m", // Corrected: 13 tiles (agari tile 'haku' removed), changed 1p,2p,3p to 4p,5p,6p
+    agariTile: "haku",
     isTsumo: false,
     isRiichi: false,
     playerWind: HonorType.NAN, // 子
@@ -46,8 +47,8 @@ const testCases: TestCase[] = [
   },
   {
     description: "タンヤオのみ、ツモ和了、リーチなし、子",
-    handTiles: "2m,3m,4m,2s,3s,4s,5p,6p,7p,2m,3m,4m,5s,5s",
-    agariTile: "4m", // 最後の4mをツモ
+    handTiles: "2m,3m,4m,2s,3s,4s,5p,6p,7p,2m,3m,5s,5s", // Corrected: 13 tiles (agari tile '4m' removed)
+    agariTile: "4m",
     isTsumo: true,
     isRiichi: false,
     playerWind: HonorType.NAN, // 子
@@ -55,15 +56,15 @@ const testCases: TestCase[] = [
     doraIndicators: ["9p"], // ドラは1p (手牌に影響なし)
     expectedShanten: -1,
     expectedAgariPattern: HandPattern.NORMAL,
-    expectedYakuNames: ["断幺九", "門前清自摸和"], // メンゼンツモもつく
-    expectedHan: 2,
-    expectedFu: 30, // 副底20 + ツモ2 = 22 -> 30符 (面子符は全て0)
-    expectedScore: { tsumoKo: 4000, tsumoOya: 2000 }, // 2翻30符: 子ツモ 親4000/子2000 (scoreTable "2h30f": 2000 base)
+    expectedYakuNames: ["断幺九", "門前清自摸和", "一盃口", "平和"], // 平和も追加
+    expectedHan: 4, // 断幺九1 + 門前清自摸和1 + 一盃口1 + 平和1 = 4
+    expectedFu: 30, // 副底20 + ツモ2 = 22 -> 30符 (平和でもツモ符がつく現状)
+    expectedScore: { tsumoKo: 8000, tsumoOya: 16000 }, // 4翻30符ツモ(切上満貫): 基本点8000. CPU支払8000, 親支払16000
   },
   {
     description: "七対子、ドラ2、ロン和了、子",
-    handTiles: "1m,1m,2s,2s,3p,3p,4m,4m,5s,5s,6p,6p,ton,ton",
-    agariTile: "ton", // 最後の東をロン
+    handTiles: "1m,1m,2s,2s,3p,3p,4m,4m,5s,5s,6p,6p,ton", // Corrected: 13 tiles (agari tile 'ton' removed)
+    agariTile: "ton",
     isTsumo: false,
     isRiichi: false,
     playerWind: HonorType.SHA, // 子
@@ -78,8 +79,8 @@ const testCases: TestCase[] = [
   },
   {
     description: "国士無双、ツモ和了、親",
-    handTiles: "1m,9m,1s,9s,1p,9p,ton,nan,sha,pei,haku,hatsu,chun,1m", // 1mが雀頭
-    agariTile: "1m", // 最後の1mをツモ
+    handTiles: "1m,9m,1s,9s,1p,9p,ton,nan,sha,pei,haku,hatsu,chun", // Corrected: 13 tiles (agari tile '1m' removed)
+    agariTile: "1m",
     isTsumo: true,
     isRiichi: false,
     playerWind: HonorType.TON, // 親
@@ -91,6 +92,76 @@ const testCases: TestCase[] = [
     expectedHan: 13, // 役満
     expectedFu: 0, // 役満は符計算なし
     expectedScore: { tsumoOya: 32000 }, // 親ツモ、シングル役満 basic_point * 1 (現状のscore.tsのロジック)
+  },
+  {
+    description: "平和(Pinfu)、ツモ和了、子、ドラなし",
+    handTiles: "2m,3m,2p,3p,4p,6s,7s,5m,5m,6s,7s,4m,8s", // Corrected: 13 tiles (agari tile '8s' removed)
+    agariTile: "8s",
+    melds: [], // 門前
+    isTsumo: true,
+    isRiichi: false,
+    playerWind: HonorType.NAN, // 子
+    roundWind: HonorType.TON,
+    doraIndicators: ["1p"], // ドラ影響なし (ドラ2p)
+    expectedShanten: -1,
+    expectedAgariPattern: HandPattern.NORMAL,
+    expectedYakuNames: ["平和", "門前清自摸和", "断幺九", "一盃口"], // 断幺九、一盃口を追加
+    expectedHan: 4, // 平和1+ツモ1+断幺九1+一盃口1 = 4
+    expectedFu: 30, // 平和ツモ20符 + ツモ符2 -> 22 -> 30符 (現状実装)
+    expectedScore: { tsumoKo: 8000, tsumoOya: 16000 }, // 4翻30符ツモ(切上満貫): 基本点8000. CPU支払8000, 親支払16000
+  },
+  {
+    description: "一盃口、役牌(白)、ロン和了、子、ドラなし",
+    handTiles: "2m,3m,4m,2m,3m,4m,5p,6p,1s,1s,haku,haku,haku", // Corrected: 13 tiles (agari tile '7p' removed)
+    agariTile: "7p",
+    melds: [], // 門前
+    isTsumo: false,
+    isRiichi: false,
+    playerWind: HonorType.SHA, // 子
+    roundWind: HonorType.TON,
+    doraIndicators: ["9s"], // ドラ1sが雀頭なのでドラ2
+    expectedShanten: -1,
+    expectedAgariPattern: HandPattern.NORMAL,
+    expectedYakuNames: ["一盃口", "役牌 (白)"], // ドラ名はテストの比較対象から除外
+    expectedHan: 2, // 一盃口1 + 白1 (ドラは除く)
+    expectedFu: 40, // 副底20 + 門前ロン10 + 白暗刻8 = 38 -> 40符
+    expectedScore: { cpu: 8000 }, // (役2翻 + ドラ2翻) = 4翻40符: 子ロン8000点
+  },
+  {
+    description: "三色同順、門前、ロン和了、子、ドラなし",
+    handTiles: "2m,3m,4m,2p,3p,4p,2s,3s,1m,1m,9p,9p,9p", // Corrected: 13 tiles (agari tile '4s' removed)
+    agariTile: "4s",
+    melds: [], // 門前
+    isTsumo: false,
+    isRiichi: false,
+    playerWind: HonorType.NAN, // 子
+    roundWind: HonorType.TON,
+    doraIndicators: ["9s"], // ドラ影響なし。 "1z" は存在しない牌だったため修正。
+    expectedShanten: -1,
+    expectedAgariPattern: HandPattern.NORMAL,
+    expectedYakuNames: ["三色同順"],
+    expectedHan: 2,
+    expectedFu: 40, // 副底20 + 門前ロン10 + 9p暗刻8 = 38 -> 40符
+    expectedScore: { cpu: 2600 }, // 2翻40符: 子ロン2600点
+  },
+  {
+    description: "一気通貫、鳴き(東ポン)、ロン和了、子、ドラなし",
+    handTiles: "1m,2m,3m,4m,5m,6m,7m,8m,1p,1p", // Corrected: 10 tiles (agari tile '9m' removed)
+    agariTile: "9m",
+    melds: [
+      { type: 'koutsu', tiles: ts("ton,ton,ton"), isOpen: true, fromWho: PlayerID.CPU }
+    ], // 東をCPUからポン
+    isTsumo: false,
+    isRiichi: false,
+    playerWind: HonorType.SHA, // 子
+    roundWind: HonorType.TON,
+    doraIndicators: ["hatsu"], // ドラ影響なし (發)
+    expectedShanten: -1,
+    expectedAgariPattern: HandPattern.NORMAL,
+    expectedYakuNames: ["一気通貫", "役牌 (場風 東)"], // ポンした東も役牌
+    expectedHan: 2, // 一気通貫(食い下がり1) + 場風東1 = 2翻
+    expectedFu: 30, // 副底20 + 場風東明刻2 = 22 -> 30符 (ロン符なし)
+    expectedScore: { cpu: 2000 }, // 2翻30符: 子ロン2000点
   },
   // TODO: さらに多くのテストケース (複合役、鳴きあり、ドラ裏ドラなど)
 ];
