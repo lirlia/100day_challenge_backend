@@ -38,7 +38,6 @@ function getCpuDiscard(cpuHand: Tile[], gameState: GameState): Tile {
     }
 
     // 2. スジ牌 (1-4-7, 2-5-8, 3-6-9) - 簡易版
-    // 例: 相手が4を捨てていれば、1と7は比較的安全
     const sujiCandidates: Tile[] = [];
     const opponentDiscardValuesBySuit: { [suit: string]: number[] } = {};
     opponentState.river.forEach(t => {
@@ -63,7 +62,64 @@ function getCpuDiscard(cpuHand: Tile[], gameState: GameState): Tile {
       return sujiCandidates[Math.floor(Math.random() * sujiCandidates.length)];
     }
 
-    // TODO: 壁、字牌の安全度なども考慮
+    // 3. 壁（カベ）の考慮
+    const kabeCandidates: Tile[] = [];
+    const allVisibleTiles = [
+      ...cpuHand,
+      ...opponentState.river,
+      ...ownState.river, // 自分の河も考慮
+      ...opponentState.melds.flatMap(m => m.tiles),
+      ...ownState.melds.flatMap(m => m.tiles),
+      gameState.yama.doraIndicators[0], // ドラ表示牌
+      // TODO: カンドラ表示牌も追加 (gameState.yama.kanDoraIndicators)
+    ];
+
+    for (const tile of cpuHand) {
+      if (tile.suit !== TileSuit.JIHAI) {
+        const suit = tile.suit;
+        const value = tile.value as number;
+        let isKabeSafe = false;
+
+        // 例: 7が4枚見えていれば8,9は比較的安全 (ノーチャンスカベ)
+        // 6が4枚見えていれば、8は比較的安全 (ワンチャンスカベの内スジ)
+        // 5が4枚見えていれば、7は比較的安全 (ワンチャンスカベの内スジ)
+        // 4が4枚見えていれば、2,6は比較的安全
+        // 3が4枚見えていれば、1,5は比較的安全
+        // 2が4枚見えていれば、1,4は比較的安全
+        // 1が4枚見えていれば、2,3は比較的安全 (1に対するカベはあまり意味がないが、一応)
+
+        const countVisible = (s: TileSuit, v: number) => allVisibleTiles.filter(t => t.suit === s && t.value === v).length;
+
+        if (value === 9) {
+            if (countVisible(suit, 7) === 4 || countVisible(suit, 8) === 4) isKabeSafe = true;
+        } else if (value === 8) {
+            if (countVisible(suit, 7) === 4 || countVisible(suit, 6) === 4) isKabeSafe = true;
+        } else if (value === 7) {
+            if (countVisible(suit, 5) === 4 || countVisible(suit, 6) === 4) isKabeSafe = true;
+        } else if (value === 6) {
+            if (countVisible(suit, 4) === 4 || countVisible(suit, 5) === 4 || (countVisible(suit,8) === 4 && countVisible(suit,9) === 4) /* 7を跨ぐ場合 */) isKabeSafe = true;
+        } else if (value === 5) {
+            // 5は複雑なので一旦スキップ
+        } else if (value === 4) {
+            if (countVisible(suit, 2) === 4 || countVisible(suit, 3) === 4 || (countVisible(suit,1) === 4 && countVisible(suit,2) === 4) /* 3を跨ぐ場合 */) isKabeSafe = true;
+        } else if (value === 3) {
+            if (countVisible(suit, 1) === 4 || countVisible(suit, 2) === 4) isKabeSafe = true;
+        } else if (value === 2) {
+            if (countVisible(suit, 1) === 4 || countVisible(suit, 3) === 4) isKabeSafe = true;
+        } else if (value === 1) {
+            if (countVisible(suit, 2) === 4 || countVisible(suit, 3) === 4) isKabeSafe = true;
+        }
+
+        if (isKabeSafe) {
+          kabeCandidates.push(tile);
+        }
+      }
+    }
+    if (kabeCandidates.length > 0) {
+      return kabeCandidates[Math.floor(Math.random() * kabeCandidates.length)];
+    }
+
+    // TODO: 字牌の安全度なども考慮
   }
 
   // 常に14枚手牌で分析 (ツモ後打牌前の想定)
