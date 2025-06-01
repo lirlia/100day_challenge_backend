@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { Tile, TileSuit, HonorType } from '../../../../lib/mahjong/tiles';
-import { GameState, PlayerID, ActionType, GamePhase, TileInRiver } from '../../../../lib/mahjong/game_state';
+import { Tile, TileSuit, HonorType, isSameTile } from '../../../../lib/mahjong/tiles';
+import { GameState, PlayerID, ActionType, GamePhase, TileInRiver, KanPossibility, Meld } from '../../../../lib/mahjong/game_state';
 import Link from 'next/link';
 
 // TileDisplayコンポーネント (仮。実際の定義に合わせてください)
@@ -44,6 +44,8 @@ export default function GamePage({ params }: { params: { gameId: string } }) {
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedTileForRiichi, setSelectedTileForRiichi] = useState<Tile | null>(null);
+  const [isKanModalOpen, setIsKanModalOpen] = useState(false);
+  const [selectedKan, setSelectedKan] = useState<KanPossibility | null>(null);
 
   const fetchGameState = useCallback(async () => {
     try {
@@ -108,6 +110,40 @@ export default function GamePage({ params }: { params: { gameId: string } }) {
       if (!response.ok) throw new Error('Failed to pon');
       const data = await response.json();
       setGameState(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An unknown error occurred');
+    }
+  };
+
+  const handleExecuteKan = async () => {
+    if (!gameState || !selectedKan) return;
+    try {
+      const actionPayload: { gameId: string; playerId: PlayerID; action: { type: ActionType; tile?: Tile; meldType?: 'ankan' | 'kakan' | 'daiminkan'; meld?: Meld } } = {
+        gameId,
+        playerId: PlayerID.Player,
+        action: {
+          type: ActionType.Kan,
+          meldType: selectedKan.type,
+        },
+      };
+
+      if (selectedKan.type === 'ankan' || selectedKan.type === 'daiminkan') {
+        actionPayload.action.tile = selectedKan.tile;
+      } else if (selectedKan.type === 'kakan') {
+        actionPayload.action.tile = selectedKan.tile; // 加える牌
+        actionPayload.action.meld = selectedKan.meldToUpgrade; // 元の刻子
+      }
+
+      const response = await fetch(`/api/game/action`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(actionPayload),
+      });
+      if (!response.ok) throw new Error('Failed to execute kan');
+      const data = await response.json();
+      setGameState(data);
+      setIsKanModalOpen(false);
+      setSelectedKan(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An unknown error occurred');
     }
@@ -225,7 +261,7 @@ export default function GamePage({ params }: { params: { gameId: string } }) {
                     handleDiscardTile(tile);
                   }
                 }}
-                className={`${(selectedTileForRiichi && selectedTileForRiichi.id === tile.id) ? 'border-red-500 ring-2 ring-red-500' : ''} ${(gameState.turn === PlayerID.Player && player.hand.length % 3 === 2 && !(player.canPon && player.tileToPon)) ? 'cursor-pointer' : 'cursor-not-allowed opacity-70'}`}
+                className={`${(selectedTileForRiichi && selectedTileForRiichi.id === tile.id) ? 'border-red-500 ring-2 ring-red-500' : ''} ${(gameState.turn === PlayerID.Player && player.hand.length % 3 === 2 && !(player.canPon && player.tileToPon) && !isKanModalOpen) ? 'cursor-pointer' : 'cursor-not-allowed opacity-70'}`}
               />
             ))}
           </div>
@@ -278,24 +314,79 @@ export default function GamePage({ params }: { params: { gameId: string } }) {
           {!(player.canPon && player.tileToPon) && player.hand.length % 3 === 2 && (
             <p className="text-sm mb-2 text-gray-600">手牌から牌を選択して捨ててください。{player.canRiichi ? 'リーチも可能です。宣言する場合は、まず捨て牌を選択してください。' : ''}</p>
           )}
-          {/* リーチ宣言ボタン（仮） */}
-          {!(player.canPon && player.tileToPon) && player.canRiichi && player.hand.length % 3 === 2 && !selectedTileForRiichi && (
-            <button
-              // onClick={handleDeclareRiichi} // 適切なハンドラを後で設定
-              className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded mt-2 transition-colors duration-150 ease-in-out clay-button-red disabled:opacity-50"
-              // disabled={player.score < 1000}
-            >
-              リーチ (宣言牌を選択してください)
-            </button>
-          )}
-          {player.canTsumoAgari && (
-             <button
-                // onClick={handleTsumoAgari} // 後で実装
-                className="bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded mt-2 transition-colors duration-150 ease-in-out clay-button-yellow"
-            >
-                ツモ和了！
-            </button>
-          )}
+          {/* アクションボタン群 */}
+          <div className="flex space-x-2 mt-2">
+            {player.canRiichi && player.hand.length % 3 === 2 && !selectedTileForRiichi && !(player.canPon && player.tileToPon) && (
+              <button
+                // onClick={handleDeclareRiichi} // 適切なハンドラを後で設定
+                className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded transition-colors duration-150 ease-in-out clay-button-red disabled:opacity-50"
+                disabled={player.score < 1000 || isKanModalOpen}
+              >
+                リーチ (宣言牌を選択)
+              </button>
+            )}
+            {player.canKan && !(player.canPon && player.tileToPon) && (
+              <button
+                onClick={() => setIsKanModalOpen(true)}
+                className="bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 rounded transition-colors duration-150 ease-in-out clay-button-purple disabled:opacity-50"
+                disabled={isKanModalOpen}
+              >
+                カン
+              </button>
+            )}
+            {player.canTsumoAgari && !(player.canPon && player.tileToPon) && (
+               <button
+                  // onClick={handleTsumoAgari} // 後で実装
+                  className="bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded transition-colors duration-150 ease-in-out clay-button-yellow disabled:opacity-50"
+                  disabled={isKanModalOpen}
+              >
+                  ツモ和了！
+              </button>
+            )}
+             {/* TODO: Ron button */}
+          </div>
+        </div>
+      )}
+
+      {/* Kan Selection Modal */}
+      {isKanModalOpen && gameState && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full clay-card-modal">
+            <h3 className="text-xl font-semibold mb-4 text-gray-800">カンを選択</h3>
+            {gameState.player.possibleKans.length === 0 && <p className="text-gray-600">可能なカンがありません。</p>}
+            <ul className="space-y-2 mb-4 max-h-60 overflow-y-auto">
+              {gameState.player.possibleKans.map((kanOption, index) => (
+                <li key={index}>
+                  <button
+                    onClick={() => setSelectedKan(kanOption)}
+                    className={`w-full text-left p-3 rounded border transition-colors duration-150 ease-in-out clay-button-selectable ${selectedKan && selectedKan.type === kanOption.type && selectedKan.tile.id === kanOption.tile.id && ((selectedKan.meldToUpgrade && kanOption.meldToUpgrade && selectedKan.meldToUpgrade.tiles[0].id === kanOption.meldToUpgrade.tiles[0].id) || (!selectedKan.meldToUpgrade && !kanOption.meldToUpgrade))  ? 'bg-blue-500 text-white border-blue-600' : 'bg-gray-50 hover:bg-gray-100 border-gray-300 text-gray-700'}`}
+                  >
+                    {kanOption.type === 'ankan' && `暗槓: ${kanOption.tile.name} x 4`}
+                    {kanOption.type === 'kakan' && `加槓: ${kanOption.meldToUpgrade?.tiles[0].name} に ${kanOption.tile.name} を追加`}
+                    {kanOption.type === 'daiminkan' && `大明槓: ${kanOption.tile.name} を鳴く`}
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <div className="flex justify-end space-x-2">
+              <button
+                onClick={() => {
+                  setIsKanModalOpen(false);
+                  setSelectedKan(null);
+                }}
+                className="px-4 py-2 rounded bg-gray-300 hover:bg-gray-400 text-gray-800 transition-colors duration-150 ease-in-out clay-button-gray"
+              >
+                キャンセル
+              </button>
+              <button
+                onClick={handleExecuteKan}
+                disabled={!selectedKan}
+                className="px-4 py-2 rounded bg-green-500 hover:bg-green-600 text-white transition-colors duration-150 ease-in-out clay-button-green disabled:opacity-50"
+              >
+                実行
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

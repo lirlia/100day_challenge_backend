@@ -129,3 +129,19 @@ export function tilesFromStrings(tileStrings: string[]): Tile[] {
 export function isSameTile(a: Tile, b: Tile): boolean {
   return a.suit === b.suit && a.value === b.value;
 }
+
+/**
+ * 指定された牌が么九牌（ヤオチューハイ）かどうかを判定する。
+ * 么九牌: 1・9の数牌および字牌
+ * @param tile 判定する牌
+ * @returns {boolean} 么九牌であれば true、そうでなければ false
+ */
+export function isYaochuuhai(tile: Tile): boolean {
+  if (tile.suit === TileSuit.JIHAI) {
+    return true; // 字牌は全て么九牌
+  }
+  if (tile.value === 1 || tile.value === 9) {
+    return true; // 数牌の1と9は么九牌
+  }
+  return false;
+}

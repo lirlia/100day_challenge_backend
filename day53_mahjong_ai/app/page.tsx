@@ -34,6 +34,10 @@ export default function MahjongGamePage() {
           throw new Error(`Failed to start new game: ${response.statusText}`);
         }
         const data: GameState = await response.json();
+        console.log('API Response - GameState:', JSON.parse(JSON.stringify(data)));
+        console.log('API Response - Player Hand Length:', data.player.hand.length);
+        console.log('API Response - Player Hand:', JSON.parse(JSON.stringify(data.player.hand)));
+        console.log('API Response - Player Last Draw:', JSON.parse(JSON.stringify(data.player.lastDraw)));
         setGameState(data);
         setError(null);
       } catch (err) {
@@ -71,6 +75,10 @@ export default function MahjongGamePage() {
         throw new Error(errorData.message || `Action failed: ${response.statusText}`);
       }
       const data: GameState = await response.json();
+      console.log('API Response - GameState:', JSON.parse(JSON.stringify(data)));
+      console.log('API Response - Player Hand Length:', data.player.hand.length);
+      console.log('API Response - Player Hand:', JSON.parse(JSON.stringify(data.player.hand)));
+      console.log('API Response - Player Last Draw:', JSON.parse(JSON.stringify(data.player.lastDraw)));
       setGameState(data);
       setSelectedTile(null);
       if ([GamePhase.PLAYER_TURN, GamePhase.CPU_TURN, GamePhase.ROUND_ENDED, GamePhase.GAME_OVER].includes(data.phase)) {
@@ -139,6 +147,14 @@ export default function MahjongGamePage() {
 
   if (!playerState || !cpuState) return <div className="p-4 text-center clay-area shadow-clay-main text-lg">プレイヤーまたはCPUの状態がありません。</div>;
 
+  console.log('Debug PlayerHand props:', {
+    currentTurn: gameState.currentTurn,
+    playerHandLength: playerState.hand.length,
+    isPlayerTurn: gameState.currentTurn === 'player',
+    isHandLength14: playerState.hand.length === 14,
+    canDiscardResult: gameState.currentTurn === 'player' && playerState.hand.length === 14,
+  });
+
   const sortHand = (hand: TileType[]) => {
     return [...hand].sort(compareTiles);
   };
@@ -165,6 +181,10 @@ export default function MahjongGamePage() {
         throw new Error(`Failed to start new game: ${response.statusText}`);
       }
       const data: GameState = await response.json();
+      console.log('API Response - GameState:', JSON.parse(JSON.stringify(data)));
+      console.log('API Response - Player Hand Length:', data.player.hand.length);
+      console.log('API Response - Player Hand:', JSON.parse(JSON.stringify(data.player.hand)));
+      console.log('API Response - Player Last Draw:', JSON.parse(JSON.stringify(data.player.lastDraw)));
       setGameState(data);
       setError(null);
     } catch (err) {

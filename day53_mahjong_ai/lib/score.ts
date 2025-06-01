@@ -42,7 +42,7 @@ export function calculateScore(
   yakuResults.forEach(yr => {
     if (yr.yaku.isYakuman) {
       isYakuman = true;
-      yakumanCount += yr.yaku.han >= 26 ? 2 : 1;
+      yakumanCount += yr.yaku.han >= 26 ? 2 : 1; // 役満の翻数が26以上なら2倍役満とする (仮)
     }
   });
 
@@ -70,15 +70,18 @@ export function calculateScore(
       calculatedBaseScore = Math.ceil(tempBase / 100) * 100;
       if (options.isOya && calculatedBaseScore > 12000) calculatedBaseScore = 12000;
       if (!options.isOya && calculatedBaseScore > 8000) calculatedBaseScore = 8000;
+      if (calculatedBaseScore < (options.isOya ? 1500: 1000) && han > 0) { // 最低点の保証 (例: 親30符1翻=1500点)
+        // calculatedBaseScore = options.isOya ? 1500 : 1000; // この保証は支払い計算後に行うべきか
+      }
     }
   }
 
   if (options.isTsumo) {
     if (options.isOya) {
-      koPayment = Math.ceil(calculatedBaseScore / 100) * 100;
+      koPayment = Math.ceil(calculatedBaseScore / 100) * 100; // 二人麻雀: 親ツモは子が全額
       finalTotalScore = koPayment;
     } else {
-      oyaPayment = Math.ceil(calculatedBaseScore / 100) * 100;
+      oyaPayment = Math.ceil(calculatedBaseScore / 100) * 100; // 二人麻雀: 子ツモは親が全額
       finalTotalScore = oyaPayment;
     }
   } else {
@@ -136,9 +139,9 @@ export function getScoreNameAndPayments(
   let paymentsText = "";
   if (scoreResult.ronPlayerPayment !== undefined) {
     paymentsText = `ロン: ${scoreResult.ronPlayerPayment}点`;
-  } else if (scoreResult.oyaPayment !== undefined && !isOyaAgari) {
+  } else if (scoreResult.oyaPayment !== undefined && !isOyaAgari) { // 子ツモで親が支払う
     paymentsText = `ツモ (親支払い: ${scoreResult.oyaPayment}点)`;
-  } else if (scoreResult.koPayment !== undefined && isOyaAgari) {
+  } else if (scoreResult.koPayment !== undefined && isOyaAgari) { // 親ツモで子が支払う
     paymentsText = `ツモ (子支払い: ${scoreResult.koPayment}点)`;
   }
 

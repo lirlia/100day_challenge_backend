@@ -64,7 +64,7 @@ export function GameResultModal({ gameState, onClose, onNewGame }: GameResultMod
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-50">
-      <div className="bg-gray-800 p-6 sm:p-8 rounded-xl shadow-2xl w-full max-w-md clay-area-modal text-white">
+      <div className="w-full max-w-md clay-area-modal text-white">
         <h2 className="text-3xl font-bold mb-4 text-yellow-300 clay-text-title text-center">{title}</h2>
         <p className="text-lg mb-6 text-center whitespace-pre-wrap">{message}</p>
 

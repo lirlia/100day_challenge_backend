@@ -1,5 +1,5 @@
 import { Tile, TileSuit, HonorType, isSameTile, compareTiles } from "./tiles";
-import { Meld, HandPattern } from "./hand"; // hand.ts から Meld, HandPattern 型をインポート
+import { Meld, HandPattern, MachiPattern } from "./hand"; // hand.ts から Meld, HandPattern, MachiPattern 型をインポート
 import { PlayerID, GameState } from "./game_state"; // PlayerID, GameState をインポート
 
 // 役の定義
@@ -72,6 +72,7 @@ export interface HandContext {
   melds: Meld[];            // 副露 (鳴いた面子) および手牌から構成される面子
   jantou?: Tile;           // 雀頭 (通常手の解析時に設定)
   handPattern?: HandPattern; // 手牌の形 (通常手、七対子、国士無双)
+  machiPattern?: MachiPattern; // ★追加: 待ちの形
   isTsumo: boolean;         // ツモ和了かどうか
   isRiichi: boolean;        // リーチしているかどうか
   isDoubleRiichi?: boolean; // ダブルリーチかどうか (オプション)
@@ -203,7 +204,7 @@ export function checkYaku(context: HandContext): YakuResult[] {
       // 平和 (Pinfu)
       let isPinfu = true;
       // 1. 4面子が全て順子
-      if (context.melds.length !== 4 || !context.melds.every(m => m.type === 'shuntsu')) {
+      if (!context.melds || context.melds.length !== 4 || !context.melds.every(m => m.type === 'shuntsu')) {
         isPinfu = false;
       }
       // 2. 雀頭が役牌でない
@@ -217,60 +218,36 @@ export function checkYaku(context: HandContext): YakuResult[] {
             isPinfu = false; // 場風または自風
           }
         }
-      } else { // 雀頭がないのはありえないが念のため
+      } else {
         isPinfu = false;
       }
-      // 3. 両面待ち (判定が複雑なので、ここではアガリ牌が順子の一部で、かつ端牌でないことを簡易的にチェック)
-      // isBasicAgari の時点で面子と雀頭は確定しているので、アガリ牌がどの順子を完成させたか、その待ちが両面だったかを見る
-      // context.agariTile が context.melds のいずれかの順子に数字として含まれ、かつその順子が両面待ちを形成しうるか
-      // 例: [2,3,アガリ牌(4)]m で 1-4待ち、[アガリ牌(3),4,5]m で 3-6待ちなど
-      // 非常に簡略化: アガリ牌が数牌で、1でも9でもなく、かつそれが順子の一部であること。
-      // かつ、その順子を構成する他の2枚との関係で両面待ちになっていたことを確認する必要がある。
-      // これは extractMeldsAndJantou や analyzeHandShanten 側で待ちの形を判定して HandContext に含める必要があるかもしれない。
-      // 今回は「4面子順子」「非役牌雀頭」のみでピンフとしてしまう。(待ちの判定は複雑なため一旦省略)
-      // TODO: 正確な両面待ち判定
-      let isRyanmenMachi = false;
-      if (context.agariTile.suit !== TileSuit.JIHAI && context.agariTile.value !== 1 && context.agariTile.value !== 9) {
-        // アガリ牌が melds の shuntsu の一部であるか確認
-        for (const meld of context.melds) {
-          if (meld.type === 'shuntsu' && meld.tiles.some(t => isSameTile(t, context.agariTile))) {
-            // さらに、この順子が両面待ちを形成しうるか？
-            // 例: アガリ牌が4mで、面子が[2m,3m,4m]ならOK、[4m,5m,6m]ならOK
-            // 簡略化のため、アガリ牌が真ん中(ペンチャン)や端(カンチャン)でないことを期待
-            const tileValues = meld.tiles.map(t => t.value).sort((a,b) => a-b);
-            if ( (isSameTile(meld.tiles[0], context.agariTile) && tileValues[1] === tileValues[0] + 1 && tileValues[2] === tileValues[1] + 1 && context.agariTile.value <=7 ) || // x, x+1, x+2 (xがアガリ)
-                 (isSameTile(meld.tiles[2], context.agariTile) && tileValues[1] === tileValues[2] - 1 && tileValues[0] === tileValues[1] - 1 && context.agariTile.value >=3 )    // x-2, x-1, x (xがアガリ)
-            ) {
-                 isRyanmenMachi = true;
-                 break;
-            }
-          }
-        }
+      // 3. 両面待ちであること (HandContext から machiPattern を参照)
+      if (context.machiPattern !== MachiPattern.RYANMEN) {
+        isPinfu = false;
       }
-      if (!isRyanmenMachi) isPinfu = false; // 両面待ちでない場合はピンフではない
 
       if (isPinfu) {
         results.push({ yaku: ALL_YAKU.Pinfu, han: ALL_YAKU.Pinfu.han });
       }
 
       // 一盃口 (Iipeikou)
-      let iipeikouCount = 0;
-      const shuntsuCounts: Record<string, number> = {};
-      const closedShuntsu = context.melds.filter(m => m.type === 'shuntsu' && !m.isOpen);
-      if (closedShuntsu.length >= 2) {
-        for (const shuntsu of closedShuntsu) {
-          const shuntsuId = shuntsu.tiles.map(t => t.id).sort().join(',');
-          shuntsuCounts[shuntsuId] = (shuntsuCounts[shuntsuId] || 0) + 1;
-          if (shuntsuCounts[shuntsuId] === 2) {
-            iipeikouCount++; // 2つ揃えば1つの一盃口
-            // 二盃口も考慮するなら、ここで shuntsuCounts[shuntsuId] = 0; (使ったものとして) とするか、別途カウント
+      if (context.melds && context.melds.length === 4 && context.jantou) { // 門前・通常手である前提
+        const shuntsuMelds = context.melds.filter(m => m.type === 'shuntsu' && !m.isOpen);
+        if (shuntsuMelds.length >= 2) { // 順子が2つ以上ないと始まらない
+          const shuntsuCounts: Record<string, number> = {};
+          for (const meld of shuntsuMelds) {
+            // 順子を構成する最初の牌のIDでカウント (例: 123m なら "1m")
+            const firstTileId = meld.tiles[0].id;
+            shuntsuCounts[firstTileId] = (shuntsuCounts[firstTileId] || 0) + 1;
+          }
+          for (const count of Object.values(shuntsuCounts)) {
+            if (count >= 2) {
+              results.push({ yaku: ALL_YAKU.Iipeikou, han: ALL_YAKU.Iipeikou.han });
+              break; // 一盃口は1つまで
+            }
           }
         }
       }
-      if (iipeikouCount === 1) { // 1つだけなら一盃口
-        results.push({ yaku: ALL_YAKU.Iipeikou, han: ALL_YAKU.Iipeikou.han });
-      }
-      // TODO: 二盃口 (Ryanpeikou) の判定 (iipeikouCount === 2 の場合)
     }
 
     // 三色同順 (Sanshoku Doujun)

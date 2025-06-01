@@ -102,67 +102,81 @@ export interface GameState {
 
 export function createInitialGameState(
   gameId: string,
-  playerHandTiles: Tile[],
-  cpuHandTiles: Tile[],
-  initialYama: Yama, // yama を initialYama に変更
+  playerHandTilesFromDeal: Tile[], // 14枚 (親)
+  cpuHandTilesFromDeal: Tile[],    // 13枚 (子)
+  yamaFromDeal: Yama,            // dealInitialHands 後の山
   dora: Tile[]
 ): GameState {
-  if (isKyuushuuKyuuhai(playerHandTiles) || isKyuushuuKyuuhai(cpuHandTiles)) {
-    const kyuushuuPlayer = isKyuushuuKyuuhai(playerHandTiles) ? 'player' : 'cpu';
-    const newYamaForKyuushuu = createYama();
+  // 九種九牌チェック (これは配牌直後に行うべきなので、引数の手牌を使う)
+  // この時点では親は14枚、子は13枚
+  // isKyuushuuKyuuhai は13枚または14枚の手牌を想定している
+  const playerKyuushuuCheckHand = [...playerHandTilesFromDeal]; // 14枚
+  const cpuKyuushuuCheckHand = [...cpuHandTilesFromDeal];       // 13枚
+
+  if (isKyuushuuKyuuhai(playerKyuushuuCheckHand) || isKyuushuuKyuuhai(cpuKyuushuuCheckHand)) {
+    const kyuushuuPlayer = isKyuushuuKyuuhai(playerKyuushuuCheckHand) ? 'player' : 'cpu';
+    const newYamaForKyuushuu = createYama(); // 山を作り直す
     const newDoraForKyuushuu = getCurrentDora(newYamaForKyuushuu);
+    // 九種九牌時は、手牌はそのまま表示し、流局とする
     return {
       gameId,
       phase: GamePhase.ROUND_ENDED,
-      turn: 1,
-      currentTurn: 'player',
-      dealer: 'player',
+      turn: 1, // 最初の巡目
+      currentTurn: 'player', // 便宜上プレイヤーにしておく
+      dealer: 'player',    // 最初の親
       wind: 'east',
       round: 1,
-      honba: 1,
+      honba: 1, // 九種九牌は本場を1つ増やす
       riichiSticks: 0,
       dora: newDoraForKyuushuu,
-      player: { hand: playerHandTiles, river: [], melds: [], score: 25000, isRiichi: false, riichiTileIndex: null, riichiTurn: 0, possibleKans: [] },
-      cpu: { hand: cpuHandTiles, river: [], melds: [], score: 25000, isRiichi: false, riichiTileIndex: null, riichiTurn: 0, possibleKans: [] },
+      player: { hand: playerHandTilesFromDeal, river: [], melds: [], score: 25000, isRiichi: false, riichiTileIndex: null, riichiTurn: 0, possibleKans: [] },
+      cpu: { hand: cpuHandTilesFromDeal, river: [], melds: [], score: 25000, isRiichi: false, riichiTileIndex: null, riichiTurn: 0, possibleKans: [] },
       yama: newYamaForKyuushuu,
       winner: 'draw',
       lastActionMessage: `${kyuushuuPlayer === 'player' ? "あなた" : "CPU"}が九種九牌のため流局しました。`,
-      turnCount: 0,
+      turnCount: 0, // アクションはまだない
       kanCount: 0,
       totalRounds: 4,
     };
   }
 
-  const currentDealer: PlayerIdentifier = 'player';
-  let dealerHand = currentDealer === 'player' ? [...playerHandTiles] : [...cpuHandTiles];
-  let nonDealerHand = currentDealer === 'player' ? [...cpuHandTiles] : [...playerHandTiles];
+  const currentDealer: PlayerIdentifier = 'player'; // 固定
 
-  let yamaForDraw = initialYama; // drawTile に渡す yama
-  const drawResult = drawTile(yamaForDraw);
-  if (!drawResult || !drawResult.tile) { // drawResult自体と、その中のtileの存在を確認
-    throw new Error("Failed to draw initial tile for dealer in createInitialGameState");
+  // dealInitialHands で既に親は14枚、子は13枚になっている
+  // 追加のツモは不要
+  const dealerInitialHand = [...playerHandTilesFromDeal]; // 14枚
+  const nonDealerInitialHand = [...cpuHandTilesFromDeal]; // 13枚
+
+  // 親の14枚目の牌が最初のツモ牌扱い
+  const dealerLastDraw = dealerInitialHand.length === 14 ? dealerInitialHand[dealerInitialHand.length - 1] : undefined;
+  if (!dealerLastDraw) {
+      // 万が一14枚でない場合はエラーまたは警告
+      console.error("Dealer's initial hand is not 14 tiles as expected in createInitialGameState after deal.");
+      // フォールバックとして、山から1枚引く (以前のロジックに近いが、これは問題の兆候)
+      // const fallbackDraw = drawTile(yamaFromDeal);
+      // dealerLastDraw = fallbackDraw.tile;
+      // yamaFromDeal = fallbackDraw.updatedYama;
+      // if(dealerLastDraw) dealerInitialHand.push(dealerLastDraw); // 手牌に加える
   }
-  const firstDraw = drawResult.tile;
-  yamaForDraw = drawResult.updatedYama; // yamaを更新
-  dealerHand.push(firstDraw);
+
 
   const initialPlayerState: PlayerState = {
-    hand: currentDealer === 'player' ? dealerHand : nonDealerHand,
+    hand: dealerInitialHand, // 14枚のはず
     river: [], melds: [], score: 25000, isRiichi: false, riichiTileIndex: null, riichiTurn: 0,
-    lastDraw: currentDealer === 'player' ? firstDraw : undefined,
+    lastDraw: currentDealer === 'player' ? dealerLastDraw : undefined,
     possibleKans: [],
   };
 
   const initialCpuState: PlayerState = {
-    hand: currentDealer === 'cpu' ? dealerHand : nonDealerHand,
+    hand: nonDealerInitialHand, // 13枚のはず
     river: [], melds: [], score: 25000, isRiichi: false, riichiTileIndex: null, riichiTurn: 0,
-    lastDraw: currentDealer === 'cpu' ? firstDraw : undefined,
+    lastDraw: currentDealer === 'cpu' ? dealerLastDraw : undefined, // playerが親なのでここはundefined
     possibleKans: [],
   };
 
   const initialGameState: GameState = {
     gameId,
-    phase: GamePhase.PLAYER_TURN,
+    phase: GamePhase.PLAYER_TURN, // 親のターンから開始
     turn: 1,
     currentTurn: currentDealer,
     dealer: currentDealer,
@@ -173,17 +187,19 @@ export function createInitialGameState(
     dora,
     player: initialPlayerState,
     cpu: initialCpuState,
-    yama: yamaForDraw, // 更新されたyamaを使用
+    yama: yamaFromDeal, // dealInitialHands 後の山をそのまま使用
     winner: null,
-    turnCount: 1,
+    turnCount: 1, // 最初のツモは1巡目
     kanCount: 0,
     totalRounds: 4,
   };
 
-  if (currentDealer === 'player') {
-    updateActionFlagsForPlayer(initialGameState.player, initialGameState, firstDraw, true);
-  } else {
-    updateActionFlagsForPlayer(initialGameState.cpu, initialGameState, firstDraw, true);
+  // 親の最初のツモ牌に対するアクションフラグ更新
+  // dealerLastDraw が undefined でないことを確認
+  if (currentDealer === 'player' && dealerLastDraw) {
+    updateActionFlagsForPlayer(initialGameState.player, initialGameState, dealerLastDraw, true);
+  } else if (currentDealer === 'cpu' && dealerLastDraw) { // playerが親なのでここは通らないはず
+     updateActionFlagsForPlayer(initialGameState.cpu, initialGameState, dealerLastDraw, true);
   }
   return initialGameState;
 }
@@ -509,7 +525,9 @@ export function processAction(currentState: GameState, playerId: PlayerIdentifie
         break;
       }
       const discardedTile = action.tile;
+      console.log(`[Discard Pre] ${playerId} hand length: ${actingPlayer.hand.length}, discarding: ${discardedTile.id}`);
       actingPlayer.hand = removeTileFromPlayerHand(actingPlayer.hand, discardedTile);
+      console.log(`[Discard Post] ${playerId} hand length: ${actingPlayer.hand.length}`);
       actingPlayer.river.push({ ...discardedTile, discardedBy: playerId, turn: nextState.turnCount });
       actingPlayer.lastDiscard = discardedTile;
       actingPlayer.justKaned = false; // カン直後フラグをリセット
@@ -542,7 +560,9 @@ export function processAction(currentState: GameState, playerId: PlayerIdentifie
           const drawResult = drawTile(nextState.yama);
           nextState.yama = drawResult.updatedYama;
           if (drawResult.tile) {
+            console.log(`[Draw Pre] ${opponentPlayerId} hand length: ${opponentPlayer.hand.length}, drawing: ${drawResult.tile?.id}`);
             opponentPlayer.hand.push(drawResult.tile);
+            console.log(`[Draw Post] ${opponentPlayerId} hand length: ${opponentPlayer.hand.length}`);
             opponentPlayer.hand.sort(compareTiles);
             opponentPlayer.lastDraw = drawResult.tile;
             nextState.lastActionMessage += ` ${opponentPlayerId === 'player' ? "あなた" : "CPU"}がツモりました。`;
@@ -589,7 +609,9 @@ export function processAction(currentState: GameState, playerId: PlayerIdentifie
       nextState.riichiSticks++;
 
       // リーチ宣言牌を捨てる (Discardと同じ処理)
+      console.log(`[Discard Pre Riichi] ${playerId} hand length: ${actingPlayer.hand.length}, discarding: ${tileToDiscardForRiichi.id}`);
       actingPlayer.hand = removeTileFromPlayerHand(actingPlayer.hand, tileToDiscardForRiichi);
+      console.log(`[Discard Post Riichi] ${playerId} hand length: ${actingPlayer.hand.length}`);
       actingPlayer.river.push({ ...tileToDiscardForRiichi, discardedBy: playerId, turn: nextState.turnCount, isRiichiDeclare: true });
       actingPlayer.lastDiscard = tileToDiscardForRiichi;
       actingPlayer.canRiichi = false; // リーチ後はリーチできない
@@ -609,7 +631,9 @@ export function processAction(currentState: GameState, playerId: PlayerIdentifie
           const drawResult = drawTile(nextState.yama);
           nextState.yama = drawResult.updatedYama;
           if (drawResult.tile) {
+            console.log(`[Draw Pre Riichi] ${opponentPlayerId} hand length: ${opponentPlayer.hand.length}, drawing: ${drawResult.tile?.id}`);
             opponentPlayer.hand.push(drawResult.tile);
+            console.log(`[Draw Post Riichi] ${opponentPlayerId} hand length: ${opponentPlayer.hand.length}`);
             opponentPlayer.hand.sort(compareTiles);
             opponentPlayer.lastDraw = drawResult.tile;
             nextState.lastActionMessage += ` ${opponentPlayerId === 'player' ? "あなた" : "CPU"}がツモりました。`;

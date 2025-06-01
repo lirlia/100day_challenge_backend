@@ -1,7 +1,7 @@
 import { Tile, TileSuit, HonorType, isSameTile, compareTiles, tileFromString, tilesFromStrings } from './tiles';
 import { checkYaku, HandContext, YakuResult, ALL_YAKU } from './yaku'; // Yaku関連をインポート
 import { calculateScore, ScoreResult, ScoreOptions } from './score'; // Score関連をインポート
-import { GameState, PlayerID } from './game_state'; // GameStateの一部をインポート
+import { GameState, PlayerIdentifier as PlayerID } from './game_state'; // GameStateの一部をインポート
 
 // tiles.ts の HONOR 定義を参考に、手牌処理で必要な字牌リストを作成
 const YAOCHUUHAI_ID_STRINGS = [
@@ -32,6 +32,7 @@ export interface AgariInfo {
   jantou?: Tile;            // 雀頭 (通常手の場合)
   score?: ScoreResult;      // 点数計算結果
   isTsumo: boolean;         // ツモ和了かどうか
+  machiPattern?: MachiPattern; // 待ちの形
   // TODO: フリテン情報なども追加可能
 }
 
@@ -54,6 +55,15 @@ export enum HandPattern {
   NORMAL = "Normal",          // 通常手 (4面子1雀頭)
   CHIITOITSU = "Chiitoitsu",  // 七対子
   KOKUSHI = "KokushiMusou", // 国士無双
+}
+
+// 待ちの形を表す Enum
+export enum MachiPattern {
+  RYANMEN = "Ryanmen",      // 両面待ち (例: 23 で 1-4待ち)
+  KANCHAN = "Kanchan",      // 嵌張待ち (例: 24 で 3待ち)
+  PENCHAN = "Penchan",      // 辺張待ち (例: 12 で 3待ち, 89 で 7待ち)
+  SHABO = "Shabo",          // 双碰待ち (例: 東東 西西 で 東か西待ち)
+  TANKI = "Tanki",          // 単騎待ち (例: 123456789東東南南西 で 西待ち)
 }
 
 // 手牌に牌を追加する (ソートも行う)
@@ -242,363 +252,83 @@ export function analyzeHandShanten(
   scoreOptions?: ScoreOptions,
 ): HandAnalysisResult {
   const handLengthForCheck = handTilesInput.length + (agariContext ? 1 : 0);
-  if (handLengthForCheck !== 13 && handLengthForCheck !== 14 && !agariContext) {
-    // agariContextなしで向聴数だけ見る場合、13枚を想定
-    if (handTilesInput.length !== 13) return { shanten: 8 };
-  }
-  if (agariContext && handTilesInput.length + existingMelds.reduce((sum, m) => sum + m.tiles.length, 0) + 1 !== 14) {
-      // 鳴き＋手牌＋アガリ牌 で14枚にならないのはおかしい
-      console.warn("Invalid total tile count for agari check with melds.");
-      return { shanten: 8 };
-  }
+  // if (handLengthForCheck !== 13 && handLengthForCheck !== 14 && !agariContext) {
+  //     // agariContextなしで向聴数だけ見る場合、13枚を想定
+  //     if (handTilesInput.length !== 13) return { shanten: 8 };
+  // }
+  // if (agariContext && handTilesInput.length + existingMelds.reduce((sum, m) => sum + m.tiles.length, 0) + 1 !== 14) {
+  //     // 鳴き＋手牌＋アガリ牌 で14枚にならないのはおかしい
+  //     console.warn("Invalid total tile count for agari check with melds.");
+  //     return { shanten: 8 };
+  // }
 
-  // アガリ牌を含む完成形の手牌 (ソート済み)
-  const completedHand = agariContext ? [...handTilesInput, agariContext.agariTile].sort(compareTiles) : [...handTilesInput].sort(compareTiles);
-  const completedHandLength = completedHand.length;
-
-  // --- 特殊手の判定 (鳴きなし前提、完成形14枚で判定) ---
-  if (agariContext && completedHandLength === 14 && existingMelds.length === 0) {
-    if (isKokushiMusou(completedHand)) {
-      const handCtx: HandContext = {
-        handTiles: completedHand,
-        agariTile: agariContext.agariTile,
-        melds: [], // 国士無双は鳴きも手牌からの面子もない
-        jantou: undefined, // 国士無双に雀頭の概念は通常適用しない
-        handPattern: HandPattern.KOKUSHI,
-        isTsumo: agariContext.isTsumo,
-        isRiichi: agariContext.isRiichi,
-        isDoubleRiichi: agariContext.isDoubleRiichi,
-        playerWind: agariContext.playerWind,
-        roundWind: agariContext.roundWind,
-        doraTiles: agariContext.doraTiles,
-        uraDoraTiles: agariContext.uraDoraTiles,
-        turnCount: agariContext.turnCount,
-        isMenzen: true,
-        isRinshan: agariContext?.isRinshan,
-      };
-      const yakuResults = checkYaku(handCtx);
-      const score = calculateScore(yakuResults, agariContext.playerWind === HonorType.TON, agariContext.isTsumo, scoreOptions, { handTiles:completedHand, agariTile: agariContext.agariTile, melds:[], playerWind: agariContext.playerWind, roundWind: agariContext.roundWind, isMenzen: true});
-      return {
-        shanten: -1,
-        agariResult: {
-          handPattern: HandPattern.KOKUSHI,
-          completedHand: completedHand,
-          agariTile: agariContext.agariTile,
-          melds: [], // 国士は面子なし
-          score: score.error ? undefined : score,
-          isTsumo: agariContext.isTsumo,
-        }
-      };
-    }
-    if (isChiitoitsu(completedHand)) {
-      const handCtx: HandContext = {
-        handTiles: completedHand,
-        agariTile: agariContext.agariTile,
-        melds: [], // 七対子は鳴きも手牌からの面子もない
-        jantou: undefined, // 七対子に雀頭の概念は通常適用しない
-        handPattern: HandPattern.CHIITOITSU,
-        isTsumo: agariContext.isTsumo,
-        isRiichi: agariContext.isRiichi,
-        isDoubleRiichi: agariContext.isDoubleRiichi,
-        playerWind: agariContext.playerWind,
-        roundWind: agariContext.roundWind,
-        doraTiles: agariContext.doraTiles,
-        uraDoraTiles: agariContext.uraDoraTiles,
-        turnCount: agariContext.turnCount,
-        isMenzen: true,
-        isRinshan: agariContext?.isRinshan,
-      };
-      const yakuResults = checkYaku(handCtx);
-       // 七対子の符は25符固定なので、fuContextは簡易的に設定
-      const score = calculateScore(yakuResults, agariContext.playerWind === HonorType.TON, agariContext.isTsumo, scoreOptions, { handTiles:completedHand, agariTile: agariContext.agariTile, melds:[], playerWind: agariContext.playerWind, roundWind: agariContext.roundWind, isMenzen: true });
-      return {
-        shanten: -1,
-        agariResult: {
-          handPattern: HandPattern.CHIITOITSU,
-          completedHand: completedHand,
-          agariTile: agariContext.agariTile,
-          melds: [], // 七対子は面子なし
-          score: score.error ? undefined : score,
-          isTsumo: agariContext.isTsumo,
-        }
-      };
-    }
-  }
-  // --- 通常手の判定 ---
+  let completedHand: Tile[] = [];
   if (agariContext) {
-    // 鳴き面子を除いた純粋な手牌部分を計算
-    let tilesForBaseAnalysis = [...completedHand];
-    existingMelds.forEach(meld => {
-        meld.tiles.forEach(tileInMeld => {
-            const index = tilesForBaseAnalysis.findIndex(t => isSameTile(t, tileInMeld));
-            if (index !== -1) tilesForBaseAnalysis.splice(index, 1);
-        });
-    });
-
-    if (isBasicAgari(tilesForBaseAnalysis, existingMelds)) {
-        const extractedParts = extractMeldsAndJantou(tilesForBaseAnalysis, existingMelds);
-        if (extractedParts) {
-            const isMenzenCheck = existingMelds.every(m => !m.isOpen) && extractedParts.melds.every(m => !m.isOpen);
-            const finalMeldsForContext = [...existingMelds, ...extractedParts.melds];
-
-            const handCtx: HandContext = {
-                handTiles: completedHand, // 役判定には完成形14枚を渡す
-                agariTile: agariContext.agariTile,
-                melds: finalMeldsForContext,
-                jantou: extractedParts.jantou,
-                handPattern: HandPattern.NORMAL,
-                isTsumo: agariContext.isTsumo,
-                isRiichi: agariContext.isRiichi,
-                isDoubleRiichi: agariContext.isDoubleRiichi,
-                playerWind: agariContext.playerWind,
-                roundWind: agariContext.roundWind,
-                doraTiles: agariContext.doraTiles,
-                uraDoraTiles: agariContext.uraDoraTiles,
-                turnCount: agariContext.turnCount,
-                isMenzen: isMenzenCheck,
-                isRinshan: agariContext?.isRinshan,
-            };
-            const yakuResults = checkYaku(handCtx);
-
-            if (yakuResults.length > 0) {
-                const fuCtx = {
-                    handTiles: completedHand,
-                    agariTile: agariContext.agariTile,
-                    melds: finalMeldsForContext,
-                    jantou: extractedParts.jantou,
-                    playerWind: agariContext.playerWind,
-                    roundWind: agariContext.roundWind,
-                    isMenzen: isMenzenCheck,
-                };
-                const scoreResult = calculateScore(yakuResults, agariContext.playerWind === HonorType.TON, agariContext.isTsumo, scoreOptions, fuCtx);
-                return {
-                    shanten: -1,
-                    agariResult: {
-                        handPattern: HandPattern.NORMAL,
-                        completedHand: completedHand,
-                        agariTile: agariContext.agariTile,
-                        melds: finalMeldsForContext,
-                        jantou: extractedParts.jantou,
-                        score: scoreResult,
-                        isTsumo: agariContext.isTsumo,
-                    }
-                };
-            } else {
-                // 役なし (ドラのみも含む)
-                // この場合も和了とみなさない。向聴数0。
-                console.warn("No yaku for basic agari (or dora only):", yakuResults);
-            }
-        } else {
-            // 面子・雀頭の抽出に失敗 (isBasicAgari と矛盾するが、ロジック不備の可能性)
-            console.warn("Failed to extract melds/jantou from basic agari hand.");
-        }
-    }
-    // isBasicAgari が true だが、役や点数がつかない、または agariContext がない場合
-    // 14枚で形だけ和了っている場合は向聴数0 (聴牌)として扱う
-    // (ただし、shanten -1 で agariResult なしのケースは既にあるので、ここは通らないかも)
-    if (completedHandLength === 14 && !agariContext) return { shanten: -1 }; // 和了形だが詳細不明
-    if (completedHandLength === 14) return { shanten: 0 }; // 役なしなどで和了にならなかった聴牌
+    completedHand = [...handTilesInput, agariContext.agariTile].sort(compareTiles);
   }
 
-  // 向聴数計算 (agariContextがない場合、または通常手で役なしだった場合)
-  // ここでの向聴数計算は、入力の handTilesInput (アガリ牌を含まない) をベースに行う
-  let shanten = 8; // Default shanten
-  const currentTilesForShanten = [...handTilesInput].sort(compareTiles);
-  const numTilesForShanten = currentTilesForShanten.length;
+  // 1. 国士無双のチェック (和了形のみ)
+  if (agariContext && completedHand.length === 14 && isKokushiMusou(completedHand)) {
+    const agariInfo: AgariInfo = {
+      handPattern: HandPattern.KOKUSHI,
+      completedHand,
+      agariTile: agariContext.agariTile,
+      melds: [], // 国士は面子なし
+      isTsumo: agariContext.isTsumo,
+      machiPattern: MachiPattern.TANKI,
+    };
+    return { shanten: -1, agariResult: agariInfo };
+  }
 
-  // 簡易向聴数計算ロジック (既存のものを流用、鳴きも考慮する必要あり)
-  // 8 - (2 * 面子候補数 + 塔子候補数 + 雀頭候補数)
-  let mentsuCount = existingMelds.length; // 鳴き面子は確定面子
-  let taatsuCount = 0;
-  let jantouCount = 0;
+  // 2. 七対子のチェック (和了形のみ)
+  if (agariContext && completedHand.length === 14 && isChiitoitsu(completedHand) && existingMelds.length === 0) {
+    const agariInfo: AgariInfo = {
+      handPattern: HandPattern.CHIITOITSU,
+      completedHand,
+      agariTile: agariContext.agariTile,
+      melds: [],
+      isTsumo: agariContext.isTsumo,
+      machiPattern: MachiPattern.TANKI,
+    };
+    return { shanten: -1, agariResult: agariInfo };
+  }
 
-  const tempHand = [...currentTilesForShanten]; // 副露牌は除外済みのはずだが、手牌のみ対象とする
-  const counts = countTiles(tempHand);
+  let bestShanten = 8;
+  let bestAgariInfo: AgariInfo | undefined = undefined;
 
-  // 雀頭候補を探す
-  for (const [tileId, count] of counts) {
-    if (count >= 2) {
-      jantouCount = 1; // 1つあれば十分 (最も効率の良いものを探すのは複雑)
-      break;
+  const handForAnalysis = agariContext ? completedHand : handTilesInput;
+
+  if (agariContext && handForAnalysis.length === 14) {
+    const extractedParts = extractMeldsAndJantou(handForAnalysis, existingMelds);
+    if (extractedParts) {
+      let determinedMachiPattern: MachiPattern | undefined = determineMachiPattern(
+        extractedParts.melds,
+        extractedParts.jantou,
+        agariContext.agariTile,
+        existingMelds
+      );
+
+      const agariInfo: AgariInfo = {
+        handPattern: HandPattern.NORMAL,
+        completedHand: handForAnalysis,
+        agariTile: agariContext.agariTile,
+        melds: extractedParts.melds,
+        jantou: extractedParts.jantou,
+        isTsumo: agariContext.isTsumo,
+        machiPattern: determinedMachiPattern,
+      };
+      bestShanten = -1;
+      bestAgariInfo = agariInfo;
+      return { shanten: bestShanten, agariResult: bestAgariInfo };
     }
   }
 
-  // 面子・塔子候補を探す (刻子優先)
-  const remainingForMentsuTaatsu = [...tempHand];
-  remainingForMentsuTaatsu.sort(compareTiles);
-
-  // 暗刻・槓子候補
-  const ankoChecked = new Set<string>();
-  for (let i = 0; i < remainingForMentsuTaatsu.length; i++) {
-    const tile = remainingForMentsuTaatsu[i];
-    if (ankoChecked.has(tile.id)) continue;
-    const numSame = remainingForMentsuTaatsu.filter(t => isSameTile(t, tile)).length;
-    if (numSame >= 3 && mentsuCount < 4) { // 4面子まで
-      mentsuCount++;
-      // 刻子として使った牌を除く (3枚)
-      let removed = 0;
-      for (let j = remainingForMentsuTaatsu.length - 1; j >=0; j--) {
-          if(isSameTile(remainingForMentsuTaatsu[j], tile) && removed < 3){
-              remainingForMentsuTaatsu.splice(j,1);
-              removed++;
-          }
-      }
-      ankoChecked.add(tile.id);
-      i = -1; // 配列が変わったので最初から走査しなおし (簡易)
-    }
+  if (bestShanten > 0) {
+    const currentShanten = calculateShantenNormal(handTilesInput, existingMelds);
+    bestShanten = currentShanten;
   }
 
-  // 順子候補 (残りの牌で)
-  const shuntsuCheckedIndices = new Set<number>();
-  for (let i = 0; i < remainingForMentsuTaatsu.length; i++) {
-    if (shuntsuCheckedIndices.has(i)) continue;
-    const t1 = remainingForMentsuTaatsu[i];
-    if (t1.suit !== TileSuit.JIHAI && t1.value <= 7 && mentsuCount < 4) {
-      const t2Value = t1.value + 1;
-      const t3Value = t1.value + 2;
-      let idx2 = -1, idx3 = -1;
-
-      for (let j = i + 1; j < remainingForMentsuTaatsu.length; j++) {
-        if (shuntsuCheckedIndices.has(j)) continue;
-        const currentTile = remainingForMentsuTaatsu[j];
-        if (currentTile.suit === t1.suit && currentTile.value === t2Value) {
-          idx2 = j;
-          break;
-        }
-      }
-      if (idx2 !== -1) {
-        for (let k = idx2 + 1; k < remainingForMentsuTaatsu.length; k++) {
-          if (shuntsuCheckedIndices.has(k)) continue;
-          const currentTile = remainingForMentsuTaatsu[k];
-          if (currentTile.suit === t1.suit && currentTile.value === t3Value) {
-            idx3 = k;
-            break;
-          }
-        }
-      }
-
-      if (idx2 !== -1 && idx3 !== -1) {
-        mentsuCount++;
-        shuntsuCheckedIndices.add(i);
-        shuntsuCheckedIndices.add(idx2);
-        shuntsuCheckedIndices.add(idx3);
-        // 順子に使った牌は実際には取り除かないで次の候補を探す（より良い分割のため）
-        // ただし、この簡易ロジックでは重複カウントの可能性あり。
-        // 厳密には面子確定ごとに牌を取り除くべきだが、向聴数計算の複雑さが増す。
-      }
-    }
-  }
-
-  // 塔子候補 (残りの牌で、面子にならなかったものから)
-  // 簡易的に、ペアとペンチャン・カンチャン・リャンメン形を探す
-  // (この部分は非常に簡易的で、正確な向聴数とは乖離が大きい可能性あり)
-  const remainingForTaatsu = [];
-  for(let i=0; i<remainingForMentsuTaatsu.length; i++){
-      if(!shuntsuCheckedIndices.has(i) && !ankoChecked.has(remainingForMentsuTaatsu[i].id)){
-          remainingForTaatsu.push(remainingForMentsuTaatsu[i]);
-      }
-  }
-
-  for (let i = 0; i < remainingForTaatsu.length; i++) {
-    const t1 = remainingForTaatsu[i];
-    // 対子塔子
-    for (let j = i + 1; j < remainingForTaatsu.length; j++) {
-      const t2 = remainingForTaatsu[j];
-      if (isSameTile(t1, t2) && (mentsuCount + taatsuCount < 4)) {
-        taatsuCount++;
-        // TODO: 塔子に使った牌を除く処理 (簡易のため省略)
-        break;
-      }
-    }
-    // 辺張・嵌張・両面塔子
-    if (t1.suit !== TileSuit.JIHAI && (mentsuCount + taatsuCount < 4)) {
-      for (let j = i + 1; j < remainingForTaatsu.length; j++) {
-        const t2 = remainingForTaatsu[j];
-        if (t1.suit === t2.suit && Math.abs(t1.value - t2.value) <= 2 && Math.abs(t1.value - t2.value) > 0 ) {
-          taatsuCount++;
-           // TODO: 塔子に使った牌を除く処理 (簡易のため省略)
-          break;
-        }
-      }
-    }
-    if (mentsuCount + taatsuCount >= 4) break; // 4ブロックあれば十分
-  }
-
-  // 向聴数の計算: 8 - (面子数 * 2 + 塔子数 + 雀頭数)
-  // ただし、鳴いている場合は 8 - (鳴き面子数 * 2) からスタートし、手牌で不足分を補う
-  // ここでは melds を mentsuCount の初期値として考慮済み
-  shanten = 8 - (mentsuCount * 2 + taatsuCount + jantouCount);
-
-  // 特殊形 (国士・七対子) の向聴数も計算し、最も良いものを採用
-  // (国士無双: 13種 - (揃っている種類数) - (対子があれば-1) )
-  // (七対子: 6 - (対子数) ) ※ 13枚の時は計算が異なる
-  if (existingMelds.length === 0) { // 鳴いていない場合のみ
-    // 国士無双向聴 (13枚/14枚)
-    const kokushiCounts = countTiles(currentTilesForShanten);
-    const requiredYaochuuhai = YAOCHUUHAI_PROTOTYPES;
-    let yaochuuTypes = 0;
-    let yaochuuHasPair = false;
-    for (const req of requiredYaochuuhai) {
-        if (kokushiCounts.has(req.id)) {
-            yaochuuTypes++;
-            if ((kokushiCounts.get(req.id) || 0) >= 2) yaochuuHasPair = true;
-        }
-    }
-    // 13牌全てあれば聴牌 (13枚手牌なら向聴0、14枚手牌なら和了で-1)
-    // 12種あり1種が対子なら聴牌 (13枚手牌なら向聴0、14枚手牌なら和了で-1)
-    // それ以外は不足数
-    let kokushiShanten = 13 - yaochuuTypes;
-    if (yaochuuHasPair) kokushiShanten--; // 対子があれば1向聴減る
-    if (completedHandLength === 13 && kokushiShanten < 0) kokushiShanten = 0; // 13枚の時は0が最小
-    if (completedHandLength === 14 && kokushiShanten < -1) kokushiShanten = -1; // 14枚の時は-1が最小
-
-    shanten = Math.min(shanten, kokushiShanten);
-
-    // 七対子向聴 (13枚/14枚)
-    const chiitoiCounts = countTiles(currentTilesForShanten);
-    let pairCountForChiitoi = 0;
-    let singleCountForChiitoi = 0;
-    for(const count of chiitoiCounts.values()){
-        if(count >= 2) pairCountForChiitoi++;
-        if(count === 1) singleCountForChiitoi++;
-    }
-    // 13枚の場合: 6 - 対子数 + (7 - 対子数 - (13 - 対子*2) > 0 ? 7 - 対子数 - (13 - 対子*2) : 0)
-    //   = 6 - 対子数 + (対子数 - 6 + singles > 0 ? ...)
-    //   必要なのは (7-対子数) のシングル牌。それが手元にあればOK
-    // 14枚の場合: 6 - 対子数
-    let chiitoiShanten = 6 - pairCountForChiitoi;
-    if (completedHandLength === 13) {
-        // あと (7-pairCountForChiitoi) 個の対子が必要。
-        // 残りの牌 (singleCountForChiitoi 個) からいくつ対子を作れるか。
-        // 作れない場合は、その不足分が向聴数に加算される。
-        // 例: 5対子1シングル3枚 -> あと2対子必要。シングル3枚からは1対子しか作れないので +1 で向聴1
-        const neededPairs = 7 - pairCountForChiitoi;
-        const availableSingles = singleCountForChiitoi;
-        if (neededPairs > 0) {
-            if (availableSingles < neededPairs) { // シングル牌が足りない場合は、その分向聴数増
-                 chiitoiShanten += (neededPairs - availableSingles);
-            }
-        }
-    }
-    if (completedHandLength === 14 && chiitoiShanten < -1) chiitoiShanten = -1;
-    if (completedHandLength === 13 && chiitoiShanten < 0) chiitoiShanten = 0;
-
-    shanten = Math.min(shanten, chiitoiShanten);
-  }
-
-  // 最終的な向聴数がマイナスなら-1 (和了) にする
-  // (ただし、isBasicAgari, isChiitoitsu, isKokushiMusou で既に-1を返している場合はそちらが優先される)
-  if (shanten < -1) shanten = -1;
-  if (shanten === -1 && completedHandLength === 13) shanten = 0; // 13枚の場合は和了形でも聴牌(0)扱い
-
-  if (shanten === -1 && completedHandLength === 14 && !agariContext) {
-      // 和了形だがagariContextがないので点数計算不可。shantenは-1のまま。
-      return { shanten: -1 };
-  }
-  // shanten === -1 で agariContext があり、かつ isBasicAgari などで agariResult がまだ設定されていない場合
-  // (これは通常発生しないはず。isBasicAgari などが先に agariResult を設定する)
-
-  return { shanten };
+  return { shanten: bestShanten, agariResult: bestAgariInfo };
 }
 
 interface ExtractedHandParts {
@@ -716,4 +446,102 @@ export function isKyuushuuKyuuhai(hand: Tile[]): boolean {
   const uniqueYaochuuTypes = new Set(yaochuuTiles.map(tile => tile.id));
 
   return uniqueYaochuuTypes.size >= 9;
+}
+
+// 待ちの形を判定するヘルパー関数 (要実装)
+function determineMachiPattern(
+  completedMelds: Meld[],
+  jantou: Tile,
+  agariTile: Tile,
+  existingMelds: Meld[]
+): MachiPattern | undefined {
+  const handOnlyMelds = completedMelds.filter(m =>
+    !existingMelds.some(em =>
+        em.tiles.length === m.tiles.length &&
+        em.tiles.every((et, i) => isSameTile(et, m.tiles[i]))
+    )
+  );
+
+  if (isSameTile(jantou, agariTile)) {
+    const tempHand = removeTileFromHand(completedMelds.flatMap(m => m.tiles), agariTile);
+    if (canMakeMelds(tempHand, completedMelds.length)) {
+         return MachiPattern.TANKI;
+    }
+  }
+
+  for (const meld of handOnlyMelds) {
+    if (meld.type === 'koutsu' && meld.tiles.some(t => isSameTile(t, agariTile))) {
+      const otherTiles = meld.tiles.filter(t => !isSameTile(t, agariTile));
+      if (otherTiles.length === 2 && isSameTile(otherTiles[0], otherTiles[1])) {
+        return MachiPattern.SHABO;
+      }
+    }
+  }
+
+  for (const meld of handOnlyMelds) {
+    if (meld.type === 'shuntsu' && meld.tiles.some(t => isSameTile(t, agariTile))) {
+      if (agariTile.suit === TileSuit.JIHAI) continue;
+      const sortedMeldTiles = [...meld.tiles].sort(compareTiles);
+      const agariIndex = sortedMeldTiles.findIndex(t => isSameTile(t, agariTile));
+
+      if (agariTile.value === 1 && agariIndex === 0 && sortedMeldTiles[1].value === 2 && sortedMeldTiles[2].value === 3) return MachiPattern.PENCHAN; // 123 の 1 (ペン3待ちの片割れ扱いだが、平和ではOK)
+      if (agariTile.value === 9 && agariIndex === 2 && sortedMeldTiles[0].value === 7 && sortedMeldTiles[1].value === 8) return MachiPattern.PENCHAN; // 789 の 9 (ペン7待ちの片割れ扱いだが、平和ではOK)
+      if (agariTile.value === 3 && agariIndex === 2 && sortedMeldTiles[0].value === 1 && sortedMeldTiles[1].value === 2) return MachiPattern.PENCHAN; // 12 で 3待ち
+      if (agariTile.value === 7 && agariIndex === 0 && sortedMeldTiles[1].value === 8 && sortedMeldTiles[2].value === 9) return MachiPattern.PENCHAN; // 89 で 7待ち
+
+      if (agariIndex === 1) {
+        if (sortedMeldTiles[0].value === agariTile.value - 1 && sortedMeldTiles[2].value === agariTile.value + 1) {
+          return MachiPattern.KANCHAN;
+        }
+      }
+
+      if (agariIndex === 0 && sortedMeldTiles[1].value === agariTile.value + 1 && sortedMeldTiles[2].value === agariTile.value + 2) {
+        if (agariTile.value >= 1 && agariTile.value <= 7) return MachiPattern.RYANMEN;
+      }
+      if (agariIndex === 2 && sortedMeldTiles[0].value === agariTile.value - 2 && sortedMeldTiles[1].value === agariTile.value - 1) {
+        if (agariTile.value >= 3 && agariTile.value <= 9) return MachiPattern.RYANMEN;
+      }
+    }
+  }
+  return undefined;
+}
+
+function calculateShantenNormal(handTiles: Tile[], existingMelds: Meld[]): number {
+  if (isBasicAgari(handTiles, existingMelds)) return 0;
+  // TODO: Implement a more accurate shanten calculation for normal hands.
+  // This is a very simplified placeholder.
+  // Count isolated tiles, pairs, taatsu (proto-shuntsu/koutsu)
+  // and apply standard shanten formula (8 - 2*num_melds - num_taatsu - num_pairs)
+  // For now, return a high number if not immediately tenpai.
+  let shanten = 8;
+  const baseMelds = existingMelds.length;
+  let pairs = 0;
+  let taatsu = 0;
+  let koutsuCandidates = 0;
+
+  const counts = countTiles(handTiles);
+  const uniqueTiles = Array.from(counts.keys()).map(id => tileFromString(id)!).sort(compareTiles);
+
+  // Count pairs and koutsu from hand
+  for(const tileId of counts.keys()){
+      if(counts.get(tileId)! >= 2) pairs++;
+      if(counts.get(tileId)! >= 3) koutsuCandidates++;
+  }
+  shanten -= pairs; // Simplified pair contribution
+  shanten -= koutsuCandidates * 2; // Simplified koutsu contribution
+
+  // Count taatsu (proto-shuntsu)
+  for (let i = 0; i < uniqueTiles.length; i++) {
+    const t1 = uniqueTiles[i];
+    if (t1.suit === TileSuit.JIHAI) continue;
+    // Check for ryanmen/kanchan type taatsu
+    const t2_val = t1.value + 1;
+    const t3_val = t1.value + 2;
+    if (counts.has(`${t2_val}${t1.suit}`) && t2_val <=9) taatsu++;
+    else if (counts.has(`${t3_val}${t1.suit}`) && t3_val <=9) taatsu++;
+  }
+  shanten -= taatsu; // Simplified taatsu contribution
+  shanten -= baseMelds * 2;
+
+  return Math.max(0, shanten); // Shanten cannot be negative here (unless agari)
 }
