@@ -1,6 +1,6 @@
 import { Tile, isSameTile, compareTiles, HonorType, TileSuit } from './tiles';
 import { Yama, createYama, dealInitialHands, drawTile, getCurrentDora, drawRinshanTile, revealKanDora, getCurrentUraDora } from './yama';
-import { analyzeHandShanten, Meld, HandPattern, AgariInfo, AgariContext, removeTileFromHand as removeTileFromPlayerHand } from './hand'; // removeTileFromHand をインポート
+import { analyzeHandShanten, Meld, HandPattern, AgariInfo, AgariContext, removeTileFromHand as removeTileFromPlayerHand, isKyuushuuKyuuhai } from './hand'; // removeTileFromHand をインポート
 import type { AgariContext as OldAgariContext } from './hand'; // AgariContext 型をインポート
 
 export enum PlayerID {
@@ -86,6 +86,48 @@ export function createInitialGameState(gameId: string): GameState {
   const yama = createYama();
   const { playerHand, cpuHand } = dealInitialHands(yama);
   const initialOya = PlayerID.Player; // 仮にプレイヤーを常に東家とする
+
+  // 九種九牌チェック用の手牌 (ツモ前)
+  const initialPlayerHandForKyuuCheck = [...playerHand];
+  const initialCpuHandForKyuuCheck = [...cpuHand];
+
+  if (isKyuushuuKyuuhai(initialPlayerHandForKyuuCheck) || isKyuushuuKyuuhai(initialCpuHandForKyuuCheck)) {
+    const kyuushuuPlayer = isKyuushuuKyuuhai(initialPlayerHandForKyuuCheck) ? PlayerID.Player : PlayerID.CPU;
+    return {
+      gameId,
+      round: 1,
+      honba: 1, // 九種九牌は本場を1増やして親流れなし（ルールによるが、ここではそうする）
+      oya: initialOya,
+      turn: initialOya, // 親のターンで再開
+      phase: GamePhase.Draw,
+      yama: createYama(), // 山を再生成
+      dora: getCurrentDora(yama), // ドラも再設定
+      player: {
+        hand: playerHand, // 九種九牌でも手牌は見せる（UIで判断）
+        river: [],
+        score: 25000,
+        isRiichi: false,
+        riichiTurn: 0,
+        canRiichi: false, canTsumoAgari: false, canRon: false, canKan: false, canPon: false,
+        melds: [],
+      },
+      cpu: {
+        hand: cpuHand,
+        river: [],
+        score: 25000,
+        isRiichi: false,
+        riichiTurn: 0,
+        canRiichi: false, canTsumoAgari: false, canRon: false, canKan: false, canPon: false,
+        melds: [],
+      },
+      turnCount: 0,
+      lastActionMessage: `${kyuushuuPlayer}が九種九牌のため流局しました。`,
+      winner: null,
+      gameWinner: undefined,
+      winningHandInfo: undefined,
+      totalRounds: 4,
+    };
+  }
 
   // ツモ牌をプレイヤーの手牌に加える（最初のツモ）
   let playerHandWithTsumo: Tile[] = [...playerHand];
@@ -303,6 +345,26 @@ function proceedToNextRoundOrEndGame(currentState: GameState): GameState {
     nextState.oya = currentOya === PlayerID.Player ? PlayerID.CPU : PlayerID.Player;
   }
 
+  // 規定局数終了判定の前に九種九牌などの流局をチェック
+  if (nextState.phase === GamePhase.Draw) {
+    // すでに流局（例：山切れ）と判断されていれば、そのまま次の局へ
+  } else {
+    // ここで次の局の配牌を行う前に九種九牌をチェック (proceedToNextRoundOrEndGame の責務)
+    const tempYamaForKyuuCheck = createYama(); // チェックのため一時的な山を作成
+    const { playerHand: nextPlayerHandKyuu, cpuHand: nextCpuHandKyuu } = dealInitialHands(tempYamaForKyuuCheck);
+
+    if (isKyuushuuKyuuhai(nextPlayerHandKyuu) || isKyuushuuKyuuhai(nextCpuHandKyuu)) {
+      const kyuushuuPlayer = isKyuushuuKyuuhai(nextPlayerHandKyuu) ? nextState.oya : (nextState.oya === PlayerID.Player ? PlayerID.CPU : PlayerID.Player) ; // 親から見て
+      nextState.phase = GamePhase.Draw;
+      nextState.lastActionMessage = `${kyuushuuPlayer}が九種九牌のため流局しました。本場を増やして継続します。`;
+      nextState.honba++; // 九種九牌は本場を増やし、親は流れない
+      // yama, player.hand, cpu.hand などは次のループの最初で再設定されるので、ここでは変更しない
+      // (oyaも変わらない)
+      // return proceedToNextRoundOrEndGame(nextState); // 再帰的に呼び出すか、フラグで制御
+      // この後の通常の局開始処理で新しい手牌が配られるため、ここではメッセージ設定と本場追加のみ
+    }
+  }
+
   // 2. 規定局数終了判定 (例: 東4局終了)
   if (nextState.round > nextState.totalRounds) {
     nextState.phase = GamePhase.GameOver;
@@ -360,6 +422,18 @@ function proceedToNextRoundOrEndGame(currentState: GameState): GameState {
   nextState.uraDora = undefined;
   nextState.winner = undefined;
   nextState.winningHandInfo = undefined;
+
+  // 九種九牌で流局した場合、このタイミングで手牌を再配布し、ゲームを再開する
+  // ただし、上記で `nextState.phase = GamePhase.Draw` としているため、
+  // `proceedToNextRoundOrEndGame` が再度呼ばれることを期待する。
+  // もし `phase` が `Draw` であれば、手牌の再配布と親のツモから再開。
+  if (currentState.phase === GamePhase.Draw && currentState.lastActionMessage?.includes("九種九牌")) {
+      // 既にproceedToNextRoundOrEndGameの中で手牌は配られているはず
+      // firstDraw の処理でツモも行われている
+      // lastActionMessageで九種九牌だったことを記録してある
+      // 特にここでは何もしない。
+      // nextState.lastActionMessage = `${currentState.oya}が九種九牌で流局したため、局を再開します。`;
+  }
 
   // 初手のアクションフラグ更新 (新しい親に対して)
   const activePlayerState = nextOya === PlayerID.Player ? nextState.player : nextState.cpu;

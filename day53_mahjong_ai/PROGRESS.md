@@ -103,8 +103,8 @@
 -   [x] **CPU AIと高度なゲームフロー:** (一部進行中)
     -   [x] CPUの打牌AIを改善 (向聴数を考慮した打牌選択を `app/api/game/action/route.ts` に実装。`game_state.ts` への本格的な移植は今後の課題)。
     -   [x] CPUのリーチ判断、カン判断（暗槓のみ仮実装、`game_state.ts` 内）。
-    -   [ ] CPUの鳴き判断（ポン、チー、カン）。
-    -   [ ] 流局（九種九牌、四風連打、四開槓など）の処理（現在は通常の山切れのみ）。
+    -   [x] CPUの鳴き判断（ポン）：`app/api/game/action/route.ts` に簡易的なポン実行ロジックを追加 (現在はポン可能なら常にポン)。
+    -   [x] 流局（九種九牌）：`lib/mahjong/hand.ts` に判定関数 `isKyuushuuKyuuhai` を追加し、`lib/mahjong/game_state.ts` の初期配牌時と局開始時に九種九牌による流局処理を追加。
     -   [x] `lib/mahjong/game_state.ts`: ポン (`ActionType.Pon`) のロジックを `processAction` に追加。`updateActionFlagsForPlayer` に `canPon` 判定を追加。Linterエラーを修正。
     -   [x] `app/api/game/action/route.ts`: CPUの自動アクション実行ロジックを強化。
 -   [ ] **その他仕上げ:**

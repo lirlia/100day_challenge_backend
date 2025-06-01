@@ -66,6 +66,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: 'Game not found' }, { status: 404 });
     }
 
+    const previousPlayerPhase = game.player.canRon || game.player.canPon || game.player.canKan;
+
     // プレイヤーのターンか確認 (アクションによっては不要な場合もある)
     if (game.turn !== playerId && ![ActionType.Ron].includes(action.type)) { // ロンは相手の打牌に対するアクション
       // TODO: カンも相手の打牌に対して可能な場合がある (大明槓)
@@ -84,19 +86,72 @@ export async function POST(request: NextRequest) {
       // game.phase が Playing の場合、CPUの自動アクションを実行する。
       // ただし、プレイヤーのロン/ポン待ちの場合はCPUは動かない。
       if (game.turn === PlayerID.CPU && game.phase === GamePhase.Playing &&
-          !(game.player.canRon || game.player.canPon || game.player.canKan /*プレイヤーの大明槓待ち*/) ) {
+          !(game.player.canRon || game.player.canPon || game.player.canKan /*プレイヤーの大明槓待ち*/) &&
+          !previousPlayerPhase) { // プレイヤーがロン/ポン/カンを選択できる状態だった場合はCPUは動かない
 
         let cpuActionTaken = false;
         const cpuState = game.cpu;
+        const opponentState = game.player; // CPUから見た相手はプレイヤー
 
-        // 1. CPU ツモ和了チェック
-        if (cpuState.canTsumoAgari) {
+        // 0. CPU ポン判断 (相手の打牌直後、自分がツモる前)
+        // このタイミングでポンするかは、processActionでdiscardが行われた"直後"に決まるべき
+        // processAction(playerDiscard) -> updateActionFlags(cpu) で cpu.canPon が設定される。
+        // このAPIハンドラでは、その canPon フラグを見て、CPUがポンするかどうかを決める。
+        // ただし、現在の action/route.ts の構造では、プレイヤーのアクション後に一連のCPUの動きをシミュレートしている。
+        // CPUがポンできるのは「プレイヤーが打牌した後」かつ「CPUがツモる前」。
+        // game.lastAction がプレイヤーの discard で、cpu.canPon が true の場合に検討。
+
+        if (game.lastAction?.type === ActionType.Discard && game.lastAction?.tile && cpuState.canPon && opponentState.lastDiscard && isSameTile(opponentState.lastDiscard, game.lastAction.tile)) {
+          // ポンするかどうかの簡易的な評価ロジック
+          // ここでは、「ポンしたら役がつく、またはシャンテン数が進むならポンする」を実装する
+          // (より高度な評価は将来の課題)
+          const tileToPon = opponentState.lastDiscard;
+          const handAfterPonDraw = [...cpuState.hand]; // ポンした後の手牌は1枚減り、打牌する
+                                                    // 正確には、ポンで2枚消費し、打牌する牌を選ぶので、手牌は11枚+打牌候補1枚になる
+
+          // ポンしたと仮定してシャンテン数を計算 (打牌する牌は別途選択)
+          const tempHandForPon = [...cpuState.hand];
+          let removedForPon = 0;
+          const handWithoutPonTiles = tempHandForPon.filter(t => {
+            if (isSameTile(t, tileToPon) && removedForPon < 2) {
+              removedForPon++;
+              return false;
+            }
+            return true;
+          });
+
+          // ポン後の手牌 (打牌前) は12枚になる (13 - 2(ポン) + 1(次の打牌する牌) - 1(打牌) ... ではなく、13 - 2 = 11枚)
+          // ここでどの牌を捨てるかによってシャンテン数が変わる。
+          // 簡易的に、ポン後の11枚でシャンテン数を評価。 analyzeHandShanten は13枚 or 14枚を期待するので、
+          // ダミーの2牌を加えて評価するか、11枚の状態で評価できるロジックが必要。
+          // もしくは、ポン後の手牌から1枚捨てた状態を全て試し、最も良くなるかを見る。
+
+          let shouldPon = false;
+          // とりあえず常にポンするとする (テストのため)
+          // TODO: ここにポンするかどうかのより詳細な判断ロジックを入れる
+          // 例: ポンすると役が付く、シャンテン数が進むなど。
+          // analyzeHandShanten は13枚か14枚を期待するので、ポンして打牌後の11枚にダミー2枚追加して評価は難しい。
+          // ここでは、「ポンできるなら必ずポンする」という最も単純なAIで実装
+          if (cpuState.canPon && tileToPon) { // canPon は updateActionFlags で設定済みのはず
+             shouldPon = true; // 簡易的に常にポン
+          }
+
+          if (shouldPon) {
+            game = processAction(game, PlayerID.CPU, { type: ActionType.Pon, targetTile: tileToPon });
+            // ポン後はCPUの打牌ターンになるので、この後の打牌ロジックで処理される
+            // cpuActionTaken = true; // ポンは打牌とは別のカテゴリのアクションとして扱う
+                                  // この後の打牌ロジックが実行されるように cpuActionTaken は true にしない
+          }
+        }
+
+        // 1. CPU ツモ和了チェック (ポンしなかった場合、またはポンしてツモ番が来た場合)
+        if (game.turn === PlayerID.CPU && cpuState.canTsumoAgari) { // game.turn を再確認
           game = processAction(game, PlayerID.CPU, { type: ActionType.TsumoAgari });
           cpuActionTaken = true;
         }
 
-        // 2. CPU カンチェック (ツモ後) -> 打牌前に処理 (暗槓・加槓)
-        if (!cpuActionTaken && cpuState.canKan && !cpuState.isRiichi && cpuState.lastDraw) { // リーチしてない場合のみ
+        // 2. CPU カンチェック (ツモ後)
+        if (!cpuActionTaken && game.turn === PlayerID.CPU && cpuState.canKan && !cpuState.isRiichi && cpuState.lastDraw) {
             // 可能なカンを探す (暗槓優先、次に加槓)
             const counts = new Map<string, Tile[]>();
             for (const tile of cpuState.hand) {
@@ -131,7 +186,6 @@ export async function POST(request: NextRequest) {
                 cpuActionTaken = true; // カンもアクションとみなす
             }
         }
-
 
         // 3. CPU リーチチェック (ツモ後、カン後)
         // カンした場合は、その後の手牌でリーチできるか再評価が必要だが、ここではカンしたら打牌に進む

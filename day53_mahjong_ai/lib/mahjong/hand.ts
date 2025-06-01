@@ -703,3 +703,17 @@ function findMeldsRecursive(tiles: Tile[], numMeldsNeeded: number, foundMelds: M
 
 // TODO: より正確な面子分割ロジック (全ての組み合わせを試すなど)
 // function findBestMeldCombination(hand: Tile[]): { melds: Meld[], jantou?: Tile } | null
+
+// 手牌が九種九牌（キュウシュキュウハイ）か判定する関数
+export function isKyuushuuKyuuhai(hand: Tile[]): boolean {
+  if (hand.length < 13) return false; // 配牌時を想定
+
+  const yaochuuTiles = hand.filter(tile =>
+    (tile.suit === TileSuit.MANZU || tile.suit === TileSuit.SOZU || tile.suit === TileSuit.PINZU) && (tile.value === 1 || tile.value === 9) ||
+    (tile.suit === TileSuit.JIHAI)
+  );
+
+  const uniqueYaochuuTypes = new Set(yaochuuTiles.map(tile => tile.id));
+
+  return uniqueYaochuuTypes.size >= 9;
+}
