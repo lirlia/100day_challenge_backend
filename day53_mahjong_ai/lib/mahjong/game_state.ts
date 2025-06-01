@@ -80,6 +80,7 @@ export interface GameState {
   winningHandInfo?: AgariInfo;    // 和了時の手牌情報、役、点数など (詳細は後で)
   lastAction?: GameAction; // 最後に行われたアクション (主にCPUのロン判定用)
   totalRounds: number; // ゲームの総局数 (例: 4局戦)
+  kanCount: number;      // 現在の局で行われたカンの総数
 }
 
 export function createInitialGameState(gameId: string): GameState {
@@ -126,6 +127,7 @@ export function createInitialGameState(gameId: string): GameState {
       gameWinner: undefined,
       winningHandInfo: undefined,
       totalRounds: 4,
+      kanCount: 0,     // カンカウント初期化
     };
   }
 
@@ -208,6 +210,7 @@ export function createInitialGameState(gameId: string): GameState {
     gameWinner: undefined,
     winningHandInfo: undefined,
     totalRounds: 4, // 東風戦 (4局)
+    kanCount: 0,     // カンカウント初期化
   };
 }
 
@@ -422,6 +425,7 @@ function proceedToNextRoundOrEndGame(currentState: GameState): GameState {
   nextState.uraDora = undefined;
   nextState.winner = undefined;
   nextState.winningHandInfo = undefined;
+  nextState.kanCount = 0; // 新しい局でカンカウントをリセット
 
   // 九種九牌で流局した場合、このタイミングで手牌を再配布し、ゲームを再開する
   // ただし、上記で `nextState.phase = GamePhase.Draw` としているため、
@@ -769,6 +773,7 @@ export function processAction(currentState: GameState, playerId: PlayerID, actio
       }
       let kanSuccess = false;
       let kanTypeMessage = "";
+      let isActuallyKan = false; // action.meldType が正しくカンを示しているか
 
       if (action.meldType === "ankan" && action.tile) { // 暗槓
           const tileForAnkan = action.tile;
@@ -779,6 +784,7 @@ export function processAction(currentState: GameState, playerId: PlayerID, actio
               actingPlayer.hand = actingPlayer.hand.filter(t => t.id !== tileForAnkan.id);
               kanSuccess = true;
               kanTypeMessage = "暗槓";
+              isActuallyKan = true;
           }
       } else if (action.meldType === "kakan" && action.meld && action.tile) { // 加槓
           const tileForKakan = action.tile;
@@ -802,6 +808,7 @@ export function processAction(currentState: GameState, playerId: PlayerID, actio
               actingPlayer.hand = actingPlayer.hand.filter(t => !isSameTile(t, tileForKakan));
               kanSuccess = true;
               kanTypeMessage = "加槓";
+              isActuallyKan = true;
           }
       } else if (action.meldType === "daiminkan" && action.tile) { // 大明槓
           // 直前の相手の捨て牌に対してカン
@@ -821,42 +828,74 @@ export function processAction(currentState: GameState, playerId: PlayerID, actio
                   opponentPlayer.canRon = false;
                   kanSuccess = true;
                   kanTypeMessage = "大明槓";
+                  isActuallyKan = true;
               }
           }
       }
 
-      if (kanSuccess) {
+      if (kanSuccess && isActuallyKan) {
+          nextState.kanCount++;
           nextState.yama = revealKanDora(nextState.yama);
           nextState.dora = getCurrentDora(nextState.yama);
           actingPlayer.justKaned = true;
           nextState.lastActionMessage = `${playerId === PlayerID.Player ? "あなた" : "CPU"}が ${action.tile?.id || action.meld?.tiles[0].id} で${kanTypeMessage}しました。嶺上牌をツモります。`;
 
-          const rinshanDrawResult = drawRinshanTile(nextState.yama); // rinshanDrawResult を正しく使用
-          nextState.yama = rinshanDrawResult.updatedYama;
+          if (nextState.kanCount === 4) {
+            // 四開槓による流局チェック (嶺上開花より優先するかどうかはルール次第)
+            // ここでは、4回目のカン成立時点で、ツモアガリがなければ流局とする
+            const rinshanDrawCheck = drawRinshanTile(nextState.yama); // ツモだけして戻すわけにはいかない
+            let canRinshanAgari = false;
+            if (rinshanDrawCheck.tile) {
+                const tempHandForRinshan = [...actingPlayer.hand, rinshanDrawCheck.tile];
+                const playerWindRinshan = playerId === nextState.oya ? HonorType.TON : HonorType.NAN;
+                const rinshanAgariContext: AgariContext = {
+                    agariTile: rinshanDrawCheck.tile,
+                    isTsumo: true, isRiichi: actingPlayer.isRiichi, playerWind: playerWindRinshan, roundWind: HonorType.TON,
+                    doraTiles: getCurrentDora(nextState.yama), uraDoraTiles: actingPlayer.isRiichi ? getCurrentUraDora(nextState.yama) : undefined,
+                    turnCount: nextState.turnCount, isMenzen: actingPlayer.melds.every(m => !m.isOpen), isRinshan: true,
+                };
+                const rinshanAnalysis = analyzeHandShanten(tempHandForRinshan.filter(t => !isSameTile(t, rinshanDrawCheck.tile!)), actingPlayer.melds, rinshanAgariContext);
+                if (rinshanAnalysis.shanten === -1 && rinshanAnalysis.agariResult && rinshanAnalysis.agariResult.score) {
+                    canRinshanAgari = true;
+                }
+            }
 
-          if (rinshanDrawResult.tile) {
-              actingPlayer.hand.push(rinshanDrawResult.tile);
-              actingPlayer.hand.sort(compareTiles);
-              actingPlayer.lastDraw = rinshanDrawResult.tile === null ? undefined : rinshanDrawResult.tile; // null を undefined に変換
-              updateActionFlagsForPlayer(actingPlayer, nextState, rinshanDrawResult.tile as Tile, true); // 嶺上ツモ後の状態更新
-              // 大明槓の場合、ここでターンが終了し、打牌は不要
-              if (action.meldType !== "daiminkan") {
-                // 暗槓・加槓の場合は打牌が必要。次のアクションを待つ。
-                // updateActionFlagsForPlayer で canDiscard などが設定される。
-              } else {
-                // 大明槓後は打牌不要。相手のターンに通常は移らない。次の自分のツモで継続のはずだが、
-                // ここでは簡略化し、次のツモは updateActionFlagsForPlayer で canTsumoAgari が true になればそれを待ち、
-                // そうでなければ次の打牌を促す (手番は変わらないまま)。
-                // 実際には大明槓の後の処理はもう少し複雑（他のプレイヤーの行動など）。
-                // ここでは、ツモアガリできなければ、手番プレイヤーが再度打牌する流れを想定。
-                nextState.turn = playerId; // 手番は変わらない
-              }
-          } else {
-              // 嶺上牌が引けなかった -> 流局 (特殊ケース)
-              nextState.phase = GamePhase.Draw;
-              nextState.winner = null;
-              nextState.lastActionMessage += " しかし嶺上牌がありませんでした。流局です。";
-              gameEndedThisTurn = true;
+            if (!canRinshanAgari) {
+                nextState.phase = GamePhase.Draw;
+                nextState.winner = null;
+                nextState.lastActionMessage = `四開槓のため流局しました。 (${nextState.kanCount}回目のカン)`;
+                // proceedToNextRoundOrEndGame へ続くので、本場などはそちらで処理
+                gameEndedThisTurn = true; // これにより proceedToNextRoundOrEndGame が呼ばれる
+                // この後の嶺上牌を引く処理はスキップされるべきだが、gameEndedThisTurn で制御
+            }
+          }
+
+          if (!gameEndedThisTurn) { // 四開槓で流局していなければ嶺上牌を引く
+            const rinshanDrawResult = drawRinshanTile(nextState.yama);
+            if (rinshanDrawResult.tile) {
+                actingPlayer.hand.push(rinshanDrawResult.tile);
+                actingPlayer.hand.sort(compareTiles);
+                actingPlayer.lastDraw = rinshanDrawResult.tile === null ? undefined : rinshanDrawResult.tile; // null を undefined に変換
+                updateActionFlagsForPlayer(actingPlayer, nextState, rinshanDrawResult.tile as Tile, true); // 嶺上ツモ後の状態更新
+                // 大明槓の場合、ここでターンが終了し、打牌は不要
+                if (action.meldType !== "daiminkan") {
+                  // 暗槓・加槓の場合は打牌が必要。次のアクションを待つ。
+                  // updateActionFlagsForPlayer で canDiscard などが設定される。
+                } else {
+                  // 大明槓後は打牌不要。相手のターンに通常は移らない。次の自分のツモで継続のはずだが、
+                  // ここでは簡略化し、次のツモは updateActionFlagsForPlayer で canTsumoAgari が true になればそれを待ち、
+                  // そうでなければ次の打牌を促す (手番は変わらないまま)。
+                  // 実際には大明槓の後の処理はもう少し複雑（他のプレイヤーの行動など）。
+                  // ここでは、ツモアガリできなければ、手番プレイヤーが再度打牌する流れを想定。
+                  nextState.turn = playerId; // 手番は変わらない
+                }
+            } else {
+                // 嶺上牌が引けなかった -> 流局 (特殊ケース)
+                nextState.phase = GamePhase.Draw;
+                nextState.winner = null;
+                nextState.lastActionMessage += " しかし嶺上牌がありませんでした。流局です。";
+                gameEndedThisTurn = true;
+            }
           }
       } else {
           nextState.lastActionMessage = "エラー: カンできませんでした。";
