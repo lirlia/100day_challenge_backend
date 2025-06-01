@@ -1,7 +1,7 @@
-import { GameState, PlayerID, GamePhase } from '../lib/mahjong/game_state';
-import { AgariInfo } from '../lib/mahjong/hand'; // ScoreResult もここから取れる想定 (AgariInfo.score)
+import { GameState, PlayerIdentifier, GamePhase } from '../lib/mahjong/game_state';
+import { AgariInfo } from '../lib/mahjong/hand';
 import { TileDisplay } from './tile-display';
-import { ScoreResult } from '../lib/mahjong/score'; // ScoreResult を直接使用
+import { ScoreResult, getScoreNameAndPayments } from '../lib/mahjong/score';
 
 interface GameResultModalProps {
   gameState: GameState | null;
@@ -10,7 +10,10 @@ interface GameResultModalProps {
 }
 
 export function GameResultModal({ gameState, onClose, onNewGame }: GameResultModalProps) {
-  if (!gameState || !gameState.phase || !['player_won', 'cpu_won', 'draw', 'game_over'].includes(gameState.phase)) {
+  if (!gameState || !gameState.phase || ![
+    GamePhase.ROUND_ENDED,
+    GamePhase.GAME_OVER
+  ].includes(gameState.phase)) {
     return null;
   }
 
@@ -18,34 +21,44 @@ export function GameResultModal({ gameState, onClose, onNewGame }: GameResultMod
   const gameWinner = gameState.gameWinner;
   const winningHandInfo = gameState.winningHandInfo as AgariInfo | undefined;
   const score = winningHandInfo?.score as ScoreResult | undefined;
-  const yakuList = score?.yakuList || [];
-  const han = score?.han || 0;
-  const fu = score?.fu || 0;
-  const displayPoints = score?.displayedPoint || 0;
 
   let title = "";
   let message = "";
   let showAgariInfo = false;
 
-  if (gameState.phase === GamePhase.PlayerWon) {
-    title = "あなたの勝利！";
-    message = `おめでとうございます！ ${han}飜 ${fu}符 ${displayPoints}点獲得です。`;
-    showAgariInfo = true;
-  } else if (gameState.phase === GamePhase.CPUWon) {
-    title = "CPUの勝利";
-    message = `CPUが和了しました。 ${han}飜 ${fu}符 ${displayPoints}点です。`;
-    showAgariInfo = true;
-  } else if (gameState.phase === GamePhase.Draw) {
-    title = "流局";
-    message = "引き分けです。";
-  } else if (gameState.phase === GamePhase.GameOver) {
-    title = "ゲーム終了！";
-    if (gameWinner === PlayerID.Player) {
-      message = `あなたの勝ちです！ 最終スコア: あなた ${gameState.player.score}点, CPU ${gameState.cpu.score}点`;
-    } else if (gameWinner === PlayerID.CPU) {
-      message = `CPUの勝ちです。 最終スコア: あなた ${gameState.player.score}点, CPU ${gameState.cpu.score}点`;
+  if (gameState.phase === GamePhase.ROUND_ENDED) {
+    if (winner === 'player' && score) {
+      const scoreDisplay = getScoreNameAndPayments(score, gameState.dealer === 'player');
+      title = "あなたの和了！";
+      message = `${scoreDisplay.totalPointsText} です。`;
+      showAgariInfo = true;
+    } else if (winner === 'cpu' && score) {
+      const scoreDisplay = getScoreNameAndPayments(score, gameState.dealer === 'cpu');
+      title = "CPUの和了";
+      message = `${scoreDisplay.totalPointsText} です。`;
+      showAgariInfo = true;
+    } else if (winner === 'draw') {
+      title = "流局";
+      message = gameState.lastActionMessage || "引き分けです。"; // 流局理由を表示
     } else {
-      message = `引き分けです。 最終スコア: あなた ${gameState.player.score}点, CPU ${gameState.cpu.score}点`;
+      // ROUND_ENDED だが勝者がいないケース (通常は流局メッセージがあるはず)
+      title = "局終了";
+      message = gameState.lastActionMessage || "次の局へ進みます。";
+    }
+  } else if (gameState.phase === GamePhase.GAME_OVER) {
+    title = "ゲーム終了！";
+    const playerFinalScore = gameState.player.score;
+    const cpuFinalScore = gameState.cpu.score;
+    if (gameWinner === 'player') {
+      message = `あなたの総合勝利です！ 最終スコア: あなた ${playerFinalScore}点, CPU ${cpuFinalScore}点`;
+    } else if (gameWinner === 'cpu') {
+      message = `CPUの総合勝利です。 最終スコア: あなた ${playerFinalScore}点, CPU ${cpuFinalScore}点`;
+    } else {
+      message = `総合引き分けです。 最終スコア: あなた ${playerFinalScore}点, CPU ${cpuFinalScore}点`;
+    }
+    // ゲームオーバー時も直前の局の和了情報があれば表示する
+    if (winningHandInfo && score) {
+        showAgariInfo = true;
     }
   }
 
@@ -53,11 +66,11 @@ export function GameResultModal({ gameState, onClose, onNewGame }: GameResultMod
     <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-50">
       <div className="bg-gray-800 p-6 sm:p-8 rounded-xl shadow-2xl w-full max-w-md clay-area-modal text-white">
         <h2 className="text-3xl font-bold mb-4 text-yellow-300 clay-text-title text-center">{title}</h2>
-        <p className="text-lg mb-6 text-center">{message}</p>
+        <p className="text-lg mb-6 text-center whitespace-pre-wrap">{message}</p>
 
-        {showAgariInfo && winningHandInfo && winner && (
+        {showAgariInfo && winningHandInfo && score && (
           <div className="mb-6">
-            <h3 className="text-xl font-semibold mb-2 text-yellow-400">和了手 ({winner === PlayerID.Player ? "あなた" : "CPU"}):</h3>
+            <h3 className="text-xl font-semibold mb-2 text-yellow-400">和了手 ({winner === 'player' ? "あなた" : "CPU"}):</h3>
             <div className="flex flex-wrap justify-center bg-green-700/50 p-2 rounded-md border border-green-600 mb-2">
               {winningHandInfo.completedHand.map((tile, i) => (
                 <TileDisplay key={`winner-hand-${tile.id}-${i}`} tile={tile} size="small" />
@@ -67,18 +80,18 @@ export function GameResultModal({ gameState, onClose, onNewGame }: GameResultMod
                 <p className="text-sm text-center">和了牌: <TileDisplay tile={winningHandInfo.agariTile} size="small" inline={true} /></p>
             )}
 
-            {yakuList.length > 0 && (
+            {score.yakuList.length > 0 && (
               <div className="mt-4">
                 <h4 className="text-md font-semibold mb-1 text-yellow-400">役一覧:</h4>
                 <ul className="list-disc list-inside text-sm space-y-1">
-                  {yakuList.map((yakuItem, i) => (
+                  {score.yakuList.map((yakuItem, i) => (
                     <li key={i}>{yakuItem.yaku.name} ({yakuItem.han}飜)</li>
                   ))}
                 </ul>
               </div>
             )}
-             <p className="text-sm mt-2 text-center">合計: {han}飜 {fu}符</p>
-             <p className="text-lg font-bold mt-1 text-center text-yellow-300">{displayPoints} 点</p>
+             <p className="text-sm mt-2 text-center">合計: {score.han}飜 {score.fu}符</p>
+             <p className="text-lg font-bold mt-1 text-center text-yellow-300">{getScoreNameAndPayments(score, winner === 'player' || (winner === 'cpu' && gameState.dealer === 'cpu')).totalPointsText}</p>
           </div>
         )}
 

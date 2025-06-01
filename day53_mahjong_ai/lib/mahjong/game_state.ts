@@ -7,7 +7,9 @@ import { calculateScore, ScoreResult, ScoreOptions, getScoreNameAndPayments } fr
 import type { AgariContext as OldAgariContext } from './hand';
 import { decideCpuAction, decideCpuNakiAction } from './cpu_player'; // CPUロジックをインポート
 
-export type PlayerID = 'player' | 'cpu';
+export type PlayerIdentifier = 'player' | 'cpu';
+// type PlayerID_Dev = 'player' | 'cpu'; // 新しい型名を定義
+// export type { PlayerID_Dev as PlayerID }; // 新しい型名でエクスポート
 
 export enum GamePhase {
   PLAYER_TURN = 'PLAYER_TURN',
@@ -46,7 +48,7 @@ export interface GameAction {
 
 // 河の牌の型 (Tile に追加情報)
 export interface TileInRiver extends Tile {
-  discardedBy: PlayerID;
+  discardedBy: PlayerIdentifier;
   turn: number;
   isRiichiDeclare?: boolean;
 }
@@ -77,8 +79,8 @@ export interface GameState {
   gameId: string;          // ゲームの一意なID
   phase: GamePhase;        // 現在のゲームフェーズ
   turn: number;            // 何巡目か
-  currentTurn: PlayerID;   // 現在誰のターンか
-  dealer: PlayerID;         // 現在の局の親プレイヤー
+  currentTurn: PlayerIdentifier;   // 現在誰のターンか
+  dealer: PlayerIdentifier;         // 現在の局の親プレイヤー
   wind: 'east' | 'south' | 'west' | 'north'; // 場風 (東風戦なら東固定)
   round: number;           // 現在の局 (例: 1 = 東1局, 2 = 東2局)
   honba: number;           // 本場 (積み棒の数)
@@ -88,8 +90,8 @@ export interface GameState {
   player: PlayerState;
   cpu: PlayerState;
   yama: Yama;              // 山の状態
-  winner: PlayerID | 'draw' | null; // 勝者または流局
-  gameWinner?: PlayerID | 'draw' | null; // ゲーム全体の勝者
+  winner: PlayerIdentifier | 'draw' | null; // 勝者または流局
+  gameWinner?: PlayerIdentifier | 'draw' | null; // ゲーム全体の勝者
   winningHandInfo?: AgariInfo;    // 和了時の手牌情報、役、点数など
   lastAction?: GameAction; // 最後に行われたアクション
   lastActionMessage?: string; // 直前のアクションに関するメッセージ (例: "CPUが1萬を捨てました")
@@ -131,7 +133,7 @@ export function createInitialGameState(
     };
   }
 
-  const currentDealer: PlayerID = 'player';
+  const currentDealer: PlayerIdentifier = 'player';
   let dealerHand = currentDealer === 'player' ? [...playerHandTiles] : [...cpuHandTiles];
   let nonDealerHand = currentDealer === 'player' ? [...cpuHandTiles] : [...playerHandTiles];
 
@@ -484,7 +486,7 @@ export function proceedToNextRoundOrEndGame(currentState: GameState): GameState 
   return nextState;
 }
 
-export function processAction(currentState: GameState, playerId: PlayerID, action: GameAction): GameState {
+export function processAction(currentState: GameState, playerId: PlayerIdentifier, action: GameAction): GameState {
   let nextState = JSON.parse(JSON.stringify(currentState)) as GameState;
   nextState.lastAction = action;
   nextState.lastActionMessage = ""; // メッセージを初期化
