@@ -1,6 +1,6 @@
 import { NextResponse, NextRequest } from "next/server";
 import { GameState, PlayerID, GamePhase, GameAction, ActionType, processAction } from "../../../../lib/mahjong/game_state";
-import { Tile, tilesFromStrings, tileFromString, isSameTile } from "../../../../lib/mahjong/tiles";
+import { Tile, tilesFromStrings, tileFromString, isSameTile, TileSuit, HonorType } from "../../../../lib/mahjong/tiles";
 import { drawTile as drawTileFromYamaOriginal, getCurrentDora, drawRinshanTile, Yama } from "../../../../lib/mahjong/yama";
 import { analyzeHandShanten, removeTileFromHand, addTileToHand } from "../../../../lib/mahjong/hand";
 import { getGame, saveGame } from "../../../../lib/mahjong/game_store";
@@ -12,38 +12,85 @@ function drawTileWrapper(yama: Yama): { tile: Tile | null; updatedYama: Yama } {
 
 const YAOCHUUHAI_IDS = ["1m", "9m", "1s", "9s", "1p", "9p", "ton", "nan", "sha", "pei", "haku", "hatsu", "chun"];
 
+// CPUの打牌選択ロジック (game_state を引数に追加)
 function getCpuDiscard(cpuHand: Tile[], gameState: GameState): Tile {
   if (cpuHand.length === 0) {
     console.error("CPU hand is empty, cannot discard.");
     throw new Error("CPU hand is empty.");
   }
 
+  const opponentState = gameState.player; // CPUから見た相手はプレイヤー
+  const ownState = gameState.cpu;
+
+  // 相手がリーチしている場合の安全牌選択
+  if (opponentState.isRiichi) {
+    const opponentRiver = opponentState.river.map(r => r.id);
+    const safeTiles: Tile[] = [];
+
+    // 1. 現物 (相手の捨て牌)
+    for (const tile of cpuHand) {
+      if (opponentRiver.includes(tile.id)) {
+        safeTiles.push(tile);
+      }
+    }
+    if (safeTiles.length > 0) {
+      return safeTiles[Math.floor(Math.random() * safeTiles.length)];
+    }
+
+    // 2. スジ牌 (1-4-7, 2-5-8, 3-6-9) - 簡易版
+    // 例: 相手が4を捨てていれば、1と7は比較的安全
+    const sujiCandidates: Tile[] = [];
+    const opponentDiscardValuesBySuit: { [suit: string]: number[] } = {};
+    opponentState.river.forEach(t => {
+      if (t.suit !== TileSuit.JIHAI) {
+        if (!opponentDiscardValuesBySuit[t.suit]) opponentDiscardValuesBySuit[t.suit] = [];
+        opponentDiscardValuesBySuit[t.suit].push(t.value as number);
+      }
+    });
+
+    for (const tile of cpuHand) {
+      if (tile.suit !== TileSuit.JIHAI) {
+        const suit = tile.suit;
+        const value = tile.value as number;
+        const discardedValuesInSuit = opponentDiscardValuesBySuit[suit] || [];
+
+        if (discardedValuesInSuit.includes(value - 3) || discardedValuesInSuit.includes(value + 3)) { // 1-4, 4-7, 2-5, 5-8, 3-6, 6-9
+          sujiCandidates.push(tile);
+        }
+      }
+    }
+    if (sujiCandidates.length > 0) {
+      return sujiCandidates[Math.floor(Math.random() * sujiCandidates.length)];
+    }
+
+    // TODO: 壁、字牌の安全度なども考慮
+  }
+
   // 常に14枚手牌で分析 (ツモ後打牌前の想定)
-  const currentCpuState = gameState.cpu;
   let bestDiscardCandidate: Tile = cpuHand[Math.floor(Math.random() * cpuHand.length)]; // デフォルトはランダム
   let minShanten = Infinity;
 
   // 各牌を捨てた場合の向聴数を評価
   for (const tileToDiscard of cpuHand) {
     const tempHand = removeTileFromHand([...cpuHand], tileToDiscard);
-    const analysis = analyzeHandShanten(tempHand, currentCpuState.melds);
+    const analysis = analyzeHandShanten(tempHand, ownState.melds); // 副露も考慮
 
     if (analysis.shanten < minShanten) {
       minShanten = analysis.shanten;
       bestDiscardCandidate = tileToDiscard;
     } else if (analysis.shanten === minShanten) {
       // 同程度の向聴数なら、ヤオ九牌や孤立牌を優先して捨てる
-      // (より詳細な評価ロジックをここに追加可能)
       const isCurrentCandidateYaochu = YAOCHUUHAI_IDS.includes(bestDiscardCandidate.id);
       const isNewCandidateYaochu = YAOCHUUHAI_IDS.includes(tileToDiscard.id);
 
       if (!isCurrentCandidateYaochu && isNewCandidateYaochu) {
-        bestDiscardCandidate = tileToDiscard; // 新しい候補がヤオ九牌ならそちらを優先
+        bestDiscardCandidate = tileToDiscard;
       } else if (isCurrentCandidateYaochu === isNewCandidateYaochu) {
         // 両方ヤオ九牌、または両方中張牌の場合、より孤立しているものを探す (簡易)
-        const currentCandidateIsolatedScore = tempHand.filter(t => Math.abs(t.value - bestDiscardCandidate.value) <= 2 && t.suit === bestDiscardCandidate.suit).length;
-        const newCandidateIsolatedScore = tempHand.filter(t => Math.abs(t.value - tileToDiscard.value) <= 2 && t.suit === tileToDiscard.suit).length;
-        if (newCandidateIsolatedScore < currentCandidateIsolatedScore) {
+        // (ここでは孤立度をカウントするのではなく、単純にIDで比較したり、ランダム性を残すことも考えられる)
+        // より安全な牌を選ぶロジック (例: スジ、壁など) はここでは未実装
+        // 簡単のため、ID文字列の長さや辞書順などで適当に選ぶ (より良い基準があれば変更)
+        if (tileToDiscard.id < bestDiscardCandidate.id) { // 適当な比較
             bestDiscardCandidate = tileToDiscard;
         }
       }
@@ -51,6 +98,7 @@ function getCpuDiscard(cpuHand: Tile[], gameState: GameState): Tile {
   }
   return bestDiscardCandidate;
 }
+
 
 export async function POST(request: NextRequest) {
   try {
@@ -67,14 +115,6 @@ export async function POST(request: NextRequest) {
     }
 
     const previousPlayerPhase = game.player.canRon || game.player.canPon || game.player.canKan;
-
-    // プレイヤーのターンか確認 (アクションによっては不要な場合もある)
-    if (game.turn !== playerId && ![ActionType.Ron].includes(action.type)) { // ロンは相手の打牌に対するアクション
-      // TODO: カンも相手の打牌に対して可能な場合がある (大明槓)
-      // return NextResponse.json({ message: 'Not your turn' }, { status: 403 });
-      console.warn(`Action attempted by ${playerId} but current turn is ${game.turn}. Action: ${action.type}`);
-      // 一旦許容して進めるが、厳密にはエラーにすべきケースもある
-    }
 
     // ゲームロジックの処理を processAction に委譲
     try {
@@ -94,53 +134,41 @@ export async function POST(request: NextRequest) {
         const opponentState = game.player; // CPUから見た相手はプレイヤー
 
         // 0. CPU ポン判断 (相手の打牌直後、自分がツモる前)
-        // このタイミングでポンするかは、processActionでdiscardが行われた"直後"に決まるべき
-        // processAction(playerDiscard) -> updateActionFlags(cpu) で cpu.canPon が設定される。
-        // このAPIハンドラでは、その canPon フラグを見て、CPUがポンするかどうかを決める。
-        // ただし、現在の action/route.ts の構造では、プレイヤーのアクション後に一連のCPUの動きをシミュレートしている。
-        // CPUがポンできるのは「プレイヤーが打牌した後」かつ「CPUがツモる前」。
-        // game.lastAction がプレイヤーの discard で、cpu.canPon が true の場合に検討。
+        if (game.lastAction?.type === ActionType.Discard &&
+            game.lastAction.tile &&
+            cpuState.canPon &&
+            opponentState.lastDiscard &&
+            isSameTile(opponentState.lastDiscard, game.lastAction.tile)) {
 
-        if (game.lastAction?.type === ActionType.Discard && game.lastAction?.tile && cpuState.canPon && opponentState.lastDiscard && isSameTile(opponentState.lastDiscard, game.lastAction.tile)) {
-          // ポンするかどうかの簡易的な評価ロジック
-          // ここでは、「ポンしたら役がつく、またはシャンテン数が進むならポンする」を実装する
-          // (より高度な評価は将来の課題)
           const tileToPon = opponentState.lastDiscard;
-          const handAfterPonDraw = [...cpuState.hand]; // ポンした後の手牌は1枚減り、打牌する
-                                                    // 正確には、ポンで2枚消費し、打牌する牌を選ぶので、手牌は11枚+打牌候補1枚になる
-
-          // ポンしたと仮定してシャンテン数を計算 (打牌する牌は別途選択)
-          const tempHandForPon = [...cpuState.hand];
-          let removedForPon = 0;
-          const handWithoutPonTiles = tempHandForPon.filter(t => {
-            if (isSameTile(t, tileToPon) && removedForPon < 2) {
-              removedForPon++;
-              return false;
-            }
-            return true;
-          });
-
-          // ポン後の手牌 (打牌前) は12枚になる (13 - 2(ポン) + 1(次の打牌する牌) - 1(打牌) ... ではなく、13 - 2 = 11枚)
-          // ここでどの牌を捨てるかによってシャンテン数が変わる。
-          // 簡易的に、ポン後の11枚でシャンテン数を評価。 analyzeHandShanten は13枚 or 14枚を期待するので、
-          // ダミーの2牌を加えて評価するか、11枚の状態で評価できるロジックが必要。
-          // もしくは、ポン後の手牌から1枚捨てた状態を全て試し、最も良くなるかを見る。
-
           let shouldPon = false;
-          // とりあえず常にポンするとする (テストのため)
-          // TODO: ここにポンするかどうかのより詳細な判断ロジックを入れる
-          // 例: ポンすると役が付く、シャンテン数が進むなど。
-          // analyzeHandShanten は13枚か14枚を期待するので、ポンして打牌後の11枚にダミー2枚追加して評価は難しい。
-          // ここでは、「ポンできるなら必ずポンする」という最も単純なAIで実装
-          if (cpuState.canPon && tileToPon) { // canPon は updateActionFlags で設定済みのはず
-             shouldPon = true; // 簡易的に常にポン
+
+          const cpuOya = game.oya === PlayerID.CPU;
+          const cpuPlayerWindActual = cpuOya ? HonorType.TON : HonorType.NAN;
+          const currentRoundWindActual = HonorType.TON; // 二人麻雀の場風は常に東
+
+          let isTileYakuhai = false;
+          // tileToPon が undefined でないこと、字牌であること、value が HonorType であることを確認
+          if (tileToPon && tileToPon.suit === TileSuit.JIHAI) {
+            // このブロック内では tileToPon.value は HonorType であると推論される
+            const honorValue = tileToPon.value as HonorType; // 明示的なキャストも可能だが、通常は不要
+            if (honorValue === HonorType.HAKU || honorValue === HonorType.HATSU || honorValue === HonorType.CHUN) {
+              isTileYakuhai = true;
+            }
+            if (honorValue === cpuPlayerWindActual) {
+              isTileYakuhai = true;
+            }
+            if (honorValue === currentRoundWindActual) {
+              isTileYakuhai = true;
+            }
+          }
+
+          if (isTileYakuhai) {
+            shouldPon = true;
           }
 
           if (shouldPon) {
             game = processAction(game, PlayerID.CPU, { type: ActionType.Pon, targetTile: tileToPon });
-            // ポン後はCPUの打牌ターンになるので、この後の打牌ロジックで処理される
-            // cpuActionTaken = true; // ポンは打牌とは別のカテゴリのアクションとして扱う
-                                  // この後の打牌ロジックが実行されるように cpuActionTaken は true にしない
           }
         }
 
@@ -152,7 +180,6 @@ export async function POST(request: NextRequest) {
 
         // 2. CPU カンチェック (ツモ後)
         if (!cpuActionTaken && game.turn === PlayerID.CPU && cpuState.canKan && !cpuState.isRiichi && cpuState.lastDraw) {
-            // 可能なカンを探す (暗槓優先、次に加槓)
             const counts = new Map<string, Tile[]>();
             for (const tile of cpuState.hand) {
                 const tileList = counts.get(tile.id) || [];
@@ -160,14 +187,12 @@ export async function POST(request: NextRequest) {
                 counts.set(tile.id, tileList);
             }
             let kanAction: GameAction | null = null;
-            // 暗槓
             for (const [tileId, tileList] of counts.entries()) {
                 if (tileList.length === 4) {
                     kanAction = { type: ActionType.Kan, tile: tileList[0]!, meldType: 'ankan' };
                     break;
                 }
             }
-            // 加槓 (暗槓がなければ)
             if (!kanAction) {
                 for (const meld of cpuState.melds) {
                     if (meld.type === 'koutsu' && meld.isOpen) {
@@ -181,43 +206,37 @@ export async function POST(request: NextRequest) {
             }
             if (kanAction) {
                 game = processAction(game, PlayerID.CPU, kanAction);
-                // カン後、再度CPUの打牌処理が必要 (processAction(Kan)の中で手番はCPUのままのはず)
-                // このifブロックの最後に打牌処理があるので、そこで処理される
-                cpuActionTaken = true; // カンもアクションとみなす
+                cpuActionTaken = true;
             }
         }
 
         // 3. CPU リーチチェック (ツモ後、カン後)
-        // カンした場合は、その後の手牌でリーチできるか再評価が必要だが、ここではカンしたら打牌に進む
-        if (!cpuActionTaken && cpuState.canRiichi && cpuState.score >= 1000 && cpuState.melds.every(m => !m.isOpen)) {
-          // リーチ宣言牌を選択 (getCpuDiscard を利用)
-          const tileToDiscardForRiichi = getCpuDiscard(cpuState.hand, game); // gameState を渡す
+        if (!cpuActionTaken && game.turn === PlayerID.CPU && cpuState.canRiichi && cpuState.score >= 1000 && cpuState.melds.every(m => !m.isOpen)) {
+          const tileToDiscardForRiichi = getCpuDiscard(cpuState.hand, game);
           if (tileToDiscardForRiichi) {
             game = processAction(game, PlayerID.CPU, { type: ActionType.Riichi, tileToDiscard: tileToDiscardForRiichi });
             cpuActionTaken = true;
           }
         }
 
-        // 4. CPU 打牌 (ツモ和了/カン/リーチしなかった場合)
+        // 4. CPU 打牌 (ツモ和了/カン/リーチしなかった場合、またはポンした後)
         if (game.turn === PlayerID.CPU && game.phase === GamePhase.Playing) { // gameの状態が変わりうるので再チェック
-            const cpuHandForDiscard = game.cpu.hand; // 最新の手牌
-            if (cpuHandForDiscard.length > 0) { // 手牌がある場合のみ打牌
+            const cpuHandForDiscard = game.cpu.hand;
+            if (cpuHandForDiscard.length > 0) {
                 const cpuDiscardTile = getCpuDiscard(cpuHandForDiscard, game);
                 if (cpuDiscardTile) {
                     game = processAction(game, PlayerID.CPU, { type: ActionType.Discard, tile: cpuDiscardTile });
-                    // cpuActionTaken = true; // 打牌は必ず行われる想定
                 } else {
                     console.error("CPU discard tile is null, should not happen if hand is not empty.");
                 }
             } else if (cpuHandForDiscard.length === 0 && !game.winner) {
-                // 手牌が0枚になるのは和了か、ありえない状況(カン後など枚数調整ミス)
                  console.error("CPU hand is empty, but no winner. This should not happen.");
             }
         }
       }
     } catch (e: any) {
       console.error("Error processing action in game_state:", e);
-      return NextResponse.json({ message: e.message || "Error processing action logic" }, { status: 400 }); // 400 for logical errors
+      return NextResponse.json({ message: e.message || "Error processing action logic" }, { status: 400 });
     }
 
     saveGame(game);
