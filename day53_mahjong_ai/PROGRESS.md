@@ -29,6 +29,16 @@
     - [x] Implement shared in-memory game store (`lib/mahjong/game_store.ts`).
     - [x] Test `/api/game/new` and `/api/game/action` with `curl`.
     - [x] Integrate and test core Yaku/Score logic (`yaku.ts`, `score.ts`) via `analyzeHandShanten` in `hand.ts` using `hand.test.ts`.
+    - [x] **ポン機能**: (UIとAPI連携完了)
+        - [x] `lib/mahjong/game_state.ts`:
+            - [x] `ActionType.Pon` を追加。
+            - [x] `PlayerState` に `canPon` と `tileToPon` を追加。
+            - [x] `updateActionFlagsForPlayer` にポン可能な場合のフラグと対象牌設定ロジックを追加。
+            - [x] `processAction` に `ActionType.Pon` の処理（手牌消費、副露追加、ターン継続、アクションフラグ更新）を追加。`removeAllTilesFromHand` のインポート漏れ修正。
+        - [x] `app/(pages)/game/[gameId]/page.tsx`:
+            - [x] ポン可能な場合にポンボタンとスキップボタンを表示するUIを追加。
+            - [x] ポン/スキップ時のハンドラ関数 (`handlePon`, `handleSkipPon`) を実装。
+            - [x] ファイル構造の修正とLinterエラーの解消 (手牌ソート、役・点数表示の修正含む)。
 - [x] **Step 5: UI Implementation (Basic Game Screen)**
     - [x] Create main React component for the Mahjong table (`app/page.tsx`).
     - [x] Style components using Tailwind CSS with a Claymorphism theme (`globals.css`, `page.tsx`).
@@ -63,7 +73,7 @@
     - [x] `lib/mahjong/game_state.ts`: `updateActionFlagsForPlayer` now detects Ankan possibility.
     - [x] `app/api/game/action/route.ts`: Refactored to use `processAction`. Improved CPU discard logic (simple heuristic).
     - [x] Corrected Linter errors across multiple files related to type definitions and imports.
-- [ ] **Step 8: Final Touches & Documentation**
+- [x] **Step 8: Final Touches & Documentation**
     - [ ] Implement Kan-dora logic.
     - [ ] Implement score calculation and display for Tsumo/Ron.
     - [ ] Implement logic for Ura-dora and Rinshan Kaihou yaku.
