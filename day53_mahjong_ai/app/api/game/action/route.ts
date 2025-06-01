@@ -179,6 +179,26 @@ function getCpuDiscard(cpuHand: Tile[], gameState: GameState): Tile {
   let bestDiscardCandidate: Tile = cpuHand[Math.floor(Math.random() * cpuHand.length)]; // デフォルトはランダム
   let minShanten = Infinity;
 
+  // 手役の評価 (簡易)
+  const suitCounts: { [suit: string]: number } = { m: 0, s: 0, p: 0, z: 0 };
+  let honorPairCounts: { [honor: number]: number } = {};
+  cpuHand.forEach(tile => {
+    suitCounts[tile.suit]++;
+    if (tile.suit === TileSuit.JIHAI) {
+      const honorVal = tile.value as HonorType;
+      honorPairCounts[honorVal] = (honorPairCounts[honorVal] || 0) + 1;
+    }
+  });
+
+  const ownPlayerWind = gameState.oya === PlayerID.CPU ? HonorType.TON : HonorType.NAN;
+  const roundWind = HonorType.TON;
+  const potentialYakuhaiToitsu = Object.entries(honorPairCounts).filter(([_, count]) => count >= 2)
+      .map(([honorStr, _]) => parseInt(honorStr) as HonorType)
+      .filter(honorVal =>
+          honorVal === HonorType.HAKU || honorVal === HonorType.HATSU || honorVal === HonorType.CHUN ||
+          honorVal === ownPlayerWind || honorVal === roundWind
+      );
+
   // 各牌を捨てた場合の向聴数を評価
   for (const tileToDiscard of cpuHand) {
     const tempHand = removeTileFromHand([...cpuHand], tileToDiscard);
@@ -192,14 +212,45 @@ function getCpuDiscard(cpuHand: Tile[], gameState: GameState): Tile {
       const isCurrentCandidateYaochu = YAOCHUUHAI_IDS.includes(bestDiscardCandidate.id);
       const isNewCandidateYaochu = YAOCHUUHAI_IDS.includes(tileToDiscard.id);
 
-      if (!isCurrentCandidateYaochu && isNewCandidateYaochu) {
+      let scoreCurrent = 0;
+      let scoreNew = 0;
+
+      // ホンイツ/チンイツ評価 (簡易: 一色の牌が多いほど良い)
+      const evaluateSuitPreference = (tile: Tile): number => {
+        let prefScore = 0;
+        if (suitCounts[TileSuit.MANZU] >= 7 && tile.suit !== TileSuit.MANZU && tile.suit !== TileSuit.JIHAI) prefScore -= 5; // 萬子ホンイツ狙い
+        if (suitCounts[TileSuit.SOZU] >= 7 && tile.suit !== TileSuit.SOZU && tile.suit !== TileSuit.JIHAI) prefScore -= 5;  // 索子ホンイツ狙い
+        if (suitCounts[TileSuit.PINZU] >= 7 && tile.suit !== TileSuit.PINZU && tile.suit !== TileSuit.JIHAI) prefScore -= 5;  // 筒子ホンイツ狙い
+        // 字牌はホンイツで使えるのでペナルティなし
+        return prefScore;
+      }
+      scoreCurrent += evaluateSuitPreference(bestDiscardCandidate);
+      scoreNew += evaluateSuitPreference(tileToDiscard);
+
+      // 役牌トイツ/刻子評価 (役牌に関連する牌は保持)
+      const evaluateYakuhaiPreference = (tile: Tile): number => {
+        if (tile.suit === TileSuit.JIHAI) {
+          const honorVal = tile.value as HonorType;
+          if (potentialYakuhaiToitsu.includes(honorVal)) {
+            if (honorPairCounts[honorVal] === 2 && isSameTile(tile, cpuHand.find(h => h.value === honorVal && h.id !== tile.id)!)) return 10; // トイツの片割れ
+            if (honorPairCounts[honorVal] >= 2) return 5; // 役牌の対子/刻子の一部
+          }
+        }
+        return 0;
+      }
+      scoreCurrent += evaluateYakuhaiPreference(bestDiscardCandidate);
+      scoreNew += evaluateYakuhaiPreference(tileToDiscard);
+
+      // ヤオ九牌かどうかのスコア
+      if (isNewCandidateYaochu) scoreNew -= 2; // ヤオ九牌は少し捨てやすい
+      if (isCurrentCandidateYaochu) scoreCurrent -=2;
+
+      // スコアが低い方が捨てやすい牌 (価値が低い)
+      if (scoreNew < scoreCurrent) {
         bestDiscardCandidate = tileToDiscard;
-      } else if (isCurrentCandidateYaochu === isNewCandidateYaochu) {
-        // 両方ヤオ九牌、または両方中張牌の場合、より孤立しているものを探す (簡易)
-        // (ここでは孤立度をカウントするのではなく、単純にIDで比較したり、ランダム性を残すことも考えられる)
-        // より安全な牌を選ぶロジック (例: スジ、壁など) はここでは未実装
-        // 簡単のため、ID文字列の長さや辞書順などで適当に選ぶ (より良い基準があれば変更)
-        if (tileToDiscard.id < bestDiscardCandidate.id) { // 適当な比較
+      } else if (scoreNew === scoreCurrent) {
+        // スコアも同じならIDで比較 (現状のまま)
+        if (tileToDiscard.id < bestDiscardCandidate.id) { // より若いIDの牌を捨てる (一貫性のため)
             bestDiscardCandidate = tileToDiscard;
         }
       }
