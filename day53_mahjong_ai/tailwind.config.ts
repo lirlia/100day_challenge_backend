@@ -1,4 +1,5 @@
 import type { Config } from 'tailwindcss'
+// import plugin from 'tailwindcss/plugin' // コメントアウト
 
 const config: Config = {
   content: [
@@ -17,6 +18,6 @@ const config: Config = {
       // },
     },
   },
-  plugins: [],
+  plugins: [], // プラグイン定義を空に戻す
 }
 export default config

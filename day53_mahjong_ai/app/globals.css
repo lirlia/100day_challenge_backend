@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@theme inline {}
+
 /* Claymorphism Base Styles */
 :root {
   --clay-bg: #e0e5ec; /* Softer base background */
@@ -13,14 +15,20 @@
 }
 
 .clay-area {
-  @apply bg-[var(--clay-bg)] text-[var(--clay-text)] rounded-[var(--clay-border-radius-main)] p-[var(--clay-padding-main)] shadow-clay-main;
+  @apply bg-[var(--clay-bg)] text-[var(--clay-text)] rounded-[var(--clay-border-radius-main)] p-[var(--clay-padding-main)];
   transition: all 0.2s ease-in-out;
 }
 
 .clay-button {
-  @apply bg-[var(--clay-bg)] text-[var(--clay-text)] rounded-lg px-4 py-2 shadow-clay-button active:shadow-clay-button-inset;
+  @apply bg-[var(--clay-bg)] text-[var(--clay-text)] rounded-lg px-4 py-2;
   @apply font-semibold border border-transparent;
   transition: all 0.15s ease-in-out;
+}
+
+.clay-button:active {
+  /* @apply shadow-clay-button-inset; */ /* コメントアウト */
+  box-shadow: inset -4px -4px 8px var(--clay-shadow-light),
+    inset 4px 4px 8px var(--clay-shadow-dark);
 }
 
 .clay-button:hover {
@@ -32,7 +40,7 @@
 }
 
 .clay-tile {
-  @apply bg-slate-50 text-black rounded-[var(--clay-border-radius-tile)] p-[var(--clay-padding-tile)] shadow-clay-tile;
+  @apply bg-slate-50 text-black rounded-[var(--clay-border-radius-tile)] p-[var(--clay-padding-tile)];
   @apply border border-slate-200;
   transition: all 0.1s ease-in-out;
 }
@@ -43,7 +51,7 @@
 }
 
 .clay-tile-back {
-  @apply bg-slate-500 rounded-[var(--clay-border-radius-tile)] shadow-clay-tile;
+  @apply bg-slate-500 rounded-[var(--clay-border-radius-tile)];
   @apply border border-slate-600;
 }
 
@@ -57,7 +65,7 @@
 
 /* New style for info boxes in the header */
 .clay-info-box {
-  @apply bg-green-600/70 text-yellow-50 rounded-lg p-2 text-center shadow-clay-inset-sm;
+  @apply bg-green-600/70 text-yellow-50 rounded-lg p-2 text-center;
   /* Slightly inset appearance */
 }
 
@@ -82,36 +90,33 @@
   @apply bg-blue-500 hover:bg-blue-600 text-white;
 }
 
-
-/* Custom shadows for Claymorphism */
-@layer utilities {
-  .shadow-clay-main {
-    box-shadow: -8px -8px 16px var(--clay-shadow-light),
-      8px 8px 16px var(--clay-shadow-dark);
-  }
-  .shadow-clay-button {
-    box-shadow: -5px -5px 10px var(--clay-shadow-light),
-      5px 5px 10px var(--clay-shadow-dark);
-  }
-  .shadow-clay-button-inset {
-    box-shadow: inset -4px -4px 8px var(--clay-shadow-light),
-      inset 4px 4px 8px var(--clay-shadow-dark);
-  }
-  .shadow-clay-tile {
-    box-shadow: -3px -3px 6px rgba(255, 255, 255, 0.8),
-      3px 3px 6px rgba(180, 180, 180, 0.7);
-  }
-  .shadow-clay-inset-sm {
-    box-shadow: inset -2px -2px 4px rgba(0,0,0,0.15),
-      inset 2px 2px 4px rgba(255,255,255,0.3);
-  }
-}
-
 body {
   @apply bg-green-700;
   /* background: var(--clay-bg); */ /* Changed main background to green for Mahjong table */
   color: var(--clay-text);
   font-family: 'Noto Sans JP', sans-serif; /* Added a Japanese font */
+}
+
+/* Custom shadows for Claymorphism */
+.shadow-clay-main {
+  box-shadow: -8px -8px 16px var(--clay-shadow-light),
+    8px 8px 16px var(--clay-shadow-dark);
+}
+.shadow-clay-button {
+  box-shadow: -5px -5px 10px var(--clay-shadow-light),
+    5px 5px 10px var(--clay-shadow-dark);
+}
+.shadow-clay-button-inset {
+  box-shadow: inset -4px -4px 8px var(--clay-shadow-light),
+    inset 4px 4px 8px var(--clay-shadow-dark);
+}
+.shadow-clay-tile {
+  box-shadow: -3px -3px 6px rgba(255, 255, 255, 0.8),
+    3px 3px 6px rgba(180, 180, 180, 0.7);
+}
+.shadow-clay-inset-sm {
+  box-shadow: inset -2px -2px 4px rgba(0,0,0,0.15),
+    inset 2px 2px 4px rgba(255,255,255,0.3);
 }
 
 /* Ensure Tailwind directives are processed correctly */
