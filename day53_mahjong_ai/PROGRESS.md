@@ -29,41 +29,48 @@
     - [x] Implement shared in-memory game store (`lib/mahjong/game_store.ts`).
     - [x] Test `/api/game/new` and `/api/game/action` with `curl`.
     - [x] Integrate and test core Yaku/Score logic (`yaku.ts`, `score.ts`) via `analyzeHandShanten` in `hand.ts` using `hand.test.ts`.
-- [ ] **Step 5: UI Implementation (Basic Game Screen)**
+- [x] **Step 5: UI Implementation (Basic Game Screen)**
     - [x] Create main React component for the Mahjong table (`app/page.tsx`).
     - [x] Style components using Tailwind CSS with a Claymorphism theme (`globals.css`, `page.tsx`).
     - [x] Fetch initial game state from `/api/game/new` on page load.
     - [x] Implement player tile discard action (calls `/api/game/action`).
     - [x] Create sub-components:
-        - [x] Tile component (`components/mahjong/TileDisplay.tsx` - currently in `page.tsx`).
-        - [ ] Player's hand display (in `page.tsx`).
-        - [ ] CPU's (opponent's) hand display (tiles face down, count visible) (in `page.tsx`).
-        - [ ] Player's river (discarded tiles) (in `page.tsx`).
-        - [ ] CPU's river (in `page.tsx`).
-        - [ ] Dora indicator display (in `page.tsx`).
-        - [ ] Yama (deck) display (remaining tile count) (in `page.tsx`).
-        - [ ] Scoreboard / Game info display (current turn, round, player scores) (in `page.tsx`).
-        - [ ] Action buttons (e.g., Discard) (in `page.tsx`).
-- [X] **Step 6: Mahjong Core Logic (Yaku & Score - Refinement)**
-    - [X] `lib/mahjong/yaku.ts`: 平和(Pinfu)の判定ロジックを追加
-    - [X] `lib/mahjong/yaku.ts`: 一盃口(Iipeikou)の判定ロジックを追加
-    - [X] `lib/mahjong/hand.test.ts`: 平和と一盃口のテストケースを追加・パス
-    - [X] `lib/mahjong/yaku.ts`: 三色同順(Sanshoku Doujun)の判定ロジックを追加
-    - [X] `lib/mahjong/yaku.ts`: 一気通貫(Ikkitsuukan)の判定ロジックを追加
-    - [X] `lib/mahjong/hand.test.ts`: 三色同順と一気通貫のテストケースを追加
-    - [X] `lib/mahjong/hand.ts`: `analyzeHandShanten`, `isBasicAgari`, `extractMeldsAndJantou` を修正し、鳴き面子を考慮
-    - [X] `lib/mahjong/hand.test.ts`: 全テストケースの `handTiles` をアガリ牌を含まない枚数に修正
-    - [X] `lib/mahjong/yaku.ts`: デバッグログを削除
-    - [X] `lib/mahjong/hand.test.ts`: 「役牌(白)のみ」テストケースの手牌を修正し、全テストケースがパス
-- [ ] **Step 7: CPU AI & Advanced Game Flow**
-    - [ ] Enhance CPU discard logic (beyond random discard).
-    - [ ] Implement Riichi decision for CPU.
-    - [ ] Implement Meld decisions for CPU (Pon, Chi, Kan).
-    - [ ] Implement full game flow logic in API and client (Pon, Chi, Kan, Riichi, Tsumo/Ron calls, draws, round/game end conditions).
-    - [ ] Update UI to reflect advanced game actions and states.
+        - [x] Tile component (`components/tile-display.tsx`).
+        - [x] Player's hand display (in `page.tsx`).
+        - [x] CPU's (opponent's) hand display (tiles face down, count visible) (in `page.tsx`).
+        - [x] Player's river (discarded tiles) (in `page.tsx`).
+        - [x] CPU's river (in `page.tsx`).
+        - [x] Dora indicator display (in `page.tsx`).
+        - [x] Yama (deck) display (remaining tile count) (in `page.tsx`).
+        - [x] Scoreboard / Game info display (current turn, round, player scores) (in `page.tsx`).
+        - [x] Action buttons (Discard, Riichi, Tsumo, Kan) (in `page.tsx`).
+- [x] **Step 6: Mahjong Core Logic (Yaku & Score - Refinement)**
+    - [x] `lib/mahjong/yaku.ts`: 平和(Pinfu)の判定ロジックを追加
+    - [x] `lib/mahjong/yaku.ts`: 一盃口(Iipeikou)の判定ロジックを追加
+    - [x] `lib/mahjong/hand.test.ts`: 平和と一盃口のテストケースを追加・パス
+    - [x] `lib/mahjong/yaku.ts`: 三色同順(Sanshoku Doujun)の判定ロジックを追加
+    - [x] `lib/mahjong/yaku.ts`: 一気通貫(Ikkitsuukan)の判定ロジックを追加
+    - [x] `lib/mahjong/hand.test.ts`: 三色同順と一気通貫のテストケースを追加
+    - [x] `lib/mahjong/hand.ts`: `analyzeHandShanten`, `isBasicAgari`, `extractMeldsAndJantou` を修正し、鳴き面子を考慮
+    - [x] `lib/mahjong/hand.test.ts`: 全テストケースの `handTiles` をアガリ牌を含まない枚数に修正
+    - [x] `lib/mahjong/yaku.ts`: デバッグログを削除
+    - [x] `lib/mahjong/hand.test.ts`: 「役牌(白)のみ」テストケースの手牌を修正し、全テストケースがパス
+- [x] **Step 7: UI/UX & Game Flow Refinement (Actions & CPU)**
+    - [x] `components/tile-display.tsx`: Created and enhanced TileDisplay component.
+    - [x] `app/page.tsx`: Integrated new TileDisplay, added action buttons (Riichi, Kan, TsumoAgari, Ron) and handlers.
+    - [x] `lib/mahjong/game_state.ts`: Defined `ActionType`, `GameAction`. Updated `PlayerState` (action flags), `GameState` (more properties). Implemented `createInitialGameState` with first player draw and initial action flags.
+    - [x] `lib/mahjong/game_state.ts`: Implemented `processAction` to handle Discard, Riichi, TsumoAgari, Ron, Kan (Ankan basic) with state updates and action flag refresh via `updateActionFlagsForPlayer`.
+    - [x] `lib/mahjong/game_state.ts`: `updateActionFlagsForPlayer` now detects Ankan possibility.
+    - [x] `app/api/game/action/route.ts`: Refactored to use `processAction`. Improved CPU discard logic (simple heuristic).
+    - [x] Corrected Linter errors across multiple files related to type definitions and imports.
 - [ ] **Step 8: Final Touches & Documentation**
-    - [ ] UI Polish and UX improvements.
-    - [ ] Comprehensive error handling.
+    - [ ] Implement Kan-dora logic.
+    - [ ] Implement score calculation and display for Tsumo/Ron.
+    - [ ] Implement logic for Ura-dora and Rinshan Kaihou yaku.
+    - [ ] Further enhance CPU AI (meld decisions, Riichi decisions, more advanced discard).
+    - [ ] Implement game end conditions (e.g., player bankruptcy, round limits) and display.
+    - [ ] UI Polish: Agari/Ryukyoku result display, better error handling, overall design refinements.
+    - [ ] Comprehensive testing (including Playwright for E2E if time permits).
     - [ ] Update `README.md` with final app description and how to play.
     - [ ] Update `.cursor/rules/knowledge.mdc`.
 
@@ -77,3 +84,32 @@
 - [ ] 
 - [ ] 
 - [ ] 
+
+## Step 8: 仕上げとドキュメント (進行中)
+
+-   [x] **ゲーム終了ロジックと表示:**
+    -   [x] `game_state.ts`: `GameState` に `winner`, `winningHandInfo`, `finalScores`, `totalRounds`, `gameWinner` を追加。`GamePhase` に `GameOver` を追加。和了/流局/規定局数終了時にこれらを設定する `proceedToNextRoundOrEndGame` を実装し、`processAction` に統合。
+    -   [x] `components/game-result-modal.tsx`: ゲーム結果（勝者、手牌、役、点数、最終スコア）を表示するモーダルを `GameOver` フェーズに対応。
+    -   [x] `app/page.tsx`: `GameResultModal` を統合し、`gameState.phase` が `PlayerWon`, `CPUWon`, `Draw`, `GameOver` の場合に表示。総局数も表示。
+-   [x] **カン処理改善 (UI):**
+    -   [x] `game_state.ts`: `updateActionFlagsForPlayer` でリーチ後の暗槓・加槓を一旦不可とするシンプルなルールに変更。
+    -   [x] `app/page.tsx`: 「カン」ボタン押下で可能な暗槓・加槓のリストをモーダル表示し、選択して実行できるようにUIを改善。
+-   [ ] **裏ドラと嶺上開花:** (一部実装済み、確認と調整)
+    -   [ ] `yama.ts`: `Yama` インターフェースに `uraDoraIndicators` を追加。`createYama` で初期化。`getCurrentUraDora` 関数を確認。
+    -   [ ] `game_state.ts`: `PlayerState` に `justKaned` フラグを追加。`GameState` に `uraDora` フィールドを追加。`processAction` でカン後に `justKaned` を設定し、打牌でクリア。和了時に `analyzeHandShanten` の `agariContext` に `uraDoraTiles` と `isRinshan` を設定するロジックを確認。
+    -   [ ] `hand.ts`: `analyzeHandShanten` の `AgariContext` に `isRinshan?: boolean` を追加。`checkYaku` に渡す `HandContext` にも `isRinshan` を追加する部分を確認。
+    -   [ ] `yaku.ts`: `ALL_YAKU_DEFINITIONS` に `RinshanKaihou` を追加。`checkYaku` を更新し `isRinshan` をチェックする部分を確認。
+    -   [ ] 点数計算に裏ドラ・カンドラ・カン裏ドラが正しく反映されるか確認。
+-   [ ] **CPU AIと高度なゲームフロー:**
+    -   [ ] CPUの打牌AIを改善 (ベタオリ、手役狙いなど基本的な戦略)。
+    -   [ ] CPUのリーチ判断、カン判断（現在は未実装）。
+    -   [ ] CPUの鳴き判断（ポン、チー、カン）。
+    -   [ ] 流局（九種九牌、四風連打、四開槓など）の処理（現在は通常の山切れのみ）。
+-   [ ] **その他仕上げ:**
+    -   [ ] フリテンのチェックと表示 (警告など)。
+    -   [ ] UI/UXの微調整 (ローディング表示、エラーメッセージ、牌のソートなど)。
+    -   [ ] Linterエラー (`game_state.ts` の型エラー) の最終確認と修正。
+    -   [ ] 最終テスト (Playwright)。
+-   [ ] **ドキュメント:**
+    -   [ ] `README.md` の更新。
+    -   [ ] `.cursor/rules/knowledge.mdc` の更新。

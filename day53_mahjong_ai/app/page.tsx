@@ -1,10 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { GameState, PlayerID, PlayerState } from '../lib/mahjong/game_state';
-import { Tile as TileType } from '../lib/mahjong/tiles';
-import { compareTiles } from '../lib/mahjong/tiles';
+import { GameState, PlayerID, PlayerState, GamePhase } from '../lib/mahjong/game_state';
+import { Tile as TileType, isSameTile, compareTiles } from '../lib/mahjong/tiles';
+import { Meld } from '../lib/mahjong/hand';
 import { TileDisplay } from '../components/tile-display'; // New component import
+import { GameResultModal } from '../components/game-result-modal'; // モーダルをインポート
 
 export default function MahjongGamePage() {
   const [gameState, setGameState] = useState<GameState | null>(null);
@@ -12,6 +13,13 @@ export default function MahjongGamePage() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [actionError, setActionError] = useState<string | null>(null); // For action-specific errors
+  const [showResultModal, setShowResultModal] = useState<boolean>(false);
+  const [showKanSelectionModal, setShowKanSelectionModal] = useState<boolean>(false);
+  const [possibleKans, setPossibleKans] = useState<{
+    type: 'ankan' | 'kakan';
+    tile?: TileType; // ankan の場合、カンする牌の代表 (例: 1m)
+    meld?: Meld; // kakan の場合、加槓する既存の面子
+  }[]>([]);
 
   const currentPlayerId: PlayerID = PlayerID.Player;
 
@@ -64,6 +72,9 @@ export default function MahjongGamePage() {
       const data: GameState = await response.json();
       setGameState(data);
       setSelectedTile(null); // Clear selection after action
+      if ([GamePhase.PlayerWon, GamePhase.CPUWon, GamePhase.Draw, GamePhase.GameOver].includes(data.phase)) {
+        setShowResultModal(true);
+      }
     } catch (err) {
       console.error("Error submitting action:", err);
       setActionError(err instanceof Error ? err.message : 'Unknown error during action');
@@ -81,6 +92,14 @@ export default function MahjongGamePage() {
     // TODO: リーチ可能な牌を選択させるUI (打牌と同時)
     if (!selectedTile) { // 打牌する牌が選択されている必要がある
         setActionError("リーチするには、まず捨てる牌を選んでください。");
+        return;
+    }
+    if (!playerState) { // playerStateの存在チェック
+        setActionError("プレイヤーの状態が取得できません。");
+        return;
+    }
+    if (playerState.score < 1000) {
+        setActionError("点数が足りないためリーチできません (1000点必要)。");
         return;
     }
     await submitAction({ type: 'riichi', tile: selectedTile });
@@ -127,12 +146,33 @@ export default function MahjongGamePage() {
   const canRon = playerState.canRon; // 相手の打牌に対してなので、表示条件は別途検討
   const canKan = playerState.canKan && gameState.turn === currentPlayerId; // 仮の条件
 
+  const startNewGame = async () => {
+    setShowResultModal(false);
+    setSelectedTile(null);
+    setActionError(null);
+    setIsLoading(true);
+    try {
+      const response = await fetch('/api/game/new');
+      if (!response.ok) {
+        throw new Error(`Failed to start new game: ${response.statusText}`);
+      }
+      const data: GameState = await response.json();
+      setGameState(data);
+      setError(null);
+    } catch (err) {
+      console.error("Error fetching new game:", err);
+      setError(err instanceof Error ? err.message : 'Unknown error creating game');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-green-700 p-2 sm:p-4 flex flex-col items-center text-white font-sans">
       <header className="mb-4 w-full max-w-5xl clay-area rounded-lg p-3">
         <h1 className="text-3xl sm:text-4xl font-bold text-center text-yellow-300 clay-text-title mb-2">Day 53 - 麻雀 AI 対戦</h1>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm sm:text-base">
-          <div className="clay-info-box">Round: {displayRound(gameState.round)}局 {gameState.honba}本場</div>
+          <div className="clay-info-box">Round: {displayRound(gameState.round)}局 / 全{gameState.totalRounds}局 {gameState.honba}本場</div>
           <div className="clay-info-box">Score: P {playerState.score} | C {cpuState.score}</div>
           <div className="clay-info-box flex items-center justify-center">Dora: {gameState.dora.length > 0 ? <TileDisplay tile={gameState.dora[0]} size="small" isPlayable={false}/> : 'N/A'}</div>
           <div className="clay-info-box">Yama: {gameState.yama.tiles.length}</div>
@@ -190,6 +230,14 @@ export default function MahjongGamePage() {
           </div>
         )}
       </div>
+
+      {showResultModal && gameState && (
+        <GameResultModal
+          gameState={gameState}
+          onClose={() => setShowResultModal(false)} // onClose は現状使わないが念のため
+          onNewGame={startNewGame}
+        />
+      )}
     </div>
   );
 }

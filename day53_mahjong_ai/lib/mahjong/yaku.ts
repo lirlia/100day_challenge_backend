@@ -27,7 +27,8 @@ export const ALL_YAKU: Record<string, Yaku> = {
   YakuhaiHaku: { name: "役牌 (白)", han: 1, hanNaki: 1 },
   YakuhaiHatsu: { name: "役牌 (發)", han: 1, hanNaki: 1 },
   YakuhaiChun: { name: "役牌 (中)", han: 1, hanNaki: 1 },
-  // TODO: 嶺上開花、槍槓、海底摸月、河底撈魚など
+  RinshanKaihou: { name: "嶺上開花", han: 1, hanNaki: 1 },
+  // TODO: 槍槓、海底摸月、河底撈魚など
 
   // 2翻役
   DoubleRiichi: { name: "ダブル立直", han: 2, hanNaki: 0 },
@@ -80,6 +81,7 @@ export interface HandContext {
   uraDoraTiles?: Tile[];    // 裏ドラ牌 (リーチ時のみ)
   turnCount: number;        // 巡目
   isMenzen?: boolean;      // 門前かどうか (checkYaku内部で判定されるが、hand.tsから渡すように変更)
+  isRinshan?: boolean;     // 嶺上開花かどうか
   // TODO: 一発、海底/河底、槍槓、嶺上開花などの状況フラグ
 }
 
@@ -97,6 +99,24 @@ export interface YakuResult {
 export function checkYaku(context: HandContext): YakuResult[] {
   const results: YakuResult[] = [];
   const isMenzen = context.melds.every(m => !m.isOpen);
+  let hanForDora = 0;
+
+  // ドラ、赤ドラ、裏ドラの計算
+  const allTilesInHandAndMelds = [...context.handTiles, ...context.melds.flatMap(m => m.tiles)];
+  context.doraTiles.forEach(dora => {
+    hanForDora += allTilesInHandAndMelds.filter(t => isSameTile(t, dora) && !t.isRedDora).length;
+  });
+  if (context.isRiichi && context.uraDoraTiles) {
+    context.uraDoraTiles.forEach(uraDora => {
+      hanForDora += allTilesInHandAndMelds.filter(t => isSameTile(t, uraDora) && !t.isRedDora).length;
+    });
+  }
+  // 赤ドラのカウント (isRedDora フラグを持つ牌)
+  hanForDora += allTilesInHandAndMelds.filter(t => t.isRedDora).length;
+
+  if (hanForDora > 0) {
+    results.push({ yaku: { name: `ドラ ${hanForDora}`, han: hanForDora, hanNaki: hanForDora }, han: hanForDora });
+  }
 
   // 特殊役の判定 (国士無双、七対子)
   if (context.handPattern === HandPattern.KOKUSHI) {
@@ -118,6 +138,11 @@ export function checkYaku(context: HandContext): YakuResult[] {
     // 門前清自摸和 (メンゼンツモ)
     if (isMenzen && context.isTsumo) {
       results.push({ yaku: ALL_YAKU.Tsumo, han: ALL_YAKU.Tsumo.han });
+    }
+
+    // 嶺上開花
+    if (context.isRinshan && context.isTsumo) { // カンによるツモ和了
+      results.push({ yaku: ALL_YAKU.RinshanKaihou, han: ALL_YAKU.RinshanKaihou.han });
     }
 
     // 断幺九 (タンヤオ)
@@ -291,29 +316,6 @@ export function checkYaku(context: HandContext): YakuResult[] {
         break; // 一気通貫は1つ成立すればOK (複数スーツではありえない)
       }
     }
-  }
-
-  // ドラ (どの役にも共通して加算)
-  let doraCount = 0;
-  const allVisibleTiles = [...context.handTiles, ...context.melds.filter(m => m.isOpen).flatMap(m => m.tiles)]; // 副露のみドラ計算対象？いや手牌全体のはず
-  const allTilesInHandAndOpenMelds = [...context.handTiles]; // 和了形14枚に全て含まれる
-  // context.melds には手牌の暗刻も含まれるため、二重カウントしないように注意
-  // → handTiles (和了形14枚) だけでドラを数えるのが正しい
-
-  context.doraTiles.forEach(dora => {
-    allTilesInHandAndOpenMelds.forEach(tileInHand => {
-        if (isSameTile(tileInHand, dora)) doraCount++;
-    });
-  });
-  if (context.isRiichi && context.uraDoraTiles) {
-    context.uraDoraTiles.forEach(uraDora => {
-        allTilesInHandAndOpenMelds.forEach(tileInHand => {
-            if (isSameTile(tileInHand, uraDora)) doraCount++;
-        });
-    });
-  }
-  if (doraCount > 0) {
-    results.push({ yaku: { name: `ドラ ${doraCount}`, han: doraCount, hanNaki: doraCount }, han: doraCount });
   }
 
   // 役がない場合はエラーまたは和了不可とする (最低1翻必要。ただしドラのみはNG)

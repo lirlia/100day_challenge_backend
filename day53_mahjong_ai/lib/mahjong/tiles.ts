@@ -29,9 +29,8 @@ export interface Tile {
   value: number | HonorType;       // 数値 (1-9) または字牌の種類 (HonorType)
   id: string;          // ユニークなID (例: '1m', '5s', 'ton', 'haku')
   name: string;        // 表示名 (例: '一萬', '五索', '東', '白')
-  isRed: boolean;      // 赤ドラかどうか (今回はfalse固定)
+  isRedDora: boolean;  // 赤ドラかどうか
   isTsumogiri?: boolean; // ツモ切りかどうか (捨て牌の時に使用)
-  isRedDora?: boolean; // 赤ドラ牌かどうか (オプション)
 }
 
 // 数牌 (1-9)
@@ -60,7 +59,7 @@ SUITS.forEach(suit => {
       value,
       id: `${value}${suit}`,
       name: `${value}${suit === TileSuit.MANZU ? '萬' : suit === TileSuit.SOZU ? '索' : '筒'}`,
-      isRed: false, // 赤ドラは後で対応
+      isRedDora: false, // isRedDora に変更 (初期値はfalse、createYamaで赤ドラ設定)
     });
   });
 });
@@ -72,7 +71,7 @@ HONORS.forEach(honor => {
     value: honor.type,
     id: honor.id,
     name: honor.name,
-    isRed: false,
+    isRedDora: false,
   });
 });
 

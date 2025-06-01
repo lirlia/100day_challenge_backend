@@ -20,6 +20,7 @@ export interface ScoreResult {
   tsumoPointsPlayerKo: number;  // 子のツモ和了時の親の支払い
   tsumoPointsCPUOya: number;   // 親のツモ和了時の子1人あたりの支払い (CPUが親の場合)
   tsumoPointsCPUKo: number;    // 子のツモ和了時の親の支払い (CPUが子の場合)
+  displayedPoint: number; // 和了者が実際に受け取る/支払う点数
   yakuList: YakuResult[]; // 成立した役のリスト
   error?: string;         // エラーメッセージ (役なしなど)
 }
@@ -93,7 +94,7 @@ export function calculateScore(
   }
 ): ScoreResult {
   if (yakuResults.length === 0 || yakuResults.every(yr => yr.yaku.name.startsWith("ドラ"))) {
-    return { han: 0, fu: 0, basePoints: 0, ronPointsPlayer: 0, ronPointsCPU: 0, tsumoPointsPlayerOya: 0, tsumoPointsPlayerKo: 0, tsumoPointsCPUOya: 0, tsumoPointsCPUKo: 0, yakuList: [], error: "役がありません" };
+    return { han: 0, fu: 0, basePoints: 0, ronPointsPlayer: 0, ronPointsCPU: 0, tsumoPointsPlayerOya: 0, tsumoPointsPlayerKo: 0, tsumoPointsCPUOya: 0, tsumoPointsCPUKo: 0, displayedPoint: 0, yakuList: [], error: "役がありません" };
   }
 
   let totalHan = 0;
@@ -193,7 +194,7 @@ export function calculateScore(
       // basePoints = fu * Math.pow(2, 2 + totalHan);
       // basePoints = ceilToNearest100(basePoints); // 100点未満切り上げ
       // 満貫キャップなども考慮すると複雑なので、ここではテーブルにないものはエラー扱いでも良い
-      return { han: totalHan, fu, basePoints: 0, ronPointsPlayer: 0, ronPointsCPU: 0, tsumoPointsPlayerOya: 0, tsumoPointsPlayerKo: 0, tsumoPointsCPUOya: 0, tsumoPointsCPUKo: 0, yakuList: yakuResults, error: "点数表にない組み合わせです" };
+      return { han: totalHan, fu, basePoints: 0, ronPointsPlayer: 0, ronPointsCPU: 0, tsumoPointsPlayerOya: 0, tsumoPointsPlayerKo: 0, tsumoPointsCPUOya: 0, tsumoPointsCPUKo: 0, displayedPoint: 0, yakuList: yakuResults, error: "点数表にない組み合わせです" };
   }
 
   let ronPointsPlayer = 0;
@@ -207,27 +208,36 @@ export function calculateScore(
   const oyaRonPoint = ceilToNearest100(basePoints * 1.5); // 親のロン和了時の点数 (満貫なら12000)
   const koRonPoint = basePoints; // 子のロン和了時の点数 (満貫なら8000)
 
-  // 親のツモ和了は、子が子のロン和了点と同額を支払う (例: 親満貫ツモなら子が8000支払い)
-  const oyaTsumoKoPay = koRonPoint;
+  // 二人麻雀の点数計算
+  // 親のツモ和了: 相手(子)が基本点x2を支払う (例:親満貫ツモなら子は8000x1=8000点支払い)
+  // ※ 通常の四人麻雀だと親満ツモは4000オールだが、二人麻雀では相手が全額負担。
+  //   basePointsは子のロン基準なので、親ツモは basePoints x 1 で計算 (例: 満貫8000)
+  const oyaTsumoTotal = koRonPoint;
 
-  // 子のツモ和了は、親が子のロン和了点の2倍、もう一人の子(CPU)が子のロン和了点の1倍を支払う
-  // (テストケースに合わせる: 基本点1000 -> 親2000, CPU1000)
-  const koTsumoOyaPay = ceilToNearest100(koRonPoint * 2);
-  const koTsumoCpuPay = ceilToNearest100(koRonPoint * 1);
+  // 子のツモ和了: 相手(親)が基本点x2を支払う (例:子満貫ツモなら親は8000x1=8000点支払い)
+  // ※ 通常の四人麻雀だと子満ツモは親4000,子2000だが、二人麻雀では相手が全額負担。
+  //   basePointsは子のロン基準なので、子ツモは basePoints x 1 で計算 (例: 満貫8000)
+  const koTsumoTotal = koRonPoint;
+
+  let finalDisplayedPoint = 0;
 
   if (isOya) {
     if (isTsumo) { // 親のツモ
-      tsumoPointsPlayerOya = oyaTsumoKoPay;
-      tsumoPointsCPUOya = oyaTsumoKoPay; // 二人麻雀なので相手は一人
+      tsumoPointsPlayerOya = oyaTsumoTotal;
+      // tsumoPointsCPUOya = oyaTsumoKoPay; // 2人麻雀ではCPUは常に子（のはずだが、isOyaで判定しているのでこれで良い）
+      finalDisplayedPoint = oyaTsumoTotal;
     } else { // 親のロン
       ronPointsPlayer = oyaRonPoint;
+      finalDisplayedPoint = oyaRonPoint;
     }
   } else { // 子の場合
     if (isTsumo) { // 子のツモ
-      tsumoPointsPlayerKo = koTsumoOyaPay;
-      tsumoPointsCPUKo = koTsumoCpuPay;
+      tsumoPointsPlayerKo = koTsumoTotal; // 親からの支払い
+      // tsumoPointsCPUKo = koTsumoCpuPay; // CPUがツモった場合の親の支払い
+      finalDisplayedPoint = koTsumoTotal;
     } else { // 子のロン
       ronPointsCPU = koRonPoint;
+      finalDisplayedPoint = koRonPoint;
     }
   }
 
@@ -239,8 +249,9 @@ export function calculateScore(
     ronPointsCPU,
     tsumoPointsPlayerOya,
     tsumoPointsPlayerKo,
-    tsumoPointsCPUOya,
-    tsumoPointsCPUKo,
+    tsumoPointsCPUOya: isOya && isTsumo ? oyaTsumoTotal : 0, // CPUが親でツモった場合の支払い (相手は子)
+    tsumoPointsCPUKo: !isOya && isTsumo ? koTsumoTotal : 0,   // CPUが子でツモった場合の支払い (相手は親)
+    displayedPoint: finalDisplayedPoint,
     yakuList: yakuResults,
   };
 }

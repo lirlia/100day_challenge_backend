@@ -31,7 +31,23 @@ export interface AgariInfo {
   melds: Meld[];            // 面子のリスト (暗刻・暗槓も含む)
   jantou?: Tile;            // 雀頭 (通常手の場合)
   score?: ScoreResult;      // 点数計算結果
+  isTsumo: boolean;         // ツモ和了かどうか
   // TODO: フリテン情報なども追加可能
+}
+
+// analyzeHandShanten のためのコンテキスト情報 (和了判定時)
+export interface AgariContext {
+  agariTile: Tile;
+  isTsumo: boolean;
+  isRiichi: boolean;
+  isDoubleRiichi?: boolean;
+  playerWind: HonorType;
+  roundWind: HonorType;
+  doraTiles: Tile[];
+  uraDoraTiles?: Tile[];
+  turnCount: number;
+  isMenzen?: boolean;
+  isRinshan?: boolean;
 }
 
 export enum HandPattern {
@@ -222,19 +238,7 @@ export function isKokushiMusou(handTiles: Tile[]): boolean {
 export function analyzeHandShanten(
   handTilesInput: Tile[], // アガリ牌を含まない手牌 (13枚 or 10枚など)
   existingMelds: Meld[] = [], // 副露した面子 (鳴き)
-  agariContext?: { // 和了判定に必要な追加情報
-    agariTile: Tile;
-    isTsumo: boolean;
-    isRiichi: boolean;
-    isDoubleRiichi?: boolean;
-    playerWind: HonorType;
-    roundWind: HonorType;
-    doraTiles: Tile[];
-    uraDoraTiles?: Tile[];
-    turnCount: number;
-    isMenzen?: boolean;
-    // TODO: isIppatsu, isHaitei, etc.
-  },
+  agariContext?: AgariContext, // 型をエクスポートしたものに変更
   scoreOptions?: ScoreOptions,
 ): HandAnalysisResult {
   const handLengthForCheck = handTilesInput.length + (agariContext ? 1 : 0);
@@ -269,6 +273,8 @@ export function analyzeHandShanten(
         doraTiles: agariContext.doraTiles,
         uraDoraTiles: agariContext.uraDoraTiles,
         turnCount: agariContext.turnCount,
+        isMenzen: true,
+        isRinshan: agariContext?.isRinshan,
       };
       const yakuResults = checkYaku(handCtx);
       const score = calculateScore(yakuResults, agariContext.playerWind === HonorType.TON, agariContext.isTsumo, scoreOptions, { handTiles:completedHand, agariTile: agariContext.agariTile, melds:[], playerWind: agariContext.playerWind, roundWind: agariContext.roundWind, isMenzen: true});
@@ -280,6 +286,7 @@ export function analyzeHandShanten(
           agariTile: agariContext.agariTile,
           melds: [], // 国士は面子なし
           score: score.error ? undefined : score,
+          isTsumo: agariContext.isTsumo,
         }
       };
     }
@@ -298,6 +305,8 @@ export function analyzeHandShanten(
         doraTiles: agariContext.doraTiles,
         uraDoraTiles: agariContext.uraDoraTiles,
         turnCount: agariContext.turnCount,
+        isMenzen: true,
+        isRinshan: agariContext?.isRinshan,
       };
       const yakuResults = checkYaku(handCtx);
        // 七対子の符は25符固定なので、fuContextは簡易的に設定
@@ -310,6 +319,7 @@ export function analyzeHandShanten(
           agariTile: agariContext.agariTile,
           melds: [], // 七対子は面子なし
           score: score.error ? undefined : score,
+          isTsumo: agariContext.isTsumo,
         }
       };
     }
@@ -346,6 +356,7 @@ export function analyzeHandShanten(
                 uraDoraTiles: agariContext.uraDoraTiles,
                 turnCount: agariContext.turnCount,
                 isMenzen: isMenzenCheck,
+                isRinshan: agariContext?.isRinshan,
             };
             const yakuResults = checkYaku(handCtx);
 
@@ -369,6 +380,7 @@ export function analyzeHandShanten(
                         melds: finalMeldsForContext,
                         jantou: extractedParts.jantou,
                         score: scoreResult,
+                        isTsumo: agariContext.isTsumo,
                     }
                 };
             } else {

@@ -9,6 +9,7 @@ interface TileDisplayProps {
   isPlayable?: boolean; // プレイヤーが操作可能かどうかのフラグ
   isHidden?: boolean; // CPUの手牌など、裏向きで表示する場合
   size?: 'small' | 'medium' | 'large'; // サイズ指定を追加
+  inline?: boolean; // インライン表示用 (マージン調整など)
 }
 
 export const TileDisplay = ({
@@ -17,13 +18,15 @@ export const TileDisplay = ({
   isSelected,
   isPlayable = true,
   isHidden = false,
-  size = 'medium'
+  size = 'medium',
+  inline = false,
 }: TileDisplayProps) => {
   if (isHidden || !tile) {
     let sizeClasses = "w-10 h-14";
     if (size === 'small') sizeClasses = "w-8 h-12";
     if (size === 'large') sizeClasses = "w-12 h-16";
-    return <div className={`clay-tile-back ${sizeClasses} m-0.5 rounded-md bg-slate-600 border-2 border-slate-700`} aria-label="Hidden Tile" />;
+    if (inline) sizeClasses = "w-6 h-9"; // インライン用のサイズ
+    return <div className={`clay-tile-back ${sizeClasses} ${inline ? 'mx-0.5' : 'm-0.5'} rounded-md bg-slate-600 border-2 border-slate-700`} aria-label="Hidden Tile" />;
   }
 
   const suitMap: Record<string, string> = { m: '萬', p: '筒', s: '索', z: '字' };
@@ -55,6 +58,11 @@ export const TileDisplay = ({
     valueFontSize = "text-2xl";
     suitFontSize = "text-sm";
   }
+  if (inline) {
+    sizeClasses = "w-6 h-9 text-xs"; // インライン用のサイズとフォント
+    valueFontSize = "text-sm";
+    suitFontSize = "text-[8px]";
+  }
 
   const selectedStyle = isSelected ? 'ring-2 ring-blue-500 ring-offset-2 ring-offset-green-700 scale-105' : 'hover:scale-105';
   const playableStyle = isPlayable && onClick ? 'cursor-pointer' : 'cursor-default';
@@ -67,7 +75,7 @@ export const TileDisplay = ({
     <button
       type="button"
       onClick={() => onClick && isPlayable && onClick(tile)}
-      className={`${baseStyle} ${sizeClasses} ${clayStyle} ${selectedStyle} ${playableStyle}`}
+      className={`${baseStyle} ${sizeClasses} ${clayStyle} ${selectedStyle} ${playableStyle} ${inline ? 'mx-0.5' : 'm-0.5'}`}
       aria-label={`Tile ${displayValue} ${suitCharacter}`}
       disabled={!isPlayable || !onClick}
     >
