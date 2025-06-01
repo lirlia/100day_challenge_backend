@@ -1,6 +1,6 @@
-import { Tile, isSameTile, compareTiles, HonorType } from './tiles';
+import { Tile, isSameTile, compareTiles, HonorType, TileSuit } from './tiles';
 import { Yama, createYama, dealInitialHands, drawTile, getCurrentDora, drawRinshanTile, revealKanDora, getCurrentUraDora } from './yama';
-import { analyzeHandShanten, Meld, HandPattern, AgariInfo, AgariContext } from './hand'; // AgariContext を正しくインポート
+import { analyzeHandShanten, Meld, HandPattern, AgariInfo, AgariContext, removeTileFromHand as removeTileFromPlayerHand } from './hand'; // removeTileFromHand をインポート
 import type { AgariContext as OldAgariContext } from './hand'; // AgariContext 型をインポート
 
 export enum PlayerID {
@@ -23,15 +23,17 @@ export enum ActionType {
   Kan = "kan", // 暗槓、加槓、大明槓を区別する場合はさらに詳細化
   TsumoAgari = "tsumo_agari",
   Ron = "ron",
-  // TODO: チー、ポン (二人麻雀では通常なし)
+  Pon = "pon",
+  // TODO: チー (二人麻雀では通常なし)
 }
 
 export interface GameAction {
   type: ActionType;
   tile?: Tile;            // 打牌、カンする牌 (暗槓・大明槓の場合)、加槓で加える牌
   tileToDiscard?: Tile;   // リーチ時に捨てる牌
-  meldType?: 'ankan' | 'kakan' | 'daiminkan'; // カンの種類
+  meldType?: 'ankan' | 'kakan' | 'daiminkan' | 'pon'; // カンの種類 -> meldTypeからponを削除し、ActionType.Ponで処理
   meld?: Meld;            // 加槓の対象となる既存の面子
+  targetTile?: Tile; // ポン、チーの対象となる相手の捨て牌 (Ponアクションで使用)
 }
 
 // 河の牌の型 (Tile に追加情報)
@@ -52,6 +54,7 @@ export interface PlayerState {
   canTsumoAgari?: boolean;
   canRon?: boolean; // 相手の打牌に対してロン可能か
   canKan?: boolean; // カン可能か (暗槓、加槓、大明槓のいずれか)
+  canPon?: boolean; // ポン可能か
   melds: Meld[];      // 副露した面子
   justKaned?: boolean; // カン直後のツモか (嶺上開花判定用)
   lastDraw?: Tile;      // 最後にツモった牌
@@ -102,6 +105,7 @@ export function createInitialGameState(gameId: string): GameState {
     canTsumoAgari: false,
     canRon: false,
     canKan: false,
+    canPon: false, // 初期状態ではポン不可
     melds: [],
     lastDraw: firstPlayerTsumo.tile === null ? undefined : firstPlayerTsumo.tile,
   };
@@ -116,6 +120,7 @@ export function createInitialGameState(gameId: string): GameState {
     canTsumoAgari: false,
     canRon: false,
     canKan: false,
+    canPon: false,
     melds: [],
   };
 
@@ -175,6 +180,8 @@ function updateActionFlagsForPlayer(playerState: PlayerState, gameState: GameSta
   // プレイヤーの風を決定 (親なら東、子なら南)
   const playerWind = (gameState.oya === PlayerID.Player && gameState.turn === PlayerID.Player) || (gameState.oya === PlayerID.CPU && gameState.turn === PlayerID.CPU) ? HonorType.TON : HonorType.NAN;
   const roundWind = HonorType.TON; // 二人麻雀の場風は常に東
+
+  const completedHandForAnalysis = isTsumo ? playerState.hand : [...playerState.hand, agariTile];
 
   const analysis = analyzeHandShanten(
     isTsumo ? playerState.hand : [...playerState.hand, agariTile],
@@ -243,6 +250,16 @@ function updateActionFlagsForPlayer(playerState: PlayerState, gameState: GameSta
 
   // TODO: 大明槓の判定は相手の打牌時なのでここでは false
   playerState.canKan = canAnkan || canKakan; // 現状は暗槓と加槓のみツモ時に判定
+
+  // ポンの判定 (相手の捨て牌に対して)
+  if (!isTsumo && agariTile) { // isTsumo が false = 相手の捨て牌に対するアクション
+    const ponTargetTile = agariTile;
+    const countInHand = playerState.hand.filter(t => isSameTile(t, ponTargetTile)).length;
+    // ポンはリーチ中は不可とするのが一般的
+    playerState.canPon = countInHand >= 2 && !playerState.isRiichi;
+  } else {
+    playerState.canPon = false; // ツモ時や対象牌がない場合はポン不可
+  }
 }
 
 function proceedToNextRoundOrEndGame(currentState: GameState): GameState {
@@ -384,40 +401,149 @@ export function processAction(currentState: GameState, playerId: PlayerID, actio
       // 相手のロン判定
       updateActionFlagsForPlayer(opponentPlayer, nextState, discardedTile, false); // canRon フラグを更新
 
-      if (opponentPlayer.canRon) {
-        // ロン可能な状態。相手のアクションを待つ。
-        nextState.lastActionMessage += ` ${opponentPlayerId === PlayerID.Player ? "あなた" : "CPU"}はロン可能です。`;
+      if (opponentPlayer.canRon && opponentPlayerId === PlayerID.Player) {
+        // プレイヤーがロン可能な状態。プレイヤーのアクションを待つ。
+        nextState.lastActionMessage += ` あなたはロン可能です。`;
+        // この時点でCPUのツモ・打牌は行わない。プレイヤーのロン選択を待つ。
+      } else if (opponentPlayer.canRon && opponentPlayerId === PlayerID.CPU) {
+        // CPUがロン可能な場合、その情報を伝える (実際のロン実行は次のCPUのアクションで)
+        nextState.lastActionMessage += ` CPUはロン可能です。`;
+        // nextState = processAction(nextState, PlayerID.CPU, { type: ActionType.Ron }); // 再帰呼び出しは避ける
+        // gameEndedThisTurn = true;
       } else if (nextState.yama.tiles.length > 0) {
-        // ロンされず、山が残っていれば相手のツモ
+        // ロンされず、山が残っていれば相手(CPU)のツモ
         const drawResult = drawTile(nextState.yama);
         nextState.yama = drawResult.updatedYama;
         if (drawResult.tile) {
           opponentPlayer.hand.push(drawResult.tile);
           opponentPlayer.hand.sort(compareTiles);
           opponentPlayer.lastDraw = drawResult.tile;
-          updateActionFlagsForPlayer(opponentPlayer, nextState, drawResult.tile as Tile, true); // Type assertion
+          updateActionFlagsForPlayer(opponentPlayer, nextState, drawResult.tile, true); // Tile型であることは保証されている
           nextState.lastActionMessage += ` ${opponentPlayerId === PlayerID.Player ? "あなた" : "CPU"}がツモりました。`;
+
+          // CPUのターンであれば、ツモ後に打牌を行う
+          if (opponentPlayerId === PlayerID.CPU) {
+            if (opponentPlayer.canTsumoAgari) {
+              // CPUはツモ和了を選択 (仮の即ツモAI)
+              // TODO: CPUのツモ和了判断ロジックを後で高度化する
+              nextState = processAction(nextState, PlayerID.CPU, { type: ActionType.TsumoAgari });
+              gameEndedThisTurn = true;
+            } else if (opponentPlayer.canRiichi && opponentPlayer.score >= 1000 && opponentPlayer.melds.every(m => !m.isOpen)) {
+              // CPUがリーチ可能な場合、リーチを選択する (仮の即リーチAI)
+              // TODO: CPUのリーチ判断ロジックを後で高度化する (例: 残り山、待ちの形など)
+              // リーチ時に捨てる牌を選択 (現在のgetCpuDiscardロジックと同様の考え方)
+              const cpuHandForRiichi = opponentPlayer.hand;
+              let tileToDiscardForRiichi: Tile;
+              if (cpuHandForRiichi.length > 0) {
+                // ここで最も向聴数が進まない or 安全そうな牌を選ぶ (getCpuDiscardの簡易版)
+                // 簡単のため、一旦ランダムでリーチ宣言牌を選択
+                // 本来は analyzeHandShanten を使って、リーチしても待ちが変わらないように、かつ最適な打牌を選ぶ
+                tileToDiscardForRiichi = cpuHandForRiichi[Math.floor(Math.random() * cpuHandForRiichi.length)];
+              } else {
+                console.error("CPU hand is empty before Riichi discard, should not happen.");
+                tileToDiscardForRiichi = { id: '1m', name: '一萬', suit: TileSuit.MANZU, value: 1, isRedDora: false };
+              }
+              nextState = processAction(nextState, PlayerID.CPU, { type: ActionType.Riichi, tileToDiscard: tileToDiscardForRiichi! });
+              // gameEndedThisTurn は processAction の中で処理されるのでここでは不要
+            } else {
+              // CPUの打牌選択
+              // まずカンできるかチェック (暗槓のみ、リーチしてない場合)
+              let performedKan = false;
+              if (opponentPlayer.canKan && !opponentPlayer.isRiichi) {
+                const counts = new Map<string, Tile[]>();
+                for (const tile of opponentPlayer.hand) {
+                  const tileList = counts.get(tile.id) || [];
+                  tileList.push(tile);
+                  counts.set(tile.id, tileList);
+                }
+                for (const [tileId, tileList] of counts.entries()) {
+                  if (tileList.length === 4) {
+                    // 暗槓実行
+                    nextState = processAction(nextState, PlayerID.CPU, {
+                        type: ActionType.Kan,
+                        tile: tileList[0]!, // non-null assertion を追加
+                        meldType: 'ankan'
+                    });
+                    performedKan = true;
+                    // gameEndedThisTurn は processAction の中で処理される想定
+                    break; // 1つカンしたら一旦終わり
+                  }
+                }
+              }
+
+              if (!performedKan) {
+                // カンを実行しなかった場合、通常の打牌処理
+                // TODO: route.tsのgetCpuDiscardを移植/参照する
+                const cpuHand = opponentPlayer.hand;
+                let cpuDiscardTile: Tile;
+                if (cpuHand.length > 0) {
+                  // ここに getCpuDiscard のロジックを簡易的に移植するか、ランダムにする
+                  // 例: analyzeHandShanten を使って最も向聴数が進まない牌を選ぶなど
+                  // 今回は一旦ランダムのままにしておく (外部のgetCpuDiscardに依存しないようにするため)
+                  cpuDiscardTile = cpuHand[Math.floor(Math.random() * cpuHand.length)];
+                } else {
+                  // 手牌がない状況はありえないはずだが、フォールバック
+                  console.error("CPU hand is empty before discard, which should not happen.");
+                  // この場合、エラーを投げるか、ゲームを強制終了させるべきかもしれない
+                  // ここではダミーの牌を生成してエラーを防ぐ (デバッグ用)
+                  cpuDiscardTile = { id: '1m', name: '一萬', suit: TileSuit.MANZU, value: 1, isRedDora: false };
+                }
+
+                opponentPlayer.hand = removeTileFromPlayerHand(opponentPlayer.hand, cpuDiscardTile!);
+                opponentPlayer.river.push({ ...cpuDiscardTile!, discardedBy: PlayerID.CPU, turn: nextState.turnCount });
+                opponentPlayer.lastDiscard = cpuDiscardTile!;
+                opponentPlayer.justKaned = false;
+                nextState.turn = PlayerID.Player; // プレイヤーのターンに戻る
+
+                // プレイヤーの打牌に対するロン判定 (CPUの捨て牌に対して)
+                if (cpuDiscardTile) {
+                  const confirmedCpuDiscardTile: Tile = cpuDiscardTile; // 型を明確にするためにローカル変数に代入
+                  updateActionFlagsForPlayer(nextState.player, nextState, confirmedCpuDiscardTile, false);
+                  if (nextState.player.canRon) {
+                    nextState.lastActionMessage += ` あなたはロン可能です。`;
+                  }
+                }
+
+                // プレイヤーのツモ処理 (ロンがなければ)
+                if (!nextState.player.canRon && nextState.yama.tiles.length > 0) {
+                  const playerDrawResult = drawTile(nextState.yama);
+                  nextState.yama = playerDrawResult.updatedYama;
+                  if (playerDrawResult.tile) {
+                    nextState.player.hand.push(playerDrawResult.tile);
+                    nextState.player.hand.sort(compareTiles);
+                    nextState.player.lastDraw = playerDrawResult.tile;
+                    updateActionFlagsForPlayer(nextState.player, nextState, playerDrawResult.tile, true);
+                    nextState.lastActionMessage += ` あなたがツモりました。`;
+                  } else {
+                    nextState.phase = GamePhase.Draw;
+                    nextState.winner = null;
+                    gameEndedThisTurn = true;
+                  }
+                } else if (!nextState.player.canRon && nextState.yama.tiles.length === 0) {
+                  // ロンもできず山もなし
+                  nextState.phase = GamePhase.Draw;
+                  nextState.winner = null;
+                  gameEndedThisTurn = true;
+                }
+              }
+            }
+          }
         } else {
           // 山切れ (通常は発生しないはず、drawTileがnullを返すのは嶺上牌など特殊なケース)
           nextState.phase = GamePhase.Draw;
           nextState.winner = null;
           gameEndedThisTurn = true;
         }
-      } else {
-        // ロンされず、山もなし -> 流局
-        nextState.phase = GamePhase.Draw;
-        nextState.winner = null;
-        gameEndedThisTurn = true;
       }
       break;
 
     case ActionType.Riichi:
       if (!action.tileToDiscard) {
-        console.error("Riichi action without tileToDiscard", action);
-        nextState.lastActionMessage = "エラー: リーチ時に捨てる牌が指定されていません。";
+        console.error("Riichi action in processAction without tileToDiscard", action);
+        nextState.lastActionMessage = "エラー: リーチ時に捨てる牌が指定されていませんでした。(内部処理エラー)";
         break;
       }
-      const tileToDiscardForRiichi = action.tileToDiscard; // nullチェック済み
+      const tileToDiscardForRiichi = action.tileToDiscard;
       actingPlayer.isRiichi = true;
       actingPlayer.riichiTurn = nextState.turnCount;
       actingPlayer.score -= 1000; // リーチ供託
@@ -452,10 +578,6 @@ export function processAction(currentState: GameState, playerId: PlayerID, actio
               nextState.winner = null;
               gameEndedThisTurn = true;
             }
-          } else {
-            nextState.phase = GamePhase.Draw;
-            nextState.winner = null;
-            gameEndedThisTurn = true;
           }
         }
       } else {
@@ -575,22 +697,35 @@ export function processAction(currentState: GameState, playerId: PlayerID, actio
       let kanTypeMessage = "";
 
       if (action.meldType === "ankan" && action.tile) { // 暗槓
-          const tileStr = action.tile.id;
-          const count = actingPlayer.hand.filter(t => t.id === tileStr).length;
+          const tileForAnkan = action.tile;
+          const count = actingPlayer.hand.filter(t => t.id === tileForAnkan.id).length;
           if (count === 4) {
-              const ankanMeld: Meld = { type: 'kantsu', tiles: [action.tile, action.tile, action.tile, action.tile], isOpen: false };
+              const ankanMeld: Meld = { type: 'kantsu', tiles: [tileForAnkan, tileForAnkan, tileForAnkan, tileForAnkan], isOpen: false };
               actingPlayer.melds.push(ankanMeld);
-              actingPlayer.hand = actingPlayer.hand.filter(t => t.id !== tileStr);
+              actingPlayer.hand = actingPlayer.hand.filter(t => t.id !== tileForAnkan.id);
               kanSuccess = true;
               kanTypeMessage = "暗槓";
           }
       } else if (action.meldType === "kakan" && action.meld && action.tile) { // 加槓
-          const koutsuToUpgrade = actingPlayer.melds.find(m => m.type === 'koutsu' && isSameTile(m.tiles[0], action.meld!.tiles[0]));
-          const tileInHand = actingPlayer.hand.find(t => isSameTile(t, action.tile!));
+          const tileForKakan = action.tile;
+          const meldToUpgrade = action.meld;
+
+          const koutsuToUpgrade = actingPlayer.melds.find(m =>
+              m.type === 'koutsu' &&
+              m.tiles.length === 3 &&
+              isSameTile(m.tiles[0], meldToUpgrade.tiles[0])
+          );
+          const tileInHand = actingPlayer.hand.find(t => isSameTile(t, tileForKakan));
+
           if (koutsuToUpgrade && tileInHand) {
+              if (!isSameTile(koutsuToUpgrade.tiles[0], tileForKakan)) {
+                  console.error("Kakan error: Tile in hand does not match koutsu type for kakan.");
+                  nextState.lastActionMessage = "エラー: 加槓する牌の種類が元の刻子と一致しません。";
+                  break;
+              }
               koutsuToUpgrade.type = 'kantsu';
-              koutsuToUpgrade.tiles.push(action.tile); // 4枚目
-              actingPlayer.hand = actingPlayer.hand.filter(t => !isSameTile(t, action.tile));
+              koutsuToUpgrade.tiles.push(tileForKakan);
+              actingPlayer.hand = actingPlayer.hand.filter(t => !isSameTile(t, tileForKakan));
               kanSuccess = true;
               kanTypeMessage = "加槓";
           }
@@ -652,6 +787,59 @@ export function processAction(currentState: GameState, playerId: PlayerID, actio
       } else {
           nextState.lastActionMessage = "エラー: カンできませんでした。";
       }
+      break;
+
+    case ActionType.Pon:
+      if (!opponentPlayer.lastDiscard || !action.targetTile || !isSameTile(opponentPlayer.lastDiscard, action.targetTile)) {
+        nextState.lastActionMessage = "エラー: ポン対象の牌が正しくありません。相手の直前の捨て牌と一致しません。";
+        break;
+      }
+      const targetPonTile = action.targetTile; // 相手の捨て牌
+
+      const handTilesForPon = actingPlayer.hand.filter(t => isSameTile(t, targetPonTile));
+      if (handTilesForPon.length < 2) {
+        nextState.lastActionMessage = "エラー: ポンするための牌が手牌に足りません。";
+        break;
+      }
+      if (actingPlayer.isRiichi) {
+        nextState.lastActionMessage = "エラー: リーチ中にポンはできません。";
+        break;
+      }
+
+      // ポン成功
+      const ponMeld: Meld = {
+        type: 'koutsu',
+        tiles: [handTilesForPon[0], handTilesForPon[1], targetPonTile].sort(compareTiles),
+        isOpen: true,
+        fromWho: opponentPlayerId,
+      };
+      actingPlayer.melds.push(ponMeld);
+
+      let removedCount = 0;
+      actingPlayer.hand = actingPlayer.hand.filter(t => {
+        if (removedCount < 2 && isSameTile(t, targetPonTile)) {
+          removedCount++;
+          return false;
+        }
+        return true;
+      });
+      actingPlayer.hand.sort(compareTiles);
+
+      actingPlayer.justKaned = false;
+      opponentPlayer.canRon = false; // ポンされたらロンはできない
+      opponentPlayer.canPon = false; // 連続して相手はポンできない
+      opponentPlayer.canKan = false; // 大明槓の機会も失う
+
+      nextState.turn = playerId;
+      nextState.lastActionMessage = `${playerId === PlayerID.Player ? "あなた" : "CPU"}が ${opponentPlayerId === PlayerID.Player ? "あなた" : "CPU"} の ${targetPonTile.id} をポンしました。打牌してください。`;
+
+      // ポン後のアクションフラグ (打牌のみ可能、カンなどは次のツモ後)
+      actingPlayer.canRiichi = false;
+      actingPlayer.canTsumoAgari = false;
+      actingPlayer.canRon = false;
+      actingPlayer.canPon = false;
+      actingPlayer.canKan = false; // ポン直後のカンは一旦考えない (UIシンプル化のため)
+      // 実際には打牌前に暗槓・加槓の判定をしても良いが、今回は省略
       break;
   }
 

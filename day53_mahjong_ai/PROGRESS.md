@@ -94,21 +94,23 @@
 -   [x] **カン処理改善 (UI):**
     -   [x] `game_state.ts`: `updateActionFlagsForPlayer` でリーチ後の暗槓・加槓を一旦不可とするシンプルなルールに変更。
     -   [x] `app/page.tsx`: 「カン」ボタン押下で可能な暗槓・加槓のリストをモーダル表示し、選択して実行できるようにUIを改善。
--   [ ] **裏ドラと嶺上開花:** (一部実装済み、確認と調整)
-    -   [ ] `yama.ts`: `Yama` インターフェースに `uraDoraIndicators` を追加。`createYama` で初期化。`getCurrentUraDora` 関数を確認。
-    -   [ ] `game_state.ts`: `PlayerState` に `justKaned` フラグを追加。`GameState` に `uraDora` フィールドを追加。`processAction` でカン後に `justKaned` を設定し、打牌でクリア。和了時に `analyzeHandShanten` の `agariContext` に `uraDoraTiles` と `isRinshan` を設定するロジックを確認。
-    -   [ ] `hand.ts`: `analyzeHandShanten` の `AgariContext` に `isRinshan?: boolean` を追加。`checkYaku` に渡す `HandContext` にも `isRinshan` を追加する部分を確認。
-    -   [ ] `yaku.ts`: `ALL_YAKU_DEFINITIONS` に `RinshanKaihou` を追加。`checkYaku` を更新し `isRinshan` をチェックする部分を確認。
-    -   [ ] 点数計算に裏ドラ・カンドラ・カン裏ドラが正しく反映されるか確認。
--   [ ] **CPU AIと高度なゲームフロー:**
-    -   [ ] CPUの打牌AIを改善 (ベタオリ、手役狙いなど基本的な戦略)。
-    -   [ ] CPUのリーチ判断、カン判断（現在は未実装）。
+-   [x] **裏ドラと嶺上開花:** (一部実装済み、確認と調整)
+    -   [x] `yama.ts`: `Yama` インターフェースに `uraDoraIndicators` を追加。`createYama` で初期化。`getCurrentUraDora` 関数を確認。
+    -   [x] `game_state.ts`: `PlayerState` に `justKaned` フラグを追加。`GameState` に `uraDora` フィールドを追加。`processAction` でカン後に `justKaned` を設定し、打牌でクリア。和了時に `analyzeHandShanten` の `agariContext` に `uraDoraTiles` と `isRinshan` を設定するロジックを確認。
+    -   [x] `hand.ts`: `analyzeHandShanten` の `AgariContext` に `isRinshan?: boolean` を追加。`checkYaku` に渡す `HandContext` にも `isRinshan` を追加する部分を確認。
+    -   [x] `yaku.ts`: `ALL_YAKU_DEFINITIONS` に `RinshanKaihou` を追加。`checkYaku` を更新し `isRinshan` をチェックする部分を確認。
+    -   [x] 点数計算に裏ドラ・カンドラ・カン裏ドラが正しく反映されるか確認。
+-   [x] **CPU AIと高度なゲームフロー:** (一部進行中)
+    -   [x] CPUの打牌AIを改善 (向聴数を考慮した打牌選択を `app/api/game/action/route.ts` に実装。`game_state.ts` への本格的な移植は今後の課題)。
+    -   [x] CPUのリーチ判断、カン判断（暗槓のみ仮実装、`game_state.ts` 内）。
     -   [ ] CPUの鳴き判断（ポン、チー、カン）。
     -   [ ] 流局（九種九牌、四風連打、四開槓など）の処理（現在は通常の山切れのみ）。
+    -   [x] `lib/mahjong/game_state.ts`: ポン (`ActionType.Pon`) のロジックを `processAction` に追加。`updateActionFlagsForPlayer` に `canPon` 判定を追加。Linterエラーを修正。
+    -   [x] `app/api/game/action/route.ts`: CPUの自動アクション実行ロジックを強化。
 -   [ ] **その他仕上げ:**
     -   [ ] フリテンのチェックと表示 (警告など)。
     -   [ ] UI/UXの微調整 (ローディング表示、エラーメッセージ、牌のソートなど)。
-    -   [ ] Linterエラー (`game_state.ts` の型エラー) の最終確認と修正。
+-   [ ] Linterエラー (`game_state.ts` の型エラー) の最終確認と修正。
     -   [ ] 最終テスト (Playwright)。
 -   [ ] **ドキュメント:**
     -   [ ] `README.md` の更新。
