@@ -215,29 +215,33 @@ export default function GameScreen({ onBackToTitle }: GameScreenProps) {
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.9 }}
       transition={{ duration: 0.5 }}
-      className="min-h-screen flex flex-col items-center justify-center p-4 space-y-8"
+      className="min-h-screen flex flex-col items-center justify-center p-4 space-y-6"
     >
-      {/* ゲームヘッダー */}
+      {/* ゲームヘッダー - 修正されたレイアウト */}
       <motion.div
         initial={{ y: -50, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ delay: 0.2, duration: 0.6 }}
-        className="flex items-center justify-between w-full max-w-4xl"
+        className="w-full max-w-4xl"
       >
-        <motion.button
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-          onClick={onBackToTitle}
-          className="px-6 py-3 neon-border-pink text-neon-pink hover:bg-neon-pink hover:text-black transition-all duration-300 rounded-lg font-semibold"
-        >
-          ← BACK TO TITLE
-        </motion.button>
+        {/* BACK TO TITLEボタンを独立した行に配置 */}
+        <div className="flex justify-start mb-4">
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={onBackToTitle}
+            className="px-4 py-2 neon-border-pink text-neon-pink hover:bg-neon-pink hover:text-black transition-all duration-300 rounded-lg font-semibold text-sm"
+          >
+            ← BACK TO TITLE
+          </motion.button>
+        </div>
 
-        <h1 className="text-4xl md:text-5xl font-black neon-glow-blue">
-          REVERSI BATTLE
-        </h1>
-
-        <div className="w-40"></div> {/* スペーサー */}
+        {/* タイトルを中央に配置 */}
+        <div className="text-center">
+          <h1 className="text-4xl md:text-5xl font-black neon-glow-blue">
+            REVERSI BATTLE
+          </h1>
+        </div>
       </motion.div>
 
       {/* ゲーム情報パネル */}

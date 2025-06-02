@@ -2,7 +2,6 @@
 
 import { motion } from 'framer-motion';
 import { GameState, Player } from '@/lib/reversi-engine';
-import Stone from './Stone';
 
 interface GameInfoProps {
   gameState: GameState;
@@ -53,37 +52,37 @@ export default function GameInfo({ gameState, onRestart }: GameInfoProps) {
 
           {/* プレイヤー情報（黒石） */}
           <motion.div
-            className="flex items-center justify-center space-x-4"
+            className="flex items-center justify-center"
             variants={scoreVariants}
             initial="initial"
             animate="animate"
             whileHover="pulse"
           >
-            <div className="text-center">
-              <div className="flex items-center justify-center space-x-2 mb-2">
-                <Stone state="black" size="large" />
-                <div>
-                  <h3 className="text-xl font-bold neon-glow-blue">
-                    {getPlayerName('black')}
-                  </h3>
-                  <motion.div
-                    className="text-3xl font-black neon-glow-blue"
-                    animate={currentPlayer === 'black' ? { scale: [1, 1.2, 1] } : {}}
-                    transition={{ duration: 1, repeat: Infinity }}
-                  >
-                    {blackCount}
-                  </motion.div>
-                </div>
-              </div>
-              {currentPlayer === 'black' && !gameOver && (
+            <div className="text-center space-y-2">
+              <div className="text-center">
+                <h3 className="text-lg font-bold neon-glow-blue">
+                  {getPlayerName('black')}
+                </h3>
                 <motion.div
-                  className="text-sm neon-glow-green font-semibold"
-                  animate={{ opacity: [0.5, 1, 0.5] }}
+                  className="text-3xl font-black neon-glow-blue"
+                  animate={currentPlayer === 'black' ? { scale: [1, 1.1, 1] } : {}}
                   transition={{ duration: 1, repeat: Infinity }}
                 >
-                  ▼ YOUR TURN ▼
+                  {blackCount}
                 </motion.div>
-              )}
+              </div>
+              {/* ターン表示スペースを常に確保 */}
+              <div className="h-4 flex items-center justify-center">
+                {currentPlayer === 'black' && !gameOver && (
+                  <motion.div
+                    className="text-xs neon-glow-green font-semibold"
+                    animate={{ opacity: [0.5, 1, 0.5] }}
+                    transition={{ duration: 1, repeat: Infinity }}
+                  >
+                    ▼ YOUR TURN ▼
+                  </motion.div>
+                )}
+              </div>
             </div>
           </motion.div>
 
@@ -94,19 +93,19 @@ export default function GameInfo({ gameState, onRestart }: GameInfoProps) {
                 initial={{ scale: 0 }}
                 animate={{ scale: 1 }}
                 transition={{ delay: 0.5, type: "spring", bounce: 0.6 }}
-                className="space-y-4"
+                className="space-y-3"
               >
-                <h2 className="text-3xl font-black neon-glow-pink">
+                <h2 className="text-2xl font-black neon-glow-pink">
                   GAME OVER
                 </h2>
-                <div className="text-2xl font-bold neon-glow-green">
+                <div className="text-xl font-bold neon-glow-green">
                   {getWinnerMessage()}
                 </div>
                 <motion.button
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                   onClick={onRestart}
-                  className="px-6 py-3 neon-border-green text-neon-green hover:bg-neon-green hover:text-black transition-all duration-300 rounded-lg font-semibold"
+                  className="px-4 py-2 neon-border-green text-neon-green hover:bg-neon-green hover:text-black transition-all duration-300 rounded-lg font-semibold text-sm"
                 >
                   NEW GAME
                 </motion.button>
@@ -122,7 +121,7 @@ export default function GameInfo({ gameState, onRestart }: GameInfoProps) {
                   repeat: Infinity,
                   ease: "easeInOut"
                 }}
-                className="text-4xl font-black neon-glow-pink"
+                className="text-3xl font-black neon-glow-pink"
               >
                 VS
               </motion.div>
@@ -131,37 +130,37 @@ export default function GameInfo({ gameState, onRestart }: GameInfoProps) {
 
           {/* CPU情報（白石） */}
           <motion.div
-            className="flex items-center justify-center space-x-4"
+            className="flex items-center justify-center"
             variants={scoreVariants}
             initial="initial"
             animate="animate"
             whileHover="pulse"
           >
-            <div className="text-center">
-              <div className="flex items-center justify-center space-x-2 mb-2">
-                <div>
-                  <h3 className="text-xl font-bold neon-glow-pink">
-                    {getPlayerName('white')}
-                  </h3>
-                  <motion.div
-                    className="text-3xl font-black neon-glow-pink"
-                    animate={currentPlayer === 'white' ? { scale: [1, 1.2, 1] } : {}}
-                    transition={{ duration: 1, repeat: Infinity }}
-                  >
-                    {whiteCount}
-                  </motion.div>
-                </div>
-                <Stone state="white" size="large" />
-              </div>
-              {currentPlayer === 'white' && !gameOver && (
+            <div className="text-center space-y-2">
+              <div className="text-center">
+                <h3 className="text-lg font-bold neon-glow-pink">
+                  {getPlayerName('white')}
+                </h3>
                 <motion.div
-                  className="text-sm neon-glow-green font-semibold"
-                  animate={{ opacity: [0.5, 1, 0.5] }}
+                  className="text-3xl font-black neon-glow-pink"
+                  animate={currentPlayer === 'white' ? { scale: [1, 1.1, 1] } : {}}
                   transition={{ duration: 1, repeat: Infinity }}
                 >
-                  ▼ CPU TURN ▼
+                  {whiteCount}
                 </motion.div>
-              )}
+              </div>
+              {/* ターン表示スペースを常に確保 */}
+              <div className="h-4 flex items-center justify-center">
+                {currentPlayer === 'white' && !gameOver && (
+                  <motion.div
+                    className="text-xs neon-glow-green font-semibold"
+                    animate={{ opacity: [0.5, 1, 0.5] }}
+                    transition={{ duration: 1, repeat: Infinity }}
+                  >
+                    ▼ CPU TURN ▼
+                  </motion.div>
+                )}
+              </div>
             </div>
           </motion.div>
         </div>
