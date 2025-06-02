@@ -59,3 +59,4 @@ alwaysApply: true
 | 50  | HTTP/HTTPS フォワードプロキシ (インテリジェントキャッシュ付き) | Go, SQLite, HTTP/HTTPS Proxy, MITM, 動的証明書生成, キャッシュ (Cache-Control, Expires) |
 | 51  | Monkey 言語コンパイラ & VM | Go, 字句解析, 構文解析, AST, バイトコード, スタックベースVM, REPL |
 | 52  | MMORPG「タイニーレルム冒険譚」 | Next.js (App Router), TypeScript, SQLite (better-sqlite3), Tailwind CSS (ピクセルアート風, VT323), ポーリング同期, E2Eテスト (Playwright) |
+| 53  | CPU対戦付き二人麻雀 (最強AI) | Next.js (App Router), TypeScript, Tailwind CSS (クレイモーフィズム), 麻雀コアロジック (手牌評価, 役判定, 点数計算), CPU AI (向聴数ベース) |

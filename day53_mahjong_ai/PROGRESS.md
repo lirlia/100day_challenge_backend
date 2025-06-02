@@ -67,7 +67,12 @@
     - [x] **UI**: Changed tile discard to be immediate on click, removing the confirmation step (`app/page.tsx`).
     - [ ] Implement CPU AI for Riichi decisions (advanced: considering wait shape, dora, remaining tiles).
     - [ ] Implement CPU AI for Kan decisions (Ankan, Kakan, Daiminkan - more sophisticated risk/reward).
-    - [ ] Implement CPU AI for Pon decisions (advanced: considering other yaku, hand speed vs score).
+    - [ ] Implement CPU AI for Pon decisions.
+    - [ ] **UI**: Reverted immediate discard on tile click. Implemented tile selection first, then action via buttons (Discard, Riichi) (`app/page.tsx`).
+    - [ ] **BugFix**: Enabled tile selection after Kan and Rinshan kaihou tsumo by removing hand length restrictions in `handleTileSelect` (`app/page.tsx`).
+    - [ ] **Bug Investigation**: Investigating issue where player's hand does not correctly update視覚上or reflect drawn tile after a normal tsumo. Added detailed console logging. (Ongoing)
+    - [ ] Implement complex yaku calculations (e.g., Chanta, Junchan, Honroutou, Chinitsu, Honitsu).
+    - [ ] Implement Ryanhan shibari (two-han minimum for winning) if game continues to many honba.
     - [ ] Handle complex game scenarios (e.g., multiple players can Ron, head bump - 2 player so simpler).
     - [ ] Implement Chankan yaku logic.
     - [ ] Implement Rinshan Kaihou yaku logic (partially done, needs full integration and testing).
@@ -105,21 +110,4 @@
     -   [x] `app/page.tsx`: 「カン」ボタン押下で可能な暗槓・加槓のリストをモーダル表示し、選択して実行できるようにUIを改善。
 -   [x] **裏ドラと嶺上開花:** (一部実装済み、確認と調整)
     -   [x] `yama.ts`: `Yama` インターフェースに `uraDoraIndicators` を追加。`createYama` で初期化。`getCurrentUraDora` 関数を確認。
-    -   [x] `game_state.ts`: `PlayerState` に `justKaned` フラグを追加。`GameState` に `uraDora` フィールドを追加。`processAction` でカン後に `justKaned` を設定し、打牌でクリア。和了時に `analyzeHandShanten` の `agariContext` に `uraDoraTiles` と `isRinshan` を設定するロジックを確認。
-    -   [x] `hand.ts`: `analyzeHandShanten` の `AgariContext` に `isRinshan?: boolean` を追加。`checkYaku` に渡す `HandContext` にも `isRinshan` を追加する部分を確認。
-    -   [x] `yaku.ts`: `ALL_YAKU_DEFINITIONS` に `RinshanKaihou` を追加。`checkYaku` を更新し `isRinshan` をチェックする部分を確認。
-    -   [x] 点数計算に裏ドラ・カンドラ・カン裏ドラが正しく反映されるか確認。
--   [x] **CPU AIと高度なゲームフロー:** (一部進行中)
-    -   [x] CPUの打牌AIを改善 (向聴数を考慮した打牌選択を `app/api/game/action/route.ts` に実装。`game_state.ts` への本格的な移植は今後の課題)。
-    -   [x] CPUのリーチ判断、カン判断（暗槓、加槓、大明槓）。
-    -   [x] CPUの鳴き判断（ポン）：`app/api/game/action/route.ts` に簡易的なポン実行ロジックを追加 (現在は役牌の場合ポン)。
-    -   [x] 流局（九種九牌）：`lib/mahjong/hand.ts` に判定関数 `isKyuushuuKyuuhai` を追加し、`lib/mahjong/game_state.ts` の初期配牌時と局開始時に九種九牌による流局処理を追加。
-    -   [x] 流局（四開槓）：`lib/mahjong/game_state.ts` にカンカウントを追加し、4回目のカンで嶺上開花がなければ流局する処理を追加。
--   [ ] **その他仕上げ:**
-    -   [ ] フリテンのチェックと表示 (警告など)。
-    -   [ ] UI/UXの微調整 (ローディング表示、エラーメッセージ、牌のソートなど)。
--   [x] Linterエラー (`game_state.ts` の型エラー) の最終確認と修正。
-    -   [ ] 最終テスト (Playwright)。
--   [ ] **ドキュメント:**
-    -   [ ] `README.md` の更新。
-    -   [ ] `.cursor/rules/knowledge.mdc` の更新。
+    -   [x] `game_state.ts`: `PlayerState` に `justKaned` フラグを追加。`GameState` に `uraDora` フィールドを追加。`processAction` でカン後に `justKaned` を設定し、打牌でクリア。和了時に `analyzeHandShanten`

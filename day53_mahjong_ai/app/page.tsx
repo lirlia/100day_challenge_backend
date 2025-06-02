@@ -50,10 +50,34 @@ export default function MahjongGamePage() {
     fetchNewGame();
   }, []);
 
+  // gameState が変更されるたびにデバッグ情報をコンソールに出力
+  useEffect(() => {
+    if (gameState) {
+      const currentPlayerState: PlayerState | undefined = gameState.player;
+      if (currentPlayerState) {
+        console.log("--- GameState Updated (Debug) ---");
+        console.log("Current Turn:", gameState.currentTurn);
+        console.log("Player Hand Length:", currentPlayerState.hand.length);
+        console.log("Player Hand Tiles:", JSON.stringify(currentPlayerState.hand.map(t => t.name)));
+        console.log("Last Draw:", currentPlayerState.lastDraw ? currentPlayerState.lastDraw.name : 'null');
+        console.log("Actual Last Draw Object:", JSON.stringify(currentPlayerState.lastDraw));
+        console.log("Can Riichi:", currentPlayerState.canRiichi);
+        console.log("Can TsumoAgari:", currentPlayerState.canTsumoAgari);
+        console.log("Can Ron:", currentPlayerState.canRon);
+        console.log("Can Pon:", currentPlayerState.canPon);
+        console.log("Can Kan (raw):", currentPlayerState.canKan);
+        console.log("Possible Kans:", JSON.stringify(currentPlayerState.possibleKans));
+        console.log("Selected Tile for Riichi:", selectedTileForRiichi ? selectedTileForRiichi.name : 'null');
+        console.log("Last Action Message:", gameState.lastActionMessage);
+        console.log("---------------------------------");
+      }
+    }
+  }, [gameState, selectedTileForRiichi]);
+
   const handleTileSelect = async (tile: TileType) => {
-    if (gameState?.currentTurn === currentPlayerId && playerState && playerState.hand.length === 14) {
+    if (gameState?.currentTurn === currentPlayerId && playerState) {
       setSelectedTileForRiichi(tile);
-      await submitAction({ type: ActionType.Discard, tile: tile });
+      console.log('Tile selected for potential discard/riichi:', tile);
     }
   };
 
@@ -76,11 +100,13 @@ export default function MahjongGamePage() {
         throw new Error(errorData.message || `Action failed: ${response.statusText}`);
       }
       const data: GameState = await response.json();
-      console.log('API Response - GameState:', JSON.parse(JSON.stringify(data)));
+      console.log('API Response - GameState raw data:', JSON.parse(JSON.stringify(data)));
+      console.log('API Response - data.currentTurn:', data.currentTurn);
       console.log('API Response - Player Hand Length:', data.player.hand.length);
       console.log('API Response - Player Hand:', JSON.parse(JSON.stringify(data.player.hand)));
       console.log('API Response - Player Last Draw:', JSON.parse(JSON.stringify(data.player.lastDraw)));
       setGameState(data);
+      console.log('After setGameState, expected currentTurn from data:', data.currentTurn);
       if (actionPayload.type !== ActionType.Riichi) {
         setSelectedTileForRiichi(null);
       }
@@ -166,7 +192,8 @@ export default function MahjongGamePage() {
   const canRiichi = playerState.canRiichi && gameState.currentTurn === 'player' && playerState.hand.length === 14;
   const canTsumoAgari = playerState.canTsumoAgari && gameState.currentTurn === 'player' && playerState.hand.length === 14;
   const canRon = playerState.canRon && gameState.currentTurn === 'player';
-  const canPlayerPerformKan = playerState.canKan && gameState.currentTurn === 'player' && playerState.hand.length === 14;
+  const canPlayerPerformKan = playerState.canKan && gameState.currentTurn === 'player';
+  const canPon = playerState.canPon && gameState.currentTurn === 'player';
 
   const startNewGame = async () => {
     setShowResultModal(false);
@@ -244,7 +271,7 @@ export default function MahjongGamePage() {
           lastDraw={playerState.lastDraw}
           onTileSelect={handleTileSelect}
           selectedTile={selectedTileForRiichi}
-          canDiscard={gameState.currentTurn === 'player' && playerState.hand.length === 14}
+          canDiscard={gameState.currentTurn === 'player'}
         />
 
         {playerState.melds.length > 0 && (
@@ -272,20 +299,53 @@ export default function MahjongGamePage() {
         {actionError && <div className="text-red-400 bg-red-900/50 p-2 rounded-md mb-3 text-sm">エラー: {actionError}</div>}
         {gameState.lastActionMessage && <div className="text-blue-300 bg-blue-900/50 p-2 rounded-md mb-3 text-sm">情報: {gameState.lastActionMessage}</div>}
 
+        {/* Debug Info for Riichi/Tsumo state */}
+        {gameState.currentTurn === 'player' && (
+          <div className="text-xs text-yellow-200 bg-gray-700 p-1 rounded-sm mb-2">
+            <p>Debug Info:</p>
+            <p>canRiichi: {playerState.canRiichi ? 'true' : 'false'}</p>
+            <p>canTsumoAgari: {playerState.canTsumoAgari ? 'true' : 'false'}</p>
+            <p>canPon: {playerState.canPon ? 'true' : 'false'}</p>
+            <p>canKan (raw from playerState): {playerState.canKan ? 'true' : 'false'}</p>
+            <p>canPlayerPerformKan (used for button): {canPlayerPerformKan ? 'true' : 'false'}</p>
+            <p>possibleKans: {JSON.stringify(playerState.possibleKans)}</p>
+            <p>selectedTileForRiichi: {selectedTileForRiichi ? selectedTileForRiichi.name : 'null'}</p>
+            <p>playerHand.length: {playerState.hand.length}</p>
+            <p>gameState.currentTurn: {gameState.currentTurn}</p>
+          </div>
+        )}
+
         {/* Player Action Buttons */}
         {gameState.currentTurn === 'player' && (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mt-3">
+            {selectedTileForRiichi && (
+              <button
+                type="button"
+                onClick={async () => {
+                  if (selectedTileForRiichi) {
+                    await submitAction({ type: ActionType.Discard, tile: selectedTileForRiichi });
+                  }
+                }}
+                disabled={isLoading || !selectedTileForRiichi}
+                className="clay-button action-button discard-button enabled:hover:bg-red-500 disabled:opacity-50"
+              >
+                {isLoading ? "処理中..." : `捨牌 (${selectedTileForRiichi.name})`}
+              </button>
+            )}
             {canRiichi && playerState.hand.length === 14 && (
               <button type="button" onClick={handleRiichi} disabled={isLoading || !selectedTileForRiichi} className="clay-button action-button riichi-button enabled:hover:bg-yellow-600 disabled:opacity-50">{isLoading ? "処理中..." : "リーチ"}</button>
             )}
             {canTsumoAgari && playerState.hand.length === 14 && (
               <button type="button" onClick={handleTsumoAgari} disabled={isLoading} className="clay-button action-button tsumoagari-button enabled:hover:bg-green-500 disabled:opacity-50">{isLoading ? "処理中..." : "ツモ和了"}</button>
             )}
-            {canPlayerPerformKan && playerState.hand.length === 14 && (
+            {canPlayerPerformKan && (
               <button type="button" onClick={handleKan} disabled={isLoading} className="clay-button action-button kan-button enabled:hover:bg-blue-600 disabled:opacity-50">{isLoading ? "処理中..." : "カン"}</button>
             )}
             {canRon && (
               <button type="button" onClick={handleRon} disabled={isLoading} className="clay-button action-button ron-button enabled:hover:bg-pink-600 disabled:opacity-50">{isLoading ? "処理中..." : "ロン"}</button>
+            )}
+            {canPon && (
+              <button type="button" onClick={async () => await submitAction({ type: ActionType.Pon })} disabled={isLoading} className="clay-button action-button pon-button enabled:hover:bg-orange-500 disabled:opacity-50">{isLoading ? "処理中..." : "ポン"}</button>
             )}
           </div>
         )}
