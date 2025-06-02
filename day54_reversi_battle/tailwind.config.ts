@@ -17,7 +17,8 @@ const config: Config = {
         'light-text': '#e0e0e0', // 明るいテキスト色
       },
       fontFamily: {
-        'orbitron': ['Orbitron', 'sans-serif'], // ネオン/SF風フォント
+        'orbitron': ['var(--font-orbitron)', 'sans-serif'], // next/fontのフォント変数を使用
+        'rajdhani': ['var(--font-rajdhani)', 'sans-serif'], // next/fontのフォント変数を使用
       },
       boxShadow: {
         'neon-glow-pink': '0 0 5px #FF00FF, 0 0 10px #FF00FF, 0 0 15px #FF00FF, 0 0 20px #FF00FF',

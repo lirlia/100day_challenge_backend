@@ -1,40 +1,118 @@
 @import "tailwindcss";
-@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap');
 
 :root {
-  --background: #1a1a2e; /* dark-bg from tailwind config */
-  --foreground: #e0e0e0; /* light-text from tailwind config */
-  --neon-blue: #00FFFF; /* neon-blue from tailwind config for direct use */
+  --background: #1a1a2e;
+  --foreground: #e0e0e0;
+  --neon-blue: #00FFFF;
+  --neon-pink: #FF00FF;
+  --neon-green: #00FF00;
+  --neon-purple: #8A2BE2;
+  --neon-orange: #FF6600;
 }
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: 'Orbitron', var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-/* ダークモード設定は維持しつつ、デフォルトをネオンテーマに合わせる */
-/* @media (prefers-color-scheme: dark) {
-  :root {
-    --background: #1a1a2e;
-    --foreground: #e0e0e0;
-  }
-} */
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: 'Orbitron', sans-serif; /* TailwindのfontFamily設定を優先 */
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
 }
 
-/* 基本的なネオングロースタイルをh1に適用（例）*/
+/* ネオングロー効果 */
+.neon-glow-blue {
+  text-shadow:
+    0 0 5px var(--neon-blue),
+    0 0 10px var(--neon-blue),
+    0 0 15px var(--neon-blue),
+    0 0 20px var(--neon-blue),
+    0 0 25px var(--neon-blue);
+}
+
+.neon-glow-pink {
+  text-shadow:
+    0 0 5px var(--neon-pink),
+    0 0 10px var(--neon-pink),
+    0 0 15px var(--neon-pink),
+    0 0 20px var(--neon-pink),
+    0 0 25px var(--neon-pink);
+}
+
+.neon-glow-green {
+  text-shadow:
+    0 0 5px var(--neon-green),
+    0 0 10px var(--neon-green),
+    0 0 15px var(--neon-green),
+    0 0 20px var(--neon-green),
+    0 0 25px var(--neon-green);
+}
+
+/* ボーダーネオングロー */
+.neon-border-blue {
+  border: 2px solid var(--neon-blue);
+  box-shadow:
+    0 0 5px var(--neon-blue),
+    0 0 10px var(--neon-blue),
+    0 0 15px var(--neon-blue),
+    inset 0 0 5px var(--neon-blue);
+}
+
+.neon-border-pink {
+  border: 2px solid var(--neon-pink);
+  box-shadow:
+    0 0 5px var(--neon-pink),
+    0 0 10px var(--neon-pink),
+    0 0 15px var(--neon-pink),
+    inset 0 0 5px var(--neon-pink);
+}
+
+.neon-border-green {
+  border: 2px solid var(--neon-green);
+  box-shadow:
+    0 0 5px var(--neon-green),
+    0 0 10px var(--neon-green),
+    0 0 15px var(--neon-green),
+    inset 0 0 5px var(--neon-green);
+}
+
+/* パルスアニメーション */
+.neon-pulse {
+  animation: neon-pulse 2s ease-in-out infinite alternate;
+}
+
+@keyframes neon-pulse {
+  from {
+    text-shadow:
+      0 0 5px var(--neon-blue),
+      0 0 10px var(--neon-blue),
+      0 0 15px var(--neon-blue);
+  }
+  to {
+    text-shadow:
+      0 0 10px var(--neon-blue),
+      0 0 20px var(--neon-blue),
+      0 0 30px var(--neon-blue),
+      0 0 40px var(--neon-blue);
+  }
+}
+
+/* 基本的なネオングロースタイル */
 h1 {
   text-shadow: 0 0 5px var(--neon-blue), 0 0 10px var(--neon-blue), 0 0 15px var(--neon-blue);
+}
+
+/* サイバーパンク風のスクロールバー */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1a1a2e;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--neon-blue);
+  border-radius: 4px;
+  box-shadow: 0 0 5px var(--neon-blue);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--neon-pink);
+  box-shadow: 0 0 10px var(--neon-pink);
 }

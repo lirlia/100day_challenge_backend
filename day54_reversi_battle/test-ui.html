@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reversi Battle Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #1a1a2e;
+            color: #fff;
+        }
+        .test-container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .test-item {
+            background: #2a2a3e;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+            border: 1px solid #00FFFF;
+        }
+        .success { border-color: #00FF00; }
+        .error { border-color: #FF0000; }
+        .loading { border-color: #FFFF00; }
+        iframe {
+            width: 100%;
+            height: 600px;
+            border: 2px solid #00FFFF;
+            border-radius: 8px;
+        }
+        button {
+            background: #00FFFF;
+            color: #000;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        button:hover {
+            background: #00CCCC;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>🎮 Reversi Battle - UI Test</h1>
+
+        <div class="test-item">
+            <h2>📱 アプリケーション表示テスト</h2>
+            <p>下記のiframe内でアプリケーションが正常に表示されるかを確認してください。</p>
+            <button onclick="reloadApp()">🔄 リロード</button>
+            <button onclick="openInNewTab()">🚀 新しいタブで開く</button>
+            <br><br>
+            <iframe id="appFrame" src="http://localhost:3001" frameborder="0"></iframe>
+        </div>
+
+        <div class="test-item">
+            <h2>✅ チェックリスト</h2>
+            <div id="checklist">
+                <label><input type="checkbox"> タイトル画面が表示される</label><br>
+                <label><input type="checkbox"> "REVERSI BATTLE" タイトルが見える</label><br>
+                <label><input type="checkbox"> ネオンエフェクトが動作している</label><br>
+                <label><input type="checkbox"> "GAME START" ボタンがクリックできる</label><br>
+                <label><input type="checkbox"> ゲーム画面に移行できる</label><br>
+                <label><input type="checkbox"> 8x8のボードが表示される</label><br>
+                <label><input type="checkbox"> 初期の黒白石（各2個）が見える</label><br>
+                <label><input type="checkbox"> 有効な手がハイライトされる</label><br>
+                <label><input type="checkbox"> 石をクリックして配置できる</label><br>
+                <label><input type="checkbox"> CPUが自動で手を打つ</label><br>
+                <label><input type="checkbox"> 石の反転アニメーションが動作する</label><br>
+                <label><input type="checkbox"> スコアが正しく更新される</label><br>
+            </div>
+        </div>
+
+        <div class="test-item">
+            <h2>🐛 問題レポート</h2>
+            <textarea id="problemReport" placeholder="見つかった問題や改善点を記録してください..."
+                      style="width: 100%; height: 100px; background: #1a1a2e; color: #fff; border: 1px solid #00FFFF; padding: 10px;"></textarea>
+            <br><br>
+            <button onclick="saveProblemReport()">💾 問題レポートを保存</button>
+        </div>
+
+        <div class="test-item">
+            <h2>📊 テスト結果</h2>
+            <div id="testResults">
+                <p>テスト結果がここに表示されます。</p>
+                <button onclick="generateTestReport()">📝 レポート生成</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function reloadApp() {
+            document.getElementById('appFrame').src = document.getElementById('appFrame').src;
+        }
+
+        function openInNewTab() {
+            window.open('http://localhost:3001', '_blank');
+        }
+
+        function saveProblemReport() {
+            const report = document.getElementById('problemReport').value;
+            if (report.trim()) {
+                console.log('問題レポート:', report);
+                alert('問題レポートがコンソールに出力されました。');
+            } else {
+                alert('レポート内容を入力してください。');
+            }
+        }
+
+        function generateTestReport() {
+            const checkboxes = document.querySelectorAll('#checklist input[type="checkbox"]');
+            const total = checkboxes.length;
+            const checked = Array.from(checkboxes).filter(cb => cb.checked).length;
+            const percentage = Math.round((checked / total) * 100);
+
+            const result = `
+                <h3>テスト完了率: ${percentage}% (${checked}/${total})</h3>
+                <p>チェック済み項目: ${checked}</p>
+                <p>未チェック項目: ${total - checked}</p>
+                <p>テスト実行日時: ${new Date().toLocaleString('ja-JP')}</p>
+            `;
+
+            document.getElementById('testResults').innerHTML = result;
+
+            if (percentage >= 80) {
+                document.getElementById('testResults').className = 'success';
+            } else if (percentage >= 50) {
+                document.getElementById('testResults').className = 'loading';
+            } else {
+                document.getElementById('testResults').className = 'error';
+            }
+        }
+
+        // フレームのロード状況を監視
+        document.getElementById('appFrame').onload = function() {
+            console.log('✅ アプリケーションフレームが読み込まれました');
+        };
+
+        document.getElementById('appFrame').onerror = function() {
+            console.error('❌ アプリケーションフレームの読み込みに失敗しました');
+        };
+    </script>
+</body>
+</html>
