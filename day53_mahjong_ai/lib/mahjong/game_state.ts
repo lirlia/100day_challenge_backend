@@ -60,6 +60,7 @@ export interface PlayerState {
   isRiichi: boolean;    // リーチしているか
   riichiTileIndex: number | null; // リーチ宣言牌が手牌の何番目か（リーチ後ツモ切り時に使用）
   riichiTurn: number;   // リーチ宣言した巡目 (フリテン確認などに使用)
+  seatWind: HonorType; // 自風 (東:1, 南:2, 西:3, 北:4) を追加
 
   // アクション可能フラグ (サーバーサイドで設定)
   canRiichi?: boolean;
@@ -81,7 +82,7 @@ export interface GameState {
   turn: number;            // 何巡目か
   currentTurn: PlayerIdentifier;   // 現在誰のターンか
   dealer: PlayerIdentifier;         // 現在の局の親プレイヤー
-  wind: 'east' | 'south' | 'west' | 'north'; // 場風 (東風戦なら東固定)
+  wind: HonorType; // 場風 (東風戦なら東固定) 文字列からHonorTypeに変更
   round: number;           // 現在の局 (例: 1 = 東1局, 2 = 東2局)
   honba: number;           // 本場 (積み棒の数)
   riichiSticks: number;    // リーチ棒の数
@@ -102,108 +103,99 @@ export interface GameState {
 
 export function createInitialGameState(
   gameId: string,
-  playerHandTilesFromDeal: Tile[], // 14枚 (親)
-  cpuHandTilesFromDeal: Tile[],    // 13枚 (子)
-  yamaFromDeal: Yama,            // dealInitialHands 後の山
+  playerHandTilesFromDeal: Tile[],
+  cpuHandTilesFromDeal: Tile[],
+  yamaFromDeal: Yama,
   dora: Tile[]
 ): GameState {
-  // 九種九牌チェック (これは配牌直後に行うべきなので、引数の手牌を使う)
-  // この時点では親は14枚、子は13枚
-  // isKyuushuuKyuuhai は13枚または14枚の手牌を想定している
-  const playerKyuushuuCheckHand = [...playerHandTilesFromDeal]; // 14枚
-  const cpuKyuushuuCheckHand = [...cpuHandTilesFromDeal];       // 13枚
+  const currentDealer: PlayerIdentifier = 'player'; // 東1局はプレイヤーが親と仮定
+
+  const playerInitialSeatWind = HonorType.TON; // currentDealer が 'player' 固定なので
+  const cpuInitialSeatWind = HonorType.NAN;    // currentDealer が 'player' 固定なので
+
+  const playerKyuushuuCheckHand = [...playerHandTilesFromDeal];
+  const cpuKyuushuuCheckHand = [...cpuHandTilesFromDeal];
 
   if (isKyuushuuKyuuhai(playerKyuushuuCheckHand) || isKyuushuuKyuuhai(cpuKyuushuuCheckHand)) {
     const kyuushuuPlayer = isKyuushuuKyuuhai(playerKyuushuuCheckHand) ? 'player' : 'cpu';
-    const newYamaForKyuushuu = createYama(); // 山を作り直す
+    const newYamaForKyuushuu = createYama();
     const newDoraForKyuushuu = getCurrentDora(newYamaForKyuushuu);
-    // 九種九牌時は、手牌はそのまま表示し、流局とする
+    // 九種九牌時は新規局扱いとする (本場+1, 点数リセットなし)
+    // 本来は前の局の状態を引き継ぐべきだが、この関数の責務外とする
     return {
       gameId,
       phase: GamePhase.ROUND_ENDED,
-      turn: 1, // 最初の巡目
-      currentTurn: 'player', // 便宜上プレイヤーにしておく
-      dealer: 'player',    // 最初の親
-      wind: 'east',
+      turn: 1,
+      currentTurn: currentDealer,
+      dealer: currentDealer,
+      wind: HonorType.TON,
       round: 1,
-      honba: 1, // 九種九牌は本場を1つ増やす
-      riichiSticks: 0,
+      honba: 1, // 九種九牌は本場を1つ増やす (新規ゲームなら0+1)
+      riichiSticks: 0, // リーチ棒はなし
       dora: newDoraForKyuushuu,
-      player: { hand: playerHandTilesFromDeal, river: [], melds: [], score: 25000, isRiichi: false, riichiTileIndex: null, riichiTurn: 0, possibleKans: [] },
-      cpu: { hand: cpuHandTilesFromDeal, river: [], melds: [], score: 25000, isRiichi: false, riichiTileIndex: null, riichiTurn: 0, possibleKans: [] },
+      // スコアは初期値のまま (この関数は新規ゲーム開始も兼ねるため)
+      player: { hand: playerHandTilesFromDeal, river: [], melds: [], score: 25000, isRiichi: false, riichiTileIndex: null, riichiTurn: 0, possibleKans: [], seatWind: playerInitialSeatWind },
+      cpu: { hand: cpuHandTilesFromDeal, river: [], melds: [], score: 25000, isRiichi: false, riichiTileIndex: null, riichiTurn: 0, possibleKans: [], seatWind: cpuInitialSeatWind },
       yama: newYamaForKyuushuu,
       winner: 'draw',
-      lastActionMessage: `${kyuushuuPlayer === 'player' ? "あなた" : "CPU"}が九種九牌のため流局しました。`,
-      turnCount: 0, // アクションはまだない
+      lastActionMessage: `${kyuushuuPlayer === 'player' ? "あなた" : "CPU"}が九種九牌のため流局しました。本場を増やして同じ局を続けます。`,
+      turnCount: 0,
       kanCount: 0,
       totalRounds: 4,
     };
   }
 
-  const currentDealer: PlayerIdentifier = 'player'; // 固定
-
-  // dealInitialHands で既に親は14枚、子は13枚になっている
-  // 追加のツモは不要
-  const dealerInitialHand = [...playerHandTilesFromDeal]; // 14枚
-  const nonDealerInitialHand = [...cpuHandTilesFromDeal]; // 13枚
-
-  // 親の14枚目の牌が最初のツモ牌扱い
+  const dealerInitialHand = [...playerHandTilesFromDeal];
+  const nonDealerInitialHand = [...cpuHandTilesFromDeal];
   const dealerLastDraw = dealerInitialHand.length === 14 ? dealerInitialHand[dealerInitialHand.length - 1] : undefined;
-  if (!dealerLastDraw) {
-      // 万が一14枚でない場合はエラーまたは警告
-      console.error("Dealer's initial hand is not 14 tiles as expected in createInitialGameState after deal.");
-      // フォールバックとして、山から1枚引く (以前のロジックに近いが、これは問題の兆候)
-      // const fallbackDraw = drawTile(yamaFromDeal);
-      // dealerLastDraw = fallbackDraw.tile;
-      // yamaFromDeal = fallbackDraw.updatedYama;
-      // if(dealerLastDraw) dealerInitialHand.push(dealerLastDraw); // 手牌に加える
-  }
-
 
   const initialPlayerState: PlayerState = {
-    hand: dealerInitialHand, // 14枚のはず
-    river: [], melds: [], score: 25000, isRiichi: false, riichiTileIndex: null, riichiTurn: 0,
-    lastDraw: currentDealer === 'player' ? dealerLastDraw : undefined,
+    hand: dealerInitialHand,
+    river: [], melds: [], score: 25000,
+    isRiichi: false, riichiTileIndex: null, riichiTurn: 0,
+    lastDraw: dealerLastDraw, // currentDealer が 'player' 固定なので、プレイヤーのツモ牌
     possibleKans: [],
+    seatWind: playerInitialSeatWind,
   };
 
   const initialCpuState: PlayerState = {
-    hand: nonDealerInitialHand, // 13枚のはず
-    river: [], melds: [], score: 25000, isRiichi: false, riichiTileIndex: null, riichiTurn: 0,
-    lastDraw: currentDealer === 'cpu' ? dealerLastDraw : undefined, // playerが親なのでここはundefined
+    hand: nonDealerInitialHand,
+    river: [], melds: [], score: 25000,
+    isRiichi: false, riichiTileIndex: null, riichiTurn: 0,
+    lastDraw: undefined, // currentDealer が 'player' 固定なので、CPUは最初はツモなし
     possibleKans: [],
+    seatWind: cpuInitialSeatWind,
   };
 
   const initialGameState: GameState = {
     gameId,
-    phase: GamePhase.PLAYER_TURN, // 親のターンから開始
+    phase: GamePhase.PLAYER_TURN,
     turn: 1,
     currentTurn: currentDealer,
     dealer: currentDealer,
-    wind: 'east',
+    wind: HonorType.TON,
     round: 1,
     honba: 0,
     riichiSticks: 0,
     dora,
     player: initialPlayerState,
     cpu: initialCpuState,
-    yama: yamaFromDeal, // dealInitialHands 後の山をそのまま使用
+    yama: yamaFromDeal,
     winner: null,
-    turnCount: 1, // 最初のツモは1巡目
+    turnCount: 1,
     kanCount: 0,
     totalRounds: 4,
   };
 
-  // 親の最初のツモ牌に対するアクションフラグ更新
-  // dealerLastDraw が undefined でないことを確認
-  if (currentDealer === 'player' && dealerLastDraw) {
+  // currentDealer は 'player' 固定なので、最初の分岐のみ実行される
+  if (dealerLastDraw) {
     updateActionFlagsForPlayer(initialGameState.player, initialGameState, dealerLastDraw, true);
-  } else if (currentDealer === 'cpu' && dealerLastDraw) { // playerが親なのでここは通らないはず
-     updateActionFlagsForPlayer(initialGameState.cpu, initialGameState, dealerLastDraw, true);
   }
+  // else if (currentDealer === 'cpu' && dealerLastDraw) { // このブロックは到達しない
+  //    updateActionFlagsForPlayer(initialGameState.cpu, initialGameState, dealerLastDraw, true);
+  // }
   return initialGameState;
 }
-
 
 /**
  * プレイヤーのアクション後に手牌と状況を分析し、可能なアクションフラグを更新する。
@@ -327,10 +319,6 @@ export function updateActionFlagsForPlayer(playerState: PlayerState, gameState: 
 export function proceedToNextRoundOrEndGame(currentState: GameState): GameState {
   let nextState = JSON.parse(JSON.stringify(currentState)) as GameState;
 
-  const playerWind = nextState.currentTurn === 'player' ? HonorType.TON : HonorType.NAN;
-  const roundWind = HonorType.TON; // 二人麻雀では東場固定
-
-  // 0. ゲーム終了判定 (誰かが飛んだ場合)
   if (nextState.player.score <= 0) {
     nextState.phase = GamePhase.GAME_OVER;
     nextState.gameWinner = 'cpu';
@@ -344,160 +332,101 @@ export function proceedToNextRoundOrEndGame(currentState: GameState): GameState 
     return nextState;
   }
 
-  // 1. 連荘判定 / 親流れ判定
-  let renchan = false; // 連荘フラグ
-  const oyaPlayerId = nextState.round % 2 === 1 ? 'player' : 'cpu'; // 東1,3局はplayer, 東2,4局はcpu (仮)
-
-  if (nextState.winner === oyaPlayerId) { // 親の和了
+  let renchan = false;
+  if (nextState.winner === nextState.dealer) {
     renchan = true;
-  } else if (nextState.winner === 'draw') { // 流局
-    // 親が聴牌していれば連荘 (簡単なチェック)
-    const oyaState = oyaPlayerId === 'player' ? nextState.player : nextState.cpu;
-    const oyaHandAnalysis = analyzeHandShanten(
-      oyaState.hand,
-      oyaState.melds
-    );
-    if (oyaHandAnalysis.shanten === 0) {
-      renchan = true;
-    }
-  }
-
-  if (renchan) {
-    nextState.honba++; // 本場を増やす
-    nextState.lastActionMessage = nextState.winner === 'draw' ? "流局しました (親聴牌)。次の本場へ。" : `${oyaPlayerId === 'player' ? "あなた" : "CPU"}が和了しました。連荘で次の本場へ。`;
+    nextState.honba++;
+  } else if (nextState.winner === 'draw') {
+    // TODO: 親テンパイ判定 (isTenpai(nextState.dealer === 'player' ? nextState.player : nextState.cpu))
+    // renchan = isTenpai(...);
+    renchan = false; // 仮: 流局は親流れ
+    nextState.honba++;
   } else {
-    nextState.honba = 0; // 本場リセット
-    nextState.round++;   // 次の局へ
-    // 二人麻雀なので親は交互
-    nextState.lastActionMessage = nextState.winner === 'draw' ? "流局しました (親ノーテン)。次の局へ。" : `${nextState.winner === 'player' ? "あなた" : "CPU"}が和了しました。次の局へ。`;
-  }
-  nextState.riichiSticks = 0; // 供託リーチ棒は精算されているはずなのでリセット
-
-  // 2. 規定局数終了判定 (例: 東4局終了)
-  if (nextState.round > nextState.totalRounds) {
-    nextState.phase = GamePhase.GAME_OVER;
-    // 点数比較で最終的な勝者を決定
-    if (nextState.player.score > nextState.cpu.score) {
-      nextState.gameWinner = 'player';
-      nextState.lastActionMessage += ` ${nextState.totalRounds}局終了。あなたの総合勝利です！`;
-    } else if (nextState.cpu.score > nextState.player.score) {
-      nextState.gameWinner = 'cpu';
-      nextState.lastActionMessage += ` ${nextState.totalRounds}局終了。CPUの総合勝利です。`;
-    } else {
-      nextState.gameWinner = 'draw'; // 引き分け
-      nextState.lastActionMessage += ` ${nextState.totalRounds}局終了。総合引き分けです。`;
-    }
-    return nextState;
+    renchan = false;
+    nextState.honba = 0;
   }
 
-  // 3. 次の局の準備
-  nextState.phase = GamePhase.PLAYER_TURN; // 次の局はプレイヤーのターンから開始 (仮)
-  nextState.turn = 1;
-  nextState.turnCount = 1;
+  let newDealer = nextState.dealer;
+  if (!renchan) {
+    newDealer = nextState.dealer === 'player' ? 'cpu' : 'player';
+  }
+
+  if (nextState.round >= nextState.totalRounds && !renchan) {
+      nextState.phase = GamePhase.GAME_OVER;
+      if (nextState.player.score > nextState.cpu.score) nextState.gameWinner = 'player';
+      else if (nextState.cpu.score > nextState.player.score) nextState.gameWinner = 'cpu';
+      else nextState.gameWinner = 'draw';
+      nextState.lastActionMessage = `最終局(${nextState.wind === HonorType.TON ? '東' : '南'}${nextState.round}局 ${nextState.honba}本場)が終了しました。`;
+      return nextState;
+  }
+
+  nextState.round = renchan ? nextState.round : nextState.round + 1;
+  if (nextState.round > nextState.totalRounds && !renchan) {
+      nextState.phase = GamePhase.GAME_OVER;
+      if (nextState.player.score > nextState.cpu.score) nextState.gameWinner = 'player';
+      else if (nextState.cpu.score > nextState.player.score) nextState.gameWinner = 'cpu';
+      else nextState.gameWinner = 'draw';
+      nextState.lastActionMessage = `最終局(${nextState.wind === HonorType.TON ? '東' : '南'}${nextState.round}局 ${nextState.honba}本場)が終了しました。`;
+      return nextState;
+  }
+
+  nextState.dealer = newDealer;
+  nextState.player.seatWind = nextState.dealer === 'player' ? HonorType.TON : HonorType.NAN;
+  nextState.cpu.seatWind = nextState.dealer === 'cpu' ? HonorType.TON : HonorType.NAN;
+
+  nextState.yama = createYama();
+  nextState.dora = getCurrentDora(nextState.yama);
+  nextState.uraDora = undefined;
   nextState.winner = null;
   nextState.winningHandInfo = undefined;
+  nextState.turnCount = 1;
   nextState.kanCount = 0;
-  nextState.uraDora = undefined;
 
-  const newYama = createYama();
-  const { playerHand: newPlayerHand, cpuHand: newCpuHand } = dealInitialHands(newYama);
-  nextState.yama = newYama;
-  nextState.dora = getCurrentDora(newYama);
+  [nextState.player, nextState.cpu].forEach(p => {
+    p.hand = [];
+    p.river = [];
+    p.melds = [];
+    p.isRiichi = false; p.riichiTileIndex = null; p.riichiTurn = 0;
+    p.canRiichi = false; p.canTsumoAgari = false; p.canRon = false;
+    p.canKan = false; p.possibleKans = []; p.canPon = false; p.tileToPon = undefined;
+    p.justKaned = false; p.lastDraw = undefined; p.lastDiscard = undefined;
+  });
 
+  // dealInitialHands は dealer 情報を使わない (yama.ts 側で親決め固定)
+  const { playerHand: newPlayerHand, cpuHand: newCpuHand, updatedYama: yamaAfterDeal } = dealInitialHands(nextState.yama);
+  nextState.player.hand = newPlayerHand;
+  nextState.cpu.hand = newCpuHand;
+  nextState.yama = yamaAfterDeal;
 
-  const nextOya = nextState.round % 2 === 1 ? 'player' : 'cpu'; // 次の局の親
-  nextState.currentTurn = nextOya; // 親からスタート
+  // 注意: dealInitialHands が親（プレイヤー）に14枚、子（CPU）に13枚配る前提。
+  // もし dealer が CPU の場合、ここで手牌を入れ替えるか、dealInitialHands を修正する必要がある。
+  // 現在の dealInitialHands はプレイヤー親固定なので、dealer が CPU の場合に不整合。
+  if (nextState.dealer === 'cpu') {
+      // CPUが親なので、CPUが14枚、プレイヤーが13枚になるように調整
+      const tempPlayerHand = [...nextState.player.hand]; // 14枚のはず (dealInitialHandsの結果)
+      const tempCpuHand = [...nextState.cpu.hand];   // 13枚のはず
 
-  // 新しい手牌を配る
-  const playerHandForNextRound = [...newPlayerHand];
-  const cpuHandForNextRound = [...newCpuHand];
-
-  let firstTsumoTile: Tile | undefined;
-
-  if (nextState.currentTurn === 'player') {
-    firstTsumoTile = playerHandForNextRound.pop(); // プレイヤーが親なら14枚目がツモ牌
-    nextState.player = {
-      hand: playerHandForNextRound, // 13枚
-      river: [],
-      melds: [],
-      score: nextState.player.score, // 点数は持ち越し
-      isRiichi: false,
-      riichiTurn: 0,
-      riichiTileIndex: null,
-      lastDraw: firstTsumoTile,
-      possibleKans: [],
-    };
-    nextState.cpu = {
-      hand: cpuHandForNextRound, // 13枚
-      river: [],
-      melds: [],
-      score: nextState.cpu.score,
-      isRiichi: false,
-      riichiTurn: 0,
-      riichiTileIndex: null,
-      lastDraw: undefined,
-      possibleKans: [],
-    };
-  } else { // CPUが親
-    firstTsumoTile = cpuHandForNextRound.pop(); // CPUが親なら14枚目がツモ牌
-    nextState.player = {
-      hand: playerHandForNextRound, // 13枚
-      river: [],
-      melds: [],
-      score: nextState.player.score,
-      isRiichi: false,
-      riichiTurn: 0,
-      riichiTileIndex: null,
-      lastDraw: undefined,
-      possibleKans: [],
-    };
-    nextState.cpu = {
-      hand: cpuHandForNextRound, // 13枚
-      river: [],
-      melds: [],
-      score: nextState.cpu.score,
-      isRiichi: false,
-      riichiTurn: 0,
-      riichiTileIndex: null,
-      lastDraw: firstTsumoTile,
-      possibleKans: [],
-    };
+      if (tempPlayerHand.length === 14 && tempCpuHand.length === 13) {
+          nextState.cpu.hand = tempPlayerHand; // CPUに14枚
+          nextState.player.hand = tempCpuHand; // Playerに13枚
+      } else {
+          console.error("Hand distribution mismatch when CPU is dealer in proceedToNextRoundOrEndGame");
+      }
   }
 
-
-  // 九種九牌チェック (新しい手牌に対して)
-  let playerHandForKyuushuu = [...nextState.player.hand];
-  let cpuHandForKyuushuu = [...nextState.cpu.hand];
-
-  if (firstTsumoTile) { // undefined でないことを確認
-    if (nextState.currentTurn === 'player') {
-      playerHandForKyuushuu.push(firstTsumoTile);
-    } else if (nextState.currentTurn === 'cpu') {
-      cpuHandForKyuushuu.push(firstTsumoTile);
-    }
-  }
-
-  const playerKyuushuu = isKyuushuuKyuuhai(playerHandForKyuushuu);
-  const cpuKyuushuu = isKyuushuuKyuuhai(cpuHandForKyuushuu);
-
-  if (playerKyuushuu || cpuKyuushuu) {
-    const kyuushuuPlayer = playerKyuushuu ? 'player' : 'cpu';
-    nextState.phase = GamePhase.ROUND_ENDED;
-    nextState.winner = 'draw';
-    nextState.lastActionMessage = `${kyuushuuPlayer === 'player' ? "あなた" : "CPU"}が九種九牌のため流局しました。本場を増やして同じ局を続けます。`;
-    nextState.honba++; // 本場を増やす (親は流れない)
-    // 再度 proceedToNextRoundOrEndGame を呼ぶと無限ループの可能性があるので、手動で初期化し直す
-    return proceedToNextRoundOrEndGame(nextState); // 再帰的に呼び出して局を再設定
-  }
-
-
-  // 親の最初のツモ牌に対するアクションフラグ更新
+  nextState.currentTurn = nextState.dealer;
+  nextState.phase = nextState.currentTurn === 'player' ? GamePhase.PLAYER_TURN : GamePhase.CPU_TURN;
   const activePlayerState = nextState.currentTurn === 'player' ? nextState.player : nextState.cpu;
-  if (firstTsumoTile) {
-    updateActionFlagsForPlayer(activePlayerState, nextState, firstTsumoTile, true);
-  }
-  nextState.lastActionMessage = `${nextState.currentTurn === 'player' ? "あなた" : "CPU"}の親番で局が開始されました。${nextState.honba > 0 ? `${nextState.honba}本場です。` : ''}`;
 
+  const firstTsumoTile = activePlayerState.hand.length > 0 && (activePlayerState.hand.length % 3 === 2)
+                         ? activePlayerState.hand[activePlayerState.hand.length - 1]
+                         : undefined; // 親は14枚、子は13枚のはず。ツモ牌は14枚目の牌。
+  activePlayerState.lastDraw = firstTsumoTile;
+
+  if (firstTsumoTile) {
+      updateActionFlagsForPlayer(activePlayerState, nextState, firstTsumoTile, true);
+  }
+  nextState.lastActionMessage = `${nextState.currentTurn === 'player' ? "あなた" : "CPU"}の親番で${nextState.wind === HonorType.TON ? '東' : '南'}${nextState.round}局 ${nextState.honba}本場が開始されました。`;
 
   return nextState;
 }

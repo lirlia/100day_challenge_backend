@@ -10,7 +10,7 @@ import { GameResultModal } from '../components/game-result-modal';
 
 export default function MahjongGamePage() {
   const [gameState, setGameState] = useState<GameState | null>(null);
-  const [selectedTile, setSelectedTile] = useState<TileType | null>(null);
+  const [selectedTileForRiichi, setSelectedTileForRiichi] = useState<TileType | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -50,9 +50,10 @@ export default function MahjongGamePage() {
     fetchNewGame();
   }, []);
 
-  const handleTileSelect = (tile: TileType) => {
-    if (gameState?.currentTurn === currentPlayerId) {
-      setSelectedTile(prev => (prev?.id === tile.id ? null : tile));
+  const handleTileSelect = async (tile: TileType) => {
+    if (gameState?.currentTurn === currentPlayerId && playerState && playerState.hand.length === 14) {
+      setSelectedTileForRiichi(tile);
+      await submitAction({ type: ActionType.Discard, tile: tile });
     }
   };
 
@@ -80,10 +81,12 @@ export default function MahjongGamePage() {
       console.log('API Response - Player Hand:', JSON.parse(JSON.stringify(data.player.hand)));
       console.log('API Response - Player Last Draw:', JSON.parse(JSON.stringify(data.player.lastDraw)));
       setGameState(data);
-      setSelectedTile(null);
+      if (actionPayload.type !== ActionType.Riichi) {
+        setSelectedTileForRiichi(null);
+      }
       if ([GamePhase.PLAYER_TURN, GamePhase.CPU_TURN, GamePhase.ROUND_ENDED, GamePhase.GAME_OVER].includes(data.phase)) {
         if (data.phase === GamePhase.GAME_OVER || (data.phase === GamePhase.ROUND_ENDED && data.winner !== null)) {
-            setShowResultModal(true);
+          setShowResultModal(true);
         }
       }
     } catch (err) {
@@ -94,26 +97,21 @@ export default function MahjongGamePage() {
     }
   };
 
-  const handleDiscard = async () => {
-    if (!selectedTile) return;
-    await submitAction({ type: ActionType.Discard, tile: selectedTile });
-  };
-
   const handleRiichi = async () => {
-    if (!selectedTile) {
-        setActionError("リーチするには、まず捨てる牌を選んでください。");
-        return;
+    if (!selectedTileForRiichi) {
+      setActionError("リーチするには、まず捨てる牌を選んでください (牌をクリックすると選択されます)。");
+      return;
     }
     const playerState = gameState?.player;
     if (!playerState) {
-        setActionError("プレイヤーの状態が取得できません。");
-        return;
+      setActionError("プレイヤーの状態が取得できません。");
+      return;
     }
     if (playerState.score < 1000) {
-        setActionError("点数が足りないためリーチできません (1000点必要)。");
-        return;
+      setActionError("点数が足りないためリーチできません (1000点必要)。");
+      return;
     }
-    await submitAction({ type: ActionType.Riichi, tileToDiscard: selectedTile });
+    await submitAction({ type: ActionType.Riichi, tileToDiscard: selectedTileForRiichi });
   };
 
   const handleTsumoAgari = async () => {
@@ -127,14 +125,14 @@ export default function MahjongGamePage() {
   const handleKan = async () => {
     const playerState = gameState?.player;
     if (playerState && playerState.possibleKans && playerState.possibleKans.length > 0) {
-        const firstKan = playerState.possibleKans[0];
-        if (firstKan) {
-             await submitAction({ type: ActionType.Kan, tile: firstKan.tile, meldType: firstKan.type, meld: firstKan.meldToUpgrade });
-        } else {
-            setActionError("実行可能なカンがありません。");
-        }
+      const firstKan = playerState.possibleKans[0];
+      if (firstKan) {
+        await submitAction({ type: ActionType.Kan, tile: firstKan.tile, meldType: firstKan.type, meld: firstKan.meldToUpgrade });
+      } else {
+        setActionError("実行可能なカンがありません。");
+      }
     } else {
-        setActionError("カンできる牌がありません。");
+      setActionError("カンできる牌がありません。");
     }
   };
 
@@ -172,7 +170,7 @@ export default function MahjongGamePage() {
 
   const startNewGame = async () => {
     setShowResultModal(false);
-    setSelectedTile(null);
+    setSelectedTileForRiichi(null);
     setActionError(null);
     setIsLoading(true);
     try {
@@ -202,7 +200,7 @@ export default function MahjongGamePage() {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm sm:text-base">
           <div className="clay-info-box shadow-clay-inset-sm">{displayRound(gameState.round)}局 {gameState.honba}本場</div>
           <div className="clay-info-box shadow-clay-inset-sm">P: {playerState.score} | CPU: {cpuState.score}</div>
-          <div className="clay-info-box shadow-clay-inset-sm flex items-center justify-center">ドラ: {gameState.dora.length > 0 ? <TileDisplay tile={gameState.dora[0]} className="w-8 h-12 sm:w-10 sm:h-16 text-sm"/> : 'N/A'}</div>
+          <div className="clay-info-box shadow-clay-inset-sm flex items-center justify-center">ドラ: {gameState.dora.length > 0 ? <TileDisplay tile={gameState.dora[0]} className="w-8 h-12 sm:w-10 sm:h-16 text-sm" /> : 'N/A'}</div>
           <div className="clay-info-box shadow-clay-inset-sm">山: {gameState.yama.tiles.length} / {gameState.riichiSticks}本</div>
         </div>
       </header>
@@ -212,23 +210,23 @@ export default function MahjongGamePage() {
         <h2 className="text-xl mb-2 font-semibold text-gray-300">CPU ('cpu') {gameState.currentTurn === 'cpu' && <span className="text-yellow-400 clay-text-accent">(思考中...)</span>}</h2>
         <div className="flex flex-wrap justify-center items-end gap-1 p-2 bg-gray-800/30 shadow-clay-inset rounded-lg min-h-[88px] mb-2">
           {Array(cpuState.hand.length).fill(null).map((_, i) => (
-            <TileDisplay key={`cpu-hand-hidden-${i}`} tile={null} className="w-10 h-16 sm:w-12 sm:h-20"/>
+            <TileDisplay key={`cpu-hand-hidden-${i}`} tile={null} className="w-10 h-16 sm:w-12 sm:h-20" />
           ))}
         </div>
         <p className="text-xs text-gray-400 mb-1">CPUの河:</p>
         <div className="flex flex-wrap gap-1 min-h-[52px] bg-green-800/50 p-1 rounded-md border border-green-600/50">
           {cpuState.river.map((discard: TileInRiver, i) => (
-            <TileDisplay key={`cpu-river-${discard.id}-${i}`} tile={discard} className="w-8 h-12 sm:w-10 sm:h-16 text-xs"/>
+            <TileDisplay key={`cpu-river-${discard.id}-${i}`} tile={discard} className="w-8 h-12 sm:w-10 sm:h-16 text-xs" />
           ))}
         </div>
-         {cpuState.melds.length > 0 && (
+        {cpuState.melds.length > 0 && (
           <div className="mt-2">
             <p className="text-xs text-gray-400 mb-1">CPUの鳴き:</p>
             <div className="flex flex-wrap gap-2">
               {cpuState.melds.map((meld, i) => (
                 <div key={`cpu-meld-${i}`} className="flex gap-0.5 p-1 bg-gray-700/50 rounded">
                   {meld.tiles.map((tile, ti) => (
-                    <TileDisplay key={`cpu-meld-${i}-tile-${ti}`} tile={tile} className="w-8 h-12 sm:w-10 sm:h-16 text-xs"/>
+                    <TileDisplay key={`cpu-meld-${i}-tile-${ti}`} tile={tile} className="w-8 h-12 sm:w-10 sm:h-16 text-xs" />
                   ))}
                 </div>
               ))}
@@ -245,7 +243,7 @@ export default function MahjongGamePage() {
           hand={sortHand(playerState.hand)}
           lastDraw={playerState.lastDraw}
           onTileSelect={handleTileSelect}
-          selectedTile={selectedTile}
+          selectedTile={selectedTileForRiichi}
           canDiscard={gameState.currentTurn === 'player' && playerState.hand.length === 14}
         />
 
@@ -256,7 +254,7 @@ export default function MahjongGamePage() {
               {playerState.melds.map((meld, i) => (
                 <div key={`player-meld-${i}`} className="flex gap-0.5 p-1 bg-gray-700/50 rounded">
                   {meld.tiles.map((tile, ti) => (
-                    <TileDisplay key={`player-meld-${i}-tile-${ti}`} tile={tile} className="w-10 h-16"/>
+                    <TileDisplay key={`player-meld-${i}-tile-${ti}`} tile={tile} className="w-10 h-16" />
                   ))}
                 </div>
               ))}
@@ -267,7 +265,7 @@ export default function MahjongGamePage() {
         <p className="text-xs text-gray-400 mt-3 mb-1">あなたの河:</p>
         <div className="flex flex-wrap gap-1 min-h-[52px] bg-green-800/50 p-1 rounded-md border border-green-600/50 mb-3">
           {playerState.river.map((discard: TileInRiver, i) => (
-            <TileDisplay key={`player-river-${discard.id}-${i}`} tile={discard} className="w-8 h-12 sm:w-10 sm:h-16 text-xs"/>
+            <TileDisplay key={`player-river-${discard.id}-${i}`} tile={discard} className="w-8 h-12 sm:w-10 sm:h-16 text-xs" />
           ))}
         </div>
 
@@ -277,27 +275,17 @@ export default function MahjongGamePage() {
         {/* Player Action Buttons */}
         {gameState.currentTurn === 'player' && (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mt-3">
-            {playerState.hand.length === 14 && (
-              <button
-                type="button"
-                onClick={handleDiscard}
-                disabled={!selectedTile || isLoading}
-                className="clay-button action-button discard-button enabled:hover:bg-red-700 disabled:opacity-50"
-              >
-                {isLoading && selectedTile ? '捨牌中...' : `捨牌 (${selectedTile ? selectedTile.name : '選択'})`}
-              </button>
-            )}
             {canRiichi && playerState.hand.length === 14 && (
-              <button type="button" onClick={handleRiichi} disabled={isLoading || !selectedTile} className="clay-button action-button riichi-button enabled:hover:bg-yellow-600 disabled:opacity-50">{isLoading ? "処理中..." : "リーチ"}</button>
+              <button type="button" onClick={handleRiichi} disabled={isLoading || !selectedTileForRiichi} className="clay-button action-button riichi-button enabled:hover:bg-yellow-600 disabled:opacity-50">{isLoading ? "処理中..." : "リーチ"}</button>
             )}
             {canTsumoAgari && playerState.hand.length === 14 && (
               <button type="button" onClick={handleTsumoAgari} disabled={isLoading} className="clay-button action-button tsumoagari-button enabled:hover:bg-green-500 disabled:opacity-50">{isLoading ? "処理中..." : "ツモ和了"}</button>
             )}
             {canPlayerPerformKan && playerState.hand.length === 14 && (
-                 <button type="button" onClick={handleKan} disabled={isLoading} className="clay-button action-button kan-button enabled:hover:bg-blue-600 disabled:opacity-50">{isLoading ? "処理中..." : "カン"}</button>
+              <button type="button" onClick={handleKan} disabled={isLoading} className="clay-button action-button kan-button enabled:hover:bg-blue-600 disabled:opacity-50">{isLoading ? "処理中..." : "カン"}</button>
             )}
             {canRon && (
-                 <button type="button" onClick={handleRon} disabled={isLoading} className="clay-button action-button ron-button enabled:hover:bg-pink-600 disabled:opacity-50">{isLoading ? "処理中..." : "ロン"}</button>
+              <button type="button" onClick={handleRon} disabled={isLoading} className="clay-button action-button ron-button enabled:hover:bg-pink-600 disabled:opacity-50">{isLoading ? "処理中..." : "ロン"}</button>
             )}
           </div>
         )}

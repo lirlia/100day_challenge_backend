@@ -3,6 +3,73 @@ import { Tile, TileSuit, compareTiles, isSameTile } from './tiles';
 import { analyzeHandShanten, removeTileFromHand, addTileToHand, AgariContext, HandPattern } from './hand';
 import { getCurrentDora, getCurrentUraDora } from './yama'; // getCurrentUraDora をインポート
 
+// 打牌評価のための補助関数 (例)
+interface DiscardOption {
+  tile: Tile;
+  shanten: number;
+  // patterns: HandPattern[]; // どのような待ちや構成になるか
+  // safety: number; // 安全度 (0-10, 高いほど安全)
+  // value: number; // 打点期待値
+  canRiichi: boolean;
+}
+
+function evaluateDiscardOptions(
+  hand: Tile[], // 14枚の手牌
+  melds: Meld[],
+  currentScore: number,
+  isRiichi: boolean, // プレイヤーが現在リーチしているか
+  doraTiles: Tile[],
+  // opponentRiver: Tile[], // 相手の捨て牌 (安全性評価用)
+  // remainingTiles: number // 残り牌数
+): DiscardOption[] {
+  const options: DiscardOption[] = [];
+  // 手牌中のユニークな牌に対して評価 (14枚全てを評価対象とする)
+  const uniqueTilesInHandMap = new Map<string, Tile>();
+  hand.forEach(t => uniqueTilesInHandMap.set(t.id, t));
+  const tilesToConsiderDiscarding = Array.from(uniqueTilesInHandMap.values());
+
+
+  for (const tileToDiscard of tilesToConsiderDiscarding) {
+    const tempHand = removeTileFromHand([...hand], tileToDiscard); // 13枚にする
+    if (tempHand.length !== hand.length -1 && hand.length > 0) { //正しく1枚減ったか確認
+        //手牌にない牌を捨てようとした場合など
+        console.warn('Failed to remove ' + tileToDiscard.id + ' from hand for evaluation. Skipping.', hand);
+        continue;
+    }
+    const shantenResult = analyzeHandShanten(tempHand, melds);
+
+    const canDeclareRiichi = shantenResult.shanten === 0 &&
+                             melds.every(m => !m.isOpen) &&
+                             currentScore >= 1000 &&
+                             !isRiichi;
+
+    options.push({
+      tile: tileToDiscard,
+      shanten: shantenResult.shanten,
+      canRiichi: canDeclareRiichi,
+    });
+  }
+
+  return options.sort((a, b) => {
+    if (a.shanten !== b.shanten) {
+      return a.shanten - b.shanten;
+    }
+    if (a.canRiichi !== b.canRiichi) {
+        return a.canRiichi ? -1 : 1;
+    }
+    // TODO: 安全性、待ちの良さなどでソート
+    // 例: 危険牌を優先的に捨てる (ここでは単純化)
+    // ヤオチュー牌 > 字牌 > 中張牌の順で危険度が低いとして、安全なものを残す（危険なものを切る）
+    const getSafetyScore = (tile: Tile) => {
+        if (tile.suit === TileSuit.JIHAI) return 1; // 字牌
+        if (tile.value === 1 || tile.value === 9) return 2; // ヤオチュー数牌
+        return 3; // 中張牌
+    };
+    return getSafetyScore(a.tile) - getSafetyScore(b.tile); // 危険な牌(スコア大)を先に捨てる
+  });
+}
+
+
 // CPUのアクション選択ロジック
 export function decideCpuAction(gameState: GameState): GameAction {
   const cpuState = gameState.cpu;

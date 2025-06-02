@@ -61,16 +61,20 @@
     - [x] Fix Linter errors in `game_state.ts` related to score calculation options and `agariTile` type issues.
 - [x] **Step 7: Advanced Game Flow & CPU AI**
     - [x] Implement basic CPU AI for discards (shanten-based) and simple decisions (`lib/mahjong/cpu_player.ts`).
+    - [x] `lib/mahjong/cpu_player.ts`: Added `evaluateDiscardOptions` helper. Improved discard logic (shanten-based with Riichi consideration). Improved Pon decision logic (for Yakuhai and shanten advance).
+    - [x] `lib/mahjong/game_state.ts`: Added `seatWind` to `PlayerState` and updated `wind` in `GameState` to `HonorType`. Initialized `seatWind` in `createInitialGameState` and `proceedToNextRoundOrEndGame`. Refined dealer and round progression logic in `proceedToNextRoundOrEndGame`.
     - [x] Integrate CPU AI into `game_state.ts` to enable automated CPU turns.
-    - [ ] Implement CPU AI for Riichi decisions.
-    - [ ] Implement CPU AI for Kan decisions (Ankan, Kakan, Daiminkan - more sophisticated).
-    - [ ] Implement CPU AI for Pon decisions (more sophisticated).
+    - [x] **UI**: Changed tile discard to be immediate on click, removing the confirmation step (`app/page.tsx`).
+    - [ ] Implement CPU AI for Riichi decisions (advanced: considering wait shape, dora, remaining tiles).
+    - [ ] Implement CPU AI for Kan decisions (Ankan, Kakan, Daiminkan - more sophisticated risk/reward).
+    - [ ] Implement CPU AI for Pon decisions (advanced: considering other yaku, hand speed vs score).
     - [ ] Handle complex game scenarios (e.g., multiple players can Ron, head bump - 2 player so simpler).
     - [ ] Implement Chankan yaku logic.
     - [ ] Implement Rinshan Kaihou yaku logic (partially done, needs full integration and testing).
     - [ ] Implement Haitei/Houtei Raoyui yaku logic.
     - [ ] Implement Tenhou/Chihou yaku logic (if applicable for 2-player).
     - [ ] Handle draws (Kyuushuu Kyuuhai, Suukaikan already done, Sanchahou, Suufon Renda, if applicable).
+    - [x] Resolve remaining Linter errors in `game_state.ts`.
 - [ ] **Step 8: Final Touches & Documentation**
     - [ ] Implement Ura-dora logic (partially done, needs full display and integration).
     - [ ] Display winning hand details (yaku, fu, score breakdown).
