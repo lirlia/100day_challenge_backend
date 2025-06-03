@@ -61,3 +61,4 @@ alwaysApply: true
 | 52  | MMORPG「タイニーレルム冒険譚」 | Next.js (App Router), TypeScript, SQLite (better-sqlite3), Tailwind CSS (ピクセルアート風, VT323), ポーリング同期, E2Eテスト (Playwright) |
 | 53  | CPU対戦付き二人麻雀 (最強AI) | Next.js (App Router), TypeScript, Tailwind CSS (クレイモーフィズム), 麻雀コアロジック (手牌評価, 役判定, 点数計算), CPU AI (向聴数ベース) |
 | 54  | 派手派手オセロバトル             | Next.js (App Router), TypeScript, Tailwind CSS (ネオンスタイル), Framer Motion, 3D風アニメーション, 独自オセロエンジン |
+| 55  | サイバーパンク 3D スペースシューター | Next.js (App Router), TypeScript, React Three Fiber, @react-three/drei, Zustand, nanoid, Three.js, 3D描画, ホーミング弾システム, 大量敵出現 (4形状バリエーション), ランダム回転・サイズ・色彩, スコア連動難易度, 60FPS 3Dアクション |

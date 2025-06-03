@@ -69,3 +69,4 @@ LLMで生成したコードを置いています。
 | Day52 | MMO RPG                                                                    | <video src="https://github.com/user-attachments/assets/88c96a9a-b3af-4ff6-97f6-743227b3faf7" > |
 | Day53 | 二人麻雀 (CPU対戦付き)                                                     | <video src="https://github.com/user-attachments/assets/a8698f0e-1f38-46dc-80a1-6f9122a0dc3f" > |
 | Day54 | 派手派手オセロバトル                                                       | <video src="https://github.com/user-attachments/assets/3b8785da-4e70-4990-ba0e-e960951c596c" > |
+| Day55 | サイバーパンク 3D スペースシューター                                          | <video src="https://github.com/user-attachments/assets/c4a2d2c4-db53-4d0a-b7ee-724135a355cb" > |
