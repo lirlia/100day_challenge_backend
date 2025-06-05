@@ -153,3 +153,88 @@ func UpdateOrderStatus(orderID string, status OrderStatus) error {
 	log.Printf("Order %s status updated to %s", orderID, status)
 	return nil
 }
+
+// GetAllOrders retrieves all orders from the database.
+func GetAllOrders() ([]*Order, error) {
+	rows, err := db.Query("SELECT id, user_id, total_amount, status, created_at, updated_at FROM orders ORDER BY created_at DESC")
+	if err != nil {
+		return nil, fmt.Errorf("failed to query orders: %w", err)
+	}
+	defer rows.Close()
+
+	orders := []*Order{}
+	for rows.Next() {
+		order := &Order{}
+		if err := rows.Scan(&order.ID, &order.UserID, &order.TotalAmount, &order.Status, &order.CreatedAt, &order.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan order: %w", err)
+		}
+
+		// Load order items
+		items, err := getOrderItems(order.ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load items for order %s: %w", order.ID, err)
+		}
+		order.Items = items
+
+		orders = append(orders, order)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("row iteration error for orders: %w", err)
+	}
+
+	return orders, nil
+}
+
+// GetOrdersByUserID retrieves all orders for a specific user.
+func GetOrdersByUserID(userID string) ([]*Order, error) {
+	rows, err := db.Query("SELECT id, user_id, total_amount, status, created_at, updated_at FROM orders WHERE user_id = ? ORDER BY created_at DESC", userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query orders for user %s: %w", userID, err)
+	}
+	defer rows.Close()
+
+	orders := []*Order{}
+	for rows.Next() {
+		order := &Order{}
+		if err := rows.Scan(&order.ID, &order.UserID, &order.TotalAmount, &order.Status, &order.CreatedAt, &order.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan order: %w", err)
+		}
+
+		// Load order items
+		items, err := getOrderItems(order.ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load items for order %s: %w", order.ID, err)
+		}
+		order.Items = items
+
+		orders = append(orders, order)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("row iteration error for orders: %w", err)
+	}
+
+	return orders, nil
+}
+
+// getOrderItems is a helper function to retrieve order items for a given order ID.
+func getOrderItems(orderID string) ([]OrderItem, error) {
+	rows, err := db.Query("SELECT id, product_id, quantity, price_at_purchase FROM order_items WHERE order_id = ?", orderID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query order items: %w", err)
+	}
+	defer rows.Close()
+
+	items := []OrderItem{}
+	for rows.Next() {
+		item := OrderItem{OrderID: orderID}
+		if err := rows.Scan(&item.ID, &item.ProductID, &item.Quantity, &item.PriceAtPurchase); err != nil {
+			return nil, fmt.Errorf("failed to scan order item: %w", err)
+		}
+		items = append(items, item)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("row iteration error for order items: %w", err)
+	}
+
+	return items, nil
+}

@@ -10,8 +10,22 @@ import (
 	"github.com/nats-io/nats.go"
 )
 
+// enableCORS adds CORS headers to the response
+func enableCORS(w http.ResponseWriter) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+}
+
 // CreateOrderHandler handles requests to create a new order.
 func CreateOrderHandler(w http.ResponseWriter, r *http.Request) {
+	enableCORS(w)
+
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
@@ -70,15 +84,58 @@ func CreateOrderHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(order) // Return the created order object
 }
 
-// GetOrderHandler handles requests to get an order by ID.
-func GetOrderHandler(w http.ResponseWriter, r *http.Request) {
+// GetOrdersHandler handles requests to get all orders or orders by user ID.
+func GetOrdersHandler(w http.ResponseWriter, r *http.Request) {
+	enableCORS(w)
+
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	orderID := r.URL.Path[len("/orders/"):] // Basic routing, assumes path like /orders/{id}
+	userID := r.URL.Query().Get("userId")
+
+	var orders []*Order
+	var err error
+
+	if userID != "" {
+		orders, err = GetOrdersByUserID(userID)
+	} else {
+		orders, err = GetAllOrders()
+	}
+
+	if err != nil {
+		log.Printf("Error getting orders: %v", err)
+		http.Error(w, "Failed to retrieve orders", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(orders)
+}
+
+// GetOrderHandler handles requests to get an order by ID.
+func GetOrderHandler(w http.ResponseWriter, r *http.Request) {
+	enableCORS(w)
+
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	orderID := r.URL.Path[len("/api/orders/"):] // Basic routing, assumes path like /api/orders/{id}
 	if orderID == "" {
 		http.Error(w, "Order ID is required", http.StatusBadRequest)
 		return

@@ -64,8 +64,17 @@ func main() {
 	log.Printf("OrderService: Subscribed to %s", event.ShipmentFailedSubject)
 
 	// Basic router
-	http.HandleFunc("/orders", order.CreateOrderHandler) // Handles POST
-	http.HandleFunc("/orders/", order.GetOrderHandler)   // Handles GET /orders/{id}
+	http.HandleFunc("/api/orders", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			order.CreateOrderHandler(w, r)
+		} else if r.Method == http.MethodGet {
+			order.GetOrdersHandler(w, r)
+		} else {
+			w.Header().Set("Allow", "GET, POST")
+			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		}
+	})
+	http.HandleFunc("/api/orders/", order.GetOrderHandler)   // Handles GET /api/orders/{id}
 
 	port := os.Getenv("ORDER_SERVICE_PORT")
 	if port == "" {
