@@ -59,14 +59,54 @@
 
 ## 起動方法
 
-### 1. NATS サーバー起動
+### 前提条件
+
+- Go 1.21+ がインストール済み
+- Docker がインストール済み
+- Git リポジトリをクローン済み
+
+### 手順
+
+#### 1. プロジェクトディレクトリに移動
 
 ```bash
-docker-compose up -d
+cd /path/to/100day_challenge_backend/day56_event_driven_architecture
 ```
 
-### 2. 各マイクロサービス起動
+#### 2. Go依存関係のインストール
 
+```bash
+go mod download
+```
+
+#### 3. NATS サーバー起動
+
+```bash
+# バックグラウンドでNATSコンテナを起動
+docker-compose up -d
+
+# 起動確認 (NATS管理画面: http://localhost:8222)
+docker-compose logs nats
+```
+
+#### 4. 各マイクロサービス起動
+
+**ターミナル1: 在庫サービス**
+```bash
+go run cmd/inventory_service/main.go
+```
+
+**ターミナル2: 配送サービス**
+```bash
+go run cmd/shipping_service/main.go
+```
+
+**ターミナル3: 注文サービス**
+```bash
+go run cmd/order_service/main.go
+```
+
+または、バックグラウンドで一括起動：
 ```bash
 # 在庫サービス
 go run cmd/inventory_service/main.go &
@@ -74,17 +114,112 @@ go run cmd/inventory_service/main.go &
 # 配送サービス  
 go run cmd/shipping_service/main.go &
 
-# 注文サービス
+# 注文サービス (HTTP API: localhost:8080)
 go run cmd/order_service/main.go &
+
+# プロセス確認
+jobs
 ```
 
-### 3. 停止
+#### 5. 動作確認
 
 ```bash
-# サービス停止
+# サービスの起動確認
+curl http://localhost:8080/orders/test || echo "注文サービス起動中..."
+
+# NATSの接続確認
+curl http://localhost:8222/ || echo "NATS管理画面アクセス可能"
+```
+
+#### 6. 初期データ確認
+
+在庫サービスは起動時に以下の商品データを自動で作成します：
+- `prod001`: Super Keyboard (在庫: 10個)
+- `prod002`: Ergonomic Mouse (在庫: 5個)  
+- `prod003`: 4K Monitor (在庫: 3個)
+
+### 停止方法
+
+#### バックグラウンド起動の場合
+
+```bash
+# バックグラウンドジョブの確認
+jobs
+
+# 全サービス停止
 kill %1 %2 %3
 
-# NATS停止
+# または個別停止
+kill %1  # 在庫サービス
+kill %2  # 配送サービス
+kill %3  # 注文サービス
+```
+
+#### 個別ターミナルの場合
+
+各ターミナルで `Ctrl+C` を押してサービスを停止
+
+#### NATS停止
+
+```bash
+docker-compose down
+```
+
+### トラブルシューティング
+
+#### ポート競合エラー
+```bash
+# ポート8080が使用中の場合
+lsof -i :8080
+kill -9 <PID>
+```
+
+#### NATS接続エラー
+```bash
+# NATSコンテナ状態確認
+docker-compose ps
+
+# NATS再起動
+docker-compose restart nats
+```
+
+#### 依存関係エラー
+```bash
+# Go モジュール再取得
+go mod tidy
+go mod download
+```
+
+## クイックスタート（簡単起動）
+
+すぐに動作確認したい場合は以下のコマンドを順番に実行：
+
+```bash
+# 1. プロジェクトディレクトリに移動
+cd day56_event_driven_architecture
+
+# 2. NATS起動
+docker-compose up -d
+
+# 3. 依存関係インストール
+go mod download
+
+# 4. 全サービス起動（バックグラウンド）
+go run cmd/inventory_service/main.go &
+go run cmd/shipping_service/main.go &
+go run cmd/order_service/main.go &
+
+# 5. 動作確認（簡単な注文テスト）
+sleep 5
+curl -X POST http://localhost:8080/orders \
+  -H "Content-Type: application/json" \
+  -d '{"userId": "user123", "items": [{"productId": "prod001", "quantity": 2, "price": 5000}]}'
+
+# 6. 結果確認（数秒後に注文IDを使って確認）
+# curl http://localhost:8080/orders/{注文ID}
+
+# 7. 停止
+kill %1 %2 %3
 docker-compose down
 ```
 
