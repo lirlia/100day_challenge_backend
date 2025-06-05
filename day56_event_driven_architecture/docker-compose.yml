@@ -1,0 +1,9 @@
+version: '3.8'
+
+services:
+  nats:
+    image: nats:2.9-alpine # Alpineベースの軽量イメージを選択
+    ports:
+      - "4222:4222" # クライアント接続用ポート
+      - "8222:8222" # HTTPモニタリングポート
+    # command: "-js" # JetStreamを有効にする場合 (今回は使用しない想定)
