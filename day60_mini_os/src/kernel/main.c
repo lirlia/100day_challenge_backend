@@ -1,4 +1,5 @@
 #include "kernel.h"
+#include "memory.h"
 
 /* Global kernel printf function */
 void kernel_printf(const char* format, ...) {
@@ -36,6 +37,97 @@ void kernel_printf(const char* format, ...) {
                         if (i < sizeof(buffer) - 1) buffer[i++] = '-';
                         num = -num;
                     }
+
+                    if (num == 0) {
+                        if (i < sizeof(buffer) - 1) buffer[i++] = '0';
+                    } else {
+                        while (num > 0) {
+                            num_buffer[num_len++] = '0' + (num % 10);
+                            num /= 10;
+                        }
+                        for (int j = num_len - 1; j >= 0 && i < sizeof(buffer) - 1; j--) {
+                            buffer[i++] = num_buffer[j];
+                        }
+                    }
+                    break;
+                }
+                case 'l': { // long (for llx)
+                    format++;
+                    if (*format == 'l' && *(format+1) == 'x') {
+                        format++;
+                        unsigned long long num = __builtin_va_arg(args, unsigned long long);
+                        unsigned int high = num >> 32;
+                        unsigned int low = num & 0xFFFFFFFF;
+
+                        // Simple hex print for high and low parts
+                        char temp_buf[17];
+                        int to_hex(unsigned int n, char* buf) {
+                            if (n == 0) { buf[0] = '0'; buf[1] = 0; return 1; }
+                            char* p = buf;
+                            int len = 0;
+                            while(n > 0) {
+                                *p++ = "0123456789abcdef"[n & 0xF];
+                                n >>= 4;
+                                len++;
+                            }
+                            *p = 0;
+                            // reverse
+                            char* p1 = buf;
+                            char* p2 = p - 1;
+                            while(p1 < p2) {
+                                char tmp = *p1;
+                                *p1++ = *p2;
+                                *p2-- = tmp;
+                            }
+                            return len;
+                        }
+
+                        if (high > 0) {
+                            to_hex(high, temp_buf);
+                            for(char* c = temp_buf; *c; ++c) if (i < sizeof(buffer) -1) buffer[i++] = *c;
+
+                            // pad with zeros for the low part
+                            int low_len = to_hex(low, temp_buf);
+                            for(int k=0; k < 8-low_len; ++k) if (i < sizeof(buffer) -1) buffer[i++] = '0';
+
+                        }
+                        to_hex(low, temp_buf);
+                        for(char* c = temp_buf; *c; ++c) if (i < sizeof(buffer) -1) buffer[i++] = *c;
+
+                    } else if (*format == 'l' && *(format+1) == 'u') {
+                         format++;
+                        unsigned long long num = __builtin_va_arg(args, unsigned long long);
+                        if (num == 0) {
+                            if (i < sizeof(buffer) - 1) buffer[i++] = '0';
+                        } else {
+                            char num_buffer[21] = {0}; // max 20 digits for u64
+                            char* p = num_buffer + 20;
+                            while(num > 0) {
+                                // Custom u64 div/mod 10
+                                unsigned long long rem = 0;
+                                unsigned long long temp = 0;
+                                for(int k=0; k<64; ++k) {
+                                    rem = (rem << 1) | ((num >> (63-k)) & 1);
+                                    if (rem >= 10) {
+                                        rem -= 10;
+                                        temp |= (1ULL << (63-k));
+                                    }
+                                }
+                                *--p = '0' + rem;
+                                num = temp;
+                            }
+                            while(*p) {
+                                if (i < sizeof(buffer) - 1) buffer[i++] = *p++;
+                                else break;
+                            }
+                        }
+                    }
+                    break;
+                }
+                case 'u': {
+                    unsigned int num = __builtin_va_arg(args, unsigned int);
+                    char num_buffer[32];
+                    int num_len = 0;
 
                     if (num == 0) {
                         if (i < sizeof(buffer) - 1) buffer[i++] = '0';
@@ -172,55 +264,70 @@ void kernel_panic(const char* message) {
     }
 }
 
-/* Main kernel entry point */
-void kernel_main(void) {
-    /* Initialize serial output first */
+// Test function without arguments
+void test_function_call(void) {
+    kernel_printf("test_function_call: This function was called successfully\n");
+}
+
+void test_memory_allocator(void) {
+    kernel_printf("\n=== Memory Allocator Test ===\n");
+
+    // Test page allocation
+    kernel_printf("Testing page allocation...\n");
+    u32 page1 = alloc_page();
+    kernel_printf("Allocated page 1: %u\n", page1);
+
+    u32 page2 = alloc_page();
+    kernel_printf("Allocated page 2: %u\n", page2);
+
+    u32 page3 = alloc_page();
+    kernel_printf("Allocated page 3: %u\n", page3);
+
+    // Print memory status after allocation
+    memory_print_info();
+
+    // Test page deallocation
+    kernel_printf("Testing page deallocation...\n");
+    free_page(page2);
+    kernel_printf("Freed page 2: %u\n", page2);
+
+    // Print memory status after deallocation
+    memory_print_info();
+
+    // Test reallocating freed page
+    u32 page4 = alloc_page();
+    kernel_printf("Allocated page 4: %u\n", page4);
+
+    // Final memory status
+    memory_print_info();
+
+    kernel_printf("=== Memory Test Complete ===\n\n");
+}
+
+void kmain(void) {
+    /* Initialize serial port for logging */
     serial_init();
 
-    /* Print startup banner */
-    kernel_printf("\n");
-    kernel_printf("=====================================\n");
-    kernel_printf("       %s v%s\n", KERNEL_NAME, KERNEL_VERSION);
-    kernel_printf("=====================================\n");
-    kernel_printf("\n");
+    kernel_printf("\n=====================================\n");
+    kernel_printf("       Mini OS v0.1.0\n");
+    kernel_printf("=====================================\n\n");
 
-    LOG_INFO("Kernel boot sequence started");
-    LOG_INFO("Serial communication initialized");
+    kernel_printf("About to call test function...\n");
+    test_function_call();
+    kernel_printf("test function returned successfully\n");
 
-    /* Test basic functionality */
-    LOG_INFO("Testing basic kernel functions...");
+    // Initialize memory manager
+    kernel_printf("About to call memory_init with NULL...\n");
+    memory_init(NULL);
+    kernel_printf("memory_init returned successfully\n");
 
-    /* Test string functions */
-    const char* test_str = "Hello, OS World!";
-    LOG_INFO("String test: length of '%s' is %d", test_str, strlen(test_str));
+    // Test memory allocator
+    test_memory_allocator();
 
-    /* Test memory functions */
-    char buffer[64];
-    memset(buffer, 'X', sizeof(buffer) - 1);
-    buffer[sizeof(buffer) - 1] = '\0';
-    LOG_INFO("Memory test: filled buffer with pattern");
+    kernel_printf("All tests completed successfully. Halting.\n");
 
-    strcpy(buffer, "Memory copy test");
-    LOG_INFO("String copy test: '%s'", buffer);
-
-    /* Phase 2 completion message */
-    LOG_INFO("Phase 2: Basic kernel initialization complete!");
-    LOG_INFO("Features working:");
-    LOG_INFO("  - Boot sequence (32->64 bit transition)");
-    LOG_INFO("  - Long mode paging");
-    LOG_INFO("  - Serial output (COM1)");
-    LOG_INFO("  - Basic string and memory functions");
-    LOG_INFO("  - Kernel logging system");
-
-    kernel_printf("\n");
-    kernel_printf("========== READY FOR PHASE 3 ==========\n");
-    kernel_printf("Next: Physical memory management\n");
-    kernel_printf("======================================\n");
-
-    /* Main kernel loop - for now just halt */
-    LOG_INFO("Entering main kernel loop (halting for now)");
-
-    while (1) {
-        halt();
+    /* Halt the system */
+    for (;;) {
+        asm("hlt");
     }
 }

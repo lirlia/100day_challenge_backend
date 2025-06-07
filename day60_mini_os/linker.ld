@@ -1,5 +1,5 @@
 /* Linker script for Mini OS kernel */
-/* Target: x86-64 architecture */
+/* Target: i386 architecture */
 
 ENTRY(_start)
 
@@ -7,6 +7,9 @@ SECTIONS
 {
     /* Kernel is loaded at 1MB physical address */
     . = 0x100000;
+
+    /* Mark start of kernel */
+    _kernel_start = .;
 
     /* Multiboot header must be early in the file */
     .multiboot ALIGN(4) : {
@@ -37,5 +40,5 @@ SECTIONS
     }
 
     /* Mark end of kernel */
-    kernel_end = .;
+    _kernel_end = .;
 }

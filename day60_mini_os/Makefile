@@ -1,5 +1,5 @@
 # Mini OS Build Configuration
-# Target: x86-64 architecture
+# Target: x86 architecture (32-bit)
 
 # Directories
 SRC_DIR = src
@@ -16,26 +16,22 @@ CC = x86_64-elf-gcc
 AS = nasm
 LD = x86_64-elf-ld
 
-# Flags for cross-compilation to x86-64
+# Flags for cross-compilation to x86 (32-bit)
 CFLAGS = -ffreestanding \
          -fno-stack-protector \
          -fno-pic \
          -fno-pie \
-         -mno-red-zone \
-         -mno-mmx \
-         -mno-sse \
-         -mno-sse2 \
-         -mcmodel=kernel \
+         -m32 \
          -Wall \
          -Wextra \
          -I$(INCLUDE_DIR)
 
-ASFLAGS = -f elf64
+ASFLAGS = -f elf32
 
-LDFLAGS = -static -nostdlib
+LDFLAGS = -m elf_i386 -static -nostdlib
 
 # Source files
-BOOT_ASM = $(BOOT_DIR)/boot.asm $(BOOT_DIR)/multiboot.asm
+BOOT_ASM = $(BOOT_DIR)/multiboot_kernel.asm
 KERNEL_C = $(wildcard $(KERNEL_DIR)/*.c)
 DRIVERS_C = $(wildcard $(DRIVERS_DIR)/*.c)
 FS_C = $(wildcard $(FS_DIR)/*.c)
@@ -52,6 +48,7 @@ ALL_OBJ = $(BOOT_OBJ) $(KERNEL_OBJ) $(DRIVERS_OBJ) $(FS_OBJ)
 KERNEL_BIN = $(BUILD_DIR)/kernel.bin
 SIMPLE_BOOT = $(BUILD_DIR)/simple_boot.bin
 ISO_FILE = $(BUILD_DIR)/os.iso
+GRUB_MKRESCUE = /opt/homebrew/bin/grub-mkrescue
 
 # Default target
 all: $(KERNEL_BIN)
@@ -69,7 +66,7 @@ $(SIMPLE_BOOT): $(BOOT_DIR)/simple_boot.asm
 
 # Build kernel binary
 $(KERNEL_BIN): $(ALL_OBJ) linker.ld
-	$(LD) -T linker.ld -nostdlib -o $@ $(ALL_OBJ)
+	$(LD) -m elf_i386 -T linker.ld -nostdlib -o $@ $(ALL_OBJ)
 
 # Compile assembly files
 $(BUILD_DIR)/%.o: $(BOOT_DIR)/%.asm
@@ -98,22 +95,24 @@ iso: $(KERNEL_BIN)
 	echo 'menuentry "Mini OS" {' > $(BUILD_DIR)/iso/boot/grub/grub.cfg
 	echo '    multiboot /boot/kernel.bin' >> $(BUILD_DIR)/iso/boot/grub/grub.cfg
 	echo '}' >> $(BUILD_DIR)/iso/boot/grub/grub.cfg
-	grub-mkrescue -o $(ISO_FILE) $(BUILD_DIR)/iso
+	$(GRUB_MKRESCUE) -o $(ISO_FILE) $(BUILD_DIR)/iso
 
-# Run in QEMU
+# Run in QEMU (32-bit)
 run: $(KERNEL_BIN)
-	qemu-system-x86_64 \
+	qemu-system-i386 \
 	    -kernel $(KERNEL_BIN) \
 	    -serial file:output.log \
 	    -display none \
 	    -m 256M \
 	    -no-reboot \
-	    -no-shutdown \
-	    -cpu qemu64
+	    -no-shutdown
+
+run-iso: $(ISO_FILE)
+	qemu-system-i386 -cdrom $(ISO_FILE) -serial file:output.log -m 256M
 
 # Run simple bootloader
 run-simple: $(SIMPLE_BOOT)
-	qemu-system-x86_64 \
+	qemu-system-i386 \
 	    -drive format=raw,file=$(SIMPLE_BOOT) \
 	    -serial file:output.log \
 	    -display none \
@@ -121,7 +120,7 @@ run-simple: $(SIMPLE_BOOT)
 
 # Run with monitor (for debugging)
 run-debug: $(KERNEL_BIN)
-	qemu-system-x86_64 \
+	qemu-system-i386 \
 	    -kernel $(KERNEL_BIN) \
 	    -serial file:output.log \
 	    -monitor stdio \
@@ -151,7 +150,8 @@ setup:
 	@echo "Checking development environment..."
 	@which gcc >/dev/null || (echo "GCC not found" && exit 1)
 	@which nasm >/dev/null || (echo "NASM not found. Install with: brew install nasm" && exit 1)
-	@which qemu-system-x86_64 >/dev/null || (echo "QEMU not found. Install with: brew install qemu" && exit 1)
+	@which qemu-system-i386 >/dev/null || (echo "QEMU not found. Install with: brew install qemu" && exit 1)
+	@which grub-mkrescue >/dev/null || (echo "GRUB not found. Install with: brew install grub" && exit 1)
 	@echo "Environment ready!"
 
 # Help
@@ -161,6 +161,7 @@ help:
 	@echo "Available targets:"
 	@echo "  all       - Build kernel binary (default)"
 	@echo "  run       - Run OS in QEMU"
+	@echo "  run-iso   - Run OS from ISO in QEMU"
 	@echo "  run-debug - Run OS with QEMU monitor"
 	@echo "  iso       - Create bootable ISO"
 	@echo "  log       - Show OS output"
@@ -169,4 +170,4 @@ help:
 	@echo "  setup     - Check development environment"
 	@echo "  help      - Show this help"
 
-.PHONY: all run run-debug iso clean clean-all log setup help
+.PHONY: all run run-iso run-debug iso clean clean-all log setup help
