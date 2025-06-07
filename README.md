@@ -73,3 +73,4 @@ LLMで生成したコードを置いています。
 | Day56 | イベント駆動型システム (Go + Web UI)                                       | <video src="https://github.com/user-attachments/assets/aa9eeb48-e776-43ec-9be8-bc57d45ef8fe" > |
 | Day57 | ガベージコレクタ実装システム (Frontend-only)                               | <video src="https://github.com/user-attachments/assets/5e32c7f2-5900-4da8-a155-c67d46bfea99" > |
 | Day58 | LSM-Tree ストレージエンジン                                                | <video src="https://github.com/user-attachments/assets/571c4a51-a92f-4119-a43c-95922009916e" > |
+| Day59 | OAuth2/OpenID Connect Provider (Go)                                        | <video src="https://github.com/user-attachments/assets/oauth2-provider-demo" >                 |
