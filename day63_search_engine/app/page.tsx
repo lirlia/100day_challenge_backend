@@ -26,21 +26,23 @@ export default function HomePage() {
 
           {/* 検索フォーム */}
           <div className="max-w-2xl mx-auto mb-12 fade-in-up">
-            <form className="relative">
+            <div className="relative">
               <div className="relative">
                 <input
                   type="text"
                   placeholder="青空文庫、Wikipedia、技術記事から検索..."
-                  className="w-full h-14 px-6 pr-16 rounded-2xl glass focus-ring text-white placeholder-gray-400 text-lg"
+                  className="w-full h-14 px-6 pr-16 rounded-2xl glass focus-ring text-white placeholder-gray-400 text-lg cursor-pointer"
+                  onClick={() => window.location.href = '/search'}
+                  readOnly
                 />
-                <button
-                  type="submit"
+                <a
+                  href="/search"
                   className="absolute right-2 top-2 h-10 w-10 rounded-xl bg-gradient-to-r from-blue-500 to-purple-600 flex items-center justify-center hover-glow transition-all duration-200"
                 >
                   <span className="text-white">🔍</span>
-                </button>
+                </a>
               </div>
-            </form>
+            </div>
 
             {/* クイック検索タグ */}
             <div className="flex flex-wrap justify-center gap-3 mt-6">
@@ -190,9 +192,14 @@ export default function HomePage() {
           <p className="text-xl text-gray-300 mb-8 max-w-2xl mx-auto">
             高度な検索アルゴリズムで、求める情報を瞬時に発見
           </p>
-          <button className="px-8 py-4 bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl text-white font-semibold hover-glow transition-all duration-200 text-lg">
-            検索を開始
-          </button>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <a href="/search" className="inline-block px-8 py-4 bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl text-white font-semibold hover-glow transition-all duration-200 text-lg">
+              検索を開始
+            </a>
+            <a href="/admin" className="inline-block px-8 py-4 bg-gradient-to-r from-slate-600 to-slate-700 rounded-xl text-white font-semibold hover-glow transition-all duration-200 text-lg">
+              管理画面
+            </a>
+          </div>
         </div>
       </section>
     </div>
