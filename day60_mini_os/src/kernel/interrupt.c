@@ -31,19 +31,19 @@ void interrupt_init(void) {
     idt_set_gate(13, (u32)isr13, 0x08, IDT_FLAG_PRESENT | IDT_FLAG_RING0 | IDT_FLAG_INTERRUPT);
     idt_set_gate(14, (u32)isr14, 0x08, IDT_FLAG_PRESENT | IDT_FLAG_RING0 | IDT_FLAG_INTERRUPT);
 
-    /* ハードウェア割り込みハンドラ設定 */
-    kernel_printf("interrupt_init: Setting up hardware interrupt handlers...\n");
-    idt_set_gate(32, (u32)irq0, 0x08, IDT_FLAG_PRESENT | IDT_FLAG_RING0 | IDT_FLAG_INTERRUPT); /* タイマー */
+    /* ハードウェア割り込みハンドラ設定（一時的にコメントアウト） */
+    // kernel_printf("interrupt_init: Setting up hardware interrupt handlers...\n");
+    // idt_set_gate(32, (u32)irq0, 0x08, IDT_FLAG_PRESENT | IDT_FLAG_RING0 | IDT_FLAG_INTERRUPT); /* タイマー */
 
     /* IDTロード */
     kernel_printf("interrupt_init: Loading IDT...\n");
     idt_load();
 
-    /* PIT初期化（10Hz = 100ms間隔でタイマー割り込み） */
-    kernel_printf("interrupt_init: Initializing PIT...\n");
-    pit_init(10);
+    /* PIT初期化（一時的にコメントアウト） */
+    // kernel_printf("interrupt_init: Initializing PIT...\n");
+    // pit_init(10);
 
-    kernel_printf("interrupt_init: Interrupt system initialized successfully\n");
+    kernel_printf("interrupt_init: Interrupt system initialized successfully (timer disabled)\n");
 }
 
 /* IDTゲート設定 */
@@ -130,14 +130,13 @@ void timer_handler(interrupt_frame_t* frame) {
 
     tick_count++;
 
-    /* 5回に1回（0.5秒ごと）にメッセージ出力 */
-    if (tick_count % 5 == 0) {
-        kernel_printf("Timer tick: %u (elapsed: %u.%u sec)\n",
-                      tick_count, tick_count / 10, (tick_count % 10));
+    /* 最初の10回のみ出力（安全性確保） */
+    if (tick_count <= 10) {
+        kernel_printf("Timer tick: %u\n", tick_count);
     }
 
-    /* スケジューラのタイムスライス処理 */
-    scheduler_tick();
+    /* スケジューラのタイムスライス処理（一時的にコメントアウト） */
+    // scheduler_tick();
 
     UNUSED(frame);
 }
