@@ -1,6 +1,8 @@
 import { Order, CreateOrderRequest, Product } from '@/app/types/order';
 
-const ORDER_SERVICE_URL = process.env.ORDER_SERVICE_URL || 'http://localhost:8080';
+// クライアントサイドで動作するため、NEXT_PUBLIC_プレフィックスが付いた環境変数を使用
+// または開発環境でのデフォルト値を設定
+const ORDER_SERVICE_URL = process.env.NEXT_PUBLIC_ORDER_SERVICE_URL || 'http://localhost:8080';
 
 class ApiError extends Error {
   constructor(message: string, public status: number) {

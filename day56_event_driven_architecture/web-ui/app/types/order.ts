@@ -1,8 +1,9 @@
 export interface OrderItem {
+  id: number;
+  orderId: string;
   productId: string;
-  productName: string;
   quantity: number;
-  price: number;
+  priceAtPurchase: number;
 }
 
 export interface Order {
@@ -20,6 +21,7 @@ export interface CreateOrderRequest {
   items: {
     productId: string;
     quantity: number;
+    price: number;
   }[];
 }
 

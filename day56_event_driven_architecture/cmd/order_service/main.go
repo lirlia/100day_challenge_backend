@@ -65,16 +65,18 @@ func main() {
 
 	// Basic router
 	http.HandleFunc("/api/orders", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost {
+		if r.Method == http.MethodOptions {
+			order.GetOrdersHandler(w, r) // CORS preflight処理のため
+		} else if r.Method == http.MethodPost {
 			order.CreateOrderHandler(w, r)
 		} else if r.Method == http.MethodGet {
 			order.GetOrdersHandler(w, r)
 		} else {
-			w.Header().Set("Allow", "GET, POST")
+			w.Header().Set("Allow", "GET, POST, OPTIONS")
 			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 		}
 	})
-	http.HandleFunc("/api/orders/", order.GetOrderHandler)   // Handles GET /api/orders/{id}
+	http.HandleFunc("/api/orders/", order.GetOrderHandler) // Handles GET /api/orders/{id}
 
 	port := os.Getenv("ORDER_SERVICE_PORT")
 	if port == "" {
@@ -110,7 +112,7 @@ func main() {
 			}(sub)
 		}
 	}
-	wg.Wait()    // Wait for all unsubscriptions to complete
+	wg.Wait()         // Wait for all unsubscriptions to complete
 	event.CloseNATS() // Close NATS connection after all subscriptions are drained/closed
 	log.Println("Order Service shut down gracefully.")
 	os.Exit(0)

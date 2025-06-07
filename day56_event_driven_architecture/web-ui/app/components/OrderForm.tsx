@@ -89,6 +89,7 @@ export default function OrderForm({ userId, onOrderCreated }: OrderFormProps) {
         items: cart.map(item => ({
           productId: item.product.id,
           quantity: item.quantity,
+          price: item.product.price,
         })),
       };
 

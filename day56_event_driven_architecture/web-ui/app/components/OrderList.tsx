@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Order } from '@/app/types/order';
+import { Order, Product } from '@/app/types/order';
 import { orderApi } from '@/app/lib/api';
 
 interface OrderListProps {
@@ -29,30 +29,44 @@ const statusLabels = {
 
 export default function OrderList({ userId, refreshTrigger }: OrderListProps) {
   const [orders, setOrders] = useState<Order[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchOrders = async () => {
+  // 商品IDから商品名を取得する関数
+  const getProductName = (productId: string): string => {
+    const product = products.find(p => p.id === productId);
+    return product ? product.name : productId;
+  };
+
+  const fetchData = async () => {
     try {
       setLoading(true);
       setError(null);
-      const fetchedOrders = await orderApi.getOrders(userId);
+
+      // 商品データと注文データを並行して取得
+      const [fetchedOrders, fetchedProducts] = await Promise.all([
+        orderApi.getOrders(userId),
+        orderApi.getProducts()
+      ]);
+
       setOrders(fetchedOrders);
+      setProducts(fetchedProducts);
     } catch (error) {
-      console.error('Failed to fetch orders:', error);
-      setError('注文の取得に失敗しました');
+      console.error('Failed to fetch data:', error);
+      setError('データの取得に失敗しました');
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchOrders();
+    fetchData();
   }, [userId, refreshTrigger]);
 
   // リアルタイム更新（5秒ごと）
   useEffect(() => {
-    const interval = setInterval(fetchOrders, 5000);
+    const interval = setInterval(fetchData, 5000);
     return () => clearInterval(interval);
   }, [userId]);
 
@@ -76,7 +90,7 @@ export default function OrderList({ userId, refreshTrigger }: OrderListProps) {
       <div className="bg-red-50 dark:bg-red-900 border border-red-200 dark:border-red-700 rounded-lg p-4">
         <p className="text-red-800 dark:text-red-200">{error}</p>
         <button
-          onClick={fetchOrders}
+          onClick={fetchData}
           className="mt-2 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
         >
           再試行
@@ -127,10 +141,10 @@ export default function OrderList({ userId, refreshTrigger }: OrderListProps) {
                     {order.items.map((item, index) => (
                       <div key={index} className="flex justify-between items-center text-sm">
                         <span className="text-gray-600 dark:text-gray-400">
-                          {item.productName} × {item.quantity}
+                          {getProductName(item.productId)} × {item.quantity}
                         </span>
                         <span className="font-medium text-gray-900 dark:text-white">
-                          ¥{(item.price * item.quantity).toLocaleString()}
+                          ¥{(item.priceAtPurchase * item.quantity).toLocaleString()}
                         </span>
                       </div>
                     ))}
