@@ -49,7 +49,6 @@ pub struct JitEntry {
     pub expr_hash: u64,
     pub execution_count: u64,
     pub compiled_function: Option<CompiledFunction>,
-    pub executable_memory: Option<*mut u8>, // 現在は未使用
 }
 
 /// JITコンパイラ
@@ -86,7 +85,6 @@ impl JitCompiler {
                 expr_hash,
                 execution_count: 1,
                 compiled_function: None,
-                executable_memory: None,
             });
             false
         };
