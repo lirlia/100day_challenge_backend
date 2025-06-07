@@ -33,7 +33,8 @@ void interrupt_init(void) {
 
     /* ハードウェア割り込みハンドラ設定 */
     kernel_printf("interrupt_init: Setting up hardware interrupt handlers...\n");
-    // idt_set_gate(32, (u32)irq0, 0x08, IDT_FLAG_PRESENT | IDT_FLAG_RING0 | IDT_FLAG_INTERRUPT); /* タイマー */
+    idt_set_gate(32, (u32)irq0, 0x08, IDT_FLAG_PRESENT | IDT_FLAG_RING0 | IDT_FLAG_INTERRUPT); /* タイマー */
+    register_interrupt_handler(32, timer_handler);  /* タイマーハンドラー登録 */
     kernel_printf("interrupt_init: Setting up IRQ1 (keyboard)...\n");
     idt_set_gate(33, (u32)irq1, 0x08, IDT_FLAG_PRESENT | IDT_FLAG_RING0 | IDT_FLAG_INTERRUPT); /* キーボード */
 
@@ -46,9 +47,12 @@ void interrupt_init(void) {
     kernel_printf("interrupt_init: Loading IDT...\n");
     idt_load();
 
-    /* PIT初期化（一時的にコメントアウト） */
-    // kernel_printf("interrupt_init: Initializing PIT...\n");
-    // pit_init(10);
+    /* PIT初期化 - 2Hz（500ms間隔）でタイマー割り込み（キーボード優先） */
+    kernel_printf("interrupt_init: Initializing PIT...\n");
+    pit_init(2);
+
+    /* タイマー割り込み（IRQ0）のマスクを解除 */
+    pic_clear_mask(0);
 
     /* キーボード割り込み（IRQ1）のマスクを解除 */
     pic_clear_mask(1);
@@ -78,27 +82,32 @@ void idt_load(void) {
 
 /* 汎用割り込みハンドラ（アセンブリから呼び出される） */
 void interrupt_handler(interrupt_frame_t* frame) {
-    /* 正常な割り込み処理に戻す */
+    /* ハードウェア割り込みかどうかを判定 */
 
-    /* キーボード割り込み（IRQ1 = 33）を直接処理 */
-    if (interrupt_handlers[33] != NULL) {
-        interrupt_handlers[33](frame);
+    /* まずキーボード入力があるかチェック（優先処理） */
+    if (inb(0x64) & 0x01) {  /* キーボードバッファに入力がある */
+        /* キーボード割り込みハンドラーを呼び出し */
+        if (interrupt_handlers[33] != NULL) {
+            interrupt_handlers[33](frame);
+        } else {
+            /* フォールバック処理 */
+            u8 scancode = inb(0x60);
+            kernel_printf("🎉 KEYBOARD: 0x%02X\n", scancode);
+        }
         /* PIC EOI送信 (IRQ1) */
         outb(0x20, 0x20);
         return;
     }
 
-    /* キーボード割り込みハンドラーが登録されていない場合の緊急処理 */
-    if (inb(0x64) & 0x01) {  /* キーボードバッファに入力がある */
-        u8 scancode = inb(0x60);
-        kernel_printf("🎉 DIRECT KEYBOARD: 0x%02X\n", scancode);
-        /* PIC EOI送信 (IRQ1) */
+    /* タイマー割り込みの場合 */
+    if (interrupt_handlers[32] != NULL) {
+        interrupt_handlers[32](frame);
+        /* PIC EOI送信 (IRQ0) */
         outb(0x20, 0x20);
         return;
     }
 
     /* その他の割り込み */
-    kernel_printf("Other interrupt\n");
     /* 念のためEOI送信 */
     outb(0x20, 0x20);
 }
@@ -148,13 +157,19 @@ void exception_handler(interrupt_frame_t* frame) {
 /* タイマー割り込みハンドラ */
 void timer_handler(interrupt_frame_t* frame) {
     static u32 tick_count = 0;
+    extern void increment_system_ticks(void);
+    extern void daemon_tick(void);
 
     tick_count++;
+    increment_system_ticks();  /* システム時刻を更新 */
 
-    /* 最初の10回のみ出力（安全性確保） */
-    if (tick_count <= 10) {
+    /* 最初の3回のみ出力（安全性確保） */
+    if (tick_count <= 1) {
         kernel_printf("Timer tick: %u\n", tick_count);
     }
+
+    /* デーモンタスク実行チェック */
+    daemon_tick();
 
     /* スケジューラのタイムスライス処理（一時的にコメントアウト） */
     // scheduler_tick();

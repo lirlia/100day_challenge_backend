@@ -76,6 +76,7 @@ char* strcpy(char* dest, const char* src);
 char* strncpy(char* dest, const char* src, size_t n);
 void* memset(void* ptr, int value, size_t size);
 void* memcpy(void* dest, const void* src, size_t size);
+void int_to_string(u32 num, char* buffer);
 
 /* Kernel panic */
 void kernel_panic(const char* message) __attribute__((noreturn));

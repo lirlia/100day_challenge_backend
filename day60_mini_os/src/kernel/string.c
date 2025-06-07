@@ -74,3 +74,28 @@ char* strncpy(char* dest, const char* src, size_t n) {
 
     return orig_dest;
 }
+
+/* 数値を文字列に変換 */
+void int_to_string(u32 num, char* buffer) {
+    if (!buffer) return;
+
+    if (num == 0) {
+        buffer[0] = '0';
+        buffer[1] = '\0';
+        return;
+    }
+
+    char temp[16];
+    int i = 0;
+
+    while (num > 0) {
+        temp[i++] = '0' + (num % 10);
+        num /= 10;
+    }
+
+    int j = 0;
+    for (int k = i - 1; k >= 0; k--) {
+        buffer[j++] = temp[k];
+    }
+    buffer[j] = '\0';
+}

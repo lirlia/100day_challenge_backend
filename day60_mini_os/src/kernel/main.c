@@ -1,4 +1,5 @@
 #include "kernel.h"
+#include <stdarg.h>
 #include "memory.h"
 #include "process.h"  // プロセス管理を有効化
 #include "interrupt.h" // 割り込み処理を追加
@@ -313,10 +314,7 @@ void test_memory_allocator(void) {
 void test_process_management(void) {
     kernel_printf("\n=== Process Management Test ===\n");
 
-    // 段階1: プロセス管理初期化のみ
-    kernel_printf("About to call process_init...\n");
-    process_init();
-    kernel_printf("process_init completed successfully\n");
+    // プロセス管理は既に初期化済み
 
     // 段階2: プロセス作成テスト
     kernel_printf("Testing process creation...\n");
@@ -443,6 +441,113 @@ void test_usermode_system(void) {
     kernel_printf("=== User Mode System Test Complete ===\n\n");
 }
 
+/* 前方宣言 */
+void sprintf_simple(char* buffer, const char* format, ...);
+void format_current_time(u32 ticks, char* buffer);
+
+/* システム時刻管理 */
+static u32 system_ticks = 0;
+
+u32 get_system_ticks(void) {
+    return system_ticks;
+}
+
+void increment_system_ticks(void) {
+    system_ticks++;
+}
+
+void format_uptime(u32 ticks, char* buffer) {
+    /* タイマー割り込みは2Hz（500ms間隔）に変更 */
+    u32 seconds = ticks / 2;  /* 2 ticks per second */
+    u32 minutes = seconds / 60;
+    u32 hours = minutes / 60;
+    u32 days = hours / 24;
+
+    seconds %= 60;
+    minutes %= 60;
+    hours %= 24;
+
+    /* 簡単なフォーマット */
+    if (days > 0) {
+        sprintf_simple(buffer, "%u days, %02u:%02u:%02u", days, hours, minutes, seconds);
+    } else {
+        sprintf_simple(buffer, "%02u:%02u:%02u", hours, minutes, seconds);
+    }
+}
+
+void format_current_time(u32 ticks, char* buffer) {
+    /* 起動時刻を2025年6月7日 23:04:00と仮定 */
+    u32 base_hour = 23;
+    u32 base_minute = 4;
+    u32 base_second = 0;
+
+    /* システムティックから経過秒数を計算 */
+    u32 elapsed_seconds = ticks / 2;  /* 2Hz */
+
+    /* 現在時刻を計算 */
+    u32 total_seconds = base_second + elapsed_seconds;
+    u32 total_minutes = base_minute + (total_seconds / 60);
+    u32 total_hours = base_hour + (total_minutes / 60);
+
+    u32 current_second = total_seconds % 60;
+    u32 current_minute = total_minutes % 60;
+    u32 current_hour = total_hours % 24;
+
+    /* 24時間形式で表示 */
+    sprintf_simple(buffer, "%02u:%02u:%02u", current_hour, current_minute, current_second);
+}
+
+/* 簡易sprintf実装 */
+void sprintf_simple(char* buffer, const char* format, ...) {
+    va_list args;
+    va_start(args, format);
+
+    int buf_idx = 0;
+    for (const char* p = format; *p; p++) {
+        if (*p == '%') {
+            p++;
+            if (*p == 'u') {
+                u32 num = va_arg(args, u32);
+                char temp[16];
+                int i = 0;
+                if (num == 0) {
+                    temp[i++] = '0';
+                } else {
+                    while (num > 0) {
+                        temp[i++] = '0' + (num % 10);
+                        num /= 10;
+                    }
+                }
+                for (int j = i - 1; j >= 0; j--) {
+                    buffer[buf_idx++] = temp[j];
+                }
+            } else if (*p == '0' && p[1] == '2' && p[2] == 'u') {
+                /* %02u - 2桁ゼロパディング */
+                p += 2;
+                u32 num = va_arg(args, u32);
+                if (num < 10) buffer[buf_idx++] = '0';
+                char temp[16];
+                int i = 0;
+                if (num == 0) {
+                    temp[i++] = '0';
+                } else {
+                    while (num > 0) {
+                        temp[i++] = '0' + (num % 10);
+                        num /= 10;
+                    }
+                }
+                for (int j = i - 1; j >= 0; j--) {
+                    buffer[buf_idx++] = temp[j];
+                }
+            }
+        } else {
+            buffer[buf_idx++] = *p;
+        }
+    }
+    buffer[buf_idx] = '\0';
+    va_end(args);
+}
+
 void kmain(void) {
     /* Initialize serial port for logging */
     serial_init();
@@ -467,6 +572,12 @@ void kmain(void) {
 
     // Test memory allocator
     test_memory_allocator();
+
+    // Initialize process management and daemons
+    kernel_printf("About to call process_init...\n");
+    extern void process_init(void);
+    process_init();
+    kernel_printf("process_init completed successfully\n");
 
     // Test process management (段階的に有効化)
     test_process_management();

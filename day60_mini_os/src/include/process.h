@@ -21,6 +21,15 @@ typedef struct {
     u32 cs, ds, es, fs, gs, ss; /* セグメントレジスタ */
 } cpu_context_t;
 
+/* デーモン種別 */
+typedef enum {
+    DAEMON_NONE = 0,        /* 通常プロセス */
+    DAEMON_SYSTEM_MONITOR,  /* システム監視 */
+    DAEMON_LOG_CLEANER,     /* ログクリーンアップ */
+    DAEMON_HEARTBEAT,       /* ハートビート */
+    DAEMON_CUSTOM           /* カスタムデーモン */
+} daemon_type_t;
+
 /* プロセス制御ブロック (PCB) */
 typedef struct process {
     u32 pid;                    /* プロセスID */
@@ -41,6 +50,14 @@ typedef struct process {
     u32 code_base;              /* コードセグメントベース */
     u32 code_size;              /* コードセグメントサイズ */
     bool is_user_mode;          /* ユーザーモードプロセスフラグ */
+
+    /* デーモン用フィールド */
+    bool is_daemon;             /* デーモンフラグ */
+    daemon_type_t daemon_type;  /* デーモン種別 */
+    u32 daemon_interval;        /* 実行間隔 (ticks) */
+    u32 daemon_last_run;        /* 最後の実行時刻 */
+    bool daemon_enabled;        /* デーモン有効フラグ */
+    u32 daemon_run_count;       /* 実行回数 */
 
     struct process* next;       /* プロセスリストの次のプロセス */
 } process_t;
@@ -77,6 +94,15 @@ void process_list_all(void);
 
 /* カーネルプロセス用関数 */
 process_t* kernel_process_create(const char* name, void (*entry_point)(void));
+
+/* デーモン管理関数 */
+process_t* daemon_create(const char* name, daemon_type_t type, void (*entry_point)(void), u32 interval_ticks);
+void daemon_start(process_t* daemon);
+void daemon_stop(process_t* daemon);
+void daemon_tick(void);  /* タイマー割り込みから呼び出される */
+void daemon_list_all(void);
+process_t* daemon_find_by_name(const char* name);
+process_t* daemon_find_by_type(daemon_type_t type);
 
 /* デバッグ用プロセス */
 void idle_process(void);        /* アイドルプロセス */

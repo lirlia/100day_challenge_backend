@@ -58,6 +58,15 @@ static int shell_strcmp(const char* s1, const char* s2) {
     return *s1 - *s2;
 }
 
+static int shell_strncmp(const char* s1, const char* s2, int n) {
+    for (int i = 0; i < n; i++) {
+        if (s1[i] != s2[i] || s1[i] == '\0' || s2[i] == '\0') {
+            return (unsigned char)s1[i] - (unsigned char)s2[i];
+        }
+    }
+    return 0;
+}
+
 /* 前方宣言 */
 static void execute_shell_command(const char* command);
 
@@ -244,14 +253,18 @@ static void execute_shell_command(const char* command) {
     extern void console_write(const char* str);
     extern void memory_print_info(void);
     extern void process_print_info(void);
+    extern void sprintf_simple(char* buffer, const char* format, ...);
 
     if (shell_strcmp(command, "help") == 0) {
         console_write("=== Mini OS Shell v1.0 ===\n");
         console_write("Available commands:\n");
         console_write("  help     - Show this help\n");
+        console_write("  echo     - Display text (usage: echo [text])\n");
+        console_write("  date     - Show current date and time\n");
         console_write("  version  - Show OS version\n");
         console_write("  memory   - Show memory info\n");
         console_write("  process  - Show process info\n");
+        console_write("  daemon   - Show daemon status\n");
         console_write("  clear    - Clear screen\n");
         console_write("  uptime   - Show system uptime\n");
         console_write("  test     - Run system test\n");
@@ -277,6 +290,12 @@ static void execute_shell_command(const char* command) {
     else if (shell_strcmp(command, "process") == 0) {
         console_write("=== Process Information ===\n");
         process_print_info();
+        extern void process_list_all(void);
+        process_list_all();
+    }
+    else if (shell_strcmp(command, "daemon") == 0) {
+        extern void daemon_list_all(void);
+        daemon_list_all();
     }
     else if (shell_strcmp(command, "clear") == 0) {
         extern void vga_clear(void);
@@ -329,6 +348,58 @@ static void execute_shell_command(const char* command) {
         test_keyboard_interrupt();
 
         console_write("=== Keyboard test completed ===\n");
+    }
+    else if (shell_strncmp(command, "echo ", 5) == 0) {
+        /* echo コマンド - テキストを表示 */
+        const char* text = command + 5;  /* "echo " の後の部分 */
+
+        /* 引数がない場合は空行を出力 */
+        if (*text == '\0') {
+            console_write("\n");
+        } else {
+            /* 引数の文字列を出力 */
+            console_write(text);
+            console_write("\n");
+        }
+    }
+    else if (shell_strcmp(command, "echo") == 0) {
+        /* 引数なしのecho - 空行を出力 */
+        console_write("\n");
+    }
+    else if (shell_strcmp(command, "date") == 0) {
+        /* 日付と時刻を表示 */
+        extern u32 get_system_ticks(void);
+        extern void format_current_time(u32 ticks, char* buffer);
+
+        u32 ticks = get_system_ticks();
+        char time_buffer[64];
+        format_current_time(ticks, time_buffer);
+
+        console_write("=== System Date & Time ===\n");
+        console_write("Date:         Saturday, June 7, 2025\n");
+        console_write("Current Time: ");
+        console_write(time_buffer);
+        console_write("\n");
+        console_write("Timezone:     JST (UTC+9)\n");
+        console_write("Uptime:       ");
+
+        /* 稼働時間を計算 */
+        u32 seconds = ticks / 2;  /* 2Hz */
+        u32 minutes = seconds / 60;
+        u32 hours = minutes / 60;
+
+        seconds %= 60;
+        minutes %= 60;
+
+        char uptime_str[32];
+        if (hours > 0) {
+            sprintf_simple(uptime_str, "%u:%02u:%02u", hours, minutes, seconds);
+        } else {
+            sprintf_simple(uptime_str, "%u:%02u", minutes, seconds);
+        }
+
+        console_write(uptime_str);
+        console_write("\n");
     }
     else if (shell_strcmp(command, "reboot") == 0) {
         console_write("Rebooting system...\n");

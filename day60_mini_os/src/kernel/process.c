@@ -2,6 +2,14 @@
 #include "memory.h"
 #include "kernel.h"
 
+/* 前方宣言 */
+static void daemon_init(void);
+static void daemon_execute_task(process_t* daemon);
+static const char* daemon_type_to_string(daemon_type_t type);
+static void daemon_system_monitor_task(void);
+static void daemon_log_cleaner_task(void);
+static void daemon_heartbeat_task(void);
+
 /* グローバルスケジューラ */
 static scheduler_t scheduler;
 
@@ -33,6 +41,38 @@ void process_init(void) {
     }
 
     kernel_printf("process_init: Completed successfully\n");
+
+    /* デーモン初期化 */
+    kernel_printf("process_init: About to call daemon_init...\n");
+    daemon_init();
+    kernel_printf("process_init: daemon_init completed\n");
+}
+
+/* デーモンシステム初期化 */
+static void daemon_init(void) {
+    static bool daemon_initialized = false;
+
+    if (daemon_initialized) {
+        kernel_printf("daemon_init: Already initialized, skipping\n");
+        return;
+    }
+
+    kernel_printf("daemon_init: Initializing daemon system...\n");
+
+    /* システム監視デーモン作成 (10秒間隔 = 20 ticks) */
+    process_t* sysmon = daemon_create("sysmon", DAEMON_SYSTEM_MONITOR, NULL, 20);
+    if (sysmon != NULL) {
+        daemon_start(sysmon);
+    }
+
+    /* ハートビートデーモン作成 (5秒間隔 = 10 ticks) */
+    process_t* heartbeat = daemon_create("heartbeat", DAEMON_HEARTBEAT, NULL, 10);
+    if (heartbeat != NULL) {
+        daemon_start(heartbeat);
+    }
+
+    daemon_initialized = true;
+    kernel_printf("daemon_init: Default daemons created and started\n");
 }
 
 /* スケジューラ初期化 */
@@ -135,6 +175,14 @@ process_t* process_create(const char* name, void* entry_point, u32 stack_size) {
     process->time_slice = scheduler.time_quantum;
     process->remaining_time = process->time_slice;
     process->next = NULL;
+
+    /* デーモンフィールド初期化 */
+    process->is_daemon = false;
+    process->daemon_type = DAEMON_NONE;
+    process->daemon_interval = 0;
+    process->daemon_last_run = 0;
+    process->daemon_enabled = false;
+    process->daemon_run_count = 0;
 
     /* プロセス数更新 */
     scheduler.process_count++;
@@ -344,4 +392,231 @@ void scheduler_switch_process(void) {
 void scheduler_tick(void) {
     kernel_printf("scheduler_tick: Called (stub implementation)\n");
     // TODO: タイムスライス管理とプロセス切り替え実装
+}
+
+/* =========================== */
+/* デーモン管理システム          */
+/* =========================== */
+
+/* デーモン作成 */
+process_t* daemon_create(const char* name, daemon_type_t type, void (*entry_point)(void), u32 interval_ticks) {
+    kernel_printf("daemon_create: Creating daemon '%s' (type=%u, interval=%u)\n", name, type, interval_ticks);
+
+    /* 通常のプロセスとして作成 */
+    process_t* daemon = kernel_process_create(name, entry_point);
+    if (daemon == NULL) {
+        kernel_printf("daemon_create: ERROR - Failed to create process\n");
+        return NULL;
+    }
+
+    /* デーモン特有の設定 */
+    daemon->is_daemon = true;
+    daemon->daemon_type = type;
+    daemon->daemon_interval = interval_ticks;
+    daemon->daemon_last_run = 0;  /* 次回のtickで即座に実行 */
+    daemon->daemon_enabled = false;  /* 初期状態は停止 */
+    daemon->daemon_run_count = 0;
+    daemon->priority = 2;  /* デーモンは低優先度 */
+
+    kernel_printf("daemon_create: Daemon '%s' created successfully (PID=%u)\n", name, daemon->pid);
+    return daemon;
+}
+
+/* デーモン開始 */
+void daemon_start(process_t* daemon) {
+    if (daemon == NULL || !daemon->is_daemon) {
+        kernel_printf("daemon_start: ERROR - Invalid daemon\n");
+        return;
+    }
+
+    daemon->daemon_enabled = true;
+    extern u32 get_system_ticks(void);
+    daemon->daemon_last_run = get_system_ticks();
+
+    kernel_printf("daemon_start: Daemon '%s' started\n", daemon->name);
+}
+
+/* デーモン停止 */
+void daemon_stop(process_t* daemon) {
+    if (daemon == NULL || !daemon->is_daemon) {
+        kernel_printf("daemon_stop: ERROR - Invalid daemon\n");
+        return;
+    }
+
+    daemon->daemon_enabled = false;
+    kernel_printf("daemon_stop: Daemon '%s' stopped\n", daemon->name);
+}
+
+/* デーモンタスク実行チェック */
+void daemon_tick(void) {
+    extern u32 get_system_ticks(void);
+    u32 current_ticks = get_system_ticks();
+
+    /* 全プロセスをチェック */
+    for (int i = 0; i < MAX_PROCESSES; i++) {
+        if (!process_table_used[i]) continue;
+
+        process_t* proc = &process_table[i];
+        if (!proc->is_daemon || !proc->daemon_enabled) continue;
+
+        /* 実行間隔をチェック */
+        if (current_ticks - proc->daemon_last_run >= proc->daemon_interval) {
+            /* デーモンタスク実行 */
+            proc->daemon_last_run = current_ticks;
+            proc->daemon_run_count++;
+
+            kernel_printf("daemon_tick: Running daemon '%s' (count=%u)\n",
+                         proc->name, proc->daemon_run_count);
+
+            /* 実際のデーモンタスクを実行 */
+            daemon_execute_task(proc);
+        }
+    }
+}
+
+/* デーモンタスク実行 */
+static void daemon_execute_task(process_t* daemon) {
+    if (daemon == NULL || !daemon->is_daemon) return;
+
+    switch (daemon->daemon_type) {
+        case DAEMON_SYSTEM_MONITOR:
+            daemon_system_monitor_task();
+            break;
+        case DAEMON_LOG_CLEANER:
+            daemon_log_cleaner_task();
+            break;
+        case DAEMON_HEARTBEAT:
+            daemon_heartbeat_task();
+            break;
+        case DAEMON_CUSTOM:
+            kernel_printf("daemon_execute_task: Custom daemon '%s' (PID=%u)\n",
+                         daemon->name, daemon->pid);
+            break;
+        default:
+            kernel_printf("daemon_execute_task: Unknown daemon type %u\n", daemon->daemon_type);
+            break;
+    }
+}
+
+/* デーモン一覧表示 */
+void daemon_list_all(void) {
+    extern void console_write(const char* str);
+    extern void int_to_string(u32 num, char* buffer);
+
+    console_write("\n=== Daemon Status ===\n");
+    console_write("PID | Name         | Type   | Status | Interval | Runs\n");
+    console_write("----|--------------|--------|--------|----------|-----\n");
+
+    int daemon_count = 0;
+    for (int i = 0; i < MAX_PROCESSES; i++) {
+        if (!process_table_used[i]) continue;
+
+        process_t* proc = &process_table[i];
+        if (!proc->is_daemon) continue;
+
+        daemon_count++;
+
+        /* PID */
+        char pid_str[16];
+        int_to_string(proc->pid, pid_str);
+        console_write(pid_str);
+        console_write(" | ");
+
+        /* Name */
+        console_write(proc->name);
+        console_write(" | ");
+
+        /* Type */
+        const char* type_name = daemon_type_to_string(proc->daemon_type);
+        console_write(type_name);
+        console_write(" | ");
+
+        /* Status */
+        const char* status = proc->daemon_enabled ? "ACTIVE" : "STOP";
+        console_write(status);
+        console_write(" | ");
+
+        /* Interval */
+        char interval_str[16];
+        int_to_string(proc->daemon_interval, interval_str);
+        console_write(interval_str);
+        console_write(" | ");
+
+        /* Runs */
+        char runs_str[16];
+        int_to_string(proc->daemon_run_count, runs_str);
+        console_write(runs_str);
+        console_write("\n");
+    }
+
+    if (daemon_count == 0) {
+        console_write("No daemons found.\n");
+    }
+
+    console_write("===================\n\n");
+}
+
+/* デーモン名で検索 */
+process_t* daemon_find_by_name(const char* name) {
+    for (int i = 0; i < MAX_PROCESSES; i++) {
+        if (!process_table_used[i]) continue;
+
+        process_t* proc = &process_table[i];
+        if (proc->is_daemon && strcmp(proc->name, name) == 0) {
+            return proc;
+        }
+    }
+    return NULL;
+}
+
+/* デーモンタイプで検索 */
+process_t* daemon_find_by_type(daemon_type_t type) {
+    for (int i = 0; i < MAX_PROCESSES; i++) {
+        if (!process_table_used[i]) continue;
+
+        process_t* proc = &process_table[i];
+        if (proc->is_daemon && proc->daemon_type == type) {
+            return proc;
+        }
+    }
+    return NULL;
+}
+
+/* ヘルパー関数 */
+static const char* daemon_type_to_string(daemon_type_t type) {
+    switch (type) {
+        case DAEMON_NONE: return "NONE";
+        case DAEMON_SYSTEM_MONITOR: return "SYSMON";
+        case DAEMON_LOG_CLEANER: return "LOGCLN";
+        case DAEMON_HEARTBEAT: return "BEAT";
+        case DAEMON_CUSTOM: return "CUSTOM";
+        default: return "UNK";
+    }
+}
+
+/* デーモンタスク実装 */
+static void daemon_system_monitor_task(void) {
+    extern u32 get_free_memory(void);
+    extern u32 get_total_memory(void);
+
+    u32 free_mem = get_free_memory();
+    u32 total_mem = get_total_memory();
+    u32 used_percent = ((total_mem - free_mem) * 100) / total_mem;
+
+    kernel_printf("SYSMON: Memory usage: %u%% (%u/%u KB)\n",
+                  used_percent, (total_mem - free_mem) / 1024, total_mem / 1024);
+}
+
+static void daemon_log_cleaner_task(void) {
+    kernel_printf("LOGCLN: Log cleanup completed\n");
+    /* 実際のログクリーンアップ処理をここに実装 */
+}
+
+static void daemon_heartbeat_task(void) {
+    extern u32 get_system_ticks(void);
+    static u32 heartbeat_count = 0;
+    heartbeat_count++;
+
+    kernel_printf("HEARTBEAT #%u: System alive (uptime: %u ticks)\n",
+                  heartbeat_count, get_system_ticks());
 }
