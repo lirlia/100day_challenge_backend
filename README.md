@@ -71,3 +71,4 @@ LLMで生成したコードを置いています。
 | Day54 | 派手派手オセロバトル                                                       | <video src="https://github.com/user-attachments/assets/3b8785da-4e70-4990-ba0e-e960951c596c" > |
 | Day55 | サイバーパンク 3D スペースシューター                                       | <video src="https://github.com/user-attachments/assets/c4a2d2c4-db53-4d0a-b7ee-724135a355cb" > |
 | Day56 | イベント駆動型システム (Go + Web UI)                                       | <video src="https://github.com/user-attachments/assets/aa9eeb48-e776-43ec-9be8-bc57d45ef8fe" > |
+| Day57 | ガベージコレクタ実装システム (Frontend-only)                               | <video src="https://github.com/user-attachments/assets/5e32c7f2-5900-4da8-a155-c67d46bfea99" > |
