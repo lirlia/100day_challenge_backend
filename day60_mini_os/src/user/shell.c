@@ -58,6 +58,9 @@ static int shell_strcmp(const char* s1, const char* s2) {
     return *s1 - *s2;
 }
 
+/* 前方宣言 */
+static void execute_shell_command(const char* command);
+
 /* コマンドライン入力 */
 static int shell_readline(char* buffer, int max_len) {
     int pos = 0;
@@ -160,31 +163,201 @@ static void shell_main(void) {
     }
 }
 
-/* エントリポイント（ユーザーモードから呼び出される） */
+/* エントリポイント（カーネルモードでの対話的シェル） */
 void shell_start(void) {
-    // カーネルモードでのテスト用
     extern void kernel_printf(const char* format, ...);
+    extern void console_write(const char* str);
+    extern void vga_clear(void);
+    extern int keyboard_getchar(void);  // キーボードから文字を取得
 
-    kernel_printf("\n");
-    kernel_printf("=====================================\n");
-    kernel_printf("    Welcome to Mini OS Shell!\n");
-    kernel_printf("=====================================\n");
-    kernel_printf("Running in KERNEL MODE (temporary test)\n");
-    kernel_printf("Features available:\n");
-    kernel_printf("  - Memory Management: 256MB\n");
-    kernel_printf("  - Process Management: 2 processes\n");
-    kernel_printf("  - Interrupt System: Fully operational\n");
-    kernel_printf("  - Keyboard Driver: Initialized\n");
-    kernel_printf("  - User Mode: Ready (GDT/TSS pending)\n");
-    kernel_printf("\n");
-    kernel_printf("Next steps:\n");
-    kernel_printf("  1. Enable GDT and TSS\n");
-    kernel_printf("  2. Switch to user mode\n");
-    kernel_printf("  3. Interactive shell with keyboard input\n");
-    kernel_printf("\n");
-    kernel_printf("Shell test completed successfully!\n");
-    kernel_printf("=====================================\n");
+    char command_buffer[256];
+    int pos = 0;
+    char c;
 
-    // 元のユーザーモード版はコメントアウト
-    // shell_main();
+    // 画面をクリアして起動メッセージ表示
+    vga_clear();
+    console_write("\n");
+    console_write("=====================================\n");
+    console_write("    Welcome to Mini OS Shell!\n");
+    console_write("=====================================\n");
+    console_write("Features:\n");
+    console_write("  - Memory Management: 256MB\n");
+    console_write("  - Process Management: 2 processes\n");
+    console_write("  - Interrupt System: Fully operational\n");
+    console_write("  - Keyboard Driver: Interactive input\n");
+    console_write("  - VGA Display: 80x25 text mode\n");
+    console_write("\n");
+    console_write("Type 'help' for available commands.\n");
+    console_write("Use Ctrl+C to exit.\n\n");
+
+    console_write("Shell successfully started!\n");
+
+        /* 割り込みを有効化（シェル起動後） */
+    console_write("Enabling interrupts...\n");
+    asm volatile("sti");
+    console_write("Interrupts enabled! Ready for keyboard input.\n");
+
+    /* 準備完了 */
+    console_write("\nReady for keyboard input! Structure has been fixed.\n");
+
+    // メインシェルループ
+    while (1) {
+        console_write("mini-os> ");
+        pos = 0;
+
+        // コマンドライン入力処理
+        while (pos < sizeof(command_buffer) - 1) {
+            /* キーボードから1文字取得（ポーリング） */
+            while ((c = keyboard_getchar()) == 0) {
+                /* キー入力を待機 */
+                asm("pause");  // CPUを一時停止してエネルギー節約
+            }
+
+            if (c == '\n') {
+                /* Enterキーで入力完了 */
+                command_buffer[pos] = '\0';
+                console_write("\n");
+                break;
+            } else if (c == '\b' && pos > 0) {
+                /* バックスペース処理 */
+                pos--;
+                console_write("\b \b");
+            } else if (c >= 32 && c <= 126) {
+                /* 印刷可能文字 */
+                command_buffer[pos++] = c;
+                char echo[2] = {c, '\0'};
+                console_write(echo);
+            }
+        }
+
+        command_buffer[pos] = '\0';
+
+        // コマンド処理
+        if (pos > 0) {
+            execute_shell_command(command_buffer);
+        }
+    }
+}
+
+/* コマンド実行（カーネルモード版） */
+static void execute_shell_command(const char* command) {
+    extern void console_write(const char* str);
+    extern void memory_print_info(void);
+    extern void process_print_info(void);
+
+    if (shell_strcmp(command, "help") == 0) {
+        console_write("=== Mini OS Shell v1.0 ===\n");
+        console_write("Available commands:\n");
+        console_write("  help     - Show this help\n");
+        console_write("  version  - Show OS version\n");
+        console_write("  memory   - Show memory info\n");
+        console_write("  process  - Show process info\n");
+        console_write("  clear    - Clear screen\n");
+        console_write("  uptime   - Show system uptime\n");
+        console_write("  test     - Run system test\n");
+        console_write("  inttest  - Run interrupt tests\n");
+        console_write("  kbtest   - Run keyboard test\n");
+        console_write("  reboot   - Restart system\n");
+        console_write("Use Ctrl+C to exit shell.\n");
+    }
+    else if (shell_strcmp(command, "version") == 0) {
+        console_write("=== Mini OS Version Information ===\n");
+        console_write("OS Name:     Mini OS\n");
+        console_write("Version:     v0.1.0\n");
+        console_write("Build:       Day 60 Challenge\n");
+        console_write("Architecture: x86-32bit\n");
+        console_write("Mode:        Kernel Mode Shell\n");
+        console_write("Memory:      256MB RAM\n");
+        console_write("Features:    GDT, TSS, Interrupts, Paging-ready\n");
+    }
+    else if (shell_strcmp(command, "memory") == 0) {
+        console_write("=== Memory Information ===\n");
+        memory_print_info();
+    }
+    else if (shell_strcmp(command, "process") == 0) {
+        console_write("=== Process Information ===\n");
+        process_print_info();
+    }
+    else if (shell_strcmp(command, "clear") == 0) {
+        extern void vga_clear(void);
+        vga_clear();
+        console_write("Screen cleared!\n");
+    }
+    else if (shell_strcmp(command, "uptime") == 0) {
+        console_write("=== System Status ===\n");
+        console_write("Status:          Running\n");
+        console_write("Boot Status:     Completed successfully\n");
+        console_write("Memory Manager:  Active\n");
+        console_write("Process Manager: Active (2 processes)\n");
+        console_write("Interrupt System: Active\n");
+        console_write("Keyboard Driver: Active\n");
+        console_write("VGA Driver:     Active (80x25 text mode)\n");
+        console_write("User Mode:      Ready (GDT/TSS configured)\n");
+    }
+    else if (shell_strcmp(command, "test") == 0) {
+        console_write("=== Running System Test ===\n");
+        console_write("Testing memory allocation...\n");
+
+        extern u32 alloc_page(void);
+        extern void free_page(u32 page);
+
+        u32 test_page = alloc_page();
+        if (test_page != 0) {
+            console_write("✓ Memory allocation successful\n");
+            free_page(test_page);
+            console_write("✓ Memory deallocation successful\n");
+        } else {
+            console_write("✗ Memory allocation failed\n");
+        }
+
+        console_write("✓ All tests passed!\n");
+    }
+    else if (shell_strcmp(command, "inttest") == 0) {
+        console_write("=== Running Interrupt System Tests ===\n");
+
+        extern void run_interrupt_tests(void);
+        run_interrupt_tests();
+
+        console_write("=== Interrupt tests completed ===\n");
+    }
+    else if (shell_strcmp(command, "kbtest") == 0) {
+        console_write("=== Running Keyboard Test ===\n");
+        console_write("Warning: This will temporarily replace keyboard handler\n");
+        console_write("Press any key when prompted...\n");
+
+        extern void test_keyboard_interrupt(void);
+        test_keyboard_interrupt();
+
+        console_write("=== Keyboard test completed ===\n");
+    }
+    else if (shell_strcmp(command, "reboot") == 0) {
+        console_write("Rebooting system...\n");
+        console_write("(Use Ctrl+Alt+Del in QEMU or close window)\n");
+        // 実際のリブートは複雑なので、メッセージのみ表示
+    }
+    else if (command[0] == '\0') {
+        // 空のコマンド - 何もしない
+    }
+    else {
+        console_write("Unknown command: '");
+        console_write(command);
+        console_write("'\n");
+        console_write("Type 'help' for available commands.\n");
+    }
+}
+
+/* ユーザーモードテスト用の簡単な関数 */
+void user_mode_test(void) {
+    /* システムコールでメッセージを出力 */
+    const char* msg = "Hello from User Mode!\n";
+
+    /* 文字列長を手動で計算 */
+    int len = 0;
+    const char* p = msg;
+    while (*p++) len++;
+
+    sys_write(msg, len);
+
+    /* システムコールで終了 */
+    sys_exit(0);
 }

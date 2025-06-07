@@ -1,1 +1,322 @@
-/Users/noname/Cording/100day_challenge_backend/output.log
+
+=====================================
+       Mini OS v0.1.0
+=====================================
+
+About to call test function...
+test_function_call: This function was called successfully
+test function returned successfully
+About to call memory_init with NULL...
+memory_init: Starting...
+memory_init: Clearing mm struct...
+memory_init: mm struct cleared
+memory_init: Setting kernel boundaries...
+memory_init: Kernel boundaries set
+  - Kernel loaded at: 1048576 - 1135698 (85 KB)
+memory_init: Checking multiboot info...
+  - WARNING: No multiboot memory map. Using fallback (256MB).
+memory_init: Fallback memory set
+memory_init: About to call init_page_allocator...
+init_page_allocator: Starting...
+init_page_allocator: Total pages: 65536
+init_page_allocator: Bitmap size: 2048 u32s
+init_page_allocator: Setting bitmap address...
+init_page_allocator: Bitmap address set to: 1138688
+init_page_allocator: About to clear bitmap...
+init_page_allocator: Bitmap size in bytes: 8192
+init_page_allocator: Testing bitmap memory access...
+init_page_allocator: Bitmap memory test passed
+init_page_allocator: Bitmap cleared
+init_page_allocator: Updated kernel_end to: 1146880
+init_page_allocator: Completed
+memory_init: init_page_allocator returned
+memory_init: About to call mark_kernel_pages...
+  - Marking kernel pages as used: 256 - 280
+memory_init: mark_kernel_pages returned
+memory_init: About to call memory_print_info...
+
+--- Memory Status ---
+Total Memory: 262144 KB (256 MB)
+Used Memory:  0 KB
+Free Memory:  262144 KB
+Total Pages:  65536
+Used Pages:   0
+Free Pages:   65536
+Kernel size:  96 KB
+---------------------
+memory_init: Completed successfully
+memory_init returned successfully
+
+=== Memory Allocator Test ===
+Testing page allocation...
+Allocated page 1: 1150976
+Allocated page 2: 1155072
+Allocated page 3: 1159168
+
+--- Memory Status ---
+Total Memory: 262144 KB (256 MB)
+Used Memory:  12 KB
+Free Memory:  262132 KB
+Total Pages:  65536
+Used Pages:   3
+Free Pages:   65533
+Kernel size:  96 KB
+---------------------
+Testing page deallocation...
+Freed page 2: 1155072
+
+--- Memory Status ---
+Total Memory: 262144 KB (256 MB)
+Used Memory:  8 KB
+Free Memory:  262136 KB
+Total Pages:  65536
+Used Pages:   2
+Free Pages:   65534
+Kernel size:  96 KB
+---------------------
+Allocated page 4: 1155072
+
+--- Memory Status ---
+Total Memory: 262144 KB (256 MB)
+Used Memory:  12 KB
+Free Memory:  262132 KB
+Total Pages:  65536
+Used Pages:   3
+Free Pages:   65533
+Kernel size:  96 KB
+---------------------
+=== Memory Test Complete ===
+
+
+=== Process Management Test ===
+About to call process_init...
+process_init: Starting...
+process_init: Step 1 - Basic initialization
+process_init: Step 2 - Scheduler basic setup
+process_init: Step 3 - Scheduler initialized
+process_init: Completed successfully
+process_init completed successfully
+Testing process creation...
+process_create: Creating process 'idle'
+process_create: Process 'idle' created (PID=1, Stack=8192 bytes)
+Created idle process (PID=1)
+process_create: Creating process 'test_a'
+process_create: Process 'test_a' created (PID=2, Stack=8192 bytes)
+Created test process A (PID=2)
+
+--- Process Information ---
+Total Processes: 2
+Time Quantum: 100 ms
+Current Process: None
+---------------------------
+
+
+--- Process List ---
+PID  | Name              | State | Stack
+-----|-------------------|-------|--------
+1 | idle | 0 | 8 KB
+2 | test_a | 0 | 8 KB
+-------------------
+
+Testing process function execution (direct call)...
+Calling test_process_a function directly...
+test_process_a: Started
+test_process_a: Iteration 0
+test_process_a: Iteration 1
+test_process_a: Iteration 2
+test_process_a: Iteration 3
+test_process_a: Iteration 4
+test_process_a: Finished
+test_process_a function completed
+=== Process Management Test Complete ===
+
+
+=== Interrupt System Test ===
+About to call interrupt_init...
+interrupt_init: Starting interrupt system initialization...
+interrupt_init: About to call pic_init...
+interrupt_init: pic_init completed
+interrupt_init: Setting up exception handlers...
+interrupt_init: Skipping exception handlers for debugging...
+interrupt_init: Setting up hardware interrupt handlers...
+interrupt_init: Setting up IRQ1 (keyboard)...
+interrupt_init: Setting up system call handler...
+interrupt_init: Setting up ISR 128...
+interrupt_init: Loading IDT...
+interrupt_init: Enabling interrupts...
+interrupt_init: Interrupt system initialized successfully, keyboard enabled!
+interrupt_init completed successfully
+Testing interrupt system (no timer)...
+Basic interrupt system test completed
+=== Interrupt System Test Complete ===
+
+
+=== Paging System Test ===
+About to call paging_init...
+Skipping paging_init for now (debugging)
+=== Paging System Test Complete ===
+
+
+=== User Mode System Test ===
+About to call usermode_init...
+usermode_init: Initializing user mode system...
+usermode_init: Phase 9 - Setting up GDT...
+gdt_setup: Setting up Global Descriptor Table...
+gdt_setup: GDT loaded successfully
+usermode_init: Phase 9 - Setting up TSS...
+tss_setup: Setting up Task State Segment...
+tss_setup: Clearing TSS structure...
+tss_setup: TSS structure cleared
+tss_setup: Setting up kernel stack...
+tss_setup: Kernel stack configured
+tss_setup: Setting I/O map base...
+tss_setup: I/O map base set
+tss_setup: TSS configuration complete
+tss_setup: DEBUG - Skipping TSS flush temporarily
+tss_setup: TSS loaded successfully (kernel stack: 2101248)
+tss_setup: TSS setup completed
+usermode_init: Registering system call handler...
+Interrupt handler registered for vector 128
+usermode_init: User mode system initialized
+usermode_init: Phase 9 complete - ready for user mode execution
+usermode_init completed successfully
+
+--- User Mode Status ---
+User Mode Enabled: Yes
+Basic user mode structures initialized
+-----------------------
+usermode_print_info completed successfully
+About to call keyboard_init...
+keyboard_init: Initializing keyboard driver...
+keyboard_init: Clearing keyboard state...
+keyboard_init: Keyboard state cleared
+keyboard_init: Registering interrupt handler...
+Interrupt handler registered for vector 33
+keyboard_init: Interrupt handler registered
+keyboard_init: After register_interrupt_handler
+keyboard_init: Configuring PIC...
+keyboard_init: IRQ1 unmasked via pic_clear_mask
+keyboard_init: PIC configuration completed
+keyboard_init: Keyboard driver initialized successfully
+keyboard_init completed successfully
+About to execute shell in user mode...
+User mode ready - but skipping user mode execution for debugging
+Executing shell in kernel mode instead...
+About to call shell_start...
+
+=====================================
+    Welcome to Mini OS Shell!
+=====================================
+Features:
+  - Memory Management: 256MB
+  - Process Management: 2 processes
+  - Interrupt System: Fully operational
+  - Keyboard Driver: Interactive input
+  - VGA Display: 80x25 text mode
+
+Type 'help' for available commands.
+Use Ctrl+C to exit.
+
+Shell successfully started!
+Enabling interrupts...
+Interrupts enabled! Ready for keyboard input.
+
+Ready for keyboard input! Structure has been fixed.
+mini-os> 🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+s🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+d🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+f🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+s🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+s🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+d🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+f🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+ 🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+ 🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+ 🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+ 🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+ 🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+ 🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+ 🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+e🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+c🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+h🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+o🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+ 🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+ 🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+ 🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+ 🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+k🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+l🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+s🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+ 🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+ 🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+ 🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+l🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+s🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+
+Unknown command: 'ls'
+Type 'help' for available commands.
+mini-os> 🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+e🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+c🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+ 🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+ 🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+v🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+e🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+r🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+s🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+i🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+o🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+n🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+
+=== Mini OS Version Information ===
+OS Name:     Mini OS
+Version:     v0.1.0
+Build:       Day 60 Challenge
+Architecture: x86-32bit
+Mode:        Kernel Mode Shell
+Memory:      256MB RAM
+Features:    GDT, TSS, Interrupts, Paging-ready
+mini-os> 🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+
+mini-os> 🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+
+mini-os> 🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+e🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+c🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+h🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+o🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+
+Unknown command: 'echo'
+Type 'help' for available commands.
+mini-os> 🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+e🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+c🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+h🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+o🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+ 🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+a🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+a🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)
+
+Unknown command: 'echo aa'
+Type 'help' for available commands.
+mini-os> 

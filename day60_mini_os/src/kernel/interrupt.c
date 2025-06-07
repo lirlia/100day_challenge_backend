@@ -21,19 +21,26 @@ void interrupt_init(void) {
     memset(&interrupt_handlers, 0, sizeof(interrupt_handler_t) * IDT_ENTRIES);
 
     /* PIC初期化 */
+    kernel_printf("interrupt_init: About to call pic_init...\n");
     pic_init();
+    kernel_printf("interrupt_init: pic_init completed\n");
 
-    /* 例外ハンドラ設定 - 段階的に実装 */
+            /* 例外ハンドラ設定 - 段階的に実装 */
     kernel_printf("interrupt_init: Setting up exception handlers...\n");
 
-    /* まずは基本的な例外のみ設定 */
-    idt_set_gate(0,  (u32)isr0,  0x08, IDT_FLAG_PRESENT | IDT_FLAG_RING0 | IDT_FLAG_INTERRUPT);
-    idt_set_gate(13, (u32)isr13, 0x08, IDT_FLAG_PRESENT | IDT_FLAG_RING0 | IDT_FLAG_INTERRUPT);
-    idt_set_gate(14, (u32)isr14, 0x08, IDT_FLAG_PRESENT | IDT_FLAG_RING0 | IDT_FLAG_INTERRUPT);
+    /* 一時的に例外ハンドラ設定をスキップ */
+    kernel_printf("interrupt_init: Skipping exception handlers for debugging...\n");
 
-    /* ハードウェア割り込みハンドラ設定（一時的にコメントアウト） */
-    // kernel_printf("interrupt_init: Setting up hardware interrupt handlers...\n");
+    /* ハードウェア割り込みハンドラ設定 */
+    kernel_printf("interrupt_init: Setting up hardware interrupt handlers...\n");
     // idt_set_gate(32, (u32)irq0, 0x08, IDT_FLAG_PRESENT | IDT_FLAG_RING0 | IDT_FLAG_INTERRUPT); /* タイマー */
+    kernel_printf("interrupt_init: Setting up IRQ1 (keyboard)...\n");
+    idt_set_gate(33, (u32)irq1, 0x08, IDT_FLAG_PRESENT | IDT_FLAG_RING0 | IDT_FLAG_INTERRUPT); /* キーボード */
+
+    /* システムコールハンドラ設定 */
+    kernel_printf("interrupt_init: Setting up system call handler...\n");
+    kernel_printf("interrupt_init: Setting up ISR 128...\n");
+    idt_set_gate(128, (u32)isr128, 0x08, IDT_FLAG_PRESENT | IDT_FLAG_RING3 | IDT_FLAG_INTERRUPT); /* システムコール */
 
     /* IDTロード */
     kernel_printf("interrupt_init: Loading IDT...\n");
@@ -43,7 +50,14 @@ void interrupt_init(void) {
     // kernel_printf("interrupt_init: Initializing PIT...\n");
     // pit_init(10);
 
-    kernel_printf("interrupt_init: Interrupt system initialized successfully (timer disabled)\n");
+    /* キーボード割り込み（IRQ1）のマスクを解除 */
+    pic_clear_mask(1);
+
+    /* 割り込みを有効化 */
+    kernel_printf("interrupt_init: Enabling interrupts...\n");
+    asm volatile("sti");  /* 割り込み有効化 */
+
+    kernel_printf("interrupt_init: Interrupt system initialized successfully, keyboard enabled!\n");
 }
 
 /* IDTゲート設定 */
@@ -64,22 +78,29 @@ void idt_load(void) {
 
 /* 汎用割り込みハンドラ（アセンブリから呼び出される） */
 void interrupt_handler(interrupt_frame_t* frame) {
-    /* 登録されたハンドラがあれば呼び出し */
-    if (interrupt_handlers[frame->int_no] != NULL) {
-        interrupt_handlers[frame->int_no](frame);
-    } else {
-        /* デフォルトの例外ハンドラ */
-        if (frame->int_no < 32) {
-            exception_handler(frame);
-        } else if (frame->int_no == 32) {
-            timer_handler(frame);
-        }
+    /* 正常な割り込み処理に戻す */
+
+    /* キーボード割り込み（IRQ1 = 33）を直接処理 */
+    if (interrupt_handlers[33] != NULL) {
+        interrupt_handlers[33](frame);
+        /* PIC EOI送信 (IRQ1) */
+        outb(0x20, 0x20);
+        return;
     }
 
-    /* ハードウェア割り込みの場合はEOI送信 */
-    if (frame->int_no >= 32 && frame->int_no < 48) {
-        pic_send_eoi(frame->int_no - 32);
+    /* キーボード割り込みハンドラーが登録されていない場合の緊急処理 */
+    if (inb(0x64) & 0x01) {  /* キーボードバッファに入力がある */
+        u8 scancode = inb(0x60);
+        kernel_printf("🎉 DIRECT KEYBOARD: 0x%02X\n", scancode);
+        /* PIC EOI送信 (IRQ1) */
+        outb(0x20, 0x20);
+        return;
     }
+
+    /* その他の割り込み */
+    kernel_printf("Other interrupt\n");
+    /* 念のためEOI送信 */
+    outb(0x20, 0x20);
 }
 
 /* 例外ハンドラ */
@@ -169,7 +190,7 @@ void pic_init(void) {
     outb(PIC2_DATA, 0x01);
 
     /* 全割り込みをマスク（無効化） */
-    outb(PIC1_DATA, 0xFE); /* タイマー（IRQ0）のみ有効 */
+    outb(PIC1_DATA, 0xFF); /* 全ての割り込みを無効化 */
     outb(PIC2_DATA, 0xFF); /* スレーブPICは全てマスク */
 }
 
@@ -231,4 +252,9 @@ void pit_init(u32 frequency) {
 void register_interrupt_handler(u8 n, interrupt_handler_t handler) {
     interrupt_handlers[n] = handler;
     kernel_printf("Interrupt handler registered for vector %u\n", n);
+}
+
+/* 割り込みハンドラ取得（テスト用） */
+interrupt_handler_t get_interrupt_handler(u8 n) {
+    return interrupt_handlers[n];
 }

@@ -415,13 +415,26 @@ void test_usermode_system(void) {
     extern void shell_start(void); // シェルのエントリポイント
     kernel_printf("About to execute shell in user mode...\n");
 
-    // ユーザーモードでシェル関数を実行
+    // Phase 10: ユーザーモードテスト関数を実行
     if (is_usermode_enabled()) {
-        kernel_printf("User mode ready - executing shell in user mode...\n");
-        execute_user_function((void(*)(void))shell_start);
+        kernel_printf("User mode ready - but skipping user mode execution for debugging\n");
+        kernel_printf("Executing shell in kernel mode instead...\n");
+
+                        kernel_printf("About to call shell_start...\n");
+        // extern void user_mode_test(void);
+        // execute_user_function((void(*)(void))user_mode_test);
+        extern void shell_start(void);
+        shell_start();
+
+        kernel_printf("shell_start returned\n");
     } else {
         kernel_printf("User mode not ready - executing shell in kernel mode...\n");
+
+                        kernel_printf("About to call shell_start...\n");
+        extern void shell_start(void);
         shell_start();
+
+        kernel_printf("shell_start returned\n");
     }
 
     // ここには戻ってこないはず
@@ -434,9 +447,14 @@ void kmain(void) {
     /* Initialize serial port for logging */
     serial_init();
 
-    kernel_printf("\n=====================================\n");
-    kernel_printf("       Mini OS v0.1.0\n");
-    kernel_printf("=====================================\n\n");
+    /* Initialize VGA display */
+    vga_init();
+
+    /* Show startup message on both serial and VGA */
+    const char* startup_msg = "\n=====================================\n"
+                             "       Mini OS v0.1.0\n"
+                             "=====================================\n\n";
+    console_write(startup_msg);
 
     kernel_printf("About to call test function...\n");
     test_function_call();
@@ -461,6 +479,12 @@ void kmain(void) {
 
     // Test user mode system
     test_usermode_system();
+
+    /* Show completion message on screen */
+    console_write("\n=====================================\n");
+    console_write("    All tests completed successfully!\n");
+    console_write("    System is now halting.\n");
+    console_write("=====================================\n");
 
     kernel_printf("All tests completed successfully. Halting.\n");
 

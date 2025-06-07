@@ -1,5 +1,6 @@
 #include "../include/keyboard.h"
 #include "../include/interrupt.h"
+#include "../include/kernel.h"
 
 /* グローバルキーボード状態 */
 static keyboard_state_t kb_state;
@@ -23,60 +24,70 @@ const char keyboard_map_shifted[] = {
 };
 
 void keyboard_init(void) {
+    extern void kernel_printf(const char* format, ...);
+
     kernel_printf("keyboard_init: Initializing keyboard driver...\n");
 
     /* キーボード状態を初期化 */
+    kernel_printf("keyboard_init: Clearing keyboard state...\n");
     memset(&kb_state, 0, sizeof(keyboard_state_t));
+    kernel_printf("keyboard_init: Keyboard state cleared\n");
 
     /* キーボード割り込み（IRQ1）を有効化 */
+    kernel_printf("keyboard_init: Registering interrupt handler...\n");
     register_interrupt_handler(33, keyboard_handler);
+    kernel_printf("keyboard_init: Interrupt handler registered\n");
+    kernel_printf("keyboard_init: After register_interrupt_handler\n");
 
-    /* PICでIRQ1を有効化 */
-    outb(0x21, inb(0x21) & ~0x02);  // IRQ1をアンマスク
+        /* PICでIRQ1を有効化 */
+    kernel_printf("keyboard_init: Configuring PIC...\n");
+    extern void pic_clear_mask(u8 irq);
+    pic_clear_mask(1);  // IRQ1をアンマスク
+    kernel_printf("keyboard_init: IRQ1 unmasked via pic_clear_mask\n");
 
-    kernel_printf("keyboard_init: Keyboard driver initialized\n");
+    kernel_printf("keyboard_init: PIC configuration completed\n");
+    kernel_printf("keyboard_init: Keyboard driver initialized successfully\n");
 }
 
 void keyboard_handler(interrupt_frame_t* frame) {
-    UNUSED(frame); /* パラメータ未使用の警告を回避 */
+    extern void kernel_printf(const char* format, ...);
 
-    u8 status = inb(KEYBOARD_STATUS_PORT);
-
-    /* 出力バッファが準備できている場合のみ処理 */
-    if (!(status & KEYBOARD_STATUS_OUTPUT_BUFFER)) {
-        return;
-    }
-
+    /* スキャンコードを読み取り */
     u8 scancode = inb(KEYBOARD_DATA_PORT);
 
-    /* キーリリース（最上位ビットが1）は無視 */
+    /* Key releaseは無視（上位ビットが1） */
     if (scancode & 0x80) {
-        scancode &= 0x7F; /* リリースビットを除去 */
+        u8 release_scancode = scancode & 0x7F;
 
-        /* 修飾キーのリリースを処理 */
-        if (scancode == KEY_LSHIFT || scancode == KEY_RSHIFT) {
+        /* 修飾キーのリリース処理 */
+        if (release_scancode == 0x2A || release_scancode == 0x36) { /* Left/Right Shift */
             kb_state.shift_pressed = false;
-        } else if (scancode == KEY_LCTRL) {
+        } else if (release_scancode == 0x1D) { /* Ctrl */
             kb_state.ctrl_pressed = false;
-        } else if (scancode == KEY_LALT) {
+        } else if (release_scancode == 0x38) { /* Alt */
             kb_state.alt_pressed = false;
         }
+
+        UNUSED(frame);
         return;
     }
 
-    /* 修飾キーの処理 */
-    if (scancode == KEY_LSHIFT || scancode == KEY_RSHIFT) {
+    /* 修飾キーの押下処理 */
+    if (scancode == 0x2A || scancode == 0x36) { /* Left/Right Shift */
         kb_state.shift_pressed = true;
+        UNUSED(frame);
         return;
-    } else if (scancode == KEY_LCTRL) {
+    } else if (scancode == 0x1D) { /* Ctrl */
         kb_state.ctrl_pressed = true;
+        UNUSED(frame);
         return;
-    } else if (scancode == KEY_LALT) {
+    } else if (scancode == 0x38) { /* Alt */
         kb_state.alt_pressed = true;
+        UNUSED(frame);
         return;
     }
 
-    /* 通常のキーを文字に変換 */
+    /* スキャンコードを文字に変換 */
     char ascii = 0;
     if (scancode < sizeof(keyboard_map)) {
         if (kb_state.shift_pressed && scancode < sizeof(keyboard_map_shifted)) {
@@ -86,22 +97,19 @@ void keyboard_handler(interrupt_frame_t* frame) {
         }
     }
 
-    /* 有効な文字をバッファに追加 */
-    if (ascii != 0 && kb_state.count < KEYBOARD_BUFFER_SIZE - 1) {
+    /* 有効な文字の場合はバッファに追加 */
+    if (ascii != 0 && kb_state.count < KEYBOARD_BUFFER_SIZE) {
         kb_state.buffer[kb_state.write_pos] = ascii;
         kb_state.write_pos = (kb_state.write_pos + 1) % KEYBOARD_BUFFER_SIZE;
         kb_state.count++;
 
-        /* エコー表示（デバッグ用） */
-        if (ascii == '\n') {
-            kernel_printf("\n");
-        } else if (ascii == '\b') {
-            kernel_printf("\b \b");
-        } else if (ascii >= 32 && ascii <= 126) {
-            char echo[2] = {ascii, '\0'};
-            kernel_printf("%s", echo);
-        }
+        kernel_printf("🎯 CHAR ADDED: '%c' (0x%02X from scancode 0x%02X)\n",
+                     ascii, ascii, scancode);
+    } else {
+        kernel_printf("🔄 SCAN: 0x%02X (no char)\n", scancode);
     }
+
+    UNUSED(frame);
 }
 
 char keyboard_get_char(void) {
@@ -114,6 +122,11 @@ char keyboard_get_char(void) {
     kb_state.count--;
 
     return c;
+}
+
+/* エイリアス関数 */
+int keyboard_getchar(void) {
+    return (int)keyboard_get_char();
 }
 
 bool keyboard_has_input(void) {

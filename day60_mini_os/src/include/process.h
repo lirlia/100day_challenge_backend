@@ -35,6 +35,13 @@ typedef struct process {
     u32 time_slice;             /* タイムスライス (ms) */
     u32 remaining_time;         /* 残りタイムスライス */
 
+    /* ユーザーモード用フィールド */
+    u32 user_stack_base;        /* ユーザースタックベース */
+    u32 user_stack_size;        /* ユーザースタックサイズ */
+    u32 code_base;              /* コードセグメントベース */
+    u32 code_size;              /* コードセグメントサイズ */
+    bool is_user_mode;          /* ユーザーモードプロセスフラグ */
+
     struct process* next;       /* プロセスリストの次のプロセス */
 } process_t;
 

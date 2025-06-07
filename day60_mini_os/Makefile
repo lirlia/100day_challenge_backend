@@ -102,14 +102,23 @@ $(BUILD_DIR)/user_%.o: $(USER_DIR)/%.c
 	@mkdir -p $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-# Create ISO (for GRUB boot)
+# Create ISO (for GRUB boot) - with error handling
 iso: $(KERNEL_BIN)
+	@echo "Creating bootable ISO..."
+	@if [ ! -f "$(GRUB_MKRESCUE)" ]; then \
+		echo "Error: grub-mkrescue not found at $(GRUB_MKRESCUE)"; \
+		echo "Please install GRUB:"; \
+		echo "  brew install grub"; \
+		echo "Or use 'make run' for direct kernel boot instead"; \
+		exit 1; \
+	fi
 	@mkdir -p $(BUILD_DIR)/iso/boot/grub
 	cp $(KERNEL_BIN) $(BUILD_DIR)/iso/boot/
 	echo 'menuentry "Mini OS" {' > $(BUILD_DIR)/iso/boot/grub/grub.cfg
 	echo '    multiboot /boot/kernel.bin' >> $(BUILD_DIR)/iso/boot/grub/grub.cfg
 	echo '}' >> $(BUILD_DIR)/iso/boot/grub/grub.cfg
 	$(GRUB_MKRESCUE) -o $(ISO_FILE) $(BUILD_DIR)/iso
+	@echo "ISO created: $(ISO_FILE)"
 
 # Run in QEMU (32-bit)
 run: $(KERNEL_BIN)
@@ -117,6 +126,30 @@ run: $(KERNEL_BIN)
 	    -kernel $(KERNEL_BIN) \
 	    -serial file:output.log \
 	    -display none \
+	    -m 256M \
+	    -no-reboot \
+	    -no-shutdown
+
+# Run in QEMU with GUI (visual display)
+run-gui: $(KERNEL_BIN)
+	qemu-system-i386 \
+	    -kernel $(KERNEL_BIN) \
+	    -serial file:output.log \
+	    -m 256M \
+	    -no-reboot \
+	    -no-shutdown
+
+# Run in QEMU with GUI and enable cursor
+run-show: $(KERNEL_BIN)
+	qemu-system-i386 \
+	    -kernel $(KERNEL_BIN) \
+	    -serial file:output.log \
+	    -m 256M \
+	    -no-reboot \
+	    -no-shutdown \
+	    -enable-kvm 2>/dev/null || qemu-system-i386 \
+	    -kernel $(KERNEL_BIN) \
+	    -serial file:output.log \
 	    -m 256M \
 	    -no-reboot \
 	    -no-shutdown
@@ -130,6 +163,13 @@ run-simple: $(SIMPLE_BOOT)
 	    -drive format=raw,file=$(SIMPLE_BOOT) \
 	    -serial file:output.log \
 	    -display none \
+	    -m 256M
+
+# Run simple bootloader with GUI
+run-simple-gui: $(SIMPLE_BOOT)
+	qemu-system-i386 \
+	    -drive format=raw,file=$(SIMPLE_BOOT) \
+	    -serial file:output.log \
 	    -m 256M
 
 # Run with monitor (for debugging)
@@ -162,26 +202,72 @@ log:
 # Setup development environment
 setup:
 	@echo "Checking development environment..."
-	@which gcc >/dev/null || (echo "GCC not found" && exit 1)
-	@which nasm >/dev/null || (echo "NASM not found. Install with: brew install nasm" && exit 1)
-	@which qemu-system-i386 >/dev/null || (echo "QEMU not found. Install with: brew install qemu" && exit 1)
-	@which grub-mkrescue >/dev/null || (echo "GRUB not found. Install with: brew install grub" && exit 1)
-	@echo "Environment ready!"
+	@which gcc >/dev/null || (echo "❌ GCC not found" && exit 1)
+	@echo "✅ GCC found"
+	@which nasm >/dev/null || (echo "❌ NASM not found. Install with: brew install nasm" && exit 1)
+	@echo "✅ NASM found"
+	@which qemu-system-i386 >/dev/null || (echo "❌ QEMU not found. Install with: brew install qemu" && exit 1)
+	@echo "✅ QEMU found"
+	@if which grub-mkrescue >/dev/null 2>&1; then \
+		echo "✅ GRUB found (ISO creation available)"; \
+	else \
+		echo "⚠️  GRUB not found (ISO creation disabled)"; \
+		echo "   You can still use 'make run' for direct kernel boot"; \
+	fi
+	@echo "🎉 Environment ready for Mini OS development!"
+
+# Quick start targets
+start: $(KERNEL_BIN)
+	@echo "🚀 Starting Mini OS..."
+	@$(MAKE) run
+	@echo "⏱️  Waiting for OS to boot..."
+	@sleep 3
+	@echo "📋 Showing OS output:"
+	@$(MAKE) log
+
+# Quick start with GUI
+start-show: $(KERNEL_BIN)
+	@echo "🚀 Starting Mini OS with GUI..."
+	@$(MAKE) run-gui &
+	@echo "⏱️  Waiting for OS to boot..."
+	@sleep 3
+	@echo "📋 Showing OS output:"
+	@$(MAKE) log
+
+quick: clean all start
+
+# Quick start with GUI display
+quick-show: clean all start-show
 
 # Help
 help:
-	@echo "Mini OS Build System"
+	@echo "🏗️  Mini OS Build System"
 	@echo ""
-	@echo "Available targets:"
-	@echo "  all       - Build kernel binary (default)"
-	@echo "  run       - Run OS in QEMU"
-	@echo "  run-iso   - Run OS from ISO in QEMU"
-	@echo "  run-debug - Run OS with QEMU monitor"
-	@echo "  iso       - Create bootable ISO"
-	@echo "  log       - Show OS output"
-	@echo "  clean     - Clean build files"
-	@echo "  clean-all - Clean build files and logs"
-	@echo "  setup     - Check development environment"
-	@echo "  help      - Show this help"
+	@echo "📦 Quick Start:"
+	@echo "  start       - Build and run OS, then show output"
+	@echo "  start-show  - Build and run OS with GUI display"
+	@echo "  quick       - Clean, build, and run (recommended)"
+	@echo "  quick-show  - Clean, build, and run with GUI"
+	@echo ""
+	@echo "🔧 Build targets:"
+	@echo "  all         - Build kernel binary (default)"
+	@echo "  clean       - Clean build files"
+	@echo "  setup       - Check development environment"
+	@echo ""
+	@echo "🚀 Run targets:"
+	@echo "  run         - Run OS in QEMU (background, no display)"
+	@echo "  run-gui     - Run OS in QEMU with GUI display"
+	@echo "  run-show    - Run OS in QEMU with GUI (KVM optimized)"
+	@echo "  run-debug   - Run OS with QEMU monitor"
+	@echo "  run-iso     - Run OS from ISO in QEMU"
+	@echo "  run-simple-gui - Run simple bootloader with GUI"
+	@echo ""
+	@echo "📊 Utility targets:"
+	@echo "  log         - Show OS output"
+	@echo "  clean-all   - Clean build files and logs"
+	@echo "  iso         - Create bootable ISO (requires GRUB)"
+	@echo "  help        - Show this help"
+	@echo ""
+	@echo "💡 Recommended: make quick-show (to see GUI)"
 
-.PHONY: all run run-iso run-debug iso clean clean-all log setup help
+.PHONY: all run run-gui run-show run-iso run-simple-gui run-debug iso clean clean-all log setup help start start-show quick quick-show

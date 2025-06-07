@@ -50,11 +50,20 @@ typedef struct {
 } __attribute__((packed)) idt_ptr_t;
 
 /* 割り込みフレーム構造体（スタックにプッシュされる情報） */
+/* スタック配置順序：ESP位置[0]から実際のメモリ配置に正確に対応 */
 typedef struct {
-    u32 edi, esi, ebp, esp, ebx, edx, ecx, eax;  /* レジスタ（pusha） */
-    u32 int_no, err_code;                        /* 割り込み番号とエラーコード */
-    u32 eip, cs, eflags, useresp, ss;           /* CPU が自動でプッシュ */
-} interrupt_frame_t;
+    /* pusha で最後にプッシュされるのはEDI（ESP位置[0]） */
+    u32 edi, esi, ebp, orig_esp, ebx, edx, ecx, eax;  /* [0-7] */
+    /* データセグメント保存: mov ax, ds; push eax */
+    u32 ds;          /* [8] */
+    /* IRQ スタブでのプッシュ順序：先にerr_code、後でint_no（スタックは逆順） */
+    u32 int_no;      /* [9] push byte 33 (後でプッシュ = ESP寄り) */
+    u32 err_code;    /* [10] push byte 0 (先でプッシュ = ESP遠い) */
+    /* CPU が自動でプッシュ（最初にプッシュ） */
+    u32 eip, cs, eflags;  /* [11-13] */
+    /* リング変更時のみ（今回は使用しない） */
+    u32 useresp, ss;
+} __attribute__((packed)) interrupt_frame_t;
 
 /* 割り込みハンドラの型定義 */
 typedef void (*interrupt_handler_t)(interrupt_frame_t* frame);
@@ -92,6 +101,9 @@ void keyboard_handler(interrupt_frame_t* frame);
 /* システムコールハンドラ */
 void syscall_handler(interrupt_frame_t* frame);
 
+/* システムコールハンドラ（ユーザーモード用） */
+void handle_syscall(interrupt_frame_t* frame);
+
 /* PIC制御 */
 void pic_init(void);
 void pic_send_eoi(u8 irq);
@@ -103,6 +115,9 @@ void pit_init(u32 frequency);
 
 /* 割り込みハンドラ登録 */
 void register_interrupt_handler(u8 n, interrupt_handler_t handler);
+
+/* 割り込みハンドラ取得（テスト用） */
+interrupt_handler_t get_interrupt_handler(u8 n);
 
 /* プロセス管理からの関数（前方宣言） */
 void scheduler_tick(void);
@@ -127,6 +142,7 @@ extern void isr16(void);  /* FPUエラー */
 extern void irq0(void);   /* タイマー */
 extern void irq1(void);   /* キーボード */
 
+extern void isr128(void); /* システムコール (int 0x80) */
 extern void isr_syscall(void); /* システムコール */
 
 /* IDT タイプ・属性フラグ */

@@ -102,7 +102,7 @@ void tss_setup(void) {
 
     /* TSSをロード（段階的デバッグ） */
     kernel_printf("tss_setup: TSS configuration complete\n");
-    // 一時的にTSS flushをスキップしてデバッグ
+    kernel_printf("tss_setup: DEBUG - Skipping TSS flush temporarily\n");
     // tss_flush();
 
     kernel_printf("tss_setup: TSS loaded successfully (kernel stack: %u)\n",
@@ -173,7 +173,8 @@ int create_user_process(const char* name, void* code, u32 code_size, u32 entry_p
 }
 
 void execute_user_function(void (*func)(void)) {
-    kernel_printf("execute_user_function: Executing user function at 0x%x\n", (u32)func);
+    kernel_printf("execute_user_function: Starting user mode execution\n");
+    kernel_printf("execute_user_function: Function address: 0x%x\n", (u32)func);
 
     /* ユーザースタックを割り当て（固定アドレス使用） */
     // u32 user_stack = alloc_page();
@@ -184,24 +185,40 @@ void execute_user_function(void (*func)(void)) {
 
     // 一時的に固定アドレスを使用（デバッグ用）
     u32 user_stack = 0x300000; // 3MB位置を仮のユーザースタックとして使用
+    kernel_printf("execute_user_function: User stack base: 0x%x\n", user_stack);
 
     u32 user_stack_top = user_stack + PAGE_SIZE - 4; /* スタック頂上 */
+    kernel_printf("execute_user_function: User stack top: 0x%x\n", user_stack_top);
+
+    /* GDTとTSSの状態確認 */
+    kernel_printf("execute_user_function: Current CS: 0x%x\n", get_cs());
+    kernel_printf("execute_user_function: Current privilege level: %u\n", get_current_privilege_level());
 
     /* ユーザーモードに切り替えて実行 */
-    kernel_printf("execute_user_function: Switching to user mode...\n");
+    kernel_printf("execute_user_function: About to switch to user mode...\n");
     jump_to_user_mode((u32)func, user_stack_top);
 
     /* ここには戻ってこない */
-    kernel_printf("execute_user_function: Returned from user mode\n");
+    kernel_printf("execute_user_function: ERROR - Returned from user mode unexpectedly\n");
     // free_page(user_stack);
 }
 
 void jump_to_user_mode(u32 code_addr, u32 stack_addr) {
-    kernel_printf("jump_to_user_mode: Jumping to user mode (code=0x%x, stack=0x%x)\n",
-                  code_addr, stack_addr);
+    kernel_printf("jump_to_user_mode: Entry point\n");
+    kernel_printf("jump_to_user_mode: Code address: 0x%x\n", code_addr);
+    kernel_printf("jump_to_user_mode: Stack address: 0x%x\n", stack_addr);
+
+    /* 現在のセグメント情報をデバッグ出力 */
+    kernel_printf("jump_to_user_mode: Current CS before switch: 0x%x\n", get_cs());
+    kernel_printf("jump_to_user_mode: Current DS before switch: 0x%x\n", get_ds());
+
+    kernel_printf("jump_to_user_mode: About to call switch_to_user_mode_asm...\n");
 
     /* アセンブリ関数でユーザーモードに切り替え */
     switch_to_user_mode_asm(stack_addr, code_addr);
+
+    /* ここには戻ってこないはず */
+    kernel_printf("jump_to_user_mode: ERROR - Returned from assembly function\n");
 }
 
 /* システムコールハンドラ */

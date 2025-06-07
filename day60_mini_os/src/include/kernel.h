@@ -52,6 +52,10 @@ void vga_write(const char* str);
 void vga_clear(void);
 void vga_set_color(u8 foreground, u8 background);
 
+/* Console (combined VGA + Serial output) */
+void console_write(const char* str);
+void console_putchar(char c);
+
 /* Kernel logging */
 void kernel_printf(const char* format, ...);
 void kernel_log(const char* level, const char* format, ...);

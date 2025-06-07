@@ -62,6 +62,8 @@ IRQ 0, 32           ; タイマー（PIT）
 IRQ 1, 33           ; キーボード
 
 ; システムコール
+ISR_NOERRCODE 128   ; システムコール (int 0x80)
+
 global isr_syscall
 isr_syscall:
     cli
@@ -71,10 +73,12 @@ isr_syscall:
 
 ; 共通割り込みスタブ（修正版）
 isr_common_stub:
-    pusha               ; 全汎用レジスタ保存 (edi,esi,ebp,esp,ebx,edx,ecx,eax)
-
-    mov ax, ds          ; データセグメント保存
+    ; データセグメント保存
+    mov ax, ds
     push eax
+
+    ; 全汎用レジスタ保存 (edi,esi,ebp,esp,ebx,edx,ecx,eax)
+    pusha
 
     mov ax, 0x10        ; カーネルデータセグメント読み込み
     mov ds, ax
@@ -88,13 +92,16 @@ isr_common_stub:
     call interrupt_handler  ; C言語の割り込みハンドラ呼び出し
     add esp, 4          ; 引数をスタックから除去
 
-    pop eax             ; データセグメント復元
+    ; 全汎用レジスタ復元
+    popa
+
+    ; データセグメント復元
+    pop eax
     mov ds, ax
     mov es, ax
     mov fs, ax
     mov gs, ax
 
-    popa                ; 全汎用レジスタ復元
     add esp, 8          ; エラーコードと割り込み番号をスタックから除去
     sti                 ; 割り込み有効化
     iret                ; 割り込みから復帰

@@ -42,6 +42,7 @@ typedef struct {
 void keyboard_init(void);
 void keyboard_handler(interrupt_frame_t* frame);
 char keyboard_get_char(void);
+int keyboard_getchar(void);
 bool keyboard_has_input(void);
 void keyboard_print_status(void);
 
