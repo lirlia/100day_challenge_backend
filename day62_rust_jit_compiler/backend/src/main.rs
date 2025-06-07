@@ -7,6 +7,7 @@ mod jit;
 use ast::*;
 use interpreter::Interpreter;
 use parser::Parser;
+use jit::JitCompiler;
 use anyhow::Result;
 
 fn main() -> Result<()> {
@@ -17,7 +18,12 @@ fn main() -> Result<()> {
     test_lexer_parser_interpreter()?;
 
     println!("\n✅ Phase 2: Rustコア実装 - 完了");
-    println!("次の実装予定: Phase 3 - JITエンジン実装");
+
+    // Phase 3 JITテスト
+    test_jit_compiler()?;
+
+    println!("\n✅ Phase 3: JITエンジン実装 - 完了");
+    println!("次の実装予定: Phase 4 - WebAPI実装");
 
     Ok(())
 }
@@ -87,6 +93,68 @@ fn test_lexer_parser_interpreter() -> Result<()> {
     Ok(())
 }
 
+fn test_jit_compiler() -> Result<()> {
+    println!("\n⚡ JITコンパイラのテスト中...");
+
+    let mut jit = JitCompiler::new();
+
+    // テストケース1: 基本的なJIT機能
+    println!("\n1. 基本JIT機能テスト");
+    let result = jit.execute_string("1 + 2 * 3")?;
+    println!("   結果: {} (実行時間: {}ns)", result.value, result.execution_time_ns);
+    assert_eq!(result.value, 7);
+
+    // テストケース2: ホットスポット検出
+    println!("\n2. ホットスポット検出テスト (同じ式を12回実行)");
+    for i in 1..=12 {
+        let result = jit.execute_string("2 + 3 * 4")?;
+        assert_eq!(result.value, 14);
+
+        if i == 1 {
+            println!("   1回目: {} (実行時間: {}ns)", result.value, result.execution_time_ns);
+        } else if i == 10 {
+            println!("   10回目: {} (JITコンパイル実行)", result.value);
+        } else if i == 11 {
+            println!("   11回目: {} (JITコンパイル済み)", result.value);
+        }
+    }
+
+    // テストケース3: 異なる式の管理
+    println!("\n3. 複数式の管理テスト");
+    jit.execute_string("5 + 6")?;
+    jit.execute_string("7 * 8")?;
+    jit.execute_string("5 + 6")?; // 同じ式を再実行
+
+    let cache_info = jit.get_jit_cache_info();
+    println!("   キャッシュエントリ数: {}", cache_info.len());
+
+    // テストケース4: 変数を使った式
+    println!("\n4. 変数式のJITテスト");
+    jit.execute_string("y = 10")?;
+    let result = jit.execute_string("y * 3 + 7")?;
+    println!("   結果: {} (y=10なので 10*3+7=37)", result.value);
+    assert_eq!(result.value, 37);
+
+    // テストケース5: フィボナッチのホットスポット
+    println!("\n5. フィボナッチのホットスポット検出");
+    for i in 1..=15 {
+        let result = jit.execute_string("fib(6)")?;
+        assert_eq!(result.value, 8);
+
+        if i == 1 {
+            println!("   1回目: fib(6) = {} (実行時間: {}ns)", result.value, result.execution_time_ns);
+        } else if i == 10 {
+            println!("   10回目: fib(6) = {} (JITコンパイル実行)", result.value);
+        }
+    }
+
+    // 統計情報を表示
+    jit.print_detailed_stats();
+
+    println!("\n✅ JITコンパイラテスト完了！");
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -94,5 +162,10 @@ mod tests {
     #[test]
     fn test_integration() {
         test_lexer_parser_interpreter().unwrap();
+    }
+
+    #[test]
+    fn test_jit_integration() {
+        test_jit_compiler().unwrap();
     }
 }
