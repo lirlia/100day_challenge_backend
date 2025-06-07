@@ -4,6 +4,10 @@
 
 高性能なLSM-Tree（Log-Structured Merge-Tree）ストレージエンジンをGoで実装したプロジェクトです。現代のデータベース（RocksDB、LevelDB、Cassandra、HBase等）で広く使用されているLSM-Treeアーキテクチャの学習を目的として、すべてのコアコンポーネントを一から実装しています。
 
+https://github.com/user-attachments/assets/571c4a51-a92f-4119-a43c-95922009916e
+
+[100日チャレンジ day58](https://zenn.dev/gin_nazo/scraps/01ce587b6d51ed)
+
 ## 🎯 学習目標
 
 - **LSM-Treeアーキテクチャ**の理解と実装

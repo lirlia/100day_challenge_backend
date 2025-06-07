@@ -72,3 +72,4 @@ LLMで生成したコードを置いています。
 | Day55 | サイバーパンク 3D スペースシューター                                       | <video src="https://github.com/user-attachments/assets/c4a2d2c4-db53-4d0a-b7ee-724135a355cb" > |
 | Day56 | イベント駆動型システム (Go + Web UI)                                       | <video src="https://github.com/user-attachments/assets/aa9eeb48-e776-43ec-9be8-bc57d45ef8fe" > |
 | Day57 | ガベージコレクタ実装システム (Frontend-only)                               | <video src="https://github.com/user-attachments/assets/5e32c7f2-5900-4da8-a155-c67d46bfea99" > |
+| Day58 | LSM-Tree ストレージエンジン                                                | <video src="https://github.com/user-attachments/assets/571c4a51-a92f-4119-a43c-95922009916e" > |
