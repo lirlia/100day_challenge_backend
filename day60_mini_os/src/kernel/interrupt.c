@@ -141,18 +141,13 @@ void timer_handler(interrupt_frame_t* frame) {
     UNUSED(frame);
 }
 
-/* キーボード割り込みハンドラ（スタブ） */
-void keyboard_handler(interrupt_frame_t* frame) {
-    u8 scancode = inb(0x60);
-    kernel_printf("Keyboard scancode: 0x%x\n", scancode);
+/* キーボード割り込みハンドラはkeyboard.cで実装 */
 
-    UNUSED(frame);
-}
+/* システムコールハンドラ（usermode.c実装への転送） */
+extern void handle_syscall(interrupt_frame_t* frame);
 
-/* システムコールハンドラ（スタブ） */
 void syscall_handler(interrupt_frame_t* frame) {
-    kernel_printf("System call: %u\n", frame->eax);
-    UNUSED(frame);
+    handle_syscall(frame);
 }
 
 /* PIC初期化 */

@@ -3,6 +3,8 @@
 #include "process.h"  // プロセス管理を有効化
 #include "interrupt.h" // 割り込み処理を追加
 #include "paging.h"
+#include "usermode.h" // ユーザーモード管理を追加
+#include "keyboard.h" // キーボードドライバを追加
 
 /* Global kernel printf function */
 void kernel_printf(const char* format, ...) {
@@ -392,6 +394,40 @@ void test_paging_system(void) {
     kernel_printf("=== Paging System Test Complete ===\n\n");
 }
 
+// ユーザーモード（特権レベル分離）の基本的なテスト関数
+void test_usermode_system(void) {
+    kernel_printf("\n=== User Mode System Test ===\n");
+
+    // 段階1: ユーザーモード初期化
+    kernel_printf("About to call usermode_init...\n");
+    usermode_init();
+    kernel_printf("usermode_init completed successfully\n");
+
+    // 段階2: ユーザーモード情報表示
+    usermode_print_info();
+
+    // 段階3: キーボード初期化
+    kernel_printf("About to call keyboard_init...\n");
+    keyboard_init();
+    kernel_printf("keyboard_init completed successfully\n");
+
+    // 段階4: シェルプログラムをユーザーモードで実行
+    extern void shell_start(void); // シェルのエントリポイント
+    kernel_printf("About to execute shell in user mode...\n");
+
+    // ユーザーモードでシェル関数を実行（一時的にスキップ）
+    // execute_user_function((void(*)(void))shell_start);
+
+    // 一時的にカーネルモードでシェルをテスト
+    kernel_printf("Testing shell in kernel mode (temporary)...\n");
+    shell_start();
+
+    // ここには戻ってこないはず
+    kernel_printf("Returned from shell execution\n");
+
+    kernel_printf("=== User Mode System Test Complete ===\n\n");
+}
+
 void kmain(void) {
     /* Initialize serial port for logging */
     serial_init();
@@ -420,6 +456,9 @@ void kmain(void) {
 
     // Test paging system
     test_paging_system();
+
+    // Test user mode system
+    test_usermode_system();
 
     kernel_printf("All tests completed successfully. Halting.\n");
 

@@ -36,6 +36,7 @@ KERNEL_C = $(wildcard $(KERNEL_DIR)/*.c)
 KERNEL_ASM = $(wildcard $(KERNEL_DIR)/*.asm)
 DRIVERS_C = $(wildcard $(DRIVERS_DIR)/*.c)
 FS_C = $(wildcard $(FS_DIR)/*.c)
+USER_C = $(wildcard $(USER_DIR)/*.c)
 
 # Object files
 BOOT_OBJ = $(patsubst $(BOOT_DIR)/%.asm,$(BUILD_DIR)/%.o,$(BOOT_ASM))
@@ -43,8 +44,9 @@ KERNEL_OBJ = $(patsubst $(KERNEL_DIR)/%.c,$(BUILD_DIR)/%.o,$(KERNEL_C))
 KERNEL_ASM_OBJ = $(patsubst $(KERNEL_DIR)/%.asm,$(BUILD_DIR)/kernel_%.o,$(KERNEL_ASM))
 DRIVERS_OBJ = $(patsubst $(DRIVERS_DIR)/%.c,$(BUILD_DIR)/%.o,$(DRIVERS_C))
 FS_OBJ = $(patsubst $(FS_DIR)/%.c,$(BUILD_DIR)/%.o,$(FS_C))
+USER_OBJ = $(patsubst $(USER_DIR)/%.c,$(BUILD_DIR)/user_%.o,$(USER_C))
 
-ALL_OBJ = $(BOOT_OBJ) $(KERNEL_OBJ) $(KERNEL_ASM_OBJ) $(DRIVERS_OBJ) $(FS_OBJ)
+ALL_OBJ = $(BOOT_OBJ) $(KERNEL_OBJ) $(KERNEL_ASM_OBJ) $(DRIVERS_OBJ) $(FS_OBJ) $(USER_OBJ)
 
 # Output
 KERNEL_BIN = $(BUILD_DIR)/kernel.bin
@@ -92,6 +94,11 @@ $(BUILD_DIR)/%.o: $(DRIVERS_DIR)/%.c
 
 # Compile C files - fs
 $(BUILD_DIR)/%.o: $(FS_DIR)/%.c
+	@mkdir -p $(BUILD_DIR)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+# Compile C files - user
+$(BUILD_DIR)/user_%.o: $(USER_DIR)/%.c
 	@mkdir -p $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
