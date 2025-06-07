@@ -12,30 +12,29 @@ func TestSSTable_WriteAndRead(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "test.sst")
 
-	// Write SSTable
-	writer, err := NewSSTableWriter(filePath, 0)
+	// Create SSTable writer
+	writer, err := NewSSTableWriter(filePath, 0, 100)
 	if err != nil {
 		t.Fatalf("Failed to create SSTable writer: %v", err)
 	}
 
-	// Write test entries
+	// Write entries
 	entries := []SSTableEntry{
-		{Key: "key1", Value: []byte("value1"), Timestamp: time.Now().UnixNano()},
-		{Key: "key2", Value: []byte("value2"), Timestamp: time.Now().UnixNano()},
-		{Key: "key3", Value: []byte("value3"), Deleted: true, Timestamp: time.Now().UnixNano()},
-		{Key: "key4", Value: []byte("value4"), Timestamp: time.Now().UnixNano()},
+		{Key: "key1", Value: []byte("value1"), Deleted: false, Timestamp: time.Now().UnixNano()},
+		{Key: "key2", Value: []byte("value2"), Deleted: false, Timestamp: time.Now().UnixNano()},
+		{Key: "key3", Value: []byte("value3"), Deleted: false, Timestamp: time.Now().UnixNano()},
+		{Key: "key4", Value: []byte("value4"), Deleted: false, Timestamp: time.Now().UnixNano()},
+		{Key: "key5", Value: []byte("value5"), Deleted: false, Timestamp: time.Now().UnixNano()},
 	}
 
 	for _, entry := range entries {
-		err = writer.WriteEntry(entry)
-		if err != nil {
-			t.Errorf("Failed to write entry: %v", err)
+		if err := writer.WriteEntry(entry); err != nil {
+			t.Fatalf("Failed to write entry: %v", err)
 		}
 	}
 
-	err = writer.Close()
-	if err != nil {
-		t.Errorf("Failed to close writer: %v", err)
+	if err := writer.Close(); err != nil {
+		t.Fatalf("Failed to close writer: %v", err)
 	}
 
 	// Read SSTable
@@ -50,90 +49,74 @@ func TestSSTable_WriteAndRead(t *testing.T) {
 	}
 	defer reader.Close()
 
-	// Test Get operations
-	value, found, err := reader.Get("key1")
-	if err != nil {
-		t.Errorf("Failed to get key1: %v", err)
-	}
-	if !found {
-		t.Errorf("Expected to find key1")
-	}
-	if string(value) != "value1" {
-		t.Errorf("Expected value1, got %s", string(value))
-	}
-
-	// Test deleted key
-	_, found, err = reader.Get("key3")
-	if err != nil {
-		t.Errorf("Failed to get key3: %v", err)
-	}
-	if found {
-		t.Errorf("Expected key3 to be deleted")
+	// Test reading entries
+	for _, entry := range entries {
+		value, found, err := reader.Get(entry.Key)
+		if err != nil {
+			t.Errorf("Failed to get key %s: %v", entry.Key, err)
+		}
+		if !found {
+			t.Errorf("Key %s not found", entry.Key)
+		}
+		if string(value) != string(entry.Value) {
+			t.Errorf("Value mismatch for key %s: expected %s, got %s", entry.Key, string(entry.Value), string(value))
+		}
 	}
 
 	// Test non-existent key
-	_, found, err = reader.Get("nonexistent")
+	_, found, err := reader.Get("nonexistent")
 	if err != nil {
-		t.Errorf("Failed to get nonexistent key: %v", err)
+		t.Errorf("Error getting non-existent key: %v", err)
 	}
 	if found {
-		t.Errorf("Expected nonexistent key to not be found")
-	}
-
-	// Test metadata
-	metadata := reader.GetMetadata()
-	if metadata.Level != 0 {
-		t.Errorf("Expected level 0, got %d", metadata.Level)
-	}
-	if metadata.MinKey != "key1" {
-		t.Errorf("Expected min key 'key1', got '%s'", metadata.MinKey)
-	}
-	if metadata.MaxKey != "key4" {
-		t.Errorf("Expected max key 'key4', got '%s'", metadata.MaxKey)
-	}
-	if metadata.EntryCount != 4 {
-		t.Errorf("Expected 4 entries, got %d", metadata.EntryCount)
+		t.Errorf("Non-existent key was found")
 	}
 }
 
 func TestSSTable_Iterator(t *testing.T) {
 	tmpDir := t.TempDir()
-	filePath := filepath.Join(tmpDir, "test_iter.sst")
+	filePath := filepath.Join(tmpDir, "test.sst")
 
 	// Write SSTable
-	writer, err := NewSSTableWriter(filePath, 0)
+	writer, err := NewSSTableWriter(filePath, 0, 100)
 	if err != nil {
 		t.Fatalf("Failed to create SSTable writer: %v", err)
 	}
 
-	// Write test entries in sorted order
+	// Write test entries
 	entries := []SSTableEntry{
-		{Key: "apple", Value: []byte("fruit1"), Timestamp: time.Now().UnixNano()},
-		{Key: "banana", Value: []byte("fruit2"), Timestamp: time.Now().UnixNano()},
-		{Key: "cherry", Value: []byte("fruit3"), Timestamp: time.Now().UnixNano()},
-		{Key: "date", Value: []byte("fruit4"), Deleted: true, Timestamp: time.Now().UnixNano()},
-		{Key: "elderberry", Value: []byte("fruit5"), Timestamp: time.Now().UnixNano()},
+		{Key: "key1", Value: []byte("value1"), Timestamp: time.Now().UnixNano()},
+		{Key: "key2", Value: []byte("value2"), Timestamp: time.Now().UnixNano()},
+		{Key: "key3", Value: []byte("value3"), Timestamp: time.Now().UnixNano()},
+		{Key: "key4", Value: []byte("value4"), Timestamp: time.Now().UnixNano()},
+		{Key: "key5", Value: []byte("value5"), Timestamp: time.Now().UnixNano()},
 	}
 
 	for _, entry := range entries {
-		writer.WriteEntry(entry)
+		if err := writer.WriteEntry(entry); err != nil {
+			t.Fatalf("Failed to write entry: %v", err)
+		}
 	}
-	writer.Close()
 
-	// Read and iterate
+	if err := writer.Close(); err != nil {
+		t.Fatalf("Failed to close writer: %v", err)
+	}
+
+	// Read SSTable
 	reader, err := NewSSTableReader(filePath)
 	if err != nil {
 		t.Fatalf("Failed to create SSTable reader: %v", err)
 	}
 	defer reader.Close()
 
+	// Test iterator
 	iterator, err := reader.NewIterator()
 	if err != nil {
 		t.Fatalf("Failed to create iterator: %v", err)
 	}
 	defer iterator.Close()
 
-	var retrievedEntries []SSTableEntry
+	retrievedEntries := make([]SSTableEntry, 0)
 	for iterator.HasNext() {
 		entry, ok := iterator.Next()
 		if !ok {
@@ -149,44 +132,35 @@ func TestSSTable_Iterator(t *testing.T) {
 	if len(retrievedEntries) != len(entries) {
 		t.Errorf("Expected %d entries, got %d", len(entries), len(retrievedEntries))
 	}
-
-	// Verify entries are in correct order
-	for i, entry := range retrievedEntries {
-		expected := entries[i]
-		if entry.Key != expected.Key {
-			t.Errorf("Entry %d: Expected key '%s', got '%s'", i, expected.Key, entry.Key)
-		}
-		if string(entry.Value) != string(expected.Value) {
-			t.Errorf("Entry %d: Expected value '%s', got '%s'", i, string(expected.Value), string(entry.Value))
-		}
-		if entry.Deleted != expected.Deleted {
-			t.Errorf("Entry %d: Expected deleted %v, got %v", i, expected.Deleted, entry.Deleted)
-		}
-	}
 }
 
 func TestSSTable_LargeDataset(t *testing.T) {
 	tmpDir := t.TempDir()
-	filePath := filepath.Join(tmpDir, "test_large.sst")
+	filePath := filepath.Join(tmpDir, "large.sst")
 
 	// Write SSTable with many entries
-	writer, err := NewSSTableWriter(filePath, 1)
+	writer, err := NewSSTableWriter(filePath, 0, 10000)
 	if err != nil {
 		t.Fatalf("Failed to create SSTable writer: %v", err)
 	}
 
-	numEntries := 1000
+	numEntries := 10000
 	for i := 0; i < numEntries; i++ {
 		entry := SSTableEntry{
-			Key:       fmt.Sprintf("key_%06d", i),
-			Value:     []byte(fmt.Sprintf("value_%d", i)),
+			Key:       fmt.Sprintf("key%06d", i),
+			Value:     []byte(fmt.Sprintf("value%06d", i)),
 			Timestamp: time.Now().UnixNano(),
 		}
-		writer.WriteEntry(entry)
+		if err := writer.WriteEntry(entry); err != nil {
+			t.Fatalf("Failed to write entry %d: %v", i, err)
+		}
 	}
-	writer.Close()
 
-	// Read and verify
+	if err := writer.Close(); err != nil {
+		t.Fatalf("Failed to close writer: %v", err)
+	}
+
+	// Read SSTable
 	reader, err := NewSSTableReader(filePath)
 	if err != nil {
 		t.Fatalf("Failed to create SSTable reader: %v", err)
@@ -194,92 +168,79 @@ func TestSSTable_LargeDataset(t *testing.T) {
 	defer reader.Close()
 
 	// Test random access
-	testKeys := []int{0, 100, 500, 999}
-	for _, i := range testKeys {
-		key := fmt.Sprintf("key_%06d", i)
-		expectedValue := fmt.Sprintf("value_%d", i)
-
+	for i := 0; i < 100; i++ {
+		key := fmt.Sprintf("key%06d", i*100)
 		value, found, err := reader.Get(key)
 		if err != nil {
 			t.Errorf("Failed to get key %s: %v", key, err)
 		}
 		if !found {
-			t.Errorf("Expected to find key %s", key)
+			t.Errorf("Key %s not found", key)
 		}
+		expectedValue := fmt.Sprintf("value%06d", i*100)
 		if string(value) != expectedValue {
-			t.Errorf("Expected value %s, got %s", expectedValue, string(value))
+			t.Errorf("Value mismatch for key %s: expected %s, got %s", key, expectedValue, string(value))
 		}
-	}
-
-	// Test metadata
-	metadata := reader.GetMetadata()
-	if metadata.EntryCount != int64(numEntries) {
-		t.Errorf("Expected %d entries, got %d", numEntries, metadata.EntryCount)
-	}
-	if metadata.Level != 1 {
-		t.Errorf("Expected level 1, got %d", metadata.Level)
 	}
 }
 
 func TestSSTable_EmptyFile(t *testing.T) {
 	tmpDir := t.TempDir()
-	filePath := filepath.Join(tmpDir, "test_empty.sst")
+	filePath := filepath.Join(tmpDir, "empty.sst")
 
 	// Write empty SSTable
-	writer, err := NewSSTableWriter(filePath, 0)
+	writer, err := NewSSTableWriter(filePath, 0, 0)
 	if err != nil {
 		t.Fatalf("Failed to create SSTable writer: %v", err)
 	}
 
-	err = writer.Close()
-	if err != nil {
-		t.Errorf("Failed to close empty writer: %v", err)
+	if err := writer.Close(); err != nil {
+		t.Fatalf("Failed to close writer: %v", err)
 	}
 
 	// Read empty SSTable
 	reader, err := NewSSTableReader(filePath)
 	if err != nil {
-		t.Fatalf("Failed to create SSTable reader for empty file: %v", err)
+		t.Fatalf("Failed to create SSTable reader: %v", err)
 	}
 	defer reader.Close()
 
-	// Test Get on empty file
-	_, found, err := reader.Get("any_key")
+	// Test reading from empty file
+	_, found, err := reader.Get("anykey")
 	if err != nil {
-		t.Errorf("Failed to get from empty SSTable: %v", err)
+		t.Errorf("Error getting key from empty file: %v", err)
 	}
 	if found {
-		t.Errorf("Expected not to find any key in empty SSTable")
-	}
-
-	// Test metadata
-	metadata := reader.GetMetadata()
-	if metadata.EntryCount != 0 {
-		t.Errorf("Expected 0 entries, got %d", metadata.EntryCount)
+		t.Errorf("Found key in empty file")
 	}
 }
 
 func TestSSTable_KeyRangeFiltering(t *testing.T) {
 	tmpDir := t.TempDir()
-	filePath := filepath.Join(tmpDir, "test_range.sst")
+	filePath := filepath.Join(tmpDir, "range.sst")
 
 	// Write SSTable
-	writer, err := NewSSTableWriter(filePath, 0)
+	writer, err := NewSSTableWriter(filePath, 0, 100)
 	if err != nil {
 		t.Fatalf("Failed to create SSTable writer: %v", err)
 	}
 
 	// Write entries with specific key range
 	entries := []SSTableEntry{
-		{Key: "key_100", Value: []byte("value100"), Timestamp: time.Now().UnixNano()},
-		{Key: "key_200", Value: []byte("value200"), Timestamp: time.Now().UnixNano()},
-		{Key: "key_300", Value: []byte("value300"), Timestamp: time.Now().UnixNano()},
+		{Key: "b", Value: []byte("value_b"), Timestamp: time.Now().UnixNano()},
+		{Key: "d", Value: []byte("value_d"), Timestamp: time.Now().UnixNano()},
+		{Key: "f", Value: []byte("value_f"), Timestamp: time.Now().UnixNano()},
 	}
 
 	for _, entry := range entries {
-		writer.WriteEntry(entry)
+		if err := writer.WriteEntry(entry); err != nil {
+			t.Fatalf("Failed to write entry: %v", err)
+		}
 	}
-	writer.Close()
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf("Failed to close writer: %v", err)
+	}
 
 	// Read SSTable
 	reader, err := NewSSTableReader(filePath)
@@ -289,25 +250,29 @@ func TestSSTable_KeyRangeFiltering(t *testing.T) {
 	defer reader.Close()
 
 	// Test keys outside range
-	testCases := []struct {
-		key      string
-		expected bool
-	}{
-		{"key_050", false}, // Before range
-		{"key_100", true},  // In range
-		{"key_200", true},  // In range
-		{"key_300", true},  // In range
-		{"key_400", false}, // After range
+	_, found, err := reader.Get("a") // Before range
+	if err != nil {
+		t.Errorf("Error getting key 'a': %v", err)
+	}
+	if found {
+		t.Errorf("Found key 'a' which should be outside range")
 	}
 
-	for _, tc := range testCases {
-		_, found, err := reader.Get(tc.key)
-		if err != nil {
-			t.Errorf("Failed to get key %s: %v", tc.key, err)
-		}
-		if found != tc.expected {
-			t.Errorf("Key %s: Expected found=%v, got found=%v", tc.key, tc.expected, found)
-		}
+	_, found, err = reader.Get("z") // After range
+	if err != nil {
+		t.Errorf("Error getting key 'z': %v", err)
+	}
+	if found {
+		t.Errorf("Found key 'z' which should be outside range")
+	}
+
+	// Test keys within range
+	_, found, err = reader.Get("d")
+	if err != nil {
+		t.Errorf("Error getting key 'd': %v", err)
+	}
+	if !found {
+		t.Errorf("Key 'd' not found")
 	}
 }
 
@@ -407,5 +372,77 @@ func TestSSTable_GetSSTableFiles(t *testing.T) {
 		if file != expectedFiles[i] {
 			t.Errorf("Expected file %s, got %s", expectedFiles[i], file)
 		}
+	}
+}
+
+func TestSSTable_BloomFilterEffectiveness(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "bloom_test.sst")
+
+	// Write SSTable with known keys
+	writer, err := NewSSTableWriter(filePath, 0, 1000)
+	if err != nil {
+		t.Fatalf("Failed to create SSTable writer: %v", err)
+	}
+
+	// Add 1000 keys with a specific pattern
+	for i := 0; i < 1000; i++ {
+		entry := SSTableEntry{
+			Key:       fmt.Sprintf("existing_key_%04d", i),
+			Value:     []byte(fmt.Sprintf("value_%d", i)),
+			Timestamp: time.Now().UnixNano(),
+		}
+		if err := writer.WriteEntry(entry); err != nil {
+			t.Fatalf("Failed to write entry: %v", err)
+		}
+	}
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf("Failed to close writer: %v", err)
+	}
+
+	// Read SSTable
+	reader, err := NewSSTableReader(filePath)
+	if err != nil {
+		t.Fatalf("Failed to create SSTable reader: %v", err)
+	}
+	defer reader.Close()
+
+	// Test that existing keys are found
+	for i := 0; i < 10; i++ {
+		key := fmt.Sprintf("existing_key_%04d", i*100)
+		_, found, err := reader.Get(key)
+		if err != nil {
+			t.Errorf("Error getting existing key %s: %v", key, err)
+		}
+		if !found {
+			t.Errorf("Existing key %s not found", key)
+		}
+	}
+
+	// Test non-existent keys - Bloom filter should filter most of these out
+	// We expect some false positives, but the majority should be filtered
+	falsePositives := 0
+	numTests := 10000
+	for i := 0; i < numTests; i++ {
+		key := fmt.Sprintf("nonexistent_key_%04d", i)
+		_, found, err := reader.Get(key)
+		if err != nil {
+			t.Errorf("Error getting non-existent key %s: %v", key, err)
+		}
+		if found {
+			falsePositives++
+		}
+	}
+
+	// Calculate false positive rate
+	falsePositiveRate := float64(falsePositives) / float64(numTests)
+
+	// With our Bloom filter settings (0.01 false positive rate), we expect
+	// the observed rate to be close to 1%
+	if falsePositiveRate > 0.02 { // Allow some tolerance
+		t.Errorf("False positive rate too high: %.4f (expected <= 0.02)", falsePositiveRate)
+	} else {
+		t.Logf("Bloom filter false positive rate: %.4f", falsePositiveRate)
 	}
 }

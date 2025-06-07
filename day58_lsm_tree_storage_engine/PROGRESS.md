@@ -31,12 +31,12 @@
 - [x] インデックス管理実装
 - [x] 単体テスト作成・実行
 
-### ステップ 5: Bloom Filter実装
-- [ ] Bloom Filter アルゴリズム実装
-- [ ] ハッシュ関数複数実装
-- [ ] False Positive率調整
-- [ ] SSTableとの統合
-- [ ] 単体テスト作成・実行
+### ステップ 5: Bloom Filter実装 ✅
+- [x] Bloom Filterアルゴリズム実装
+- [x] 最適パラメータ計算
+- [x] SSTableとの統合
+- [x] 偽陽性率検証テスト
+- [x] 単体テスト作成・実行
 
 ### ステップ 6: Compaction エンジン実装
 - [ ] Size-Tiered Compaction戦略実装

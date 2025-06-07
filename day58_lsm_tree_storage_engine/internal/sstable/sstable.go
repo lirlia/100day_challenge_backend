@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/lirlia/100day_challenge_backend/day58_lsm_tree_storage_engine/internal/bloom"
 )
 
 // SSTableEntry represents a single entry in an SSTable
@@ -40,31 +42,35 @@ type IndexEntry struct {
 
 // SSTableMetadata contains metadata about the SSTable
 type SSTableMetadata struct {
-	Level       int
-	MinKey      string
-	MaxKey      string
-	EntryCount  int64
-	DataSize    int64 // Size of data section (excluding metadata and index)
-	CreatedAt   time.Time
-	BloomFilter []byte // Bloom filter data (will be implemented later)
+	Level        int
+	MinKey       string
+	MaxKey       string
+	EntryCount   int64
+	DataSize     int64
+	CreatedAt    time.Time
+	BloomFilter  []byte
+	BloomNumBits uint64
+	BloomNumHash int
 }
 
 // SSTableWriter is used to write SSTable files
 type SSTableWriter struct {
-	file       *os.File
-	writer     *bufio.Writer
-	index      []IndexEntry
-	entryCount int64
-	minKey     string
-	maxKey     string
-	level      int
+	file        *os.File
+	writer      *bufio.Writer
+	index       []IndexEntry
+	entryCount  int64
+	minKey      string
+	maxKey      string
+	level       int
+	bloomFilter *bloom.BloomFilter
 }
 
 // SSTableReader is used to read SSTable files
 type SSTableReader struct {
-	file     *os.File
-	index    *SSTableIndex
-	metadata SSTableMetadata
+	file        *os.File
+	index       *SSTableIndex
+	metadata    SSTableMetadata
+	bloomFilter *bloom.BloomFilter
 }
 
 const (
@@ -72,17 +78,21 @@ const (
 )
 
 // NewSSTableWriter creates a new SSTable writer
-func NewSSTableWriter(filePath string, level int) (*SSTableWriter, error) {
+func NewSSTableWriter(filePath string, level int, expectedEntries uint64) (*SSTableWriter, error) {
 	file, err := os.Create(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create SSTable file: %w", err)
 	}
 
+	// Initialize Bloom Filter with a standard false positive rate
+	bf := bloom.NewBloomFilter(expectedEntries, 0.01)
+
 	return &SSTableWriter{
-		file:   file,
-		writer: bufio.NewWriter(file),
-		index:  make([]IndexEntry, 0),
-		level:  level,
+		file:        file,
+		writer:      bufio.NewWriter(file),
+		index:       make([]IndexEntry, 0),
+		level:       level,
+		bloomFilter: bf,
 	}, nil
 }
 
@@ -120,6 +130,9 @@ func (w *SSTableWriter) WriteEntry(entry SSTableEntry) error {
 	if _, err := w.writer.Write(data); err != nil {
 		return fmt.Errorf("failed to write entry: %w", err)
 	}
+
+	// Add key to bloom filter
+	w.bloomFilter.Add([]byte(entry.Key))
 
 	w.entryCount++
 	return nil
@@ -176,11 +189,19 @@ func (w *SSTableWriter) Close() error {
 		return fmt.Errorf("failed to get data size: %w", err)
 	}
 
-	metadataBytes, err := w.serializeMetadata(SSTableMetadata{
-		Level: w.level, MinKey: w.minKey, MaxKey: w.maxKey,
-		EntryCount: w.entryCount, DataSize: dataSize,
-		CreatedAt: time.Now(),
-	})
+	finalMetadata := SSTableMetadata{
+		Level:        w.level,
+		MinKey:       w.minKey,
+		MaxKey:       w.maxKey,
+		EntryCount:   w.entryCount,
+		DataSize:     dataSize,
+		CreatedAt:    time.Now(),
+		BloomFilter:  w.bloomFilter.ToBytes(),
+		BloomNumBits: w.bloomFilter.NumBits(),
+		BloomNumHash: w.bloomFilter.NumHash(),
+	}
+
+	metadataBytes, err := w.serializeMetadata(finalMetadata)
 	if err != nil {
 		return err
 	}
@@ -214,13 +235,11 @@ func (w *SSTableWriter) Close() error {
 
 // serializeMetadata converts metadata to binary format
 func (w *SSTableWriter) serializeMetadata(metadata SSTableMetadata) ([]byte, error) {
-	// Simple serialization for metadata
 	minKeyBytes := []byte(metadata.MinKey)
 	maxKeyBytes := []byte(metadata.MaxKey)
 
-	totalLen := 4 + 4 + len(minKeyBytes) + 4 + len(maxKeyBytes) + 8 + 8 + 8 + 8
+	totalLen := 4 + 4 + len(minKeyBytes) + 4 + len(maxKeyBytes) + 8 + 8 + 8 + 4 + len(metadata.BloomFilter) + 8 + 4
 	buffer := make([]byte, totalLen)
-
 	offset := 0
 
 	// Level
@@ -247,8 +266,24 @@ func (w *SSTableWriter) serializeMetadata(metadata SSTableMetadata) ([]byte, err
 	binary.LittleEndian.PutUint64(buffer[offset:], uint64(metadata.DataSize))
 	offset += 8
 
-	// CreatedAt (Unix timestamp)
+	// CreatedAt
 	binary.LittleEndian.PutUint64(buffer[offset:], uint64(metadata.CreatedAt.Unix()))
+	offset += 8
+
+	// BloomFilter length
+	binary.LittleEndian.PutUint32(buffer[offset:], uint32(len(metadata.BloomFilter)))
+	offset += 4
+
+	// BloomFilter data
+	copy(buffer[offset:], metadata.BloomFilter)
+	offset += len(metadata.BloomFilter)
+
+	// BloomNumBits
+	binary.LittleEndian.PutUint64(buffer[offset:], metadata.BloomNumBits)
+	offset += 8
+
+	// BloomNumHash
+	binary.LittleEndian.PutUint32(buffer[offset:], uint32(metadata.BloomNumHash))
 
 	return buffer, nil
 }
@@ -337,6 +372,9 @@ func (r *SSTableReader) readFooterAndLoad() error {
 		return err
 	}
 
+	// After deserializing metadata, create bloom filter
+	r.bloomFilter = bloom.FromBytes(r.metadata.BloomFilter, r.metadata.BloomNumBits, r.metadata.BloomNumHash)
+
 	// Read and deserialize index
 	indexLen := fileSize - footerSize - int64(indexOffset)
 	indexBytes := make([]byte, indexLen)
@@ -380,15 +418,35 @@ func (r *SSTableReader) deserializeMetadata(data []byte) error {
 
 	// CreatedAt
 	createdAtUnix := binary.LittleEndian.Uint64(data[offset:])
+	offset += 8
 	createdAt := time.Unix(int64(createdAtUnix), 0)
 
+	// BloomFilter length
+	bloomFilterLen := binary.LittleEndian.Uint32(data[offset:])
+	offset += 4
+
+	// BloomFilter data
+	bloomFilter := make([]byte, bloomFilterLen)
+	copy(bloomFilter, data[offset:offset+int(bloomFilterLen)])
+	offset += int(bloomFilterLen)
+
+	// BloomNumBits
+	bloomNumBits := binary.LittleEndian.Uint64(data[offset:])
+	offset += 8
+
+	// BloomNumHash
+	bloomNumHash := binary.LittleEndian.Uint32(data[offset:])
+
 	r.metadata = SSTableMetadata{
-		Level:      int(level),
-		MinKey:     minKey,
-		MaxKey:     maxKey,
-		EntryCount: int64(entryCount),
-		DataSize:   int64(dataSize),
-		CreatedAt:  createdAt,
+		Level:        int(level),
+		MinKey:       minKey,
+		MaxKey:       maxKey,
+		EntryCount:   int64(entryCount),
+		DataSize:     int64(dataSize),
+		CreatedAt:    createdAt,
+		BloomFilter:  bloomFilter,
+		BloomNumBits: bloomNumBits,
+		BloomNumHash: int(bloomNumHash),
 	}
 
 	return nil
@@ -433,6 +491,11 @@ func (r *SSTableReader) deserializeIndex(data []byte) error {
 
 // Get retrieves a value by key from the SSTable
 func (r *SSTableReader) Get(key string) ([]byte, bool, error) {
+	// Check bloom filter first
+	if !r.bloomFilter.MayContain([]byte(key)) {
+		return nil, false, nil
+	}
+
 	// Check if key is in range
 	if len(r.metadata.MinKey) > 0 && len(r.metadata.MaxKey) > 0 {
 		if strings.Compare(key, r.metadata.MinKey) < 0 || strings.Compare(key, r.metadata.MaxKey) > 0 {
