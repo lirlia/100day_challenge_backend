@@ -1,9 +1,14 @@
-# Day 56 - イベント駆動型システム (Go)
+# Day 56 - イベント駆動型システム (Go + Web UI)
 
 ## 概要
 
 このプロジェクトでは、Go言語を使用してイベント駆動型のマイクロサービスシステムを構築します。
 注文処理、在庫管理、配送処理をそれぞれ独立したサービスとして実装し、NATS メッセージブローカーを介した非同期イベント通信で連携させています。
+また、Next.js を使用したWebユーザーインターフェースも提供し、実際の注文操作を体験できます。
+
+https://github.com/user-attachments/assets/aa9eeb48-e776-43ec-9be8-bc57d45ef8fe
+
+[100日チャレンジ day56](https://zenn.dev/gin_nazo/scraps/ae9e6148264025)
 
 ## システム構成要素
 
@@ -12,6 +17,10 @@
 - **注文サービス (Order Service)**: ユーザーからの注文を受け付け、注文イベントを発行
 - **在庫サービス (Inventory Service)**: 商品の在庫を管理し、注文に応じて在庫を確保
 - **配送サービス (Shipping Service)**: 在庫確保後、商品の配送を手配
+
+### フロントエンド
+
+- **Web UI (Next.js)**: ユーザーが商品を選択し、注文を作成・確認できるWebインターフェース
 
 ### インフラストラクチャ
 
@@ -48,14 +57,24 @@
 
 ## 技術スタック
 
+### バックエンド
 - **言語**: Go 1.21+
 - **メッセージブローカー**: NATS 2.9
 - **データベース**: SQLite 3
-- **コンテナ**: Docker Compose
 - **主要ライブラリ**:
   - `github.com/nats-io/nats.go` - NATS クライアント
   - `github.com/mattn/go-sqlite3` - SQLite ドライバー
   - `github.com/google/uuid` - UUID 生成
+
+### フロントエンド
+- **フレームワーク**: Next.js 15 (App Router)
+- **言語**: TypeScript
+- **スタイリング**: Tailwind CSS
+- **状態管理**: React Hooks
+- **APIクライアント**: Fetch API
+
+### インフラストラクチャ
+- **コンテナ**: Docker Compose
 
 ## 起動方法
 
@@ -134,9 +153,39 @@ curl http://localhost:8222/ || echo "NATS管理画面アクセス可能"
 #### 6. 初期データ確認
 
 在庫サービスは起動時に以下の商品データを自動で作成します：
+
+**メイン商品（フロントエンド対応）:**
+- `keyboard`: キーボード (在庫: 10個)
+- `mouse`: マウス (在庫: 5個)  
+- `monitor`: モニター (在庫: 3個)
+- `headset`: ヘッドセット (在庫: 7個)
+
+**互換性商品（既存テスト用）:**
 - `prod001`: Super Keyboard (在庫: 10個)
 - `prod002`: Ergonomic Mouse (在庫: 5個)  
 - `prod003`: 4K Monitor (在庫: 3個)
+
+#### 7. Web UI起動
+
+**ターミナル4: フロントエンド**
+```bash
+cd web-ui
+npm install
+npm run dev
+```
+
+Web UI は http://localhost:3001 でアクセス可能です。
+
+### Web UI の使用方法
+
+1. ブラウザで http://localhost:3001 にアクセス
+2. ユーザーを選択（user1, user2, user3 から選択可能）
+3. 商品一覧から希望の商品をカートに追加
+4. 「注文を確定する」ボタンで注文を作成
+5. 注文履歴でリアルタイムの注文状況を確認
+   - 「処理中」→「配送待ち」→「完了」のステータス変化
+   - 在庫不足の場合は「在庫不足でキャンセル」
+   - 配送失敗の場合は「配送失敗」
 
 ### 停止方法
 
@@ -204,24 +253,37 @@ docker-compose up -d
 # 3. 依存関係インストール
 go mod download
 
-# 4. 全サービス起動（バックグラウンド）
+# 4. 全マイクロサービス起動（バックグラウンド）
 go run cmd/inventory_service/main.go &
 go run cmd/shipping_service/main.go &
 go run cmd/order_service/main.go &
 
-# 5. 動作確認（簡単な注文テスト）
-sleep 5
-curl -X POST http://localhost:8080/orders \
-  -H "Content-Type: application/json" \
-  -d '{"userId": "user123", "items": [{"productId": "prod001", "quantity": 2, "price": 5000}]}'
+# 5. Web UI起動
+cd web-ui
+npm install
+npm run dev &
+cd ..
 
-# 6. 結果確認（数秒後に注文IDを使って確認）
-# curl http://localhost:8080/orders/{注文ID}
+# 6. 動作確認
+echo "バックエンド起動完了。Web UI: http://localhost:3001"
+echo "API動作確認:"
+sleep 5
+curl -X POST http://localhost:8080/api/orders \
+  -H "Content-Type: application/json" \
+  -d '{"userId": "user123", "items": [{"productId": "keyboard", "quantity": 2, "price": 15000}]}'
 
 # 7. 停止
-kill %1 %2 %3
+kill %1 %2 %3 %4  # 全バックグラウンドプロセス停止
 docker-compose down
 ```
+
+### 推奨: Web UIでのテスト
+
+コマンドラインでのAPIテストより、Web UI (http://localhost:3001) での操作をお勧めします：
+- 直感的なユーザーインターフェース
+- リアルタイムの注文状況更新
+- 複数ユーザーでの同時テスト
+- 注文履歴の可視化
 
 ## API仕様
 

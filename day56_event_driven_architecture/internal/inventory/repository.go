@@ -31,8 +31,8 @@ func InitInventoryDB() error {
 	if err != nil {
 		return fmt.Errorf("failed to initialize inventory database: %w", err)
 	}
-	// Optional: Add some seed data for testing
-	// SeedInitialProducts()
+	// Add initial products for testing
+	SeedInitialProducts()
 	return nil
 }
 
@@ -40,6 +40,11 @@ func InitInventoryDB() error {
 // This is useful for testing purposes.
 func SeedInitialProducts() {
 	products := []Product{
+		{ID: "keyboard", Name: "キーボード", StockQuantity: 10, ReservedQuantity: 0, UpdatedAt: time.Now()},
+		{ID: "mouse", Name: "マウス", StockQuantity: 5, ReservedQuantity: 0, UpdatedAt: time.Now()},
+		{ID: "monitor", Name: "モニター", StockQuantity: 3, ReservedQuantity: 0, UpdatedAt: time.Now()},
+		{ID: "headset", Name: "ヘッドセット", StockQuantity: 7, ReservedQuantity: 0, UpdatedAt: time.Now()},
+		// 互換性のため、古い商品IDも保持
 		{ID: "prod001", Name: "Super Keyboard", StockQuantity: 10, ReservedQuantity: 0, UpdatedAt: time.Now()},
 		{ID: "prod002", Name: "Ergonomic Mouse", StockQuantity: 5, ReservedQuantity: 0, UpdatedAt: time.Now()},
 		{ID: "prod003", Name: "4K Monitor", StockQuantity: 3, ReservedQuantity: 0, UpdatedAt: time.Now()},
@@ -211,8 +216,12 @@ func ConfirmStockDeduction(orderID string, itemsToDeduct []event.OrderItem) erro
 		// Ensure we don't go negative, though reserved should cover it
 		newStockQuantity := currentStock - item.Quantity
 		newReservedQuantity := currentReserved - item.Quantity
-		if newStockQuantity < 0 { newStockQuantity = 0 }
-		if newReservedQuantity < 0 { newReservedQuantity = 0 }
+		if newStockQuantity < 0 {
+			newStockQuantity = 0
+		}
+		if newReservedQuantity < 0 {
+			newReservedQuantity = 0
+		}
 
 		_, err = tx.Exec("UPDATE products SET stock_quantity = ?, reserved_quantity = ?, updated_at = ? WHERE id = ?",
 			newStockQuantity, newReservedQuantity, time.Now(), item.ProductID)

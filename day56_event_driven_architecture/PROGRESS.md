@@ -1,26 +1,46 @@
 # PROGRESS
 
-## Day 56: イベント駆動型システム (Go)
+## Day 56: イベント駆動型システム (Go + Web UI)
 
 - [x] 仕様定義
 - [x] プロジェクト初期セットアップ (ディレクトリ構造、Goモジュール)
 - [x] メッセージブローカー (NATS) のセットアップ (docker-compose.yml 作成、接続・送受信ロジック実装 (`internal/event/*`))
 - [x] 購入サービス (Order Service) 実装
-  - [x] APIエンドポイント (注文受付: `POST /orders`, `GET /orders/{id}`)
+  - [x] APIエンドポイント (注文受付: `POST /api/orders`, `GET /api/orders`)
   - [x] イベント発行 (`OrderCreated`)
   - [x] データモデルとDB (SQLite: `orders`, `order_items` テーブル)
+  - [x] CORS対応 (フロントエンド連携用)
 - [x] 在庫サービス (Inventory Service) 実装
   - [x] イベントリッスン (`OrderCreated`)
   - [x] 在庫確認・確保ロジック (`AttemptReservation`)
   - [x] イベント発行 (`StockReserved`, `StockReservationFailed`)
   - [x] データモデルとDB (SQLite: `products` テーブル)
+  - [x] 商品データ初期化 (フロントエンド対応商品ID: `keyboard`, `mouse`, `monitor`, `headset`)
 - [x] 配送サービス (Shipping Service) 実装
   - [x] イベントリッスン (`StockReserved`)
   - [x] 配送手配ロジック (ダミー処理、DB記録)
   - [x] イベント発行 (`ShipmentInitiated`, `ShipmentCompleted`, `ShipmentFailed`)
   - [x] データモデルとDB (SQLite: `shipments`, `shipment_items` テーブル)
+- [x] **Web UI (Next.js) 実装**
+  - [x] 商品一覧表示
+  - [x] ユーザー選択機能
+  - [x] ショッピングカート機能
+  - [x] 注文作成機能
+  - [x] リアルタイム注文履歴表示
+  - [x] レスポンシブデザイン (Tailwind CSS)
+  - [x] TypeScript型安全性
 - [x] サービス間連携テスト
   - [x] 正常な注文フロー (注文作成 → 在庫予約 → 配送処理 → 注文完了)
   - [x] 在庫不足のケース (在庫不足検出 → 注文キャンセル)
   - [x] 配送失敗のケース (配送失敗 → 在庫補償 → 注文失敗マーク)
-- [x] README更新 
+- [x] **問題修正**
+  - [x] CORS preflight エラー修正
+  - [x] 商品データマッピング問題解決
+  - [x] フロントエンドの価格表示エラー修正
+  - [x] 在庫サービスの商品ID不一致問題解決
+- [x] README更新 (Web UI情報追加、詳細な使用方法)
+- [x] **動作確認完了** ✨
+  - [x] 全サービス正常起動
+  - [x] Web UIでの注文→完了フロー動作確認
+  - [x] イベント駆動アーキテクチャの動作確認
+  - [x] リアルタイム注文状況更新確認 

@@ -2,12 +2,10 @@ package main
 
 import (
 	"log"
-	"math/rand"
 	"os"
 	"os/signal"
 	"runtime"
 	"syscall"
-	"time"
 
 	"github.com/lirlia/100day_challenge_backend/day56_event_driven_architecture/internal/event"
 	"github.com/lirlia/100day_challenge_backend/day56_event_driven_architecture/internal/shipping"
@@ -16,7 +14,6 @@ import (
 const defaultNatsURL = "nats://localhost:4222"
 
 func main() {
-	rand.Seed(time.Now().UnixNano()) // Initialize random seed for dummy processing
 
 	natsURL := os.Getenv("NATS_URL")
 	if natsURL == "" {
