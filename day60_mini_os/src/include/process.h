@@ -61,8 +61,8 @@ process_t* scheduler_get_next_process(void);
 void scheduler_switch_process(void);
 void scheduler_tick(void);  /* タイマー割り込みから呼び出される */
 
-/* コンテキストスイッチ */
-void context_switch(cpu_context_t* old_context, cpu_context_t* new_context);
+/* コンテキストスイッチ (temporarily disabled) */
+// void context_switch(cpu_context_t* old_context, cpu_context_t* new_context);
 
 /* プロセス情報表示 */
 void process_print_info(void);
@@ -77,7 +77,7 @@ void test_process_a(void);      /* テストプロセスA */
 void test_process_b(void);      /* テストプロセスB */
 
 /* プロセス制御定数 */
-#define MAX_PROCESSES           64
+#define MAX_PROCESSES           8
 #define DEFAULT_STACK_SIZE      (8 * 1024)     /* 8KB */
 #define DEFAULT_TIME_QUANTUM    100             /* 100ms */
 #define IDLE_PROCESS_PID        0
