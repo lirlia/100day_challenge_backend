@@ -1,11 +1,1 @@
-Multiboot: Early boot sequence started
-Multiboot: Magic verified, calling kernel
-
-=====================================
-       Mini OS v0.1.0
-=====================================
-
-[INFO] Kernel boot sequence started
-[INFO] Serial communication initialized
-[INFO] Calling memory_init...
-Initializing memory manager...
+/Users/noname/Cording/100day_challenge_backend/output.log

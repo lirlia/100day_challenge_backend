@@ -1,5 +1,6 @@
 #include "kernel.h"
 #include "memory.h"
+#include "process.h"
 
 /* Global kernel printf function */
 void kernel_printf(const char* format, ...) {
@@ -304,6 +305,17 @@ void test_memory_allocator(void) {
     kernel_printf("=== Memory Test Complete ===\n\n");
 }
 
+void test_process_management(void) {
+    kernel_printf("\n=== Process Management Test ===\n");
+
+    // Initialize process management
+    kernel_printf("About to call process_init...\n");
+    process_init();
+    kernel_printf("process_init completed successfully\n");
+
+    kernel_printf("=== Process Management Test Complete ===\n\n");
+}
+
 void kmain(void) {
     /* Initialize serial port for logging */
     serial_init();
@@ -323,6 +335,9 @@ void kmain(void) {
 
     // Test memory allocator
     test_memory_allocator();
+
+    // Test process management
+    test_process_management();
 
     kernel_printf("All tests completed successfully. Halting.\n");
 
