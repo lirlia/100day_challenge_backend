@@ -144,7 +144,10 @@ func AuthorizeHandler(w http.ResponseWriter, r *http.Request) {
 
 // TokenHandler handles the OAuth2 token endpoint
 func TokenHandler(w http.ResponseWriter, r *http.Request) {
+	log.Printf("TokenHandler called: Method=%s, URL=%s", r.Method, r.URL.Path)
+
 	if r.Method != http.MethodPost {
+		log.Printf("Method not allowed: %s", r.Method)
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}

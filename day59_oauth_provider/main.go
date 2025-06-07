@@ -5,12 +5,65 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/lirlia/100day_challenge_backend/day59_oauth_provider/internal/database"
 	"github.com/lirlia/100day_challenge_backend/day59_oauth_provider/internal/handlers"
 	"github.com/lirlia/100day_challenge_backend/day59_oauth_provider/internal/services"
 )
+
+// カスタムハンドラー
+func customHandler(w http.ResponseWriter, r *http.Request) {
+	log.Printf("Request: %s %s", r.Method, r.URL.Path)
+
+	// CORSヘッダーを追加
+	w.Header().Set("Access-Control-Allow-Origin", "http://localhost:3001")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+	w.Header().Set("Access-Control-Allow-Credentials", "true")
+
+	// プリフライトリクエストの処理
+	if r.Method == http.MethodOptions {
+		log.Printf("Handling OPTIONS request for %s", r.URL.Path)
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	// パスに基づいてルーティング
+	switch r.URL.Path {
+	case "/":
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"ok","service":"oauth2-provider"}`))
+	case "/health":
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"ok","service":"oauth2-provider"}`))
+	case "/.well-known/openid_configuration":
+		handlers.DiscoveryHandler(w, r)
+	case "/.well-known/jwks.json":
+		handlers.JWKSHandler(w, r)
+	case "/userinfo":
+		handlers.UserInfoHandler(w, r)
+	case "/authorize":
+		handlers.AuthorizeHandler(w, r)
+	case "/token":
+		handlers.TokenHandler(w, r)
+	default:
+		if strings.HasPrefix(r.URL.Path, "/api/clients/") {
+			handlers.ClientHandler(w, r)
+		} else if r.URL.Path == "/api/clients" {
+			handlers.ClientsHandler(w, r)
+		} else if strings.HasPrefix(r.URL.Path, "/api/users/") {
+			handlers.UserHandler(w, r)
+		} else if r.URL.Path == "/api/users" {
+			handlers.UsersHandler(w, r)
+		} else {
+			http.NotFound(w, r)
+		}
+	}
+}
 
 func main() {
 	log.Println("Starting OAuth2/OpenID Connect Provider...")
@@ -26,35 +79,10 @@ func main() {
 		log.Fatalf("Failed to initialize keys: %v", err)
 	}
 
-	// HTTPサーバー設定
-	mux := http.NewServeMux()
-
-	// 基本的なヘルスチェック
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status":"ok","service":"oauth2-provider"}`))
-	})
-
-	// OpenID Connect エンドポイント
-	mux.HandleFunc("/.well-known/openid_configuration", handlers.DiscoveryHandler)
-	mux.HandleFunc("/.well-known/jwks.json", handlers.JWKSHandler)
-	mux.HandleFunc("/userinfo", handlers.UserInfoHandler)
-
-	// OAuth2 エンドポイント
-	mux.HandleFunc("/authorize", handlers.AuthorizeHandler)
-	mux.HandleFunc("/token", handlers.TokenHandler)
-
-	// 管理API
-	mux.HandleFunc("/api/clients", handlers.ClientsHandler)
-	mux.HandleFunc("/api/clients/", handlers.ClientHandler)
-	mux.HandleFunc("/api/users", handlers.UsersHandler)
-	mux.HandleFunc("/api/users/", handlers.UserHandler)
-
 	// サーバー起動
 	server := &http.Server{
 		Addr:    ":8081",
-		Handler: mux,
+		Handler: http.HandlerFunc(customHandler),
 	}
 
 	// Graceful shutdown
@@ -70,6 +98,7 @@ func main() {
 	log.Println("Server starting on :8081")
 	log.Println("OAuth2 Provider: http://localhost:8081")
 	log.Println("Discovery: http://localhost:8081/.well-known/openid_configuration")
+	log.Println("CORS enabled for: http://localhost:3001")
 
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("Server failed to start: %v", err)
