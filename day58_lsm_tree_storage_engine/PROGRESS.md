@@ -9,12 +9,12 @@
 - [x] .gitignore設定
 - [x] ディレクトリ構造作成
 
-### ステップ 2: MemTable実装（Skip List）
-- [ ] Skip List データ構造実装
-- [ ] MemTable インターフェース設計
-- [ ] Put/Get/Delete操作実装
-- [ ] イテレータ実装（スキャン用）
-- [ ] 単体テスト作成・実行
+### ステップ 2: MemTable実装（Skip List） ✅
+- [x] Skip List データ構造実装
+- [x] MemTable インターフェース設計
+- [x] Put/Get/Delete操作実装
+- [x] イテレータ実装（スキャン用）
+- [x] 単体テスト作成・実行
 
 ### ステップ 3: WAL（Write-Ahead Log）実装
 - [ ] WALファイル形式設計
@@ -64,13 +64,13 @@
 
 ## 現在の状況
 
-**現在**: ステップ 1 完了
-**次回**: ステップ 2 （Skip List実装）
+**現在**: ステップ 2 完了
+**次回**: ステップ 3 （WAL実装）
 
 ## 学習ポイント
 
 - [x] プロジェクト構造設計
-- [ ] Skip List データ構造の理解と実装
+- [x] Skip List データ構造の理解と実装
 - [ ] WAL による耐久性保証の実装
 - [ ] SSTable ファイル形式とディスクI/O最適化
 - [ ] Bloom Filter による効率的な存在判定
