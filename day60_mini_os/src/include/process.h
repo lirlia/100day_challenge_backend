@@ -61,8 +61,8 @@ process_t* scheduler_get_next_process(void);
 void scheduler_switch_process(void);
 void scheduler_tick(void);  /* タイマー割り込みから呼び出される */
 
-/* コンテキストスイッチ (temporarily disabled) */
-// void context_switch(cpu_context_t* old_context, cpu_context_t* new_context);
+/* コンテキストスイッチ */
+void context_switch(cpu_context_t* old_context, cpu_context_t* new_context);
 
 /* プロセス情報表示 */
 void process_print_info(void);

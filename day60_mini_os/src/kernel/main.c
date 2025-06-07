@@ -1,6 +1,6 @@
 #include "kernel.h"
 #include "memory.h"
-// #include "process.h"  // temporarily disabled
+#include "process.h"  // プロセス管理を有効化
 
 /* Global kernel printf function */
 void kernel_printf(const char* format, ...) {
@@ -305,19 +305,48 @@ void test_memory_allocator(void) {
     kernel_printf("=== Memory Test Complete ===\n\n");
 }
 
-// Temporarily disabled for debugging
-/*
+// プロセス管理の基本的なテスト関数 (段階的に有効化)
 void test_process_management(void) {
     kernel_printf("\n=== Process Management Test ===\n");
 
-    // Initialize process management
+    // 段階1: プロセス管理初期化のみ
     kernel_printf("About to call process_init...\n");
     process_init();
     kernel_printf("process_init completed successfully\n");
 
+    // 段階2: プロセス作成テスト
+    kernel_printf("Testing process creation...\n");
+
+    // アイドルプロセス作成
+    process_t* idle_proc = kernel_process_create("idle", idle_process);
+    if (idle_proc) {
+        kernel_printf("Created idle process (PID=%u)\n", idle_proc->pid);
+    } else {
+        kernel_printf("ERROR: Failed to create idle process\n");
+    }
+
+    // テストプロセスA作成
+    process_t* test_proc_a = kernel_process_create("test_a", test_process_a);
+    if (test_proc_a) {
+        kernel_printf("Created test process A (PID=%u)\n", test_proc_a->pid);
+    } else {
+        kernel_printf("ERROR: Failed to create test process A\n");
+    }
+
+    // プロセス情報表示
+    process_print_info();
+    process_list_all();
+
+    // 段階3: プロセス関数の直接実行テスト (コンテキストスイッチなし)
+    kernel_printf("Testing process function execution (direct call)...\n");
+
+    // テストプロセスAの関数を直接呼び出し
+    kernel_printf("Calling test_process_a function directly...\n");
+    test_process_a();
+    kernel_printf("test_process_a function completed\n");
+
     kernel_printf("=== Process Management Test Complete ===\n\n");
 }
-*/
 
 void kmain(void) {
     /* Initialize serial port for logging */
@@ -339,8 +368,8 @@ void kmain(void) {
     // Test memory allocator
     test_memory_allocator();
 
-    // Test process management (temporarily disabled for debugging)
-    // test_process_management();
+    // Test process management (段階的に有効化)
+    test_process_management();
 
     kernel_printf("All tests completed successfully. Halting.\n");
 

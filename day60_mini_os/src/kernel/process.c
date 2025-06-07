@@ -11,16 +11,28 @@ static bool process_table_used[MAX_PROCESSES];
 
 /* プロセス管理初期化 */
 void process_init(void) {
-    kernel_printf("process_init: Initializing process management...\n");
+    kernel_printf("process_init: Starting...\n");
 
-    /* プロセステーブルクリア */
-    memset(process_table, 0, sizeof(process_table));
-    memset(process_table_used, 0, sizeof(process_table_used));
+    // 段階的デバッグ: 最小限の実装
+    kernel_printf("process_init: Step 1 - Basic initialization\n");
 
-    /* スケジューラ初期化 */
-    scheduler_init();
+    // まずは静的変数への直接アクセスをテスト
+    scheduler.ready_queue = NULL;
+    kernel_printf("process_init: Step 2 - Scheduler basic setup\n");
 
-    kernel_printf("process_init: Process management initialized\n");
+    scheduler.current_process = NULL;
+    scheduler.next_pid = 1;
+    scheduler.process_count = 0;
+    scheduler.time_quantum = DEFAULT_TIME_QUANTUM;
+
+    kernel_printf("process_init: Step 3 - Scheduler initialized\n");
+
+    // プロセステーブルの初期化は後回し
+    for (int i = 0; i < MAX_PROCESSES; i++) {
+        process_table_used[i] = false;
+    }
+
+    kernel_printf("process_init: Completed successfully\n");
 }
 
 /* スケジューラ初期化 */
@@ -272,7 +284,7 @@ void process_list_all(void) {
     for (int i = 0; i < MAX_PROCESSES; i++) {
         if (process_table_used[i]) {
             process_t* proc = &process_table[i];
-            kernel_printf("%4u | %-17s | %5u | %u KB\n",
+            kernel_printf("%u | %s | %u | %u KB\n",
                           proc->pid, proc->name, proc->state, proc->stack_size / 1024);
         }
     }
@@ -320,4 +332,16 @@ void test_process_b(void) {
     }
 
     kernel_printf("test_process_b: Finished\n");
+}
+
+/* スケジューラ: プロセス切り替え (スタブ実装) */
+void scheduler_switch_process(void) {
+    kernel_printf("scheduler_switch_process: Called (stub implementation)\n");
+    // TODO: 実際のプロセス切り替え実装
+}
+
+/* スケジューラ: タイマー割り込み処理 (スタブ実装) */
+void scheduler_tick(void) {
+    kernel_printf("scheduler_tick: Called (stub implementation)\n");
+    // TODO: タイムスライス管理とプロセス切り替え実装
 }
