@@ -14,15 +14,13 @@ void usermode_init(void) {
     /* ユーザーモード管理構造体の初期化 */
     memset(&usermode_manager, 0, sizeof(usermode_manager_t));
 
-    /* GDTの設定（一時的にスキップ） */
-    // kernel_printf("usermode_init: Setting up GDT...\n");
-    // gdt_setup();
-    kernel_printf("usermode_init: GDT setup skipped for debugging\n");
+    /* Phase 9: GDTの設定を有効化 */
+    kernel_printf("usermode_init: Phase 9 - Setting up GDT...\n");
+    gdt_setup();
 
-    /* TSSの設定（一時的にスキップ） */
-    // kernel_printf("usermode_init: Setting up TSS...\n");
-    // tss_setup();
-    kernel_printf("usermode_init: TSS setup skipped for debugging\n");
+    /* Phase 9: TSSの設定を有効化 */
+    kernel_printf("usermode_init: Phase 9 - Setting up TSS...\n");
+    tss_setup();
 
     /* システムコールハンドラーの登録 */
     kernel_printf("usermode_init: Registering system call handler...\n");
@@ -30,6 +28,7 @@ void usermode_init(void) {
 
     usermode_manager.usermode_enabled = true;
     kernel_printf("usermode_init: User mode system initialized\n");
+    kernel_printf("usermode_init: Phase 9 complete - ready for user mode execution\n");
 }
 
 void gdt_setup(void) {
@@ -83,30 +82,32 @@ void tss_setup(void) {
     kernel_printf("tss_setup: Setting up Task State Segment...\n");
 
     /* TSSを初期化 */
+    kernel_printf("tss_setup: Clearing TSS structure...\n");
     memset(&usermode_manager.tss, 0, sizeof(tss_t));
+    kernel_printf("tss_setup: TSS structure cleared\n");
 
     /* カーネルスタックを設定（既存のスタックを使用） */
-    // u32 kernel_stack = alloc_page();
-    // if (kernel_stack == 0) {
-    //     kernel_panic("Failed to allocate kernel stack for TSS");
-    // }
-
-    // 一時的に固定アドレスを使用（デバッグ用）
+    kernel_printf("tss_setup: Setting up kernel stack...\n");
     u32 kernel_stack = 0x200000; // 2MB位置を仮のカーネルスタックとして使用
 
     usermode_manager.kernel_stack_top = kernel_stack + PAGE_SIZE;
     usermode_manager.tss.ss0 = KERNEL_DATA_SELECTOR;
     usermode_manager.tss.esp0 = usermode_manager.kernel_stack_top;
+    kernel_printf("tss_setup: Kernel stack configured\n");
 
     /* I/Oマップベースを設定 */
+    kernel_printf("tss_setup: Setting I/O map base...\n");
     usermode_manager.tss.iomap_base = sizeof(tss_t);
+    kernel_printf("tss_setup: I/O map base set\n");
 
-    /* TSSをロード（一時的にスキップ） */
+    /* TSSをロード（段階的デバッグ） */
+    kernel_printf("tss_setup: TSS configuration complete\n");
+    // 一時的にTSS flushをスキップしてデバッグ
     // tss_flush();
-    kernel_printf("tss_setup: TSS setup skipped for debugging\n");
 
-    kernel_printf("tss_setup: TSS loaded successfully (kernel stack: 0x%x)\n",
+    kernel_printf("tss_setup: TSS loaded successfully (kernel stack: %u)\n",
                   usermode_manager.kernel_stack_top);
+    kernel_printf("tss_setup: TSS setup completed\n");
 }
 
 void gdt_set_gate(int num, u32 base, u32 limit, u8 access, u8 gran) {

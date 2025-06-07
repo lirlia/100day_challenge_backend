@@ -415,12 +415,14 @@ void test_usermode_system(void) {
     extern void shell_start(void); // シェルのエントリポイント
     kernel_printf("About to execute shell in user mode...\n");
 
-    // ユーザーモードでシェル関数を実行（一時的にスキップ）
-    // execute_user_function((void(*)(void))shell_start);
-
-    // 一時的にカーネルモードでシェルをテスト
-    kernel_printf("Testing shell in kernel mode (temporary)...\n");
-    shell_start();
+    // ユーザーモードでシェル関数を実行
+    if (is_usermode_enabled()) {
+        kernel_printf("User mode ready - executing shell in user mode...\n");
+        execute_user_function((void(*)(void))shell_start);
+    } else {
+        kernel_printf("User mode not ready - executing shell in kernel mode...\n");
+        shell_start();
+    }
 
     // ここには戻ってこないはず
     kernel_printf("Returned from shell execution\n");
