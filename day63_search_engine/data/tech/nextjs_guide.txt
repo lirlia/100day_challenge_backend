@@ -1,0 +1,49 @@
+タイトル: Next.js App Router完全ガイド
+作者: Tech Team
+カテゴリ: 技術
+
+Next.jsのApp Routerは、React 18の新機能を活用したモダンなルーティングシステムです。従来のPages Routerと比較して、より柔軟で強力な機能を提供します。
+
+App Routerの基本概念
+App Routerでは、app/ディレクトリ内にファイルを配置することでルートを定義します。各ディレクトリがURLセグメントに対応し、page.tsx、layout.tsx、error.tsx、loading.tsx、not-found.tsxなどの特別なファイルでページの動作を制御します。
+
+ファイルベースルーティング
+App Routerのルーティングは直感的です。例えば、app/about/page.tsxは/aboutにアクセス可能なページを作成します。app/blog/[slug]/page.tsxは動的ルートを定義し、/blog/my-postのようなURLパラメータを受け取ることができます。
+
+Server Componentsとは
+Server Componentsは、サーバーサイドでレンダリングされるReactコンポーネントです。データベースへの直接アクセス、APIキーの安全な使用、バンドルサイズの削減など、多くの利点があります。デフォルトでApp Router内のすべてのコンポーネントはServer Componentsとして動作します。
+
+Client Componentsの活用
+一方、Client Componentsは'use client'ディレクティブを使用してブラウザで実行されます。イベントハンドラ、useState、useEffectなどのブラウザAPIを使用する場合に必要です。Server ComponentsとClient Componentsの適切な使い分けが、パフォーマンスの最適化につながります。
+
+データフェッチング
+App Routerでは、async/awaitを使用してServer Component内で直接データをフェッチできます。fetch関数は自動的にキャッシュされ、revalidateオプションでキャッシュの有効期限を制御できます。また、unstable_cacheを使用してより細かなキャッシュ戦略を実装することも可能です。
+
+レイアウトシステム
+layout.tsxファイルは、複数のページで共有されるUIを定義します。ネストされたレイアウトも可能で、階層的なUI構造を効率的に管理できます。レイアウトはナビゲーション時に再レンダリングされないため、パフォーマンスの向上にも寄与します。
+
+Route Handlers
+app/api/ディレクトリ内にroute.tsxファイルを配置することで、APIエンドポイントを作成できます。GET、POST、PUT、DELETEなどのHTTPメソッドをサポートし、RequestとResponseオブジェクトを使用してリクエストを処理します。
+
+Streaming とSuspense
+App RouterはReact 18のStreamingとSuspenseを活用して、ページの一部が準備できた時点で段階的にコンテンツを表示できます。loading.tsxファイルを使用してローディング状態を簡単に管理でき、ユーザーエクスペリエンスの向上に役立ちます。
+
+エラーハンドリング
+error.tsxファイルを使用して、コンポーネントツリー内のエラーをキャッチし、フォールバックUIを表示できます。エラー境界は自動的に設定され、本番環境でのエラー処理が簡素化されます。
+
+Metadata API
+App Routerでは、新しいMetadata APIを使用してSEOに重要なメタデータを管理できます。静的メタデータと動的メタデータの両方をサポートし、ページごとに適切なタイトル、説明、OGタグなどを設定できます。
+
+パフォーマンス最適化
+App Routerは自動的にコード分割を行い、必要なコードのみをロードします。また、Image Optimizationやfont最適化なども自動的に行われ、Webサイトのパフォーマンスが向上します。
+
+移行戦略
+既存のPages Routerからの移行は段階的に行うことが可能です。同一プロジェクト内でPages RouterとApp Routerを併用でき、徐々に新しいシステムに移行することができます。
+
+TypeScript統合
+App RouterはTypeScriptとの統合が非常に優れています。ルートパラメータ、検索パラメータ、メタデータなどの型安全性が自動的に提供され、開発者の生産性が向上します。
+
+デプロイメント
+Vercelをはじめとする多くのプラットフォームでApp Routerアプリケーションを簡単にデプロイできます。エッジランタイムやServerless Functionsなど、モダンなデプロイメント戦略もサポートされています。
+
+Next.jsのApp Routerは、現代のWeb開発における最新のベストプラクティスを具現化したシステムです。Server ComponentsとClient Componentsの適切な使い分け、効率的なデータフェッチング、優れたパフォーマンス最適化により、スケーラブルで高性能なWebアプリケーションを構築することができます。

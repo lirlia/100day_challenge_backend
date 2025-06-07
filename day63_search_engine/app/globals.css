@@ -1,0 +1,207 @@
+@import "tailwindcss";
+
+/* テクノロジカル・ミニマリズム デザインシステム */
+:root {
+  /* カラーパレット */
+  --color-bg-primary: #0a0b0d;
+  --color-bg-secondary: #12141a;
+  --color-bg-tertiary: #1a1d26;
+  --color-text-primary: #e5e7eb;
+  --color-text-secondary: #9ca3af;
+  --color-text-muted: #6b7280;
+  --color-accent-blue: #3b82f6;
+  --color-accent-cyan: #06b6d4;
+  --color-accent-green: #10b981;
+  --color-accent-purple: #8b5cf6;
+  --color-border: #374151;
+  --color-border-light: #4b5563;
+
+  /* グラデーション */
+  --gradient-primary: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+  --gradient-secondary: linear-gradient(135deg, #06b6d4 0%, #10b981 100%);
+  --gradient-card: linear-gradient(135deg, #12141a 0%, #1a1d26 100%);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  line-height: 1.6;
+  font-feature-settings: 'kern', 'liga', 'ss01', 'ss02';
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* スクロールバーのカスタマイズ */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-bg-secondary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-border-light);
+}
+
+/* カスタムグロー効果 */
+.glow-blue {
+  box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+}
+
+.glow-cyan {
+  box-shadow: 0 0 20px rgba(6, 182, 212, 0.3);
+}
+
+.glow-green {
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
+}
+
+/* ガラス効果 */
+.glass {
+  background: rgba(26, 29, 38, 0.7);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(75, 85, 99, 0.3);
+}
+
+/* アニメーション */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 0.8;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.fade-in-up {
+  animation: fadeInUp 0.6s ease-out;
+}
+
+.pulse-glow {
+  animation: pulse 2s infinite;
+}
+
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.1) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite;
+}
+
+/* フォーカス状態のスタイル */
+.focus-ring:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-accent-blue);
+}
+
+/* ホバー効果 */
+.hover-lift:hover {
+  transform: translateY(-2px);
+  transition: transform 0.2s ease-out;
+}
+
+.hover-glow:hover {
+  box-shadow: 0 8px 32px rgba(59, 130, 246, 0.2);
+  transition: box-shadow 0.3s ease-out;
+}
+
+/* コードブロックのスタイル */
+pre, code {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  font-feature-settings: 'liga', 'calt';
+}
+
+/* 検索結果のハイライト */
+.search-highlight {
+  background: linear-gradient(120deg, rgba(59, 130, 246, 0.3) 0%, rgba(139, 92, 246, 0.3) 100%);
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-weight: 600;
+}
+
+/* スコアバーのスタイル */
+.score-bar {
+  background: var(--gradient-secondary);
+  height: 4px;
+  border-radius: 2px;
+  transition: width 0.5s ease-out;
+}
+
+/* ステータスドット */
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.status-active {
+  background: var(--color-accent-green);
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);
+}
+
+.status-inactive {
+  background: var(--color-text-muted);
+}
+
+/* ローディングスピナー */
+.loader {
+  border: 3px solid rgba(59, 130, 246, 0.3);
+  border-top: 3px solid var(--color-accent-blue);
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* レスポンシブ対応 */
+@media (max-width: 768px) {
+  body {
+    font-size: 14px;
+  }
+
+  .glass {
+    backdrop-filter: blur(8px);
+  }
+}

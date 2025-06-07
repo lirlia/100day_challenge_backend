@@ -1,0 +1,32 @@
+{
+  "name": "day63_search_engine",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3001",
+    "build": "next build",
+    "start": "next start -p 3001",
+    "lint": "next lint",
+    "format": "biome format . --write",
+    "check": "biome check --apply ."
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.10.0",
+    "next": "15.3.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@tailwindcss/postcss": "^4",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22.14.1",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "biome": "^0.2.2",
+    "tailwindcss": "^4",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.16.0",
+    "typescript": "^5"
+  }
+}
