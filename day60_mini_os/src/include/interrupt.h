@@ -104,6 +104,9 @@ void pit_init(u32 frequency);
 /* 割り込みハンドラ登録 */
 void register_interrupt_handler(u8 n, interrupt_handler_t handler);
 
+/* プロセス管理からの関数（前方宣言） */
+void scheduler_tick(void);
+
 /* アセンブリで定義される割り込みスタブ */
 extern void isr0(void);   /* 除算エラー */
 extern void isr1(void);   /* デバッグ */

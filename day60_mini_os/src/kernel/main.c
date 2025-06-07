@@ -1,6 +1,7 @@
 #include "kernel.h"
 #include "memory.h"
 #include "process.h"  // プロセス管理を有効化
+#include "interrupt.h" // 割り込み処理を追加
 
 /* Global kernel printf function */
 void kernel_printf(const char* format, ...) {
@@ -348,6 +349,33 @@ void test_process_management(void) {
     kernel_printf("=== Process Management Test Complete ===\n\n");
 }
 
+// 割り込み処理の基本的なテスト関数
+void test_interrupt_system(void) {
+    kernel_printf("\n=== Interrupt System Test ===\n");
+
+    // 段階1: 割り込み初期化のみ
+    kernel_printf("About to call interrupt_init...\n");
+    interrupt_init();
+    kernel_printf("interrupt_init completed successfully\n");
+
+    // 段階2: タイマー割り込みテスト
+    kernel_printf("Enabling interrupts...\n");
+    enable_interrupts();
+    kernel_printf("Interrupts enabled. Waiting for timer...\n");
+
+    // タイマー割り込みのテスト（10秒間待機）
+    kernel_printf("Waiting 10 seconds for timer interrupts...\n");
+    for (int seconds = 0; seconds < 10; seconds++) {
+        kernel_printf("Waiting... %d seconds\n", seconds + 1);
+        for (volatile int i = 0; i < 10000000; i++) {
+            // 忙しい待機ループ（タイマー割り込みが発生するまで）
+            asm volatile("nop");
+        }
+    }
+
+    kernel_printf("=== Interrupt System Test Complete ===\n\n");
+}
+
 void kmain(void) {
     /* Initialize serial port for logging */
     serial_init();
@@ -370,6 +398,9 @@ void kmain(void) {
 
     // Test process management (段階的に有効化)
     test_process_management();
+
+    // Test interrupt system
+    test_interrupt_system();
 
     kernel_printf("All tests completed successfully. Halting.\n");
 
