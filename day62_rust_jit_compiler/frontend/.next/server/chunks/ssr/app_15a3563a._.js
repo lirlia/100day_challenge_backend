@@ -14,11 +14,47 @@ var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist
 ;
 ;
 function ExecutionPanel({ onExecute, disabled }) {
-    const [code, setCode] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["useState"])('1 + 2 * 3');
+    const [code, setCode] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["useState"])('x = 100; x * x + 50 * 25');
     const [result, setResult] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["useState"])(null);
     const [loading, setLoading] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["useState"])(false);
+    const [benchmarking, setBenchmarking] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["useState"])(false);
+    const [benchmarkResult, setBenchmarkResult] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["useState"])(null);
+    const lastExecutionTime = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["useRef"])(0);
+    const debounceTimeout = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["useRef"])(null);
+    // サンプル式
+    const sampleExpressions = [
+        // JITコンパイル可能な式（軽量で高速化効果が見える）
+        'x = 100; x * x + 50 * 25',
+        'y = 42; y + y * 3 - 10',
+        '1000 + 2000 * 3000 / 500',
+        // 関数呼び出し（JIT不可、遅い）
+        'fib(30)',
+        'fact(12)',
+        'pow(2, 10) + pow(3, 8)'
+    ];
+    // クリーンアップ
+    (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["useEffect"])(()=>{
+        return ()=>{
+            if (debounceTimeout.current) {
+                clearTimeout(debounceTimeout.current);
+            }
+        };
+    }, []);
     const handleExecute = async ()=>{
-        if (!code.trim() || loading || disabled) return;
+        if (!code.trim() || loading || disabled || benchmarking) return;
+        // 連続実行防止（500ms のクールダウン）
+        const now = Date.now();
+        if (now - lastExecutionTime.current < 500) {
+            console.log('Too fast! Debouncing execution...');
+            if (debounceTimeout.current) {
+                clearTimeout(debounceTimeout.current);
+            }
+            debounceTimeout.current = setTimeout(()=>{
+                handleExecute();
+            }, 500);
+            return;
+        }
+        lastExecutionTime.current = now;
         setLoading(true);
         try {
             const executionResult = await onExecute(code);
@@ -29,6 +65,38 @@ function ExecutionPanel({ onExecute, disabled }) {
             setLoading(false);
         }
     };
+    const handleBenchmark = async ()=>{
+        if (!code.trim() || loading || disabled || benchmarking) return;
+        setBenchmarking(true);
+        setBenchmarkResult(null);
+        try {
+            const results = [];
+            const totalRuns = 20; // 20回実行してベンチマーク
+            for(let i = 0; i < totalRuns; i++){
+                const result = await onExecute(code);
+                if (result) {
+                    results.push(result);
+                }
+                // 少し間隔を空ける
+                await new Promise((resolve)=>setTimeout(resolve, 100));
+            }
+            // 結果を集計
+            const totalTime = results.reduce((sum, r)=>sum + r.execution_time_ns, 0);
+            const jitExecutions = results.filter((r)=>r.was_jit_compiled).length;
+            const interpreterExecutions = results.filter((r)=>!r.was_jit_compiled).length;
+            setBenchmarkResult({
+                totalExecutions: results.length,
+                totalTime,
+                averageTime: totalTime / results.length,
+                jitExecutions,
+                interpreterExecutions
+            });
+        } catch (err) {
+            console.error('Benchmark error:', err);
+        } finally{
+            setBenchmarking(false);
+        }
+    };
     return /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
         className: "bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-6",
         children: [
@@ -37,7 +105,66 @@ function ExecutionPanel({ onExecute, disabled }) {
                 children: "式実行パネル"
             }, void 0, false, {
                 fileName: "[project]/app/components/ExecutionPanel.tsx",
-                lineNumber: 32,
+                lineNumber: 120,
+                columnNumber: 7
+            }, this),
+            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                className: "mb-4",
+                children: [
+                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
+                        className: "text-slate-300 text-sm mb-2",
+                        children: [
+                            "サンプル式:",
+                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
+                                className: "text-cyan-400 ml-2",
+                                children: "🚀 JIT対応"
+                            }, void 0, false, {
+                                fileName: "[project]/app/components/ExecutionPanel.tsx",
+                                lineNumber: 126,
+                                columnNumber: 11
+                            }, this),
+                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
+                                className: "text-orange-400 ml-2",
+                                children: "🐌 関数呼び出し"
+                            }, void 0, false, {
+                                fileName: "[project]/app/components/ExecutionPanel.tsx",
+                                lineNumber: 127,
+                                columnNumber: 11
+                            }, this)
+                        ]
+                    }, void 0, true, {
+                        fileName: "[project]/app/components/ExecutionPanel.tsx",
+                        lineNumber: 124,
+                        columnNumber: 9
+                    }, this),
+                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                        className: "flex flex-wrap gap-2",
+                        children: sampleExpressions.map((expr, index)=>{
+                            const isJitCompatible = index < 3; // 最初の3つがJIT対応
+                            return /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
+                                onClick: ()=>setCode(expr),
+                                disabled: disabled || loading || benchmarking,
+                                className: `px-3 py-1 text-xs rounded-md disabled:opacity-50 transition-colors ${isJitCompatible ? 'bg-cyan-700 hover:bg-cyan-600 text-cyan-100' : 'bg-orange-700 hover:bg-orange-600 text-orange-100'}`,
+                                children: [
+                                    isJitCompatible ? '🚀' : '🐌',
+                                    " ",
+                                    expr
+                                ]
+                            }, index, true, {
+                                fileName: "[project]/app/components/ExecutionPanel.tsx",
+                                lineNumber: 133,
+                                columnNumber: 15
+                            }, this);
+                        })
+                    }, void 0, false, {
+                        fileName: "[project]/app/components/ExecutionPanel.tsx",
+                        lineNumber: 129,
+                        columnNumber: 9
+                    }, this)
+                ]
+            }, void 0, true, {
+                fileName: "[project]/app/components/ExecutionPanel.tsx",
+                lineNumber: 123,
                 columnNumber: 7
             }, this),
             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -45,27 +172,37 @@ function ExecutionPanel({ onExecute, disabled }) {
                 children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("textarea", {
                     value: code,
                     onChange: (e)=>setCode(e.target.value),
-                    disabled: disabled || loading,
+                    disabled: disabled || loading || benchmarking,
                     className: "w-full h-24 px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg text-white font-mono",
-                    placeholder: "例: x = 42; x * 2 + 10"
+                    placeholder: "🚀 JIT対応: x = 100; x * x + 50 * 25  |  🐌 関数: fib(30)"
                 }, void 0, false, {
                     fileName: "[project]/app/components/ExecutionPanel.tsx",
-                    lineNumber: 35,
+                    lineNumber: 151,
                     columnNumber: 9
                 }, this)
             }, void 0, false, {
                 fileName: "[project]/app/components/ExecutionPanel.tsx",
-                lineNumber: 34,
+                lineNumber: 150,
                 columnNumber: 7
             }, this),
             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
                 onClick: handleExecute,
-                disabled: disabled || loading || !code.trim(),
-                className: "w-full py-3 bg-gradient-to-r from-cyan-600 to-purple-600 text-white font-medium rounded-lg disabled:opacity-50",
+                disabled: disabled || loading || !code.trim() || benchmarking,
+                className: "w-full py-3 bg-gradient-to-r from-cyan-600 to-purple-600 text-white font-medium rounded-lg disabled:opacity-50 mb-2",
                 children: loading ? '実行中...' : '実行'
             }, void 0, false, {
                 fileName: "[project]/app/components/ExecutionPanel.tsx",
-                lineNumber: 44,
+                lineNumber: 160,
+                columnNumber: 7
+            }, this),
+            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
+                onClick: handleBenchmark,
+                disabled: disabled || benchmarking || !code.trim() || loading,
+                className: "w-full py-3 bg-gradient-to-r from-orange-600 to-red-600 text-white font-medium rounded-lg disabled:opacity-50",
+                children: benchmarking ? 'ベンチマーク実行中... (20回)' : '🚀 ベンチマーク実行'
+            }, void 0, false, {
+                fileName: "[project]/app/components/ExecutionPanel.tsx",
+                lineNumber: 168,
                 columnNumber: 7
             }, this),
             result && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -79,39 +216,120 @@ function ExecutionPanel({ onExecute, disabled }) {
                         ]
                     }, void 0, true, {
                         fileName: "[project]/app/components/ExecutionPanel.tsx",
-                        lineNumber: 54,
+                        lineNumber: 178,
                         columnNumber: 11
                     }, this),
                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
                         className: "text-cyan-300",
                         children: [
                             "実行時間: ",
-                            result.execution_time_ns,
-                            " ns"
+                            (result.execution_time_ns / 1000).toFixed(1),
+                            " μs"
                         ]
                     }, void 0, true, {
                         fileName: "[project]/app/components/ExecutionPanel.tsx",
-                        lineNumber: 55,
+                        lineNumber: 179,
                         columnNumber: 11
                     }, this),
                     result.was_jit_compiled && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
                         className: "text-purple-300",
-                        children: "JIT Compiled"
+                        children: "⚡ JIT Compiled"
                     }, void 0, false, {
                         fileName: "[project]/app/components/ExecutionPanel.tsx",
-                        lineNumber: 56,
+                        lineNumber: 180,
                         columnNumber: 39
                     }, this)
                 ]
             }, void 0, true, {
                 fileName: "[project]/app/components/ExecutionPanel.tsx",
-                lineNumber: 53,
+                lineNumber: 177,
+                columnNumber: 9
+            }, this),
+            benchmarkResult && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                className: "mt-6 p-4 bg-blue-900/30 border border-blue-700 rounded-lg",
+                children: [
+                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("h3", {
+                        className: "text-white font-bold mb-2",
+                        children: "📊 ベンチマーク結果"
+                    }, void 0, false, {
+                        fileName: "[project]/app/components/ExecutionPanel.tsx",
+                        lineNumber: 186,
+                        columnNumber: 11
+                    }, this),
+                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                        className: "grid grid-cols-2 gap-2 text-sm",
+                        children: [
+                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
+                                className: "text-cyan-300",
+                                children: [
+                                    "総実行回数: ",
+                                    benchmarkResult.totalExecutions
+                                ]
+                            }, void 0, true, {
+                                fileName: "[project]/app/components/ExecutionPanel.tsx",
+                                lineNumber: 188,
+                                columnNumber: 13
+                            }, this),
+                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
+                                className: "text-green-300",
+                                children: [
+                                    "平均実行時間: ",
+                                    (benchmarkResult.averageTime / 1000).toFixed(1),
+                                    " μs"
+                                ]
+                            }, void 0, true, {
+                                fileName: "[project]/app/components/ExecutionPanel.tsx",
+                                lineNumber: 189,
+                                columnNumber: 13
+                            }, this),
+                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
+                                className: "text-purple-300",
+                                children: [
+                                    "JIT実行: ",
+                                    benchmarkResult.jitExecutions,
+                                    "回"
+                                ]
+                            }, void 0, true, {
+                                fileName: "[project]/app/components/ExecutionPanel.tsx",
+                                lineNumber: 190,
+                                columnNumber: 13
+                            }, this),
+                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
+                                className: "text-orange-300",
+                                children: [
+                                    "インタープリター: ",
+                                    benchmarkResult.interpreterExecutions,
+                                    "回"
+                                ]
+                            }, void 0, true, {
+                                fileName: "[project]/app/components/ExecutionPanel.tsx",
+                                lineNumber: 191,
+                                columnNumber: 13
+                            }, this)
+                        ]
+                    }, void 0, true, {
+                        fileName: "[project]/app/components/ExecutionPanel.tsx",
+                        lineNumber: 187,
+                        columnNumber: 11
+                    }, this),
+                    benchmarkResult.jitExecutions > 0 && benchmarkResult.interpreterExecutions > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                        className: "mt-3 p-2 bg-yellow-900/30 border border-yellow-700 rounded text-yellow-300 text-sm",
+                        children: "💡 性能改善: JITコンパイル後に実行時間が大幅に短縮されました！"
+                    }, void 0, false, {
+                        fileName: "[project]/app/components/ExecutionPanel.tsx",
+                        lineNumber: 194,
+                        columnNumber: 13
+                    }, this)
+                ]
+            }, void 0, true, {
+                fileName: "[project]/app/components/ExecutionPanel.tsx",
+                lineNumber: 185,
                 columnNumber: 9
             }, this)
         ]
     }, void 0, true, {
         fileName: "[project]/app/components/ExecutionPanel.tsx",
-        lineNumber: 31,
+        lineNumber: 119,
         columnNumber: 5
     }, this);
 }
@@ -181,6 +399,7 @@ function StatsPanel({ stats }) {
     const jitRatio = stats.total_executions > 0 ? (stats.jit_compilations / stats.total_executions * 100).toFixed(1) : '0.0';
     return /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
         className: "bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-6",
+        "data-testid": "stats-panel",
         children: [
             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("h2", {
                 className: "text-2xl font-bold text-white mb-6 flex items-center gap-2",
@@ -230,6 +449,7 @@ function StatsPanel({ stats }) {
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
                                                 className: "text-cyan-300 font-mono font-bold text-lg",
+                                                "data-testid": "total-executions",
                                                 children: stats.total_executions.toLocaleString()
                                             }, void 0, false, {
                                                 fileName: "[project]/app/components/StatsPanel.tsx",
@@ -1602,16 +1822,20 @@ function JitDashboard() {
             });
             if (response.ok) {
                 const result = await response.json();
-                // パフォーマンス履歴に追加
-                setPerformanceHistory((prev)=>[
+                // パフォーマンス履歴に追加（最新30件のみ保持してメモリ使用量を抑制）
+                setPerformanceHistory((prev)=>{
+                    const newEntry = {
+                        timestamp: Date.now(),
+                        execution_time: result.execution_time_ns,
+                        was_jit_compiled: result.was_jit_compiled
+                    };
+                    const updated = [
                         ...prev,
-                        {
-                            timestamp: Date.now(),
-                            execution_time: result.execution_time_ns,
-                            was_jit_compiled: result.was_jit_compiled
-                        }
-                    ].slice(-50)); // 最新50件のみ保持
-                // 統計情報とキャッシュ情報を更新
+                        newEntry
+                    ];
+                    return updated.slice(-30); // 最新30件のみ保持
+                });
+                // 統計情報とキャッシュ情報を更新（実行直後のみ）
                 await Promise.all([
                     fetchStats(),
                     fetchCache()
@@ -1650,9 +1874,10 @@ function JitDashboard() {
         fetchCache();
         const interval = setInterval(()=>{
             checkConnection();
+            // 統計とキャッシュの自動更新頻度を10秒に減らす
             fetchStats();
             fetchCache();
-        }, 2000); // 2秒間隔
+        }, 10000); // 10秒間隔に変更
         return ()=>clearInterval(interval);
     }, []);
     return /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1668,7 +1893,7 @@ function JitDashboard() {
                             children: "Day62 - Rust JIT コンパイラ Dashboard"
                         }, void 0, false, {
                             fileName: "[project]/app/page.tsx",
-                            lineNumber: 166,
+                            lineNumber: 168,
                             columnNumber: 11
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1676,12 +1901,14 @@ function JitDashboard() {
                             children: [
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
                                     className: "flex items-center gap-2",
+                                    "data-testid": "connection-status",
                                     children: [
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                                            className: `w-3 h-3 rounded-full ${isConnected ? 'bg-green-400 animate-pulse' : 'bg-red-400'}`
+                                            className: `w-3 h-3 rounded-full ${isConnected ? 'bg-green-400 animate-pulse' : 'bg-red-400'}`,
+                                            "data-testid": "connection-indicator"
                                         }, void 0, false, {
                                             fileName: "[project]/app/page.tsx",
-                                            lineNumber: 171,
+                                            lineNumber: 173,
                                             columnNumber: 15
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -1689,13 +1916,13 @@ function JitDashboard() {
                                             children: isConnected ? 'Backend Connected' : 'Backend Disconnected'
                                         }, void 0, false, {
                                             fileName: "[project]/app/page.tsx",
-                                            lineNumber: 174,
+                                            lineNumber: 179,
                                             columnNumber: 15
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/app/page.tsx",
-                                    lineNumber: 170,
+                                    lineNumber: 172,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
@@ -1704,19 +1931,19 @@ function JitDashboard() {
                                     children: "統計リセット"
                                 }, void 0, false, {
                                     fileName: "[project]/app/page.tsx",
-                                    lineNumber: 178,
+                                    lineNumber: 183,
                                     columnNumber: 13
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/app/page.tsx",
-                            lineNumber: 169,
+                            lineNumber: 171,
                             columnNumber: 11
                         }, this)
                     ]
                 }, void 0, true, {
                     fileName: "[project]/app/page.tsx",
-                    lineNumber: 165,
+                    lineNumber: 167,
                     columnNumber: 9
                 }, this),
                 !isConnected && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1727,7 +1954,7 @@ function JitDashboard() {
                             "⚠️ バックエンドサーバーに接続できません。",
                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("br", {}, void 0, false, {
                                 fileName: "[project]/app/page.tsx",
-                                lineNumber: 190,
+                                lineNumber: 195,
                                 columnNumber: 37
                             }, this),
                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("code", {
@@ -1735,19 +1962,19 @@ function JitDashboard() {
                                 children: "cd backend && cargo run server"
                             }, void 0, false, {
                                 fileName: "[project]/app/page.tsx",
-                                lineNumber: 191,
+                                lineNumber: 196,
                                 columnNumber: 15
                             }, this),
                             " でサーバーを起動してください。"
                         ]
                     }, void 0, true, {
                         fileName: "[project]/app/page.tsx",
-                        lineNumber: 189,
+                        lineNumber: 194,
                         columnNumber: 13
                     }, this)
                 }, void 0, false, {
                     fileName: "[project]/app/page.tsx",
-                    lineNumber: 188,
+                    lineNumber: 193,
                     columnNumber: 11
                 }, this),
                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1761,20 +1988,20 @@ function JitDashboard() {
                                     disabled: !isConnected
                                 }, void 0, false, {
                                     fileName: "[project]/app/page.tsx",
-                                    lineNumber: 200,
+                                    lineNumber: 205,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$app$2f$components$2f$StatsPanel$2e$tsx__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["default"], {
                                     stats: stats
                                 }, void 0, false, {
                                     fileName: "[project]/app/page.tsx",
-                                    lineNumber: 204,
+                                    lineNumber: 209,
                                     columnNumber: 13
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/app/page.tsx",
-                            lineNumber: 199,
+                            lineNumber: 204,
                             columnNumber: 11
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1784,37 +2011,37 @@ function JitDashboard() {
                                     data: performanceHistory
                                 }, void 0, false, {
                                     fileName: "[project]/app/page.tsx",
-                                    lineNumber: 209,
+                                    lineNumber: 214,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$app$2f$components$2f$CachePanel$2e$tsx__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["default"], {
                                     cache: cache
                                 }, void 0, false, {
                                     fileName: "[project]/app/page.tsx",
-                                    lineNumber: 210,
+                                    lineNumber: 215,
                                     columnNumber: 13
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/app/page.tsx",
-                            lineNumber: 208,
+                            lineNumber: 213,
                             columnNumber: 11
                         }, this)
                     ]
                 }, void 0, true, {
                     fileName: "[project]/app/page.tsx",
-                    lineNumber: 197,
+                    lineNumber: 202,
                     columnNumber: 9
                 }, this)
             ]
         }, void 0, true, {
             fileName: "[project]/app/page.tsx",
-            lineNumber: 163,
+            lineNumber: 165,
             columnNumber: 7
         }, this)
     }, void 0, false, {
         fileName: "[project]/app/page.tsx",
-        lineNumber: 162,
+        lineNumber: 164,
         columnNumber: 5
     }, this);
 }

@@ -103,17 +103,18 @@ export default function JitDashboard() {
       if (response.ok) {
         const result = await response.json();
 
-        // パフォーマンス履歴に追加
-        setPerformanceHistory(prev => [
-          ...prev,
-          {
+        // パフォーマンス履歴に追加（最新30件のみ保持してメモリ使用量を抑制）
+        setPerformanceHistory(prev => {
+          const newEntry = {
             timestamp: Date.now(),
             execution_time: result.execution_time_ns,
             was_jit_compiled: result.was_jit_compiled,
-          }
-        ].slice(-50)); // 最新50件のみ保持
+          };
+          const updated = [...prev, newEntry];
+          return updated.slice(-30); // 最新30件のみ保持
+        });
 
-        // 統計情報とキャッシュ情報を更新
+        // 統計情報とキャッシュ情報を更新（実行直後のみ）
         await Promise.all([fetchStats(), fetchCache()]);
 
         return result;
@@ -151,9 +152,10 @@ export default function JitDashboard() {
 
     const interval = setInterval(() => {
       checkConnection();
+      // 統計とキャッシュの自動更新頻度を10秒に減らす
       fetchStats();
       fetchCache();
-    }, 2000); // 2秒間隔
+    }, 10000); // 10秒間隔に変更
 
     return () => clearInterval(interval);
   }, []);

@@ -2,7 +2,6 @@
 
 use crate::jit::JitCompiler;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::io::prelude::*;
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};

@@ -1,11 +1,10 @@
+mod api;
 mod ast;
-mod lexer;
-mod parser;
 mod interpreter;
 mod jit;
-mod api;
+mod lexer;
+mod parser;
 
-use ast::*;
 use interpreter::Interpreter;
 use parser::Parser;
 use jit::JitCompiler;
