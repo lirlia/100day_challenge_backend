@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { useQuantumStore } from '@/lib/store';
 import { performanceMonitor } from '@/lib/performance/monitor';
 import { isWebGLAvailable } from '@/lib/webgl-detector';
-import FallbackCanvas from './FallbackCanvas';
+import { webglManager } from '@/lib/webgl-manager';
 
 interface QuantumParticle {
   position: THREE.Vector3;
@@ -20,13 +20,12 @@ interface QuantumParticle {
 export default function QuantumParticles() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
-  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const particlesRef = useRef<QuantumParticle[]>([]);
   const geometryRef = useRef<THREE.BufferGeometry | null>(null);
   const materialRef = useRef<THREE.ShaderMaterial | null>(null);
   const pointsRef = useRef<THREE.Points | null>(null);
-  const animationIdRef = useRef<number | null>(null);
+  const cleanupRef = useRef<(() => void) | null>(null);
 
   const { effectParams, interactions, isPlaying } = useQuantumStore();
 
@@ -109,17 +108,53 @@ export default function QuantumParticles() {
     camera.position.z = 50;
     cameraRef.current = camera;
 
-    // Renderer
-    const renderer = new THREE.WebGLRenderer({
-      canvas: canvasRef.current,
-      antialias: true,
-      alpha: true,
-    });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    rendererRef.current = renderer;
+    // WebGLマネージャーからレンダラーを取得
+    const renderer = webglManager.getRenderer(canvasRef.current);
 
-    console.log('🌌 Quantum Particles engine initialized');
+    // エフェクトを登録
+    const cleanup = () => {
+      if (sceneRef.current && pointsRef.current) {
+        sceneRef.current.remove(pointsRef.current);
+      }
+      if (geometryRef.current) {
+        geometryRef.current.dispose();
+        geometryRef.current = null;
+      }
+      if (materialRef.current) {
+        materialRef.current.dispose();
+        materialRef.current = null;
+      }
+      pointsRef.current = null;
+      particlesRef.current = [];
+    };
+
+    const updateFunction = (deltaTime: number) => {
+      updateQuantumPhysics(deltaTime);
+
+      // シェーダーユニフォーム更新
+      if (materialRef.current) {
+        materialRef.current.uniforms.time.value += deltaTime;
+        materialRef.current.uniforms.mousePos.value.set(
+          interactions.mousePosition.x / window.innerWidth,
+          interactions.mousePosition.y / window.innerHeight
+        );
+        materialRef.current.uniforms.intensity.value = effectParams.intensity;
+      }
+
+      // カメラ回転
+      if (cameraRef.current) {
+        cameraRef.current.position.x = Math.cos(performance.now() * 0.0005) * 50;
+        cameraRef.current.position.z = Math.sin(performance.now() * 0.0005) * 50;
+        cameraRef.current.lookAt(0, 0, 0);
+      }
+    };
+
+    webglManager.registerEffect('quantum-particles', scene, camera, cleanup, updateFunction);
+    webglManager.setActiveEffect('quantum-particles');
+    webglManager.startAnimation();
+    cleanupRef.current = cleanup;
+
+    console.log('🌌 Quantum Particles engine initialized with WebGL Manager');
   }, []);
 
   // 量子粒子生成
@@ -323,84 +358,43 @@ export default function QuantumParticles() {
     geometryRef.current.attributes.superposition.needsUpdate = true;
   }, [effectParams.speed, effectParams.interactionSensitivity, interactions]);
 
-  // アニメーションループ
-  const animate = useCallback(() => {
-    if (!isPlaying) return;
 
-    performanceMonitor.frameStart();
-
-    const deltaTime = 0.016; // 60fps想定
-
-    // 量子物理更新
-    updateQuantumPhysics(deltaTime);
-
-    // シェーダーユニフォーム更新
-    if (materialRef.current) {
-      materialRef.current.uniforms.time.value += deltaTime;
-      materialRef.current.uniforms.mousePos.value.set(
-        interactions.mousePosition.x / window.innerWidth,
-        interactions.mousePosition.y / window.innerHeight
-      );
-      materialRef.current.uniforms.intensity.value = effectParams.intensity;
-    }
-
-    // カメラ回転
-    if (cameraRef.current) {
-      cameraRef.current.position.x = Math.cos(performance.now() * 0.0005) * 50;
-      cameraRef.current.position.z = Math.sin(performance.now() * 0.0005) * 50;
-      cameraRef.current.lookAt(0, 0, 0);
-    }
-
-    // レンダリング
-    if (rendererRef.current && sceneRef.current && cameraRef.current) {
-      rendererRef.current.render(sceneRef.current, cameraRef.current);
-    }
-
-    performanceMonitor.frameEnd();
-    animationIdRef.current = requestAnimationFrame(animate);
-  }, [isPlaying, updateQuantumPhysics, effectParams.intensity, interactions]);
 
   // 初期化
   useEffect(() => {
+    console.log('🌌 Quantum Particles: Initializing component');
+
+    // パフォーマンスモニターをグローバルに設定
+    (window as any).performanceMonitor = performanceMonitor;
+
     initThreeJS();
     createQuantumParticles();
     createParticleGeometry();
 
-    // アニメーション開始
-    animationIdRef.current = requestAnimationFrame(animate);
-
     // ウィンドウリサイズ処理
     const handleResize = () => {
-      if (!cameraRef.current || !rendererRef.current) return;
-
-      cameraRef.current.aspect = window.innerWidth / window.innerHeight;
-      cameraRef.current.updateProjectionMatrix();
-      rendererRef.current.setSize(window.innerWidth, window.innerHeight);
+      webglManager.handleResize();
     };
 
     window.addEventListener('resize', handleResize);
 
     return () => {
-      if (animationIdRef.current) {
-        cancelAnimationFrame(animationIdRef.current);
-      }
+      console.log('🌌 Quantum Particles: Cleaning up component');
+
       window.removeEventListener('resize', handleResize);
 
-      // Three.js cleanup
-      if (sceneRef.current && pointsRef.current) {
-        sceneRef.current.remove(pointsRef.current);
+      // WebGLマネージャークリーンアップ
+      webglManager.unregisterEffect('quantum-particles');
+      if (cleanupRef.current) {
+        cleanupRef.current();
+        cleanupRef.current = null;
       }
-      if (geometryRef.current) {
-        geometryRef.current.dispose();
-      }
-      if (materialRef.current) {
-        materialRef.current.dispose();
-      }
-      if (rendererRef.current) {
-        rendererRef.current.dispose();
-      }
+
+      // Clear refs
+      sceneRef.current = null;
+      cameraRef.current = null;
     };
-  }, [initThreeJS, createQuantumParticles, createParticleGeometry, animate]);
+  }, []); // 空の依存配列で初期化は一度だけ
 
   // エフェクトパラメータ変更時の更新
   useEffect(() => {
@@ -408,21 +402,22 @@ export default function QuantumParticles() {
       createQuantumParticles();
       createParticleGeometry();
     }
-  }, [effectParams.particleCount, createQuantumParticles, createParticleGeometry]);
+  }, [effectParams.particleCount]);
 
   // アニメーション再開/停止
   useEffect(() => {
-    if (isPlaying && !animationIdRef.current) {
-      animationIdRef.current = requestAnimationFrame(animate);
-    } else if (!isPlaying && animationIdRef.current) {
-      cancelAnimationFrame(animationIdRef.current);
-      animationIdRef.current = null;
-    }
-  }, [isPlaying, animate]);
+    webglManager.setPlaying(isPlaying);
+  }, [isPlaying]);
 
   // WebGL利用可能性チェック
   if (!isWebGLAvailable()) {
-    return <FallbackCanvas />;
+    return <div className="w-full h-full bg-black flex items-center justify-center text-white">
+      <div className="text-center">
+        <div className="text-6xl mb-4">⚠️</div>
+        <div className="text-xl">WebGL not available</div>
+        <div className="text-sm text-white/60 mt-2">Please enable WebGL in your browser</div>
+      </div>
+    </div>;
   }
 
   return (

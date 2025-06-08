@@ -3,6 +3,7 @@
 import { useRef, useEffect } from 'react'
 import * as THREE from 'three'
 import { useQuantumStore } from '@/lib/store'
+import { webglManager } from '@/lib/webgl-manager'
 
 interface FluidParticle {
   position: THREE.Vector3
@@ -36,11 +37,10 @@ interface FluidGrid {
 }
 
 export default function FluidDynamics() {
-  const mountRef = useRef<HTMLDivElement>(null)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
   const sceneRef = useRef<THREE.Scene | null>(null)
-  const rendererRef = useRef<THREE.WebGLRenderer | null>(null)
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null)
-  const animationRef = useRef<number | null>(null)
+  const cleanupRef = useRef<(() => void) | null>(null)
 
   const fluidParticlesRef = useRef<FluidParticle[]>([])
   const vorticityFieldsRef = useRef<VorticityField[]>([])
@@ -60,8 +60,6 @@ export default function FluidDynamics() {
   const updatePerformance = useQuantumStore((state) => state.updatePerformance)
 
   useEffect(() => {
-    if (!mountRef.current) return
-
     // Scene setup for fluid simulation
     const scene = new THREE.Scene()
     scene.background = new THREE.Color(0x001122)
@@ -71,21 +69,12 @@ export default function FluidDynamics() {
     // Camera setup
     const camera = new THREE.PerspectiveCamera(
       60,
-      mountRef.current.clientWidth / mountRef.current.clientHeight,
+      window.innerWidth / window.innerHeight,
       0.1,
       500
     )
     camera.position.set(0, 40, 80)
     cameraRef.current = camera
-
-    // Renderer setup
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
-    renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight)
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
-    renderer.shadowMap.enabled = true
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap
-    mountRef.current.appendChild(renderer.domElement)
-    rendererRef.current = renderer
 
     // Setup fluid lighting
     setupFluidLighting()
@@ -96,44 +85,50 @@ export default function FluidDynamics() {
     createFlowFieldVisualization()
     createDensityVisualization()
 
-    const animate = () => {
-      if (!isPlaying) {
-        animationRef.current = requestAnimationFrame(animate)
-        return
+    // クリーンアップ関数を定義
+    const cleanup = () => {
+      fluidParticlesRef.current = []
+      vorticityFieldsRef.current = []
+      if (particleMeshRef.current) {
+        sceneRef.current?.remove(particleMeshRef.current)
+        particleMeshRef.current = null
       }
+      if (densityVisualizationRef.current) {
+        sceneRef.current?.remove(densityVisualizationRef.current)
+        densityVisualizationRef.current = null
+      }
+      flowFieldMeshRef.current.forEach(mesh => {
+        sceneRef.current?.remove(mesh)
+      })
+      flowFieldMeshRef.current = []
+    }
 
+    // アップデート関数を定義
+    const updateFunction = (deltaTime: number) => {
       updateFluidSimulation()
       updateVorticityConfinement()
       updateFlowFieldVisualization()
       updateDensityVisualization()
       updateFluidLighting()
       updateCameraFlow()
-
-      if (cameraRef.current && sceneRef.current && rendererRef.current) {
-        rendererRef.current.render(sceneRef.current, cameraRef.current)
-      }
-
-      updatePerformance({
-        fps: 60,
-        memoryUsage: (performance as any).memory?.usedJSHeapSize / 1024 / 1024 || 0,
-        particleCount: fluidParticlesRef.current.length
-      })
-
-      animationRef.current = requestAnimationFrame(animate)
     }
 
-    animate()
+    // WebGLマネージャーにエフェクトを登録
+    webglManager.registerEffect('fluid-dynamics', scene, camera, cleanup, updateFunction)
+    webglManager.setActiveEffect('fluid-dynamics')
+    webglManager.startAnimation()
+    cleanupRef.current = cleanup
 
     return () => {
-      if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current)
+      webglManager.unregisterEffect('fluid-dynamics')
+      if (cleanupRef.current) {
+        cleanupRef.current()
+        cleanupRef.current = null
       }
-      if (mountRef.current && renderer.domElement) {
-        mountRef.current.removeChild(renderer.domElement)
-      }
-      renderer.dispose()
+      sceneRef.current = null
+      cameraRef.current = null
     }
-  }, [isPlaying, updatePerformance])
+  }, [])
 
   const setupFluidLighting = () => {
     if (!sceneRef.current) return
@@ -741,5 +736,16 @@ export default function FluidDynamics() {
     return (45 / (Math.PI * Math.pow(radius, 6))) * (radius - distance)
   }
 
-  return <div ref={mountRef} className="w-full h-full" />
+  return <canvas
+    ref={canvasRef}
+    className="screensaver-canvas"
+    style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      width: '100vw',
+      height: '100vh',
+      zIndex: 1,
+    }}
+  />
 }

@@ -4,7 +4,7 @@ import { useRef, useEffect } from 'react'
 import * as THREE from 'three'
 import { useQuantumStore } from '@/lib/store'
 import { isWebGLAvailable } from '@/lib/webgl-detector'
-import FallbackCanvas from './FallbackCanvas'
+import { webglManager } from '@/lib/webgl-manager'
 
 interface Node {
   position: THREE.Vector3
@@ -24,11 +24,10 @@ interface Connection {
 }
 
 export default function NeuralFlow() {
-  const mountRef = useRef<HTMLDivElement>(null)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
   const sceneRef = useRef<THREE.Scene | null>(null)
-  const rendererRef = useRef<THREE.WebGLRenderer | null>(null)
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null)
-  const animationRef = useRef<number | null>(null)
+  const cleanupRef = useRef<(() => void) | null>(null)
   const nodesRef = useRef<Node[]>([])
   const connectionsRef = useRef<Connection[]>([])
   const nodeMeshesRef = useRef<THREE.Mesh[]>([])
@@ -39,8 +38,6 @@ export default function NeuralFlow() {
   const updatePerformance = useQuantumStore((state) => state.updatePerformance)
 
   useEffect(() => {
-    if (!mountRef.current) return
-
     // Scene setup
     const scene = new THREE.Scene()
     scene.background = new THREE.Color(0x000811)
@@ -49,62 +46,56 @@ export default function NeuralFlow() {
     // Camera setup
     const camera = new THREE.PerspectiveCamera(
       75,
-      mountRef.current.clientWidth / mountRef.current.clientHeight,
+      window.innerWidth / window.innerHeight,
       0.1,
       1000
     )
     camera.position.set(0, 0, 20)
     cameraRef.current = camera
 
-    // Renderer setup
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
-    renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight)
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
-    mountRef.current.appendChild(renderer.domElement)
-    rendererRef.current = renderer
-
     // Create neural network
     initializeNeuralNetwork()
 
-    const animate = () => {
-      if (!isPlaying) {
-        animationRef.current = requestAnimationFrame(animate)
-        return
-      }
+    // クリーンアップ関数を定義
+    const cleanup = () => {
+      nodeMeshesRef.current.forEach(mesh => sceneRef.current?.remove(mesh))
+      connectionLinesRef.current.forEach(line => sceneRef.current?.remove(line))
+      nodeMeshesRef.current = []
+      connectionLinesRef.current = []
+      nodesRef.current = []
+      connectionsRef.current = []
+    }
 
+    // アップデート関数を定義
+    const updateFunction = (deltaTime: number) => {
       updateNeuralNetwork()
       updateConnections()
 
-      if (cameraRef.current && sceneRef.current && rendererRef.current) {
+      // Camera animation
+      if (cameraRef.current) {
         const time = Date.now() * 0.0005
         cameraRef.current.position.x = Math.cos(time) * 25
         cameraRef.current.position.z = Math.sin(time) * 25
         cameraRef.current.lookAt(0, 0, 0)
-
-        rendererRef.current.render(sceneRef.current, cameraRef.current)
       }
-
-      updatePerformance({
-        fps: 60,
-        memoryUsage: (performance as any).memory?.usedJSHeapSize / 1024 / 1024 || 0,
-        particleCount: nodesRef.current.length
-      })
-
-      animationRef.current = requestAnimationFrame(animate)
     }
 
-    animate()
+    // WebGLマネージャーにエフェクトを登録
+    webglManager.registerEffect('neural-flow', scene, camera, cleanup, updateFunction)
+    webglManager.setActiveEffect('neural-flow')
+    webglManager.startAnimation()
+    cleanupRef.current = cleanup
 
     return () => {
-      if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current)
+      webglManager.unregisterEffect('neural-flow')
+      if (cleanupRef.current) {
+        cleanupRef.current()
+        cleanupRef.current = null
       }
-      if (mountRef.current && renderer.domElement) {
-        mountRef.current.removeChild(renderer.domElement)
-      }
-      renderer.dispose()
+      sceneRef.current = null
+      cameraRef.current = null
     }
-  }, [isPlaying, updatePerformance])
+  }, [])
 
   const initializeNeuralNetwork = () => {
     if (!sceneRef.current) return
@@ -258,8 +249,25 @@ export default function NeuralFlow() {
 
   // WebGL利用可能性チェック
   if (!isWebGLAvailable()) {
-    return <FallbackCanvas />;
+    return <div className="w-full h-full bg-black flex items-center justify-center text-white">
+      <div className="text-center">
+        <div className="text-6xl mb-4">⚠️</div>
+        <div className="text-xl">WebGL not available</div>
+        <div className="text-sm text-white/60 mt-2">Please enable WebGL in your browser</div>
+      </div>
+    </div>;
   }
 
-  return <div ref={mountRef} className="w-full h-full" />
+  return <canvas
+    ref={canvasRef}
+    className="screensaver-canvas"
+    style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      width: '100vw',
+      height: '100vh',
+      zIndex: 1,
+    }}
+  />
 }

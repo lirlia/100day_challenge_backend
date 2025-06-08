@@ -3,6 +3,7 @@
 import { useRef, useEffect } from 'react'
 import * as THREE from 'three'
 import { useQuantumStore } from '@/lib/store'
+import { webglManager } from '@/lib/webgl-manager'
 
 interface FractalNode {
   position: THREE.Vector3
@@ -30,11 +31,10 @@ interface MandelbrotPoint {
 }
 
 export default function FractalUniverse() {
-  const mountRef = useRef<HTMLDivElement>(null)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
   const sceneRef = useRef<THREE.Scene | null>(null)
-  const rendererRef = useRef<THREE.WebGLRenderer | null>(null)
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null)
-  const animationRef = useRef<number | null>(null)
+  const cleanupRef = useRef<(() => void) | null>(null)
   const fractalTreeRef = useRef<FractalNode | null>(null)
   const fractalMeshesRef = useRef<THREE.Group[]>([])
   const mandelbrotPointsRef = useRef<MandelbrotPoint[]>([])
@@ -47,8 +47,6 @@ export default function FractalUniverse() {
   const updatePerformance = useQuantumStore((state) => state.updatePerformance)
 
   useEffect(() => {
-    if (!mountRef.current) return
-
     // Scene setup with fractal-appropriate environment
     const scene = new THREE.Scene()
     scene.background = new THREE.Color(0x000011)
@@ -58,21 +56,12 @@ export default function FractalUniverse() {
     // Camera setup for fractal exploration
     const camera = new THREE.PerspectiveCamera(
       60,
-      mountRef.current.clientWidth / mountRef.current.clientHeight,
+      window.innerWidth / window.innerHeight,
       0.01,
       1000
     )
     camera.position.set(0, 50, 100)
     cameraRef.current = camera
-
-    // Renderer setup
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
-    renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight)
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
-    renderer.toneMapping = THREE.ACESFilmicToneMapping
-    renderer.toneMappingExposure = 1.2
-    mountRef.current.appendChild(renderer.domElement)
-    rendererRef.current = renderer
 
     // Setup fractal lighting
     setupFractalLighting()
@@ -80,42 +69,44 @@ export default function FractalUniverse() {
     // Generate fractal universe
     generateFractalStructures()
 
-    const animate = () => {
-      if (!isPlaying) {
-        animationRef.current = requestAnimationFrame(animate)
-        return
+    // クリーンアップ関数を定義
+    const cleanup = () => {
+      fractalMeshesRef.current.forEach(mesh => sceneRef.current?.remove(mesh))
+      fractalMeshesRef.current = []
+      mandelbrotPointsRef.current = []
+      if (juliaSetRef.current) {
+        sceneRef.current?.remove(juliaSetRef.current)
+        juliaSetRef.current = null
       }
+      fractalTreeRef.current = null
+      zoomLevelRef.current = 1
+      fractalTimeRef.current = 0
+    }
 
+    // アップデート関数を定義
+    const updateFunction = (deltaTime: number) => {
       updateFractalEvolution()
       updateMandelbrotZoom()
       updateJuliaSet()
       updateCameraMovement()
-
-      if (cameraRef.current && sceneRef.current && rendererRef.current) {
-        rendererRef.current.render(sceneRef.current, cameraRef.current)
-      }
-
-      updatePerformance({
-        fps: 60,
-        memoryUsage: (performance as any).memory?.usedJSHeapSize / 1024 / 1024 || 0,
-        particleCount: fractalMeshesRef.current.length + mandelbrotPointsRef.current.length
-      })
-
-      animationRef.current = requestAnimationFrame(animate)
     }
 
-    animate()
+    // WebGLマネージャーにエフェクトを登録
+    webglManager.registerEffect('fractal-universe', scene, camera, cleanup, updateFunction)
+    webglManager.setActiveEffect('fractal-universe')
+    webglManager.startAnimation()
+    cleanupRef.current = cleanup
 
     return () => {
-      if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current)
+      webglManager.unregisterEffect('fractal-universe')
+      if (cleanupRef.current) {
+        cleanupRef.current()
+        cleanupRef.current = null
       }
-      if (mountRef.current && renderer.domElement) {
-        mountRef.current.removeChild(renderer.domElement)
-      }
-      renderer.dispose()
+      sceneRef.current = null
+      cameraRef.current = null
     }
-  }, [isPlaying, updatePerformance])
+  }, [])
 
   const setupFractalLighting = () => {
     if (!sceneRef.current) return
@@ -576,5 +567,16 @@ export default function FractalUniverse() {
     cameraRef.current.lookAt(0, 0, 0)
   }
 
-  return <div ref={mountRef} className="w-full h-full" />
+  return <canvas
+    ref={canvasRef}
+    className="screensaver-canvas"
+    style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      width: '100vw',
+      height: '100vh',
+      zIndex: 1,
+    }}
+  />
 }

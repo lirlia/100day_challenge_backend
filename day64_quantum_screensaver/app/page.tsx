@@ -175,29 +175,23 @@ export default function QuantumDreamScreensaver() {
           </WebGLErrorBoundary>
         );
       case 'audio-visualizer':
-        return <div className="flex items-center justify-center h-screen text-white">
-          <div className="text-center">
-            <div className="text-6xl mb-4">🎵</div>
-            <div className="text-xl">Audio Visualizer</div>
-            <div className="text-sm text-white/60 mt-2">Coming Soon...</div>
-          </div>
-        </div>;
+        return (
+          <WebGLErrorBoundary>
+            <AudioVisualizer />
+          </WebGLErrorBoundary>
+        );
       case 'motion-reactive':
-        return <div className="flex items-center justify-center h-screen text-white">
-          <div className="text-center">
-            <div className="text-6xl mb-4">👋</div>
-            <div className="text-xl">Motion Reactive</div>
-            <div className="text-sm text-white/60 mt-2">Coming Soon...</div>
-          </div>
-        </div>;
+        return (
+          <WebGLErrorBoundary>
+            <MotionReactive />
+          </WebGLErrorBoundary>
+        );
       case 'fluid-dynamics':
-        return <div className="flex items-center justify-center h-screen text-white">
-          <div className="text-center">
-            <div className="text-6xl mb-4">💧</div>
-            <div className="text-xl">Fluid Dynamics</div>
-            <div className="text-sm text-white/60 mt-2">Coming Soon...</div>
-          </div>
-        </div>;
+        return (
+          <WebGLErrorBoundary>
+            <FluidDynamics />
+          </WebGLErrorBoundary>
+        );
       default:
         return (
           <WebGLErrorBoundary>
