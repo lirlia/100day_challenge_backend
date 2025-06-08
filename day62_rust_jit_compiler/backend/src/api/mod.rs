@@ -7,6 +7,7 @@ use std::io::prelude::*;
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::{Duration, Instant};
 
 /// APIレスポンス用のJIT統計情報
 #[derive(Serialize, Debug)]
@@ -60,6 +61,25 @@ pub struct ErrorResponse {
 
 /// アプリケーションの状態
 pub type AppState = Arc<Mutex<JitCompiler>>;
+
+/// タイムアウト付きロック獲得ヘルパー
+fn try_lock_with_timeout<T>(
+    mutex: &Arc<Mutex<T>>,
+    timeout: Duration,
+) -> Result<std::sync::MutexGuard<T>, String> {
+    let start = Instant::now();
+    loop {
+        match mutex.try_lock() {
+            Ok(guard) => return Ok(guard),
+            Err(_) => {
+                if start.elapsed() > timeout {
+                    return Err("Lock timeout".to_string());
+                }
+                thread::sleep(Duration::from_millis(1));
+            }
+        }
+    }
+}
 
 /// HTTPサーバーを開始
 pub fn start_server(port: u16) -> std::io::Result<()> {
@@ -149,7 +169,7 @@ fn handle_health() -> String {
 
 /// 統計情報を取得
 fn handle_get_stats(jit_compiler: AppState) -> String {
-    match jit_compiler.lock() {
+    match try_lock_with_timeout(&jit_compiler, Duration::from_secs(5)) {
         Ok(jit) => {
             let stats = jit.get_stats();
             let cache_info = jit.get_jit_cache_info();
@@ -177,13 +197,13 @@ fn handle_get_stats(jit_compiler: AppState) -> String {
                 Err(_) => create_error_response(500, "JSON serialization failed"),
             }
         }
-        Err(_) => create_error_response(500, "Failed to acquire lock"),
+        Err(msg) => create_error_response(503, &msg),
     }
 }
 
 /// キャッシュ情報を取得
 fn handle_get_cache(jit_compiler: AppState) -> String {
-    match jit_compiler.lock() {
+    match try_lock_with_timeout(&jit_compiler, Duration::from_secs(5)) {
         Ok(jit) => {
             let cache_info = jit.get_jit_cache_info();
             let entries: Vec<CacheEntry> = cache_info
@@ -206,7 +226,7 @@ fn handle_get_cache(jit_compiler: AppState) -> String {
                 Err(_) => create_error_response(500, "JSON serialization failed"),
             }
         }
-        Err(_) => create_error_response(500, "Failed to acquire lock"),
+        Err(msg) => create_error_response(503, &msg),
     }
 }
 
@@ -218,7 +238,7 @@ fn handle_execute(body: String, jit_compiler: AppState) -> String {
         Err(_) => return create_error_response(400, "Invalid JSON"),
     };
 
-    match jit_compiler.lock() {
+    match try_lock_with_timeout(&jit_compiler, Duration::from_secs(10)) {
         Ok(mut jit) => {
             match jit.execute_string(&request.code) {
                 Ok(result) => {
@@ -241,13 +261,13 @@ fn handle_execute(body: String, jit_compiler: AppState) -> String {
                 Err(e) => create_error_response(400, &format!("Execution failed: {}", e)),
             }
         }
-        Err(_) => create_error_response(500, "Failed to acquire lock"),
+        Err(msg) => create_error_response(503, &msg),
     }
 }
 
 /// 統計をリセット
 fn handle_reset(jit_compiler: AppState) -> String {
-    match jit_compiler.lock() {
+    match try_lock_with_timeout(&jit_compiler, Duration::from_secs(5)) {
         Ok(mut jit) => {
             jit.reset_stats();
 
@@ -258,7 +278,7 @@ fn handle_reset(jit_compiler: AppState) -> String {
 
             create_http_response(200, "OK", &response.to_string())
         }
-        Err(_) => create_error_response(500, "Failed to acquire lock"),
+        Err(msg) => create_error_response(503, &msg),
     }
 }
 
@@ -306,6 +326,7 @@ fn create_error_response(status_code: u16, message: &str) -> String {
         400 => "Bad Request",
         404 => "Not Found",
         500 => "Internal Server Error",
+        503 => "Service Unavailable",
         _ => "Error",
     };
 

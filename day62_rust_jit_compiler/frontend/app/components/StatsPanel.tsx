@@ -33,7 +33,7 @@ export default function StatsPanel({ stats }: StatsPanelProps) {
     : '0.0';
 
   return (
-    <div className="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-6">
+    <div className="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-6" data-testid="stats-panel">
       <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
         <span className="text-blue-400">📊</span>
         JIT統計情報
@@ -49,7 +49,7 @@ export default function StatsPanel({ stats }: StatsPanelProps) {
           <div className="space-y-3">
             <div className="flex justify-between items-center">
               <span className="text-slate-400">総実行回数:</span>
-              <span className="text-cyan-300 font-mono font-bold text-lg">
+              <span className="text-cyan-300 font-mono font-bold text-lg" data-testid="total-executions">
                 {stats.total_executions.toLocaleString()}
               </span>
             </div>

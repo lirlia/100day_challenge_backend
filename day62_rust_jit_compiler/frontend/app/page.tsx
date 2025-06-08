@@ -167,10 +167,13 @@ export default function JitDashboard() {
             Day62 - Rust JIT コンパイラ Dashboard
           </h1>
           <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <div className={`w-3 h-3 rounded-full ${
-                isConnected ? 'bg-green-400 animate-pulse' : 'bg-red-400'
-              }`} />
+            <div className="flex items-center gap-2" data-testid="connection-status">
+              <div
+                className={`w-3 h-3 rounded-full ${
+                  isConnected ? 'bg-green-400 animate-pulse' : 'bg-red-400'
+                }`}
+                data-testid="connection-indicator"
+              />
               <span className="text-slate-300">
                 {isConnected ? 'Backend Connected' : 'Backend Disconnected'}
               </span>

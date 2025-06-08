@@ -25,6 +25,7 @@ pub enum TokenType {
     LeftParen,    // (
     RightParen,   // )
     Comma,        // ,
+    Semicolon,    // ;
 
     // キーワード
     If,
@@ -82,6 +83,7 @@ impl Lexer {
             '(' => TokenType::LeftParen,
             ')' => TokenType::RightParen,
             ',' => TokenType::Comma,
+            ';' => TokenType::Semicolon,
             '=' => {
                 if self.match_char('=') {
                     TokenType::EqualEqual

@@ -26,7 +26,12 @@ impl Parser {
 
     /// expression → assignment
     fn expression(&mut self) -> Result<Expr> {
-        self.assignment()
+        let expr = self.assignment()?;
+
+        // セミコロンをオプションで受け入れる（文の終端として）
+        self.match_token(&TokenType::Semicolon);
+
+        Ok(expr)
     }
 
     /// assignment → IDENTIFIER "=" assignment | logical_or
