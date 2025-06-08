@@ -24,7 +24,7 @@ func NewLayerExtractor(dataDir string) *LayerExtractor {
 
 // ExtractLayer extracts a single layer to a target directory
 func (e *LayerExtractor) ExtractLayer(layerPath, targetDir string) error {
-	fmt.Printf("  Extracting layer: %s\n", filepath.Base(layerPath))
+	// fmt.Printf("  Extracting layer: %s\n", filepath.Base(layerPath))
 
 	// Open the layer file
 	file, err := os.Open(layerPath)
@@ -55,9 +55,9 @@ func (e *LayerExtractor) ExtractLayer(layerPath, targetDir string) error {
 		}
 
 		fileCount++
-		if fileCount%100 == 0 {
-			fmt.Printf("    Processed %d files...\n", fileCount)
-		}
+		// if fileCount%100 == 0 {
+		// 	fmt.Printf("    Processed %d files...\n", fileCount)
+		// }
 
 		// Clean the target path
 		targetPath := filepath.Join(targetDir, header.Name)
@@ -65,7 +65,7 @@ func (e *LayerExtractor) ExtractLayer(layerPath, targetDir string) error {
 
 		// Security check: prevent directory traversal
 		if !strings.HasPrefix(targetPath, filepath.Clean(targetDir)+string(os.PathSeparator)) {
-			fmt.Printf("Warning: Skipping file outside target directory: %s\n", header.Name)
+			// fmt.Printf("Warning: Skipping file outside target directory: %s\n", header.Name)
 			continue
 		}
 
@@ -96,11 +96,11 @@ func (e *LayerExtractor) ExtractLayer(layerPath, targetDir string) error {
 
 		default:
 			// Skip unsupported file types
-			fmt.Printf("Warning: Skipping unsupported file type %c for %s\n", header.Typeflag, header.Name)
+			// fmt.Printf("Warning: Skipping unsupported file type %c for %s\n", header.Typeflag, header.Name)
 		}
 	}
 
-	fmt.Printf("  ✓ Extracted %d files from layer\n", fileCount)
+	// fmt.Printf("  ✓ Extracted %d files from layer\n", fileCount)
 	return nil
 }
 
@@ -181,11 +181,11 @@ func (e *LayerExtractor) BuildRootFS(imageRepo, imageTag string, layerDigests []
 	}
 
 	// Apply each layer in order
-	for i, digest := range layerDigests {
+	for _, digest := range layerDigests {
 		layerPath := filepath.Join(e.dataDir, "layers", digest+".tar.gz")
 
-		fmt.Printf("Applying layer %d/%d: %s\n", i+1, len(layerDigests), digest[:12]+"...")
-		fmt.Printf("Layer path: %s\n", layerPath)
+		// fmt.Printf("Applying layer %d/%d: %s\n", i+1, len(layerDigests), digest[:12]+"...")
+		// fmt.Printf("Layer path: %s\n", layerPath)
 
 		// Check if layer file exists
 		if _, err := os.Stat(layerPath); err != nil {
@@ -196,10 +196,10 @@ func (e *LayerExtractor) BuildRootFS(imageRepo, imageTag string, layerDigests []
 			return fmt.Errorf("failed to extract layer %s: %w", digest, err)
 		}
 
-		fmt.Printf("✓ Layer %d/%d extracted successfully\n", i+1, len(layerDigests))
+		// fmt.Printf("✓ Layer %d/%d extracted successfully\n", i+1, len(layerDigests))
 	}
 
-	fmt.Printf("✓ RootFS constructed with %d layers\n", len(layerDigests))
+	// fmt.Printf("✓ RootFS constructed with %d layers\n", len(layerDigests))
 
 	return nil
 }

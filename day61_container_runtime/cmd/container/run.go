@@ -35,7 +35,12 @@ Examples:
 			imgName, tag := parseImageName(imageName)
 
 			logVerbose("Running container from image: %s:%s", imgName, tag)
+			logVerbose("Raw args: %v", args)
 			logVerbose("Command: %v", command)
+			logDebug("Command length: %d", len(command))
+			for i, arg := range command {
+				logDebug("Command[%d]: '%s'", i, arg)
+			}
 
 			// TODO: Implement actual container run logic
 			return runContainer(imgName, tag, command, &ContainerRunOptions{
