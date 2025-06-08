@@ -5,6 +5,10 @@
 クラシックなクッキークリッカーゲームをNext.js + TypeScriptで実装したプロジェクトです。
 クッキーをクリックして数を稼ぎ、自動生産施設を購入してより効率的にクッキーを生産できるようになる放置系ゲームです。
 
+https://github.com/user-attachments/assets/1266ba9b-a2e5-4ad2-a48d-154c93564465
+
+[100日チャレンジ day62](https://zenn.dev/gin_nazo/scraps/460b3f6101908d)
+
 ## 主な機能
 
 ### 基本機能

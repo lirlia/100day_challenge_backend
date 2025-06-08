@@ -76,3 +76,4 @@ LLMで生成したコードを置いています。
 | Day59 | OAuth2/OpenID Connect Provider (Go)                                        | <video src="https://github.com/user-attachments/assets/fafc690f-df51-4163-8fd6-5ec0be43bf32">  |
 | Day60 | 独自OS作成 (C)                                                             | <video src="https://github.com/user-attachments/assets/fafc690f-df51-4163-8fd6-5ec0be43bf32">  |
 | Day61 | コンテナランタイム (Go)                                                    | <video src="https://github.com/user-attachments/assets/125060d6-ded4-4b60-9fc5-11dd72baca60">  |
+| Day62 | クッキークリッカーゲーム                                                   | <video src="https://github.com/user-attachments/assets/1266ba9b-a2e5-4ad2-a48d-154c93564465">  |
