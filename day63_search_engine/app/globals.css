@@ -205,3 +205,12 @@ pre, code {
     backdrop-filter: blur(8px);
   }
 }
+
+/* Search highlight styles */
+mark {
+  background-color: rgba(34, 197, 94, 0.2);
+  color: rgb(34, 197, 94);
+  padding: 2px 4px;
+  border-radius: 4px;
+  font-weight: 500;
+}
