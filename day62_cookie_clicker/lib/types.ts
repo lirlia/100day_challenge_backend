@@ -22,13 +22,13 @@ export interface Upgrade {
 }
 
 export interface UpgradeEffect {
-  type: 'click_multiplier' | 'cps_multiplier' | 'building_multiplier'
+  type: 'click_multiplier' | 'cps_multiplier' | 'building_multiplier' | 'global_multiplier'
   value: number
   buildingId?: string // building_multiplier の場合に指定
 }
 
 export interface UnlockCondition {
-  type: 'cookies_total' | 'cookies_clicked' | 'building_count' | 'cps'
+  type: 'cookies_total' | 'cookies_clicked' | 'building_count' | 'cps' | 'total_buildings'
   value: number
   buildingId?: string // building_count の場合に指定
 }
@@ -43,7 +43,7 @@ export interface Achievement {
 }
 
 export interface AchievementCondition {
-  type: 'cookies_total' | 'cookies_clicked' | 'building_count' | 'cps' | 'upgrades_purchased'
+  type: 'cookies_total' | 'cookies_clicked' | 'building_count' | 'cps' | 'upgrades_purchased' | 'total_buildings'
   value: number
   buildingId?: string
 }

@@ -168,6 +168,10 @@ export const useGame = (): GameHook => {
             const purchasedCount = prev.upgrades.filter(u => u.purchased).length
             conditionMet = purchasedCount >= value
             break
+          case 'total_buildings':
+            const totalBuildings = prev.buildings.reduce((sum, building) => sum + building.count, 0)
+            conditionMet = totalBuildings >= value
+            break
         }
 
         if (conditionMet && !achievement.unlocked) {

@@ -30,6 +30,9 @@ export default function UpgradesPanel({ gameState }: UpgradesPanelProps) {
         return false
       case 'cps':
         return gameState.cps >= value
+      case 'total_buildings':
+        const totalBuildings = gameState.buildings.reduce((sum, building) => sum + building.count, 0)
+        return totalBuildings >= value
       default:
         return false
     }
@@ -41,6 +44,9 @@ export default function UpgradesPanel({ gameState }: UpgradesPanelProps) {
         <h2 className="text-2xl font-bold mb-4 text-brown-800">⬆️ アップグレード ⬆️</h2>
         <div className="text-center text-gray-500">
           まだアップグレードは利用できません
+        </div>
+        <div className="text-xs text-gray-400 mt-2">
+          デバッグ: クリック数 {gameState.cookiesClicked}, 総アップグレード数 {gameState.upgrades.length}
         </div>
       </div>
     )
