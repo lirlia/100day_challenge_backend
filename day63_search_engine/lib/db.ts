@@ -205,6 +205,13 @@ function importSampleDataSync(): void {
   }
 }
 
+/**
+ * データベース接続インスタンスを取得
+ */
+export function getDb() {
+  return db;
+}
+
 // データベース接続をエクスポート
 export { db };
 
