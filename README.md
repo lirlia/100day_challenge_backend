@@ -75,3 +75,4 @@ LLMで生成したコードを置いています。
 | Day58 | LSM-Tree ストレージエンジン                                                | <video src="https://github.com/user-attachments/assets/571c4a51-a92f-4119-a43c-95922009916e" > |
 | Day59 | OAuth2/OpenID Connect Provider (Go)                                        | <video src="https://github.com/user-attachments/assets/fafc690f-df51-4163-8fd6-5ec0be43bf32">  |
 | Day60 | 独自OS作成 (C)                                                             | <video src="https://github.com/user-attachments/assets/fafc690f-df51-4163-8fd6-5ec0be43bf32">  |
+| Day61 | コンテナランタイム (Go)                                                    | <video src="https://github.com/user-attachments/assets/125060d6-ded4-4b60-9fc5-11dd72baca60">  |

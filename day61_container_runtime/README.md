@@ -2,7 +2,23 @@
 
 このプロジェクトは、Docker imageを実際にpullして実行できる簡易コンテナランタイムです。Go言語で実装し、Mac環境でも動作するように設計されています。
 
-[100日チャレンジ day61](https://zenn.dev/gin_nazo/scraps/xxxxx)
+https://github.com/user-attachments/assets/125060d6-ded4-4b60-9fc5-11dd72baca60
+
+[100日チャレンジ day61](https://zenn.dev/gin_nazo/scraps/1da74e59418edc)
+
+## プロジェクトステータス
+
+✅ **完成済み** - すべての主要機能が実装され、実際のDocker Hubからbusybox:latestの取得・実行に成功
+
+### 実装済み機能
+- ✅ Docker Registry API v2 による認証とimage pull
+- ✅ OCI Image Index (マルチアーキテクチャ) 対応
+- ✅ Docker image manifest v2 の解析
+- ✅ 圧縮layer (gzip) の展開とrootfs構築
+- ✅ Mac環境でのLinuxバイナリ実行シミュレーション
+- ✅ 完全なCLIインターフェース (pull, list, run, inspect)
+- ✅ ローカルストレージ管理 (JSON metadata)
+- ✅ 3種類のデモスクリプト実装
 
 ## アプリケーション概要
 
@@ -245,3 +261,7 @@ go build -o bin/container cmd/container/*.go
 - **システムプログラミング**: Go でのファイル操作, プロセス制御
 - **アーキテクチャ設計**: CLI ツール設計, モジュール分割
 - **実践的スキル**: 実際のDocker imageを扱う実装
+
+---
+
+© 2025 Day61 Container Runtime Project. All rights reserved.
