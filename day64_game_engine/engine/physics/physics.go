@@ -185,7 +185,6 @@ func (pw *PhysicsWorld) resolveCollision(bodyA, bodyB *PhysicsBody) {
 				// Aが動的で、Bが静的（地面）の場合、Aは地面の上にいる
 				if bodyB.IsStatic {
 					bodyA.OnGround = true
-					fmt.Printf("Player on ground! Position: (%.2f, %.2f)\n", bodyA.Position.X, bodyA.Position.Y)
 				}
 			}
 			if !bodyB.IsStatic {
@@ -196,7 +195,6 @@ func (pw *PhysicsWorld) resolveCollision(bodyA, bodyB *PhysicsBody) {
 				// Bが動的で、Aが静的（地面）の場合、Bは地面の上にいる
 				if bodyA.IsStatic {
 					bodyB.OnGround = true
-					fmt.Printf("Object on ground! Position: (%.2f, %.2f)\n", bodyB.Position.X, bodyB.Position.Y)
 				}
 			}
 		} else {

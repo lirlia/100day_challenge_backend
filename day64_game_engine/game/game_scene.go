@@ -218,6 +218,7 @@ func (gs *GameScene) Update(deltaTime float64) error {
 
 	// レベルリロード処理（L キー）
 	if gs.inputManager.IsLevelReloadPressed() {
+		log.Println("L key detected! Reloading level...")
 		gs.ReloadLevel()
 		return nil
 	}
@@ -306,7 +307,7 @@ func (gs *GameScene) updateCamera() {
 		camera.Position.X = gs.levelWidth - 800
 	}
 
-	// Y軸の境界制限を追加
+	// Y軸の境界制限
 	if camera.Position.Y < 0 {
 		camera.Position.Y = 0
 	}

@@ -59,31 +59,31 @@ func (p *Player) Update(deltaTime float64, input *core.InputManager) {
 		}
 	}
 
-	// 移動入力処理
+	// 移動処理
 	movement := input.GetMovementInput()
-	fmt.Printf("Movement input: X=%.2f, Y=%.2f\n", movement.X, movement.Y)
+
+	// ジャンプ処理
+	if input.IsJumpPressed() && p.PhysicsBody.OnGround {
+		p.PhysicsBody.Velocity.Y = -p.JumpPower
+		p.PhysicsBody.OnGround = false
+	}
 
 	// 水平移動
 	if movement.X != 0 {
 		p.PhysicsBody.Velocity.X = movement.X * p.MoveSpeed
 		p.FacingRight = movement.X > 0
-		fmt.Printf("Setting velocity X: %.2f\n", p.PhysicsBody.Velocity.X)
 	} else {
-		// 入力がない時は水平速度を減衰
+		// 摩擦
 		p.PhysicsBody.Velocity.X *= 0.8
 	}
 
-	// ジャンプ入力処理
-	if input.IsJumpPressed() && p.GroundedTime > 0 {
-		p.PhysicsBody.Velocity.Y = -p.JumpPower
-		p.GroundedTime = 0
-		fmt.Printf("Jumping! Velocity Y: %.2f\n", p.PhysicsBody.Velocity.Y)
+	// 重力適用
+	if !p.PhysicsBody.OnGround {
+		p.PhysicsBody.Velocity.Y += 9.8 * deltaTime
 	}
 
-	fmt.Printf("Player pos: (%.2f, %.2f), vel: (%.2f, %.2f), onGround: %v\n",
-		p.PhysicsBody.Position.X, p.PhysicsBody.Position.Y,
-		p.PhysicsBody.Velocity.X, p.PhysicsBody.Velocity.Y,
-		p.PhysicsBody.OnGround)
+	// 物理更新
+	p.PhysicsBody.Update()
 
 	// スプライト位置を物理ボディと同期
 	p.Sprite.SetPosition(p.PhysicsBody.Position)
