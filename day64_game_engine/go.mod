@@ -2,7 +2,10 @@ module github.com/lirlia/100day_challenge_backend/day64_game_engine
 
 go 1.24.2
 
-require github.com/hajimehoshi/ebiten/v2 v2.8.8
+require (
+	github.com/hajimehoshi/ebiten/v2 v2.8.8
+	github.com/mattn/go-sqlite3 v1.14.28
+)
 
 require (
 	github.com/ebitengine/gomobile v0.0.0-20240911145611-4856209ac325 // indirect
