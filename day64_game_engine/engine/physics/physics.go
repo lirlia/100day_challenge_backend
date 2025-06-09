@@ -81,21 +81,22 @@ func (pw *PhysicsWorld) Update(deltaTime float64) {
 
 // updateBody 個別ボディの物理更新
 func (pw *PhysicsWorld) updateBody(body *PhysicsBody, deltaTime float64) {
+	// 前フレームの接地状態を保存
+	wasOnGround := body.OnGround
+
+	// 地面チェックをリセット（衝突検出で再設定される）
+	body.OnGround = false
+
 	// 重力適用
-	if !body.OnGround {
-		body.Velocity = body.Velocity.Add(pw.Gravity.Mul(deltaTime))
-	}
+	body.Velocity = body.Velocity.Add(pw.Gravity.Mul(deltaTime))
 
 	// 位置更新
 	body.Position = body.Position.Add(body.Velocity.Mul(deltaTime))
 
-	// 摩擦適用（地面にいる時のみ）
-	if body.OnGround {
+	// 摩擦適用（前フレームで地面にいた場合のみ）
+	if wasOnGround && body.Velocity.Y >= 0 {
 		body.Velocity.X *= body.Friction
 	}
-
-	// 地面チェックをリセット（衝突検出で再設定される）
-	body.OnGround = false
 }
 
 // resolveCollisions 衝突検出と解決
@@ -177,23 +178,31 @@ func (pw *PhysicsWorld) resolveCollision(bodyA, bodyB *PhysicsBody) {
 			// A is above B
 			if !bodyA.IsStatic {
 				bodyA.Position.Y -= overlapY / 2
-				bodyA.Velocity.Y = -bodyA.Velocity.Y * bodyA.Bounce
+				if bodyA.Velocity.Y > 0 {
+					bodyA.Velocity.Y = -bodyA.Velocity.Y * bodyA.Bounce
+				}
 			}
 			if !bodyB.IsStatic {
 				bodyB.Position.Y += overlapY / 2
-				bodyB.Velocity.Y = -bodyB.Velocity.Y * bodyB.Bounce
+				if bodyB.Velocity.Y < 0 {
+					bodyB.Velocity.Y = -bodyB.Velocity.Y * bodyB.Bounce
+				}
 				bodyB.OnGround = true
 			}
 		} else {
 			// A is below B
 			if !bodyA.IsStatic {
 				bodyA.Position.Y += overlapY / 2
-				bodyA.Velocity.Y = -bodyA.Velocity.Y * bodyA.Bounce
+				if bodyA.Velocity.Y < 0 {
+					bodyA.Velocity.Y = -bodyA.Velocity.Y * bodyA.Bounce
+				}
 				bodyA.OnGround = true
 			}
 			if !bodyB.IsStatic {
 				bodyB.Position.Y -= overlapY / 2
-				bodyB.Velocity.Y = -bodyB.Velocity.Y * bodyB.Bounce
+				if bodyB.Velocity.Y > 0 {
+					bodyB.Velocity.Y = -bodyB.Velocity.Y * bodyB.Bounce
+				}
 			}
 		}
 	}

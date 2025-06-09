@@ -39,7 +39,7 @@ func (im *InputManager) Update() {
 	keys := []ebiten.Key{
 		ebiten.KeyArrowLeft, ebiten.KeyArrowRight, ebiten.KeyArrowUp, ebiten.KeyArrowDown,
 		ebiten.KeyA, ebiten.KeyD, ebiten.KeyW, ebiten.KeyS,
-		ebiten.KeySpace, ebiten.KeyEnter, ebiten.KeyEscape,
+		ebiten.KeySpace, ebiten.KeyEnter, ebiten.KeyEscape, ebiten.KeyR,
 	}
 
 	for _, key := range keys {
@@ -112,6 +112,11 @@ func (im *InputManager) GetMovementInput() Vec2 {
 // IsJumpPressed ジャンプキーが押されたかチェック
 func (im *InputManager) IsJumpPressed() bool {
 	return im.IsKeyJustPressed(ebiten.KeySpace)
+}
+
+// IsRestartPressed リスタートキーが押されたかチェック
+func (im *InputManager) IsRestartPressed() bool {
+	return im.IsKeyJustPressed(ebiten.KeyR)
 }
 
 // Vec2 のメソッド

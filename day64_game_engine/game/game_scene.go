@@ -138,12 +138,19 @@ func (gs *GameScene) buildLevel() {
 
 // Update シーンを更新
 func (gs *GameScene) Update(deltaTime float64) error {
-	if gs.gameState != GameStatePlaying {
+	// 入力を更新
+	gs.inputManager.Update()
+
+	// リスタート処理
+	if gs.inputManager.IsRestartPressed() &&
+	   (gs.gameState == GameStateGameOver || gs.gameState == GameStateWin) {
+		gs.RestartGame()
 		return nil
 	}
 
-	// 入力を更新
-	gs.inputManager.Update()
+	if gs.gameState != GameStatePlaying {
+		return nil
+	}
 
 	// プレイヤーを更新
 	gs.player.Update(deltaTime, gs.inputManager)
