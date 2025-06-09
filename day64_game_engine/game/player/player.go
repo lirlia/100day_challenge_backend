@@ -28,7 +28,7 @@ func NewPlayer(pos core.Vec2, image *ebiten.Image) *Player {
 
 	// 物理ボディを作成
 	body := physics.NewPhysicsBody(pos, size, 1.0)
-	body.Friction = 0.8
+	body.Friction = 0.9
 	body.Bounce = 0.0
 
 	// スプライトを作成
@@ -61,18 +61,29 @@ func (p *Player) Update(deltaTime float64, input *core.InputManager) {
 
 	// 移動入力処理
 	movement := input.GetMovementInput()
+	fmt.Printf("Movement input: X=%.2f, Y=%.2f\n", movement.X, movement.Y)
 
 	// 水平移動
 	if movement.X != 0 {
 		p.PhysicsBody.Velocity.X = movement.X * p.MoveSpeed
 		p.FacingRight = movement.X > 0
+		fmt.Printf("Setting velocity X: %.2f\n", p.PhysicsBody.Velocity.X)
+	} else {
+		// 入力がない時は水平速度を減衰
+		p.PhysicsBody.Velocity.X *= 0.8
 	}
 
 	// ジャンプ入力処理
 	if input.IsJumpPressed() && p.GroundedTime > 0 {
 		p.PhysicsBody.Velocity.Y = -p.JumpPower
 		p.GroundedTime = 0
+		fmt.Printf("Jumping! Velocity Y: %.2f\n", p.PhysicsBody.Velocity.Y)
 	}
+
+	fmt.Printf("Player pos: (%.2f, %.2f), vel: (%.2f, %.2f), onGround: %v\n",
+		p.PhysicsBody.Position.X, p.PhysicsBody.Position.Y,
+		p.PhysicsBody.Velocity.X, p.PhysicsBody.Velocity.Y,
+		p.PhysicsBody.OnGround)
 
 	// スプライト位置を物理ボディと同期
 	p.Sprite.SetPosition(p.PhysicsBody.Position)

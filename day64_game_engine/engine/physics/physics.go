@@ -86,13 +86,13 @@ func (pw *PhysicsWorld) updateBody(body *PhysicsBody, deltaTime float64) {
 		body.Velocity = body.Velocity.Add(pw.Gravity.Mul(deltaTime))
 	}
 
-	// 摩擦適用
+	// 位置更新
+	body.Position = body.Position.Add(body.Velocity.Mul(deltaTime))
+
+	// 摩擦適用（地面にいる時のみ）
 	if body.OnGround {
 		body.Velocity.X *= body.Friction
 	}
-
-	// 位置更新
-	body.Position = body.Position.Add(body.Velocity.Mul(deltaTime))
 
 	// 地面チェックをリセット（衝突検出で再設定される）
 	body.OnGround = false
