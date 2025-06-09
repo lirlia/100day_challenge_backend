@@ -8,6 +8,7 @@ import (
 	"github.com/lirlia/100day_challenge_backend/day64_game_engine/engine/assets"
 	"github.com/lirlia/100day_challenge_backend/day64_game_engine/engine/core"
 	"github.com/lirlia/100day_challenge_backend/day64_game_engine/engine/graphics"
+	"github.com/lirlia/100day_challenge_backend/day64_game_engine/engine/levels"
 	"github.com/lirlia/100day_challenge_backend/day64_game_engine/engine/physics"
 	"github.com/lirlia/100day_challenge_backend/day64_game_engine/game/enemies"
 	"github.com/lirlia/100day_challenge_backend/day64_game_engine/game/items"
@@ -23,10 +24,12 @@ type GameScene struct {
 	renderer     *graphics.Renderer
 	assetManager *assets.AssetManager
 	inputManager *core.InputManager
+	levelLoader  *levels.LevelLoader
 	platforms    []*physics.PhysicsBody
 	gameState    GameState
 	levelWidth   float64
 	levelHeight  float64
+	currentLevel *levels.Level
 }
 
 // GameState ゲーム状態
@@ -41,11 +44,19 @@ const (
 
 // NewGameScene 新しいゲームシーンを作成
 func NewGameScene() *GameScene {
+	// レベルローダーを作成
+	levelLoader, err := levels.NewLevelLoader()
+	if err != nil {
+		log.Printf("Failed to create level loader: %v", err)
+		levelLoader = nil
+	}
+
 	return &GameScene{
 		physicsWorld: physics.NewPhysicsWorld(core.Vec2{X: 0, Y: 800}), // 重力
 		renderer:     graphics.NewRenderer(),
 		assetManager: assets.NewAssetManager("assets"),
 		inputManager: core.NewInputManager(),
+		levelLoader:  levelLoader,
 		enemyManager: enemies.NewEnemyManager(),
 		itemManager:  items.NewItemManager(),
 		platforms:    make([]*physics.PhysicsBody, 0),
@@ -76,64 +87,121 @@ func (gs *GameScene) Initialize() error {
 
 // buildLevel レベルを構築
 func (gs *GameScene) buildLevel() {
-	// 地面を作成
-	for x := float64(0); x < gs.levelWidth; x += 64 {
-		ground := physics.NewPhysicsBody(core.Vec2{X: x, Y: gs.levelHeight - 32}, core.Vec2{X: 64, Y: 32}, 0)
-		ground.IsStatic = true
-		gs.physicsWorld.AddBody(ground)
-		gs.platforms = append(gs.platforms, ground)
+	// 既存のプラットフォーム、敵、アイテムをクリア
+	for _, platform := range gs.platforms {
+		gs.physicsWorld.RemoveBody(platform)
 	}
+	gs.platforms = gs.platforms[:0] // スライスをクリア
+
+	// 既存の敵をクリア
+	gs.enemyManager.ClearAll()
+
+	// 既存のアイテムをクリア
+	gs.itemManager.ClearAll()
+
+	var levelData *levels.LevelData
+	var level *levels.Level
+
+	// レベルローダーからレベルデータを読み込み
+	if gs.levelLoader != nil {
+		var err error
+		levelData, level, err = gs.levelLoader.LoadLatestLevelData()
+		if err != nil {
+			log.Printf("Failed to load level data: %v", err)
+			levelData = gs.getDefaultLevelData()
+		} else {
+			gs.currentLevel = level
+			if level != nil {
+				gs.levelWidth = float64(level.Width)
+				gs.levelHeight = float64(level.Height)
+				log.Printf("Loaded level: %s (%dx%d)", level.Name, level.Width, level.Height)
+			}
+		}
+	} else {
+		levelData = gs.getDefaultLevelData()
+	}
+
+	// プレイヤーを開始位置に配置
+	gs.player.PhysicsBody.Position = core.Vec2{X: levelData.PlayerStart.X, Y: levelData.PlayerStart.Y}
 
 	// プラットフォームを作成
-	platforms := []struct {
-		x, y, w, h float64
-	}{
-		{300, 450, 128, 32},
-		{500, 350, 128, 32},
-		{700, 250, 128, 32},
-		{900, 400, 128, 32},
+	for _, platform := range levelData.Platforms {
+		platformBody := physics.NewPhysicsBody(
+			core.Vec2{X: platform.X, Y: platform.Y},
+			core.Vec2{X: platform.Width, Y: platform.Height},
+			0,
+		)
+		platformBody.IsStatic = true
+		gs.physicsWorld.AddBody(platformBody)
+		gs.platforms = append(gs.platforms, platformBody)
 	}
-
-	for _, p := range platforms {
-		platform := physics.NewPhysicsBody(core.Vec2{X: p.x, Y: p.y}, core.Vec2{X: p.w, Y: p.h}, 0)
-		platform.IsStatic = true
-		gs.physicsWorld.AddBody(platform)
-		gs.platforms = append(gs.platforms, platform)
-	}
+	log.Printf("Total platforms created: %d", len(gs.platforms))
 
 	// 敵を作成
 	enemyImg, _ := gs.assetManager.GetImage("enemy")
-	enemyPositions := []core.Vec2{
-		{X: 400, Y: 400},
-		{X: 600, Y: 300},
-		{X: 800, Y: 200},
+	for _, enemy := range levelData.Enemies {
+		enemyEntity := enemies.NewEnemy(
+			core.Vec2{X: enemy.X, Y: enemy.Y},
+			enemyImg,
+			enemy.PatrolDistance,
+		)
+		gs.enemyManager.AddEnemy(enemyEntity)
+		gs.physicsWorld.AddBody(enemyEntity.PhysicsBody)
 	}
 
-	for _, pos := range enemyPositions {
-		enemy := enemies.NewEnemy(pos, enemyImg, 100)
-		gs.enemyManager.AddEnemy(enemy)
-		gs.physicsWorld.AddBody(enemy.PhysicsBody)
-	}
-
-	// コインを作成
+	// アイテムを作成
 	coinImg, _ := gs.assetManager.GetImage("coin")
-	coinPositions := []core.Vec2{
-		{X: 350, Y: 420},
-		{X: 550, Y: 320},
-		{X: 750, Y: 220},
-		{X: 950, Y: 370},
-		{X: 200, Y: 500},
-	}
-
-	for _, pos := range coinPositions {
-		coin := items.NewItem(pos, items.ItemTypeCoin, coinImg)
-		gs.itemManager.AddItem(coin)
-	}
-
-	// ゴールを作成
 	goalImg, _ := gs.assetManager.GetImage("goal")
-	goal := items.NewItem(core.Vec2{X: 1100, Y: 500}, items.ItemTypeGoal, goalImg)
-	gs.itemManager.AddItem(goal)
+
+	for _, item := range levelData.Items {
+		var itemImg *ebiten.Image
+		var itemType items.ItemType
+
+		switch item.Type {
+		case "coin":
+			itemImg = coinImg
+			itemType = items.ItemTypeCoin
+		case "goal":
+			itemImg = goalImg
+			itemType = items.ItemTypeGoal
+		default:
+			continue
+		}
+
+		itemEntity := items.NewItem(
+			core.Vec2{X: item.X, Y: item.Y},
+			itemType,
+			itemImg,
+		)
+		gs.itemManager.AddItem(itemEntity)
+	}
+}
+
+// getDefaultLevelData デフォルトレベルデータを返す
+func (gs *GameScene) getDefaultLevelData() *levels.LevelData {
+	return &levels.LevelData{
+		Platforms: []levels.Platform{
+			{ID: "ground1", X: 0, Y: 568, Width: 1200, Height: 32, Type: "ground"},
+			{ID: "platform1", X: 300, Y: 450, Width: 128, Height: 32, Type: "platform"},
+			{ID: "platform2", X: 500, Y: 350, Width: 128, Height: 32, Type: "platform"},
+			{ID: "platform3", X: 700, Y: 250, Width: 128, Height: 32, Type: "platform"},
+			{ID: "platform4", X: 900, Y: 400, Width: 128, Height: 32, Type: "platform"},
+		},
+		Enemies: []levels.Enemy{
+			{ID: "enemy1", X: 400, Y: 400, PatrolDistance: 100},
+			{ID: "enemy2", X: 600, Y: 300, PatrolDistance: 100},
+			{ID: "enemy3", X: 800, Y: 200, PatrolDistance: 100},
+		},
+		Items: []levels.Item{
+			{ID: "coin1", X: 350, Y: 420, Type: "coin"},
+			{ID: "coin2", X: 550, Y: 320, Type: "coin"},
+			{ID: "coin3", X: 750, Y: 220, Type: "coin"},
+			{ID: "coin4", X: 950, Y: 370, Type: "coin"},
+			{ID: "coin5", X: 200, Y: 500, Type: "coin"},
+			{ID: "goal1", X: 1100, Y: 500, Type: "goal"},
+		},
+		PlayerStart: levels.PlayerPos{X: 100, Y: 536},
+	}
 }
 
 // Update シーンを更新
@@ -232,6 +300,14 @@ func (gs *GameScene) updateCamera() {
 		camera.Position.X = gs.levelWidth - 800
 	}
 
+	// Y軸の境界制限を追加
+	if camera.Position.Y < 0 {
+		camera.Position.Y = 0
+	}
+	if camera.Position.Y > gs.levelHeight-600 {
+		camera.Position.Y = gs.levelHeight - 600
+	}
+
 	gs.renderer.SetCamera(camera)
 }
 
@@ -287,11 +363,25 @@ func (gs *GameScene) drawUI() {
 // Cleanup シーンをクリーンアップ
 func (gs *GameScene) Cleanup() {
 	log.Println("Cleaning up game scene...")
+	if gs.levelLoader != nil {
+		gs.levelLoader.Close()
+	}
 }
 
 // RestartGame ゲームを再開
 func (gs *GameScene) RestartGame() {
-	gs.player.Reset(core.Vec2{X: 100, Y: 400})
+	// デフォルト開始位置
+	startPos := core.Vec2{X: 100, Y: 400}
+
+	// レベルローダーから開始位置を取得
+	if gs.levelLoader != nil {
+		levelData, _, err := gs.levelLoader.LoadLatestLevelData()
+		if err == nil && levelData != nil {
+			startPos = core.Vec2{X: levelData.PlayerStart.X, Y: levelData.PlayerStart.Y}
+		}
+	}
+
+	gs.player.Reset(startPos)
 	gs.itemManager.ResetAll()
 	gs.gameState = GameStatePlaying
 	log.Println("Game restarted")

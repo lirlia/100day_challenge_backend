@@ -183,3 +183,8 @@ func (im *ItemManager) ResetAll() {
 		item.Sprite.SetVisible(true)
 	}
 }
+
+// ClearAll 全アイテムを削除
+func (im *ItemManager) ClearAll() {
+	im.Items = im.Items[:0] // スライスをクリア
+}

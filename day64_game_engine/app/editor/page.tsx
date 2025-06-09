@@ -207,8 +207,8 @@ export default function LevelEditor() {
           id: Date.now().toString(),
           x: Math.round(x / 32) * 32,
           y: Math.round(y / 32) * 32,
-          width: Math.round(width / 32) * 32,
-          height: Math.round(height / 32) * 32,
+          width: Math.max(32, Math.round(width / 32) * 32), // 最小32px
+          height: Math.max(32, Math.round(height / 32) * 32), // 最小32px
           type: 'platform'
         };
         setLevel(prev => ({ ...prev, platforms: [...prev.platforms, newPlatform] }));
@@ -344,8 +344,8 @@ export default function LevelEditor() {
                   key={tool.key}
                   onClick={() => setSelectedTool(tool.key as any)}
                   className={`w-full p-3 rounded-lg text-white font-medium transition-all ${selectedTool === tool.key
-                      ? `${tool.color} ring-2 ring-offset-2 ring-blue-500`
-                      : `${tool.color} opacity-70 hover:opacity-100`
+                    ? `${tool.color} ring-2 ring-offset-2 ring-blue-500`
+                    : `${tool.color} opacity-70 hover:opacity-100`
                     }`}
                 >
                   {tool.label}
