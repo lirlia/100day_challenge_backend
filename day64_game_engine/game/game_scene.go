@@ -216,6 +216,12 @@ func (gs *GameScene) Update(deltaTime float64) error {
 		return nil
 	}
 
+	// レベルリロード処理（L キー）
+	if gs.inputManager.IsLevelReloadPressed() {
+		gs.ReloadLevel()
+		return nil
+	}
+
 	if gs.gameState != GameStatePlaying {
 		return nil
 	}
@@ -357,7 +363,7 @@ func (gs *GameScene) drawUI() {
 	}
 
 	// 操作説明
-	gs.renderer.DrawText("Arrow Keys/WASD: Move, Space: Jump, ESC: Exit", core.Vec2{X: 10, Y: 550}, color.RGBA{255, 255, 255, 255})
+	gs.renderer.DrawText("Arrow Keys/WASD: Move, Space: Jump, L: Reload Level, ESC: Exit", core.Vec2{X: 10, Y: 550}, color.RGBA{255, 255, 255, 255})
 }
 
 // Cleanup シーンをクリーンアップ
@@ -385,4 +391,17 @@ func (gs *GameScene) RestartGame() {
 	gs.itemManager.ResetAll()
 	gs.gameState = GameStatePlaying
 	log.Println("Game restarted")
+}
+
+// ReloadLevel レベルを再読み込み
+func (gs *GameScene) ReloadLevel() {
+	log.Println("Reloading level from database...")
+
+	// レベルを再構築
+	gs.buildLevel()
+
+	// ゲーム状態をプレイ中にリセット
+	gs.gameState = GameStatePlaying
+
+	log.Println("Level reloaded successfully!")
 }
