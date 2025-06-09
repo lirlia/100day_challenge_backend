@@ -1,6 +1,7 @@
 package physics
 
 import (
+	"fmt"
 	"math"
 
 	"github.com/lirlia/100day_challenge_backend/day64_game_engine/engine/core"
@@ -181,13 +182,22 @@ func (pw *PhysicsWorld) resolveCollision(bodyA, bodyB *PhysicsBody) {
 				if bodyA.Velocity.Y > 0 {
 					bodyA.Velocity.Y = -bodyA.Velocity.Y * bodyA.Bounce
 				}
+				// Aが動的で、Bが静的（地面）の場合、Aは地面の上にいる
+				if bodyB.IsStatic {
+					bodyA.OnGround = true
+					fmt.Printf("Player on ground! Position: (%.2f, %.2f)\n", bodyA.Position.X, bodyA.Position.Y)
+				}
 			}
 			if !bodyB.IsStatic {
 				bodyB.Position.Y += overlapY / 2
 				if bodyB.Velocity.Y < 0 {
 					bodyB.Velocity.Y = -bodyB.Velocity.Y * bodyB.Bounce
 				}
-				bodyB.OnGround = true
+				// Bが動的で、Aが静的（地面）の場合、Bは地面の上にいる
+				if bodyA.IsStatic {
+					bodyB.OnGround = true
+					fmt.Printf("Object on ground! Position: (%.2f, %.2f)\n", bodyB.Position.X, bodyB.Position.Y)
+				}
 			}
 		} else {
 			// A is below B
@@ -196,7 +206,6 @@ func (pw *PhysicsWorld) resolveCollision(bodyA, bodyB *PhysicsBody) {
 				if bodyA.Velocity.Y < 0 {
 					bodyA.Velocity.Y = -bodyA.Velocity.Y * bodyA.Bounce
 				}
-				bodyA.OnGround = true
 			}
 			if !bodyB.IsStatic {
 				bodyB.Position.Y -= overlapY / 2

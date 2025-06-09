@@ -62,9 +62,9 @@ func (gs *GameScene) Initialize() error {
 	// デフォルトアセットを作成
 	gs.assetManager.CreateDefaultAssets()
 
-	// プレイヤーを作成
+	// プレイヤーを作成 (地面近くに配置)
 	playerImg, _ := gs.assetManager.GetImage("player")
-	gs.player = player.NewPlayer(core.Vec2{X: 100, Y: 400}, playerImg)
+	gs.player = player.NewPlayer(core.Vec2{X: 100, Y: gs.levelHeight - 64}, playerImg)
 	gs.physicsWorld.AddBody(gs.player.PhysicsBody)
 
 	// レベルを構築
