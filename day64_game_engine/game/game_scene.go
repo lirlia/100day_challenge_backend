@@ -77,7 +77,6 @@ func (gs *GameScene) Initialize() error {
 // buildLevel レベルを構築
 func (gs *GameScene) buildLevel() {
 	// 地面を作成
-	groundImg, _ := gs.assetManager.GetImage("ground")
 	for x := float64(0); x < gs.levelWidth; x += 64 {
 		ground := physics.NewPhysicsBody(core.Vec2{X: x, Y: gs.levelHeight - 32}, core.Vec2{X: 64, Y: 32}, 0)
 		ground.IsStatic = true
