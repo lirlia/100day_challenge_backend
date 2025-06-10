@@ -12,14 +12,14 @@ import (
 
 // Player プレイヤー
 type Player struct {
-	PhysicsBody    *physics.PhysicsBody
-	Sprite         *graphics.Sprite
-	MoveSpeed      float64
-	JumpPower      float64
-	GroundedTime   float64 // 接地時間（ジャンプバッファ用）
-	Health         int
-	Score          int
-	FacingRight    bool
+	PhysicsBody  *physics.PhysicsBody
+	Sprite       *graphics.Sprite
+	MoveSpeed    float64
+	JumpPower    float64
+	GroundedTime float64 // 接地時間（ジャンプバッファ用）
+	Health       int
+	Score        int
+	FacingRight  bool
 }
 
 // NewPlayer 新しいプレイヤーを作成
@@ -76,14 +76,6 @@ func (p *Player) Update(deltaTime float64, input *core.InputManager) {
 		// 摩擦
 		p.PhysicsBody.Velocity.X *= 0.8
 	}
-
-	// 重力適用
-	if !p.PhysicsBody.OnGround {
-		p.PhysicsBody.Velocity.Y += 9.8 * deltaTime
-	}
-
-	// 物理更新
-	p.PhysicsBody.Update()
 
 	// スプライト位置を物理ボディと同期
 	p.Sprite.SetPosition(p.PhysicsBody.Position)

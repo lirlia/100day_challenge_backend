@@ -1,7 +1,6 @@
 package physics
 
 import (
-	"fmt"
 	"math"
 
 	"github.com/lirlia/100day_challenge_backend/day64_game_engine/engine/core"
@@ -9,14 +8,14 @@ import (
 
 // PhysicsBody 物理オブジェクト
 type PhysicsBody struct {
-	Position    core.Vec2
-	Velocity    core.Vec2
-	Size        core.Vec2
-	Mass        float64
-	IsStatic    bool
-	OnGround    bool
-	Bounce      float64 // 反発係数 (0.0 ~ 1.0)
-	Friction    float64 // 摩擦係数
+	Position core.Vec2
+	Velocity core.Vec2
+	Size     core.Vec2
+	Mass     float64
+	IsStatic bool
+	OnGround bool
+	Bounce   float64 // 反発係数 (0.0 ~ 1.0)
+	Friction float64 // 摩擦係数
 }
 
 // PhysicsWorld 物理ワールド

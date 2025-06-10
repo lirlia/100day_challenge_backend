@@ -30,10 +30,10 @@ type Animation struct {
 
 // Renderer 描画システム
 type Renderer struct {
-	screen       *ebiten.Image
-	camera       Camera
-	sprites      []*Sprite
-	debugMode    bool
+	screen    *ebiten.Image
+	camera    Camera
+	sprites   []*Sprite
+	debugMode bool
 }
 
 // Camera カメラ
@@ -148,6 +148,17 @@ func (r *Renderer) DrawSprite(sprite *Sprite) {
 	screenPos := r.worldToScreen(sprite.Position)
 
 	opts := &ebiten.DrawImageOptions{}
+
+	// スプライトのサイズを取得
+	imageWidth := float64(sprite.Image.Bounds().Dx())
+	imageHeight := float64(sprite.Image.Bounds().Dy())
+
+	// サイズ変更の比率を計算
+	scaleX := sprite.Size.X / imageWidth
+	scaleY := sprite.Size.Y / imageHeight
+
+	// サイズ調整
+	opts.GeoM.Scale(scaleX, scaleY)
 
 	// 位置設定
 	opts.GeoM.Translate(screenPos.X, screenPos.Y)
