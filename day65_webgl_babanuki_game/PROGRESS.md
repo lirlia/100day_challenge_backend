@@ -14,13 +14,14 @@
 
 ---
 
-### ⏳ Step 2/10: Three.js環境構築
-- [ ] Three.js、React Three Fiber、drei をインストール
-- [ ] 基本3Dシーン設定（カメラ、ライト、レンダラー）
-- [ ] テーブル環境構築（3D空間配置）
-- [ ] 動作確認（基本3D表示）
+### ✅ Step 2/10: Three.js環境構築
+- [x] Three.js、React Three Fiber、drei をインストール
+- [x] 基本3Dシーン設定（カメラ、ライト、レンダラー）
+- [x] テーブル環境構築（3D空間配置）
+- [x] 動作確認（基本3D表示）
 
-**予定学習ポイント**: WebGL、Three.js基礎、3D座標系
+**完了日**: 2024/12/XX  
+**学習ポイント**: WebGL、Three.js基礎、3D座標系、Canvas設定
 
 ---
 
