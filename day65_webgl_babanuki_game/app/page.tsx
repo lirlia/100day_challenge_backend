@@ -3,6 +3,7 @@
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls, Environment } from '@react-three/drei'
 import { Suspense } from 'react'
+import { runBasicTests } from '../lib/game-test'
 
 // 基本的な3Dシーンコンポーネント
 function GameScene() {
@@ -58,8 +59,11 @@ export default function Game() {
               <option value="hard">つよい</option>
             </select>
           </div>
-          <button className="w-full bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded transition-colors">
-            ゲーム開始
+          <button
+            onClick={() => runBasicTests()}
+            className="w-full bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded transition-colors"
+          >
+            ゲーム開始（テスト実行）
           </button>
         </div>
       </div>
