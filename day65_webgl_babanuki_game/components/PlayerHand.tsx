@@ -1,0 +1,174 @@
+'use client'
+
+import { useMemo } from 'react'
+import { Card3D } from './Card3D'
+import type { Player } from '../lib/card-game'
+
+interface PlayerHandProps {
+  player: Player
+  onCardClick?: (cardIndex: number) => void
+  selectedCardIndex?: number
+  isCurrentPlayer?: boolean
+  showCards?: boolean // 相手の手札は裏向きで表示するかどうか
+}
+
+export function PlayerHand({
+  player,
+  onCardClick,
+  selectedCardIndex,
+  isCurrentPlayer = false,
+  showCards = true
+}: PlayerHandProps) {
+
+  // プレイヤーの位置に基づいて手札の配置を計算
+  const handPositions = useMemo(() => {
+    const cardCount = player.hand.length
+    if (cardCount === 0) return []
+
+    const positions: Array<{
+      position: [number, number, number]
+      rotation: [number, number, number]
+    }> = []
+
+    // プレイヤーの位置に応じた配置
+    switch (player.position) {
+      case 0: // 下部（人間プレイヤー）
+        {
+          const startX = -(cardCount - 1) * 0.7 / 2
+          for (let i = 0; i < cardCount; i++) {
+            positions.push({
+              position: [startX + i * 0.7, 0, 4],
+              rotation: [Math.PI / 12, 0, 0] // 少し傾ける
+            })
+          }
+        }
+        break
+
+      case 1: // 左側
+        {
+          const startZ = -(cardCount - 1) * 0.7 / 2
+          for (let i = 0; i < cardCount; i++) {
+            positions.push({
+              position: [-4, 0, startZ + i * 0.7],
+              rotation: [Math.PI / 12, Math.PI / 2, 0]
+            })
+          }
+        }
+        break
+
+      case 2: // 上部
+        {
+          const startX = (cardCount - 1) * 0.7 / 2
+          for (let i = 0; i < cardCount; i++) {
+            positions.push({
+              position: [startX - i * 0.7, 0, -4],
+              rotation: [Math.PI / 12, Math.PI, 0]
+            })
+          }
+        }
+        break
+
+      case 3: // 右側
+        {
+          const startZ = (cardCount - 1) * 0.7 / 2
+          for (let i = 0; i < cardCount; i++) {
+            positions.push({
+              position: [4, 0, startZ - i * 0.7],
+              rotation: [Math.PI / 12, -Math.PI / 2, 0]
+            })
+          }
+        }
+        break
+    }
+
+    return positions
+  }, [player.hand.length, player.position])
+
+  // プレイヤー名表示位置
+  const namePosition = useMemo((): [number, number, number] => {
+    switch (player.position) {
+      case 0: return [0, 0.5, 5]    // 下部
+      case 1: return [-5, 0.5, 0]   // 左側
+      case 2: return [0, 0.5, -5]   // 上部
+      case 3: return [5, 0.5, 0]    // 右側
+      default: return [0, 0.5, 0]
+    }
+  }, [player.position])
+
+  return (
+    <group>
+      {/* プレイヤー名表示 */}
+      <group position={namePosition}>
+        <mesh>
+          <planeGeometry args={[2, 0.5]} />
+          <meshBasicMaterial
+            color={isCurrentPlayer ? "#00ff88" : "#ffffff"}
+            transparent
+            opacity={0.8}
+          />
+        </mesh>
+        {/* TODO: プレイヤー名テキストは後で実装 */}
+      </group>
+
+      {/* 手札表示 */}
+      {player.hand.map((card, index) => {
+        if (index >= handPositions.length) return null
+
+        const { position, rotation } = handPositions[index]
+        const isSelectable = player.isHuman && isCurrentPlayer
+        const isHovered = selectedCardIndex === index
+
+        return (
+          <Card3D
+            key={`${card.id}-${index}`}
+            card={showCards || player.isHuman ? card : {
+              id: 'hidden',
+              suit: 'clubs',
+              rank: 'A',
+              isJoker: false
+            }}
+            position={position}
+            rotation={rotation}
+            isHovered={isHovered}
+            isSelectable={isSelectable}
+            onClick={() => onCardClick?.(index)}
+            scale={0.8}
+          />
+        )
+      })}
+
+      {/* 手札数表示（相手プレイヤー用） */}
+      {!player.isHuman && (
+        <group position={[namePosition[0], namePosition[1] - 0.3, namePosition[2]]}>
+          <mesh>
+            <planeGeometry args={[1, 0.3]} />
+            <meshBasicMaterial color="#333333" transparent opacity={0.7} />
+          </mesh>
+          {/* TODO: 手札数テキストは後で実装 */}
+        </group>
+      )}
+
+      {/* 収集したペア表示エリア */}
+      {player.pairsCollected.length > 0 && (
+        <group position={[namePosition[0] + 2, 0, namePosition[2]]}>
+          {player.pairsCollected.map((pair, pairIndex) => (
+            <group key={pairIndex} position={[pairIndex * 0.3, 0, 0]}>
+              <Card3D
+                card={pair[0]}
+                position={[0, 0, 0]}
+                rotation={[Math.PI / 2, 0, 0]}
+                scale={0.3}
+              />
+              <Card3D
+                card={pair[1]}
+                position={[0.1, 0, 0.1]}
+                rotation={[Math.PI / 2, 0, 0]}
+                scale={0.3}
+              />
+            </group>
+          ))}
+        </group>
+      )}
+    </group>
+  )
+}
