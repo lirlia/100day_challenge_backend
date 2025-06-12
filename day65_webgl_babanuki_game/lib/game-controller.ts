@@ -154,42 +154,69 @@ export async function processAITurn(controller: GameController): Promise<GameCon
   }
 
   const newController = { ...controller, isProcessing: true }
-  const ai = newController.aiPlayers.get(currentPlayer.id)
 
-  if (!ai) {
+  try {
+    const ai = newController.aiPlayers.get(currentPlayer.id)
+
+    if (!ai) {
+      console.error(`AI not found for player ${currentPlayer.id}`)
+      return { ...newController, isProcessing: false }
+    }
+
+    // 利用可能なターゲットをチェック
+    const availableTargets = getAvailableTargets(newController)
+    if (availableTargets.length === 0) {
+      console.log(`No available targets for ${currentPlayer.name}`)
+      return { ...newController, isProcessing: false }
+    }
+
+    // AI思考時間をシミュレート
+    const thinkingTime = getAIThinkingTime(newController.aiDifficulty)
+    await new Promise(resolve => setTimeout(resolve, thinkingTime))
+
+    // AIの決定を取得
+    const decision: AIDecision = ai.makeDecision(
+      currentPlayer,
+      newController.gameState.players,
+      newController.gameState
+    )
+
+    console.log(`${currentPlayer.name} AI decision:`, decision)
+
+    // AIの決定を実行
+    if (decision.action === 'drawCard' && decision.targetPlayerId && decision.cardIndex !== undefined) {
+      return await handleDrawCard(newController, decision.targetPlayerId, decision.cardIndex)
+    }
+
+    console.warn(`Invalid AI decision for ${currentPlayer.name}:`, decision)
+    return { ...newController, isProcessing: false }
+
+  } catch (error) {
+    console.error(`Error in AI turn for ${currentPlayer.name}:`, error)
     return { ...newController, isProcessing: false }
   }
-
-  // AI思考時間をシミュレート
-  const thinkingTime = getAIThinkingTime(newController.aiDifficulty)
-  await new Promise(resolve => setTimeout(resolve, thinkingTime))
-
-  // AIの決定を取得
-  const decision: AIDecision = ai.makeDecision(
-    currentPlayer,
-    newController.gameState.players,
-    newController.gameState
-  )
-
-  // AIの決定を実行
-  if (decision.action === 'drawCard' && decision.targetPlayerId && decision.cardIndex !== undefined) {
-    return await handleDrawCard(newController, decision.targetPlayerId, decision.cardIndex)
-  }
-
-  return { ...newController, isProcessing: false }
 }
 
 // ゲームの次のターンに進む
 export async function advanceToNextTurn(controller: GameController): Promise<GameController> {
+  console.log('advanceToNextTurn called, current state:', {
+    currentPlayerIndex: controller.gameState.currentPlayerIndex,
+    isProcessing: controller.isProcessing,
+    phase: controller.gameState.phase,
+    waitingForPlayerAction: controller.waitingForPlayerAction
+  })
+
   const currentPlayer = controller.gameState.players[controller.gameState.currentPlayerIndex]
 
   // ゲーム終了チェック
   if (controller.gameState.phase === 'finished') {
+    console.log('Game is finished, returning controller as-is')
     return controller
   }
 
   // 現在のプレイヤーが人間の場合、プレイヤーの入力を待つ
   if (currentPlayer.isHuman && !controller.waitingForPlayerAction) {
+    console.log('Setting waitingForPlayerAction for human player')
     return {
       ...controller,
       waitingForPlayerAction: true
@@ -197,10 +224,12 @@ export async function advanceToNextTurn(controller: GameController): Promise<Gam
   }
 
   // AIのターンの場合、AI処理を実行
-  if (!currentPlayer.isHuman) {
+  if (!currentPlayer.isHuman && !controller.isProcessing) {
+    console.log('Processing AI turn for:', currentPlayer.name)
     return await processAITurn(controller)
   }
 
+  console.log('No action taken, returning controller as-is')
   return controller
 }
 

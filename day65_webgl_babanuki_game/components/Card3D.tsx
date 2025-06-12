@@ -15,6 +15,7 @@ interface Card3DProps {
   onClick?: () => void
   scale?: number
   showBack?: boolean // 裏向き表示するかどうか
+  isAvailableTarget?: boolean // 利用可能なターゲットかどうか
 }
 
 export function Card3D({
@@ -25,7 +26,8 @@ export function Card3D({
   isSelectable = false,
   onClick,
   scale = 1,
-  showBack = false
+  showBack = false,
+  isAvailableTarget = false
 }: Card3DProps) {
   const meshRef = useRef<THREE.Mesh>(null)
   const groupRef = useRef<THREE.Group>(null)
@@ -218,6 +220,19 @@ export function Card3D({
             color="#00ff88"
             transparent
             opacity={isHovered ? 0.3 : 0.1}
+            side={THREE.DoubleSide}
+          />
+        </mesh>
+      )}
+
+      {/* 利用可能ターゲットの場合の青いグロー効果 */}
+      {isAvailableTarget && (
+        <mesh>
+          <boxGeometry args={[0.8, 1.1, 0.08]} />
+          <meshBasicMaterial
+            color="#00aaff"
+            transparent
+            opacity={0.4 + Math.sin(Date.now() * 0.008) * 0.2} // より強いパルス効果
             side={THREE.DoubleSide}
           />
         </mesh>

@@ -10,6 +10,7 @@ interface PlayerHandProps {
   selectedCardIndex?: number
   isCurrentPlayer?: boolean
   showCards?: boolean // 相手の手札は裏向きで表示するかどうか
+  isAvailableTarget?: boolean // カードを引ける対象かどうか
 }
 
 export function PlayerHand({
@@ -17,7 +18,8 @@ export function PlayerHand({
   onCardClick,
   selectedCardIndex,
   isCurrentPlayer = false,
-  showCards = true
+  showCards = true,
+  isAvailableTarget = false
 }: PlayerHandProps) {
 
   // プレイヤーの位置に基づいて手札の配置を計算
@@ -118,7 +120,7 @@ export function PlayerHand({
         if (index >= handPositions.length) return null
 
         const { position, rotation } = handPositions[index]
-        const isSelectable = player.isHuman && isCurrentPlayer
+        const isSelectable = player.isHuman ? (player.isHuman && isCurrentPlayer) : isAvailableTarget // CPUの手札は利用可能な場合のみ選択可能
         const isHovered = selectedCardIndex === index
 
         // 人間プレイヤーのカードは常に表示、CPUプレイヤーのカードは裏向き
@@ -140,6 +142,7 @@ export function PlayerHand({
             onClick={() => onCardClick?.(index)}
             scale={player.isHuman ? 1.0 : 0.7} // 人間プレイヤーの手札を大きく表示
             showBack={!shouldShowCard} // 裏向き表示フラグを追加
+            isAvailableTarget={isAvailableTarget} // 利用可能ターゲットフラグを追加
           />
         )
       })}

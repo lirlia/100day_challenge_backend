@@ -185,12 +185,12 @@ export function createAI(difficulty: AIDifficulty, playerId: string): BaseAI {
 export function getAIThinkingTime(difficulty: AIDifficulty): number {
   switch (difficulty) {
     case 'easy':
-      return 500 + Math.random() * 1000 // 0.5-1.5秒
+      return 50 + Math.random() * 50 // 0.05-0.1秒
     case 'normal':
-      return 1000 + Math.random() * 1500 // 1-2.5秒
+      return 80 + Math.random() * 40 // 0.08-0.12秒
     case 'hard':
-      return 1500 + Math.random() * 2000 // 1.5-3.5秒
+      return 100 + Math.random() * 50 // 0.1-0.15秒
     default:
-      return 1000
+      return 100
   }
 }

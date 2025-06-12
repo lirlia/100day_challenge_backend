@@ -24,12 +24,16 @@ function GameScene({
   gameState,
   selectedCardIndex,
   onCardClick,
-  onPlayerHandClick
+  onPlayerHandClick,
+  availableTargets,
+  canPlayerAct
 }: {
   gameState: GameState
   selectedCardIndex: number | null
   onCardClick: (cardIndex: number) => void
   onPlayerHandClick: (playerId: string, cardIndex: number) => void
+  availableTargets: any[]
+  canPlayerAct: boolean
 }) {
   return (
     <>
@@ -46,16 +50,22 @@ function GameScene({
       </mesh>
 
       {/* 各プレイヤーの手札表示 */}
-      {gameState.players.map((player, index) => (
-        <PlayerHand
-          key={player.id}
-          player={player}
-          isCurrentPlayer={index === gameState.currentPlayerIndex}
-          showCards={player.isHuman}
-          selectedCardIndex={player.isHuman ? (selectedCardIndex ?? undefined) : undefined}
-          onCardClick={player.isHuman ? onCardClick : (cardIndex) => onPlayerHandClick(player.id, cardIndex)}
-        />
-      ))}
+      {gameState.players.map((player, index) => {
+        const isCurrentPlayer = index === gameState.currentPlayerIndex
+        const isAvailableTarget = canPlayerAct && availableTargets.some(t => t.id === player.id)
+
+        return (
+          <PlayerHand
+            key={player.id}
+            player={player}
+            isCurrentPlayer={isCurrentPlayer}
+            showCards={player.isHuman}
+            selectedCardIndex={player.isHuman ? (selectedCardIndex ?? undefined) : undefined}
+            onCardClick={player.isHuman ? onCardClick : (cardIndex) => onPlayerHandClick(player.id, cardIndex)}
+            isAvailableTarget={isAvailableTarget}
+          />
+        )
+      })}
 
       {/* ライトセットアップ */}
       <ambientLight intensity={0.6} />
@@ -101,8 +111,21 @@ export default function Game() {
     }
 
     const controller = createGameController(gameState, aiDifficulty)
-    setGameController(controller)
-    setGameMessage('ゲーム開始！あなたのターンです。')
+
+    // 人間プレイヤーのターンの場合、waitingForPlayerActionを設定
+    const currentPlayer = controller.gameState.players[controller.gameState.currentPlayerIndex]
+    const updatedController = {
+      ...controller,
+      waitingForPlayerAction: currentPlayer.isHuman
+    }
+
+    setGameController(updatedController)
+
+    if (currentPlayer.isHuman) {
+      setGameMessage('ゲーム開始！青く光っている相手の手札からカードを選んでください。')
+    } else {
+      setGameMessage('ゲーム開始！CPUのターンです...')
+    }
   }, [aiDifficulty])
 
   // 初回ゲーム初期化
@@ -115,35 +138,44 @@ export default function Game() {
     if (!gameController) return
 
     const processGameTurn = async () => {
-      const updatedController = await advanceToNextTurn(gameController)
+      try {
+        console.log('Processing game turn for:', gameController.gameState.players[gameController.gameState.currentPlayerIndex]?.name)
 
-      if (updatedController !== gameController) {
-        setGameController(updatedController)
+        const updatedController = await advanceToNextTurn(gameController)
 
-        // メッセージ更新
-        const currentPlayer = updatedController.gameState.players[updatedController.gameState.currentPlayerIndex]
-        if (currentPlayer.isHuman && canPlayerAct(updatedController)) {
-          setGameMessage('あなたのターンです。他のプレイヤーからカードを選んでください。')
-        } else if (!currentPlayer.isHuman) {
-          setGameMessage(`${currentPlayer.name}が考え中...`)
-        }
+        if (updatedController !== gameController) {
+          setGameController(updatedController)
 
-        // ゲーム終了チェック
-        if (updatedController.gameState.phase === 'finished') {
-          const humanPlayer = updatedController.gameState.players.find(p => p.isHuman)
-          if (humanPlayer && humanPlayer.hand.length === 0) {
-            setGameMessage('おめでとうございます！あなたの勝利です！')
-          } else {
-            setGameMessage('ゲーム終了！ジョーカーを持っているプレイヤーの負けです。')
+          // メッセージ更新
+          const currentPlayer = updatedController.gameState.players[updatedController.gameState.currentPlayerIndex]
+          if (currentPlayer.isHuman && canPlayerAct(updatedController)) {
+            const availableCount = getAvailableTargets(updatedController).length
+            setGameMessage(`あなたのターン！青く光っている${availableCount}人の手札からカードを選んでください 💙`)
+          } else if (!currentPlayer.isHuman && !updatedController.isProcessing) {
+            setGameMessage(`${currentPlayer.name}が考え中... 🤔`)
+          }
+
+          // ゲーム終了チェック
+          if (updatedController.gameState.phase === 'finished') {
+            const humanPlayer = updatedController.gameState.players.find(p => p.isHuman)
+            if (humanPlayer && humanPlayer.hand.length === 0) {
+              setGameMessage('おめでとうございます！あなたの勝利です！')
+            } else {
+              setGameMessage('ゲーム終了！ジョーカーを持っているプレイヤーの負けです。')
+            }
           }
         }
+      } catch (error) {
+        console.error('Error processing game turn:', error)
+        setGameMessage('エラーが発生しました。新しいゲームを開始してください。')
       }
     }
 
     // AIターンの場合は自動で進行
     const currentPlayer = gameController.gameState.players[gameController.gameState.currentPlayerIndex]
     if (!currentPlayer.isHuman && !gameController.isProcessing && gameController.gameState.phase === 'playing') {
-      const timer = setTimeout(processGameTurn, 500)
+      console.log('Starting AI turn for:', currentPlayer.name)
+      const timer = setTimeout(processGameTurn, 100) // 50ms -> 100ms に戻す
       return () => clearTimeout(timer)
     }
   }, [gameController])
@@ -153,7 +185,7 @@ export default function Game() {
     if (!gameController || !canPlayerAct(gameController)) return
 
     // 自分の手札をクリックしても何もしない（他のプレイヤーからカードを引く必要がある）
-    setGameMessage('他のプレイヤーの手札からカードを選んでください。')
+    setGameMessage('❌ 自分の手札は選べません！青く光っている相手の手札からカードを選んでください 💙')
   }, [gameController])
 
   // プレイヤーが他のプレイヤーの手札をクリック
@@ -164,11 +196,11 @@ export default function Game() {
     const targetPlayer = availableTargets.find(p => p.id === playerId)
 
     if (!targetPlayer) {
-      setGameMessage('そのプレイヤーからはカードを引けません。')
+      setGameMessage('❌ そのプレイヤーからは引けません！青く光っている手札を選んでください 💙')
       return
     }
 
-    setGameMessage('カードを引いています...')
+    setGameMessage('カードを引いています... 🎴')
     const updatedController = await handleDrawCard(gameController, playerId, cardIndex)
     setGameController(updatedController)
   }, [gameController])
@@ -187,6 +219,9 @@ export default function Game() {
       initializeNewGame()
     }, 100)
   }, [initializeNewGame])
+
+  // 利用可能なターゲットプレイヤーを取得
+  const availableTargets = gameController ? getAvailableTargets(gameController) : []
 
   if (!gameController) {
     return (
@@ -265,6 +300,8 @@ export default function Game() {
               selectedCardIndex={gameController.selectedCardIndex}
               onCardClick={handlePlayerCardClick}
               onPlayerHandClick={handlePlayerHandClick}
+              availableTargets={availableTargets}
+              canPlayerAct={canPlayerAct(gameController)}
             />
             <Environment preset="night" />
             <OrbitControls
