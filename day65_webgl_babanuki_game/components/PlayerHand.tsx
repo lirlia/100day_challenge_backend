@@ -37,8 +37,8 @@ export function PlayerHand({
           const startX = -(cardCount - 1) * 0.7 / 2
           for (let i = 0; i < cardCount; i++) {
             positions.push({
-              position: [startX + i * 0.7, 0, 4],
-              rotation: [Math.PI / 12, 0, 0] // 少し傾ける
+              position: [startX + i * 0.7, 0.5, 4.0], // Y位置を上げて、Z位置を手前に、間隔を広げる
+              rotation: [-Math.PI / 6, 0, 0] // より見やすい角度に調整（30度）
             })
           }
         }
@@ -46,10 +46,10 @@ export function PlayerHand({
 
       case 1: // 左側
         {
-          const startZ = -(cardCount - 1) * 0.7 / 2
+          const startZ = -(cardCount - 1) * 0.5 / 2
           for (let i = 0; i < cardCount; i++) {
             positions.push({
-              position: [-4, 0, startZ + i * 0.7],
+              position: [-3.5, 0.2, startZ + i * 0.5],
               rotation: [Math.PI / 12, Math.PI / 2, 0]
             })
           }
@@ -58,10 +58,10 @@ export function PlayerHand({
 
       case 2: // 上部
         {
-          const startX = (cardCount - 1) * 0.7 / 2
+          const startX = (cardCount - 1) * 0.6 / 2
           for (let i = 0; i < cardCount; i++) {
             positions.push({
-              position: [startX - i * 0.7, 0, -4],
+              position: [startX - i * 0.6, 0.2, -3.5],
               rotation: [Math.PI / 12, Math.PI, 0]
             })
           }
@@ -70,10 +70,10 @@ export function PlayerHand({
 
       case 3: // 右側
         {
-          const startZ = (cardCount - 1) * 0.7 / 2
+          const startZ = (cardCount - 1) * 0.5 / 2
           for (let i = 0; i < cardCount; i++) {
             positions.push({
-              position: [4, 0, startZ - i * 0.7],
+              position: [3.5, 0.2, startZ - i * 0.5],
               rotation: [Math.PI / 12, -Math.PI / 2, 0]
             })
           }
@@ -97,8 +97,10 @@ export function PlayerHand({
 
   return (
     <group>
-      {/* プレイヤー名表示 */}
+      {/* プレイヤー名表示 - 背景を削除してテキストのみに */}
       <group position={namePosition}>
+        {/* 背景のmeshを削除またはコメントアウト */}
+        {/*
         <mesh>
           <planeGeometry args={[2, 0.5]} />
           <meshBasicMaterial
@@ -107,6 +109,7 @@ export function PlayerHand({
             opacity={0.8}
           />
         </mesh>
+        */}
         {/* TODO: プレイヤー名テキストは後で実装 */}
       </group>
 
@@ -118,11 +121,14 @@ export function PlayerHand({
         const isSelectable = player.isHuman && isCurrentPlayer
         const isHovered = selectedCardIndex === index
 
+        // 人間プレイヤーのカードは常に表示、CPUプレイヤーのカードは裏向き
+        const shouldShowCard = player.isHuman
+
         return (
           <Card3D
             key={`${card.id}-${index}`}
-            card={showCards || player.isHuman ? card : {
-              id: 'hidden',
+            card={shouldShowCard ? card : {
+              id: `hidden-${index}`,
               suit: 'clubs',
               rank: 'A',
               isJoker: false
@@ -132,18 +138,22 @@ export function PlayerHand({
             isHovered={isHovered}
             isSelectable={isSelectable}
             onClick={() => onCardClick?.(index)}
-            scale={0.8}
+            scale={player.isHuman ? 1.0 : 0.7} // 人間プレイヤーの手札を大きく表示
+            showBack={!shouldShowCard} // 裏向き表示フラグを追加
           />
         )
       })}
 
-      {/* 手札数表示（相手プレイヤー用） */}
+      {/* 手札数表示（相手プレイヤー用） - 背景を削除 */}
       {!player.isHuman && (
         <group position={[namePosition[0], namePosition[1] - 0.3, namePosition[2]]}>
+          {/* 背景のmeshを削除またはコメントアウト */}
+          {/*
           <mesh>
             <planeGeometry args={[1, 0.3]} />
             <meshBasicMaterial color="#333333" transparent opacity={0.7} />
           </mesh>
+          */}
           {/* TODO: 手札数テキストは後で実装 */}
         </group>
       )}

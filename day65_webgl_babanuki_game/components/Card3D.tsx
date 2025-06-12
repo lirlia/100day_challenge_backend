@@ -14,6 +14,7 @@ interface Card3DProps {
   isSelectable?: boolean
   onClick?: () => void
   scale?: number
+  showBack?: boolean // 裏向き表示するかどうか
 }
 
 export function Card3D({
@@ -23,7 +24,8 @@ export function Card3D({
   isHovered = false,
   isSelectable = false,
   onClick,
-  scale = 1
+  scale = 1,
+  showBack = false
 }: Card3DProps) {
   const meshRef = useRef<THREE.Mesh>(null)
   const groupRef = useRef<THREE.Group>(null)
@@ -87,86 +89,126 @@ export function Card3D({
       <mesh ref={meshRef}>
         <boxGeometry args={[0.6, 0.9, 0.05]} />
         <meshStandardMaterial
-          color={card.isJoker ? '#2a2a2a' : '#ffffff'}
+          color={showBack ? '#1a365d' : (card.isJoker ? '#2a2a2a' : '#ffffff')}
           roughness={0.1}
           metalness={0.1}
         />
       </mesh>
 
-      {/* カード表面のテキスト */}
-      <group position={[0, 0, 0.026]}>
-        {/* 左上のランク */}
-        <Text
-          position={[-0.22, 0.32, 0]}
-          fontSize={0.12}
-          color={suitColor}
-          font="/fonts/arial.woff"
-          anchorX="center"
-          anchorY="middle"
-        >
-          {card.rank}
-        </Text>
+      {/* カード表面のテキスト（裏向きでない場合のみ表示） */}
+      {!showBack && (
+        <group position={[0, 0, 0.026]}>
+          {/* 左上のランク */}
+          <Text
+            position={[-0.22, 0.32, 0]}
+            fontSize={0.12}
+            color={suitColor}
+            anchorX="center"
+            anchorY="middle"
+          >
+            {card.rank}
+          </Text>
 
-        {/* 左上のスート */}
-        <Text
-          position={[-0.22, 0.22, 0]}
-          fontSize={0.08}
-          color={suitColor}
-          font="/fonts/arial.woff"
-          anchorX="center"
-          anchorY="middle"
-        >
-          {suitSymbol}
-        </Text>
+          {/* 左上のスート */}
+          <Text
+            position={[-0.22, 0.22, 0]}
+            fontSize={0.08}
+            color={suitColor}
+            anchorX="center"
+            anchorY="middle"
+          >
+            {suitSymbol}
+          </Text>
 
-        {/* 中央のスート（大きく表示） */}
-        <Text
-          position={[0, 0, 0]}
-          fontSize={0.25}
-          color={suitColor}
-          font="/fonts/arial.woff"
-          anchorX="center"
-          anchorY="middle"
-        >
-          {suitSymbol}
-        </Text>
+          {/* 中央のスート（大きく表示） */}
+          <Text
+            position={[0, 0, 0]}
+            fontSize={0.25}
+            color={suitColor}
+            anchorX="center"
+            anchorY="middle"
+          >
+            {suitSymbol}
+          </Text>
 
-        {/* 右下のランク（回転） */}
-        <Text
-          position={[0.22, -0.32, 0]}
-          fontSize={0.12}
-          color={suitColor}
-          font="/fonts/arial.woff"
-          anchorX="center"
-          anchorY="middle"
-          rotation={[0, 0, Math.PI]}
-        >
-          {card.rank}
-        </Text>
+          {/* 右下のランク（回転） */}
+          <Text
+            position={[0.22, -0.32, 0]}
+            fontSize={0.12}
+            color={suitColor}
+            anchorX="center"
+            anchorY="middle"
+            rotation={[0, 0, Math.PI]}
+          >
+            {card.rank}
+          </Text>
 
-        {/* 右下のスート（回転） */}
-        <Text
-          position={[0.22, -0.22, 0]}
-          fontSize={0.08}
-          color={suitColor}
-          font="/fonts/arial.woff"
-          anchorX="center"
-          anchorY="middle"
-          rotation={[0, 0, Math.PI]}
-        >
-          {suitSymbol}
-        </Text>
-      </group>
+          {/* 右下のスート（回転） */}
+          <Text
+            position={[0.22, -0.22, 0]}
+            fontSize={0.08}
+            color={suitColor}
+            anchorX="center"
+            anchorY="middle"
+            rotation={[0, 0, Math.PI]}
+          >
+            {suitSymbol}
+          </Text>
+        </group>
+      )}
 
-      {/* カード背面 */}
-      <mesh position={[0, 0, -0.026]}>
-        <planeGeometry args={[0.58, 0.88]} />
-        <meshStandardMaterial
-          color="#1a365d"
-          roughness={0.3}
-          metalness={0.0}
-        />
-      </mesh>
+      {/* カード背面パターン（裏向きの場合のみ表示） */}
+      {showBack && (
+        <group position={[0, 0, 0.026]}>
+          {/* 背面のパターン */}
+          <Text
+            position={[0, 0, 0]}
+            fontSize={0.3}
+            color="#4a90e2"
+            anchorX="center"
+            anchorY="middle"
+          >
+            🂠
+          </Text>
+          {/* 小さな装飾パターン */}
+          <Text
+            position={[-0.15, 0.2, 0]}
+            fontSize={0.08}
+            color="#2c5aa0"
+            anchorX="center"
+            anchorY="middle"
+          >
+            ♠
+          </Text>
+          <Text
+            position={[0.15, 0.2, 0]}
+            fontSize={0.08}
+            color="#2c5aa0"
+            anchorX="center"
+            anchorY="middle"
+          >
+            ♠
+          </Text>
+          <Text
+            position={[-0.15, -0.2, 0]}
+            fontSize={0.08}
+            color="#2c5aa0"
+            anchorX="center"
+            anchorY="middle"
+          >
+            ♠
+          </Text>
+          <Text
+            position={[0.15, -0.2, 0]}
+            fontSize={0.08}
+            color="#2c5aa0"
+            anchorX="center"
+            anchorY="middle"
+          >
+            ♠
+          </Text>
+        </group>
+      )}
 
       {/* 選択可能な場合のグロー効果 */}
       {isSelectable && (
