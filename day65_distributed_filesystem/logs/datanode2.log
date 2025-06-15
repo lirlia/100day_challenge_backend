@@ -1,0 +1,22 @@
+2025/06/15 23:18:27 main.go:21: Starting DataNode datanode2...
+2025/06/15 23:18:27 server.go:58: Connecting to NameNode at localhost:9000
+2025/06/15 23:18:27 server.go:81: DataNode datanode2 starting on localhost:9002
+2025/06/15 23:18:27 server.go:108: Registering DataNode datanode2 with NameNode
+2025/06/15 23:18:27 server.go:124: Successfully registered with NameNode: data node registered successfully
+2025/06/15 23:18:37 server.go:238: Starting to write chunk: c6209fa5-7eaa-4c78-a5af-1cdc5ebe1a50
+2025/06/15 23:18:37 server.go:249: Writing chunk c6209fa5-7eaa-4c78-a5af-1cdc5ebe1a50: 4.6 KB
+2025/06/15 23:18:37 server.go:257: Successfully wrote chunk c6209fa5-7eaa-4c78-a5af-1cdc5ebe1a50: checksum=f2edd50669d9c5193c6b0f4c1cbb9655
+2025/06/15 23:19:08 server.go:238: Starting to write chunk: 4108a270-728e-43e6-8e4f-8bd84a175acd
+2025/06/15 23:19:08 server.go:249: Writing chunk 4108a270-728e-43e6-8e4f-8bd84a175acd: 3.1 KB
+2025/06/15 23:19:08 server.go:257: Successfully wrote chunk 4108a270-728e-43e6-8e4f-8bd84a175acd: checksum=f3c3fd87a50962379470fe4c71e7d1c6
+2025/06/16 00:06:07 server.go:238: Starting to write chunk: fb6d41ac-9159-4bdf-a59d-3459b3a3479f
+2025/06/16 00:06:07 server.go:249: Writing chunk fb6d41ac-9159-4bdf-a59d-3459b3a3479f: 511 B
+2025/06/16 00:06:07 server.go:257: Successfully wrote chunk fb6d41ac-9159-4bdf-a59d-3459b3a3479f: checksum=a0a00743c311d1b53a289111ef270eef
+2025/06/16 00:06:07 server.go:238: Starting to write chunk: a1d7157b-8658-4718-abe4-938f8638669f
+2025/06/16 00:06:07 server.go:249: Writing chunk a1d7157b-8658-4718-abe4-938f8638669f: 91.7 KB
+2025/06/16 00:06:07 server.go:257: Successfully wrote chunk a1d7157b-8658-4718-abe4-938f8638669f: checksum=da1aba4a5d8008ca6996227d30a29536
+2025/06/16 00:06:07 server.go:238: Starting to write chunk: c6ba1768-07a5-4cc2-a79d-c88f63b4fb1c
+2025/06/16 00:06:07 server.go:249: Writing chunk c6ba1768-07a5-4cc2-a79d-c88f63b4fb1c: 697.2 KB
+2025/06/16 00:06:07 server.go:257: Successfully wrote chunk c6ba1768-07a5-4cc2-a79d-c88f63b4fb1c: checksum=e4f172c1dca6afce39a863cdcb144ccf
+2025/06/16 00:06:10 main.go:51: Shutting down DataNode datanode2...
+2025/06/16 00:06:10 main.go:53: DataNode datanode2 stopped
