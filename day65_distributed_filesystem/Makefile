@@ -102,7 +102,14 @@ test-ops: build create-test-file
 
 # Create logs directory
 setup:
-	@mkdir -p logs data/namenode data/datanode1 data/datanode2 data/datanode3 test_data
+	@mkdir -p logs data/namenode data/datanode1 data/datanode2 data/datanode3 test_data scripts
+
+# Run failure tests
+failure-test: build
+	@echo "=== 障害試験実行 ==="
+	@mkdir -p logs scripts
+	@chmod +x scripts/failure_test.sh
+	@./scripts/failure_test.sh
 
 # Show help
 help:
@@ -118,6 +125,7 @@ help:
 	@echo "  run-cluster   - Start full cluster (NameNode + 3 DataNodes)"
 	@echo "  stop-cluster  - Stop the cluster"
 	@echo "  test-ops      - Test basic DFS operations"
+	@echo "  failure-test  - Run comprehensive failure tests"
 	@echo "  help          - Show this help message"
 	@echo ""
 	@echo "Examples:"
