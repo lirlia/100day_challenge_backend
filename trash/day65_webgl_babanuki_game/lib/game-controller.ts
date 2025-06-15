@@ -199,38 +199,65 @@ export async function processAITurn(controller: GameController): Promise<GameCon
 
 // ゲームの次のターンに進む
 export async function advanceToNextTurn(controller: GameController): Promise<GameController> {
-  console.log('advanceToNextTurn called, current state:', {
-    currentPlayerIndex: controller.gameState.currentPlayerIndex,
-    isProcessing: controller.isProcessing,
-    phase: controller.gameState.phase,
-    waitingForPlayerAction: controller.waitingForPlayerAction
-  })
+  console.log('advanceToNextTurn called, initial player:', controller.gameState.players[controller.gameState.currentPlayerIndex]?.name);
 
-  const currentPlayer = controller.gameState.players[controller.gameState.currentPlayerIndex]
+  let currentController = { ...controller };
 
   // ゲーム終了チェック
-  if (controller.gameState.phase === 'finished') {
-    console.log('Game is finished, returning controller as-is')
-    return controller
+  if (currentController.gameState.phase === 'finished') {
+    console.log('Game is finished, returning controller as-is');
+    return currentController;
   }
 
-  // 現在のプレイヤーが人間の場合、プレイヤーの入力を待つ
-  if (currentPlayer.isHuman && !controller.waitingForPlayerAction) {
-    console.log('Setting waitingForPlayerAction for human player')
-    return {
-      ...controller,
-      waitingForPlayerAction: true
+  // プレイヤーの行動待ち状態をリセット
+  currentController = { ...currentController, waitingForPlayerAction: false, isProcessing: true };
+
+  try {
+    // 現在のプレイヤーが人間になるか、ゲームが終了するまでループ
+    while (
+      !currentController.gameState.players[currentController.gameState.currentPlayerIndex].isHuman &&
+      currentController.gameState.phase === 'playing'
+    ) {
+      const currentPlayer = currentController.gameState.players[currentController.gameState.currentPlayerIndex];
+      console.log(`Processing AI turn for: ${currentPlayer.name}`);
+
+      currentController = await processAITurn(currentController);
+
+      // processAITurn の後、ゲームが終了したかチェック
+      if (currentController.gameState.phase === 'finished') {
+        console.log('Game finished during AI turn loop.');
+        break;
+      }
     }
-  }
 
-  // AIのターンの場合、AI処理を実行
-  if (!currentPlayer.isHuman && !controller.isProcessing) {
-    console.log('Processing AI turn for:', currentPlayer.name)
-    return await processAITurn(controller)
-  }
+    // ループが終了した時点で現在のプレイヤーを確認
+    const finalPlayer = currentController.gameState.players[currentController.gameState.currentPlayerIndex];
+    if (finalPlayer.isHuman && currentController.gameState.phase === 'playing') {
+      console.log('Transitioning to human player turn.');
+      return {
+        ...currentController,
+        isProcessing: false,
+        waitingForPlayerAction: true,
+      };
+    }
 
-  console.log('No action taken, returning controller as-is')
-  return controller
+    // AIのターンが連続した後にゲームが終了した場合など
+    console.log('AI processing finished, or game ended.');
+    return {
+      ...currentController,
+      isProcessing: false,
+    };
+  } catch (error) {
+    console.error('Error in advanceToNextTurn loop:', error);
+    return {
+      ...controller, // エラー発生時は元のコントローラーを返す
+      isProcessing: false,
+      gameState: {
+        ...controller.gameState,
+        gameLog: [...controller.gameState.gameLog, 'エラーが発生しました。']
+      }
+    };
+  }
 }
 
 // ゲーム状態をリセット
