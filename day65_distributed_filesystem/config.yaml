@@ -1,0 +1,22 @@
+namenode:
+  address: "localhost"
+  port: 9000
+  database_path: "data/namenode/metadata.db"
+
+datanode:
+  id: "datanode1"
+  address: "localhost"
+  port: 9001
+  data_dir: "data/datanode1"
+  capacity: 107374182400 # 100GB
+  namenode_address: "localhost"
+  namenode_port: 9000
+  heartbeat_interval: "30s"
+
+dfs:
+  chunk_size: 67108864 # 64MB
+  replication: 3
+
+log:
+  level: "info"
+  format: "text"
