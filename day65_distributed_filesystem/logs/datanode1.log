@@ -1,5 +1,0 @@
-2025/06/16 00:06:14 main.go:21: Starting DataNode datanode1...
-2025/06/16 00:06:14 server.go:58: Connecting to NameNode at localhost:9000
-2025/06/16 00:06:14 server.go:81: DataNode datanode1 starting on localhost:9001
-2025/06/16 00:06:14 server.go:108: Registering DataNode datanode1 with NameNode
-2025/06/16 00:06:14 server.go:124: Successfully registered with NameNode: data node registered successfully

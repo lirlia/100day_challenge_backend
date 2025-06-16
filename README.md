@@ -79,3 +79,4 @@ LLMで生成したコードを置いています。
 | Day62 | クッキークリッカーゲーム                                                   | <video src="https://github.com/user-attachments/assets/1266ba9b-a2e5-4ad2-a48d-154c93564465">  |
 | Day63 | 検索エンジン                                                               | <video src="https://github.com/user-attachments/assets/ec32d39f-6d1d-4b9a-a4f2-6c08f3c622f1">  |
 | Day64 | シンプル2Dゲームエンジン                                                   | <video src="https://github.com/user-attachments/assets/6d5700e1-777c-4c75-8129-49974e19c080">  |
+| Day65 | 分散ファイルシステム (GolangDFS)                                           | <video src="https://github.com/user-attachments/assets/bbfe99aa-4aa1-4059-8dc3-998bef566c36">  |
