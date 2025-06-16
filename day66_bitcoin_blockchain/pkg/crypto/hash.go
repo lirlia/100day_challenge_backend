@@ -1,12 +1,15 @@
 package crypto
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"math/big"
 )
 
-// HashSHA256 は入力データのSHA-256ハッシュを計算する
+// HashSHA256 SHA-256ハッシュを計算
 func HashSHA256(data []byte) []byte {
 	hash := sha256.Sum256(data)
 	return hash[:]
@@ -28,10 +31,11 @@ func HashSHA256StringHex(data string) string {
 	return HashSHA256Hex([]byte(data))
 }
 
-// DoubleSHA256 は2回のSHA-256ハッシュを実行する（Bitcoinで使用される方式）
+// DoubleSHA256 Bitcoin風のダブルSHA-256ハッシュ
 func DoubleSHA256(data []byte) []byte {
-	first := HashSHA256(data)
-	return HashSHA256(first)
+	first := sha256.Sum256(data)
+	second := sha256.Sum256(first[:])
+	return second[:]
 }
 
 // DoubleSHA256Hex は2回のSHA-256ハッシュをHEX文字列で返す
@@ -40,7 +44,7 @@ func DoubleSHA256Hex(data []byte) string {
 	return hex.EncodeToString(hash)
 }
 
-// VerifyHash はデータとハッシュが一致するかを検証する
+// VerifyHash ハッシュが正しいかを検証
 func VerifyHash(data []byte, expectedHash []byte) bool {
 	actualHash := HashSHA256(data)
 	return hex.EncodeToString(actualHash) == hex.EncodeToString(expectedHash)
@@ -52,57 +56,79 @@ func VerifyHashHex(data []byte, expectedHashHex string) bool {
 	return actualHash == expectedHashHex
 }
 
-// FormatHash はハッシュを読みやすい形式でフォーマットする
+// FormatHash ハッシュを読みやすい形式にフォーマット
 func FormatHash(hash []byte) string {
-	if len(hash) == 0 {
-		return "<empty>"
-	}
-
-	hashStr := hex.EncodeToString(hash)
-	if len(hashStr) > 16 {
-		return fmt.Sprintf("%s...%s", hashStr[:8], hashStr[len(hashStr)-8:])
-	}
-	return hashStr
+	return hex.EncodeToString(hash)
 }
 
-// IsValidHashHex はHEX文字列が有効なハッシュかを判定する
-func IsValidHashHex(hashHex string) bool {
-	// SHA-256ハッシュは64文字のHEX文字列
-	if len(hashHex) != 64 {
-		return false
-	}
-
-	// HEX文字のみで構成されているかチェック
-	_, err := hex.DecodeString(hashHex)
-	return err == nil
+// ValidateHashFormat ハッシュ形式が有効かチェック
+func ValidateHashFormat(hashStr string) bool {
+	_, err := hex.DecodeString(hashStr)
+	return err == nil && len(hashStr) == 64 // SHA-256は32バイト = 64文字
 }
 
-// CompareHashes は2つのハッシュを比較する
-func CompareHashes(hash1, hash2 []byte) bool {
-	if len(hash1) != len(hash2) {
-		return false
-	}
-
-	for i := range hash1 {
-		if hash1[i] != hash2[i] {
-			return false
-		}
-	}
-	return true
+// IsValidHash バイト配列が有効なSHA-256ハッシュかチェック
+func IsValidHash(hash []byte) bool {
+	return len(hash) == 32 // SHA-256は32バイト
 }
 
-// HasLeadingZeros は指定された数の先頭ゼロを持つかチェックする（PoW用）
-func HasLeadingZeros(hash []byte, difficulty int) bool {
-	hashHex := hex.EncodeToString(hash)
-
-	if difficulty > len(hashHex) {
-		return false
-	}
-
+// GenerateHashTarget 指定された難易度に対応するターゲットハッシュを生成
+func GenerateHashTarget(difficulty int) string {
+	target := ""
 	for i := 0; i < difficulty; i++ {
-		if hashHex[i] != '0' {
+		target += "0"
+	}
+	for i := difficulty; i < 64; i++ {
+		target += "f"
+	}
+	return target
+}
+
+// HashPubKey 公開鍵をハッシュ化（Bitcoin風のアドレス生成用）
+func HashPubKey(pubKey []byte) []byte {
+	pubSHA256 := sha256.Sum256(pubKey)
+
+	// 簡易版：SHA256のみ（実際のBitcoinはRIPEMD160も使用）
+	return pubSHA256[:]
+}
+
+// RestorePublicKey バイト配列から公開鍵を復元
+func RestorePublicKey(pubKeyBytes []byte) (*ecdsa.PublicKey, error) {
+	if len(pubKeyBytes) != 64 {
+		return nil, fmt.Errorf("invalid public key length: expected 64, got %d", len(pubKeyBytes))
+	}
+
+	curve := elliptic.P256()
+	x := new(big.Int).SetBytes(pubKeyBytes[:32])
+	y := new(big.Int).SetBytes(pubKeyBytes[32:])
+
+	pubKey := &ecdsa.PublicKey{
+		Curve: curve,
+		X:     x,
+		Y:     y,
+	}
+
+	return pubKey, nil
+}
+
+// CompareHashes 2つのハッシュを比較
+func CompareHashes(hash1, hash2 []byte) bool {
+	return hex.EncodeToString(hash1) == hex.EncodeToString(hash2)
+}
+
+// HasLeadingZeros ハッシュが指定された数の先頭ゼロを持つかチェック
+func HasLeadingZeros(hash []byte, numZeros int) bool {
+	hashStr := hex.EncodeToString(hash)
+
+	if len(hashStr) < numZeros {
+		return false
+	}
+
+	for i := 0; i < numZeros; i++ {
+		if hashStr[i] != '0' {
 			return false
 		}
 	}
+
 	return true
 }

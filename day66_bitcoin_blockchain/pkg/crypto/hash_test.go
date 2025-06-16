@@ -183,8 +183,8 @@ func TestFormatHash(t *testing.T) {
 	// 空のハッシュ
 	emptyHash := []byte{}
 	formatted := FormatHash(emptyHash)
-	if formatted != "<empty>" {
-		t.Error("Empty hash should be formatted as '<empty>'")
+	if formatted != "" {
+		t.Error("Empty hash should be formatted as empty string")
 	}
 
 	// 短いハッシュ
@@ -199,17 +199,16 @@ func TestFormatHash(t *testing.T) {
 	longHash := HashSHA256([]byte("test"))
 	longFormatted := FormatHash(longHash)
 	longHashHex := hex.EncodeToString(longHash)
-	expectedLong := longHashHex[:8] + "..." + longHashHex[len(longHashHex)-8:]
 
-	if longFormatted != expectedLong {
-		t.Errorf("Long hash should be truncated, expected %s, got %s", expectedLong, longFormatted)
+	if longFormatted != longHashHex {
+		t.Errorf("Hash should be fully displayed, expected %s, got %s", longHashHex, longFormatted)
 	}
 }
 
-func TestIsValidHashHex(t *testing.T) {
+func TestValidateHashFormat(t *testing.T) {
 	// 有効なSHA-256ハッシュ
 	validHash := HashSHA256Hex([]byte("test"))
-	if !IsValidHashHex(validHash) {
+	if !ValidateHashFormat(validHash) {
 		t.Error("Valid SHA-256 hex should be recognized as valid")
 	}
 
@@ -227,7 +226,7 @@ func TestIsValidHashHex(t *testing.T) {
 
 	for _, tc := range invalidCases {
 		t.Run(tc.name, func(t *testing.T) {
-			if IsValidHashHex(tc.hash) {
+			if ValidateHashFormat(tc.hash) {
 				t.Errorf("Invalid hash should not be recognized as valid: %s", tc.hash)
 			}
 		})
@@ -235,7 +234,7 @@ func TestIsValidHashHex(t *testing.T) {
 
 	// 大文字小文字の混在（有効）
 	mixedCase := "A1B2C3D4E5F60708A1B2C3D4E5F60708A1B2C3D4E5F60708A1B2C3D4E5F60708"
-	if !IsValidHashHex(mixedCase) {
+	if !ValidateHashFormat(mixedCase) {
 		t.Error("Mixed case hex should be valid")
 	}
 }
