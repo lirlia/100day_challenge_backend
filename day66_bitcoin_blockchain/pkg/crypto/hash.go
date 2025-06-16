@@ -132,3 +132,13 @@ func HasLeadingZeros(hash []byte, numZeros int) bool {
 
 	return true
 }
+
+// HexEncode バイト配列を16進文字列に変換
+func HexEncode(data []byte) string {
+	return hex.EncodeToString(data)
+}
+
+// HexDecode 16進文字列をバイト配列に変換
+func HexDecode(s string) ([]byte, error) {
+	return hex.DecodeString(s)
+}
