@@ -142,3 +142,25 @@ func HexEncode(data []byte) string {
 func HexDecode(s string) ([]byte, error) {
 	return hex.DecodeString(s)
 }
+
+// RestorePrivateKey バイト配列からECDSA秘密鍵を復元
+func RestorePrivateKey(privateKeyBytes []byte) (*ecdsa.PrivateKey, error) {
+	curve := elliptic.P256()
+
+	// 秘密鍵のDを設定
+	d := new(big.Int).SetBytes(privateKeyBytes)
+
+	// 公開鍵を計算
+	x, y := curve.ScalarBaseMult(privateKeyBytes)
+
+	privateKey := &ecdsa.PrivateKey{
+		PublicKey: ecdsa.PublicKey{
+			Curve: curve,
+			X:     x,
+			Y:     y,
+		},
+		D: d,
+	}
+
+	return privateKey, nil
+}
