@@ -194,3 +194,11 @@ type TxOutput struct {
 - **セキュリティ**: 暗号学的に安全な実装
 
 詳細は `PROGRESS.md` を参照してください。
+
+## ライセンス
+
+MIT License
+
+## Copyright
+
+© 2025 Bitcoin Blockchain Implementation (Educational Purpose)
