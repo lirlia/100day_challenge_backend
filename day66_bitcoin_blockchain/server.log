@@ -1,57 +1,121 @@
-2025/06/19 00:02:53 🔗 Bitcoin Blockchain Go Implementation
-2025/06/19 00:02:53 📂 データベース: data/dev.db
-2025/06/19 00:02:53 🌐 APIサーバー: http://localhost:3001
-2025/06/19 00:02:53 🌱 Genesisブロックを作成中...
-2025/06/19 00:02:53 ⛏️  Genesisブロックをマイニング中...
+2025/06/19 00:16:15 🔗 Bitcoin Blockchain Go Implementation
+2025/06/19 00:16:15 📂 データベース: data/dev.db
+2025/06/19 00:16:15 🌐 APIサーバー: http://localhost:3001
+2025/06/19 00:16:15 📦 既存のブロックチェーンを検出 (高さ: 0)
+2025/06/19 00:16:15 🚀 ブロックチェーンエンジンを初期化しました
+2025/06/19 00:16:15 🔧 初期設定を実行中...
+2025/06/19 00:16:15 💳 初期ウォレットを作成中...
+2025/06/19 00:16:15 🌐 APIサーバーを開始: :3001
+2025/06/19 00:16:15 💳 新しいウォレットを作成: 1M2YNJi3QFgWqT73gu1q6Ak5EgCXkHoX1D
+2025/06/19 00:16:15 ✅ 初期ウォレットを作成: 1M2YNJi3QFgWqT73gu1q6Ak5EgCXkHoX1D
+2025/06/19 00:16:15 🔍 ブロックチェーンの整合性を検証中...
+2025/06/19 00:16:15 🔍 ブロックチェーンの整合性を検証中...
+2025/06/19 00:16:15 ✅ ブロックチェーンの整合性確認完了
+2025/06/19 00:16:15 ✅ ブロックチェーンの整合性確認完了
+2025/06/19 00:16:15 📊 === システム情報 ===
+2025/06/19 00:16:15    📦 ブロック高: 0
+2025/06/19 00:16:15    🧱 総ブロック数: 1
+2025/06/19 00:16:15    💸 総トランザクション数: 1
+2025/06/19 00:16:15    💰 総UTXO数: 1
+2025/06/19 00:16:15    💎 総価値: 5000000000 satoshi
+2025/06/19 00:16:15    📏 平均ブロックサイズ: 507.00 bytes
+2025/06/19 00:16:15    💾 チェーンサイズ: 507 bytes
+2025/06/19 00:16:15    📝 メンプールサイズ: 0
+2025/06/19 00:16:15    ⚙️  難易度: 4
+2025/06/19 00:16:15    💳 ウォレット数: 1
+2025/06/19 00:16:15 📊 === ウォレット情報 ===
+2025/06/19 00:16:15    1. 1M2YNJi3QFgWqT73... (残高: 0 satoshi)
+2025/06/19 00:16:15 ✅ システムが準備完了しました
+2025/06/19 00:16:15 🌐 Web UI: http://localhost:3001
+2025/06/19 00:16:15 📊 API Docs: http://localhost:3001/api/info
+2025/06/19 00:16:15 🛑 終了するには Ctrl+C を押してください
+2025/06/19 00:17:22 💳 新しいウォレットを作成: 1Cne3RVrRVxwzHxTywesTdrL6LokzUNnCS
+2025/06/19 00:17:36 ⛏️  ブロック 1 をマイニング中... (トランザクション数: 1)
 マイニング開始 - 難易度: 4 (先頭4ゼロ)
-✅ マイニング成功! ナンス: 6853, 試行回数: 6854, 時間: 4.292208ms
-ハッシュ: 00000ac07bfaff8d9c21a08d8113520090db1dedb4048988a1736fe8a57699e7
-2025/06/19 00:02:53 ✅ Genesisブロックを作成完了
-2025/06/19 00:02:53    📝 ブロックハッシュ: 00000ac07bfaff8d
-2025/06/19 00:02:53    🎯 ナンス: 6853
-2025/06/19 00:02:53    ⏱️  マイニング時間: 4.3445ms
-2025/06/19 00:02:53 🚀 ブロックチェーンエンジンを初期化しました
-2025/06/19 00:02:53 🔧 初期設定を実行中...
-2025/06/19 00:02:53 🔍 ブロックチェーンの整合性を検証中...
-2025/06/19 00:02:53 🔍 ブロックチェーンの整合性を検証中...
-2025/06/19 00:02:53 🌐 APIサーバーを開始: :3001
-2025/06/19 00:02:53 ✅ ブロックチェーンの整合性確認完了
-2025/06/19 00:02:53 ✅ ブロックチェーンの整合性確認完了
-2025/06/19 00:02:53 📊 === システム情報 ===
-2025/06/19 00:02:53    📦 ブロック高: 0
-2025/06/19 00:02:53    🧱 総ブロック数: 1
-2025/06/19 00:02:53    💸 総トランザクション数: 1
-2025/06/19 00:02:53    💰 総UTXO数: 1
-2025/06/19 00:02:53    💎 総価値: 5000000000 satoshi
-2025/06/19 00:02:53    📏 平均ブロックサイズ: 507.00 bytes
-2025/06/19 00:02:53    💾 チェーンサイズ: 507 bytes
-2025/06/19 00:02:53    📝 メンプールサイズ: 0
-2025/06/19 00:02:53    ⚙️  難易度: 4
-2025/06/19 00:02:53    💳 ウォレット数: 1
-2025/06/19 00:02:53 📊 === ウォレット情報 ===
-2025/06/19 00:02:53    1. 1Loy8scUMXKgy6fk... (残高: 0 satoshi)
-2025/06/19 00:02:53 ✅ システムが準備完了しました
-2025/06/19 00:02:53 🌐 Web UI: http://localhost:3001
-2025/06/19 00:02:53 📊 API Docs: http://localhost:3001/api/info
-2025/06/19 00:02:53 🛑 終了するには Ctrl+C を押してください
-2025/06/19 00:10:45 💳 新しいウォレットを作成: 1JDxrHQLd48WLAVE5ggNRCy8V5gGZ8KJ3D
-2025/06/19 00:10:52 http: panic serving [::1]:49731: runtime error: slice bounds out of range [:16] with length 0
-goroutine 12 [running]:
+✅ マイニング成功! ナンス: 75417, 試行回数: 75418, 時間: 94.222875ms
+ハッシュ: 0000c7341b048ab75862faac4df7f2e3fa7e5a62cd9a9bea7bd618d46e0e55e6
+2025/06/19 00:17:36 ✅ ブロック 1 マイニング完了
+2025/06/19 00:17:36    📝 ブロックハッシュ: 0000c7341b048ab7
+2025/06/19 00:17:36    🎯 ナンス: 75417
+2025/06/19 00:17:36    ⏱️  マイニング時間: 94.313417ms
+2025/06/19 00:17:36    💰 マイナー報酬: 5000000000 satoshi
+2025/06/19 00:20:55 💳 新しいウォレットを作成: 14GGG4cvzhHMqMvHweMjyCQmQegDfXyX2L
+2025/06/19 00:21:32 ⛏️  ブロック 2 をマイニング中... (トランザクション数: 1)
+マイニング開始 - 難易度: 4 (先頭4ゼロ)
+✅ マイニング成功! ナンス: 8056, 試行回数: 8057, 時間: 6.017375ms
+ハッシュ: 00008d9bbd2d25cef7a39e51b42e8bf894cc009d171f85b67e5e2e4c138ed4e6
+2025/06/19 00:21:32 ✅ ブロック 2 マイニング完了
+2025/06/19 00:21:32    📝 ブロックハッシュ: 00008d9bbd2d25ce
+2025/06/19 00:21:32    🎯 ナンス: 8056
+2025/06/19 00:21:32    ⏱️  マイニング時間: 6.069792ms
+2025/06/19 00:21:32    💰 マイナー報酬: 5000000000 satoshi
+2025/06/19 00:22:08 http: panic serving [::1]:50061: runtime error: slice bounds out of range [:16] with length 0
+goroutine 15 [running]:
 net/http.(*conn).serve.func1()
 	/Users/noname/.asdf/installs/golang/1.24.2/go/src/net/http/server.go:1947 +0xb0
-panic({0x100e90260?, 0x14000016540?})
+panic({0x10092c260?, 0x140001a5c98?})
 	/Users/noname/.asdf/installs/golang/1.24.2/go/src/runtime/panic.go:792 +0x124
-github.com/lirlia/100day_challenge_backend/day66_bitcoin_blockchain/internal/server.(*APIServer).handleBlocks(0x14000432000, {0x100eb5ea8, 0x1400044c1c0}, 0x100d85fa8?)
+github.com/lirlia/100day_challenge_backend/day66_bitcoin_blockchain/internal/server.(*APIServer).handleBlocks(0x1400019d350, {0x100951ea8, 0x140001321c0}, 0x100821fa8?)
 	/Users/noname/Cording/100day_challenge_backend/day66_bitcoin_blockchain/internal/server/api.go:137 +0x4f4
-github.com/lirlia/100day_challenge_backend/day66_bitcoin_blockchain/internal/server.(*APIServer).setupRoutes.(*APIServer).setupRoutes.func1.func3({0x100eb5ea8, 0x1400044c1c0}, 0x140000da8c0)
+github.com/lirlia/100day_challenge_backend/day66_bitcoin_blockchain/internal/server.(*APIServer).setupRoutes.(*APIServer).setupRoutes.func1.func3({0x100951ea8, 0x140001321c0}, 0x1400060a000)
 	/Users/noname/Cording/100day_challenge_backend/day66_bitcoin_blockchain/internal/server/api.go:65 +0x124
-net/http.HandlerFunc.ServeHTTP(0x140000b60c0?, {0x100eb5ea8?, 0x1400044c1c0?}, 0x100c08d24?)
+net/http.HandlerFunc.ServeHTTP(0x140001c60c0?, {0x100951ea8?, 0x140001321c0?}, 0x1006a4d24?)
 	/Users/noname/.asdf/installs/golang/1.24.2/go/src/net/http/server.go:2294 +0x38
-net/http.(*ServeMux).ServeHTTP(0x0?, {0x100eb5ea8, 0x1400044c1c0}, 0x140000da8c0)
+net/http.(*ServeMux).ServeHTTP(0x1400019a3e0?, {0x100951ea8, 0x140001321c0}, 0x1400060a000)
 	/Users/noname/.asdf/installs/golang/1.24.2/go/src/net/http/server.go:2822 +0x1b4
-net/http.serverHandler.ServeHTTP({0x14000432e40?}, {0x100eb5ea8?, 0x1400044c1c0?}, 0x1?)
+net/http.serverHandler.ServeHTTP({0x14000606090?}, {0x100951ea8?, 0x140001321c0?}, 0x6?)
 	/Users/noname/.asdf/installs/golang/1.24.2/go/src/net/http/server.go:3301 +0xbc
-net/http.(*conn).serve(0x140000c2630, {0x100eb6278, 0x1400012e240})
+net/http.(*conn).serve(0x140001da2d0, {0x100952278, 0x14000090240})
 	/Users/noname/.asdf/installs/golang/1.24.2/go/src/net/http/server.go:2102 +0x52c
-created by net/http.(*Server).Serve in goroutine 8
+created by net/http.(*Server).Serve in goroutine 39
+	/Users/noname/.asdf/installs/golang/1.24.2/go/src/net/http/server.go:3454 +0x3d8
+2025/06/19 00:22:21 http: panic serving [::1]:50090: runtime error: slice bounds out of range [:16] with length 0
+goroutine 30 [running]:
+net/http.(*conn).serve.func1()
+	/Users/noname/.asdf/installs/golang/1.24.2/go/src/net/http/server.go:1947 +0xb0
+panic({0x10092c260?, 0x140001a5f38?})
+	/Users/noname/.asdf/installs/golang/1.24.2/go/src/runtime/panic.go:792 +0x124
+github.com/lirlia/100day_challenge_backend/day66_bitcoin_blockchain/internal/server.(*APIServer).handleBlocks(0x1400019d350, {0x100951ea8, 0x14000132460}, 0x100821fa8?)
+	/Users/noname/Cording/100day_challenge_backend/day66_bitcoin_blockchain/internal/server/api.go:137 +0x4f4
+github.com/lirlia/100day_challenge_backend/day66_bitcoin_blockchain/internal/server.(*APIServer).setupRoutes.(*APIServer).setupRoutes.func1.func3({0x100951ea8, 0x14000132460}, 0x14000112500)
+	/Users/noname/Cording/100day_challenge_backend/day66_bitcoin_blockchain/internal/server/api.go:65 +0x124
+net/http.HandlerFunc.ServeHTTP(0x140001c60c0?, {0x100951ea8?, 0x14000132460?}, 0x1006a4d24?)
+	/Users/noname/.asdf/installs/golang/1.24.2/go/src/net/http/server.go:2294 +0x38
+net/http.(*ServeMux).ServeHTTP(0x1400019aa40?, {0x100951ea8, 0x14000132460}, 0x14000112500)
+	/Users/noname/.asdf/installs/golang/1.24.2/go/src/net/http/server.go:2822 +0x1b4
+net/http.serverHandler.ServeHTTP({0x140000bdec0?}, {0x100951ea8?, 0x14000132460?}, 0x6?)
+	/Users/noname/.asdf/installs/golang/1.24.2/go/src/net/http/server.go:3301 +0xbc
+net/http.(*conn).serve(0x140002946c0, {0x100952278, 0x14000090240})
+	/Users/noname/.asdf/installs/golang/1.24.2/go/src/net/http/server.go:2102 +0x52c
+created by net/http.(*Server).Serve in goroutine 39
+	/Users/noname/.asdf/installs/golang/1.24.2/go/src/net/http/server.go:3454 +0x3d8
+2025/06/19 00:22:41 🔄 自動マイニングを開始 (間隔: 10s)
+2025/06/19 00:22:50 ⛏️  ブロック 3 をマイニング中... (トランザクション数: 1)
+マイニング開始 - 難易度: 4 (先頭4ゼロ)
+✅ マイニング成功! ナンス: 3768, 試行回数: 3769, 時間: 21.038917ms
+ハッシュ: 0000ec4f9c6fb235b79378e70529651dad44093ddb0454b5b7fb4105e2f507aa
+2025/06/19 00:22:50 ✅ ブロック 3 マイニング完了
+2025/06/19 00:22:50    📝 ブロックハッシュ: 0000ec4f9c6fb235
+2025/06/19 00:22:50    🎯 ナンス: 3768
+2025/06/19 00:22:50    ⏱️  マイニング時間: 21.114ms
+2025/06/19 00:22:50    💰 マイナー報酬: 5000000000 satoshi
+2025/06/19 00:22:50 http: panic serving [::1]:50099: runtime error: slice bounds out of range [:16] with length 0
+goroutine 84 [running]:
+net/http.(*conn).serve.func1()
+	/Users/noname/.asdf/installs/golang/1.24.2/go/src/net/http/server.go:1947 +0xb0
+panic({0x10092c260?, 0x14000016330?})
+	/Users/noname/.asdf/installs/golang/1.24.2/go/src/runtime/panic.go:792 +0x124
+github.com/lirlia/100day_challenge_backend/day66_bitcoin_blockchain/internal/server.(*APIServer).handleBlocks(0x1400019d350, {0x100951ea8, 0x14000204000}, 0x100821fa8?)
+	/Users/noname/Cording/100day_challenge_backend/day66_bitcoin_blockchain/internal/server/api.go:137 +0x4f4
+github.com/lirlia/100day_challenge_backend/day66_bitcoin_blockchain/internal/server.(*APIServer).setupRoutes.(*APIServer).setupRoutes.func1.func3({0x100951ea8, 0x14000204000}, 0x14000676000)
+	/Users/noname/Cording/100day_challenge_backend/day66_bitcoin_blockchain/internal/server/api.go:65 +0x124
+net/http.HandlerFunc.ServeHTTP(0x140001c60c0?, {0x100951ea8?, 0x14000204000?}, 0x1006a4d24?)
+	/Users/noname/.asdf/installs/golang/1.24.2/go/src/net/http/server.go:2294 +0x38
+net/http.(*ServeMux).ServeHTTP(0x140004fc000?, {0x100951ea8, 0x14000204000}, 0x14000676000)
+	/Users/noname/.asdf/installs/golang/1.24.2/go/src/net/http/server.go:2822 +0x1b4
+net/http.serverHandler.ServeHTTP({0x140000ea240?}, {0x100951ea8?, 0x14000204000?}, 0x6?)
+	/Users/noname/.asdf/installs/golang/1.24.2/go/src/net/http/server.go:3301 +0xbc
+net/http.(*conn).serve(0x140002941b0, {0x100952278, 0x14000090240})
+	/Users/noname/.asdf/installs/golang/1.24.2/go/src/net/http/server.go:2102 +0x52c
+created by net/http.(*Server).Serve in goroutine 39
 	/Users/noname/.asdf/installs/golang/1.24.2/go/src/net/http/server.go:3454 +0x3d8

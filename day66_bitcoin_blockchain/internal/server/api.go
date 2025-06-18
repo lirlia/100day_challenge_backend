@@ -131,10 +131,29 @@ func (s *APIServer) handleBlocks(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
+		// ハッシュの安全な処理
+		hashStr := crypto.HexEncode(block.Hash)
+		prevHashStr := crypto.HexEncode(block.PrevBlockHash)
+
+		// 空のハッシュを処理
+		hashDisplay := "N/A"
+		if len(hashStr) >= 16 {
+			hashDisplay = hashStr[:16] + "..."
+		} else if hashStr != "" {
+			hashDisplay = hashStr
+		}
+
+		prevHashDisplay := "N/A"
+		if len(prevHashStr) >= 16 {
+			prevHashDisplay = prevHashStr[:16] + "..."
+		} else if prevHashStr != "" {
+			prevHashDisplay = prevHashStr
+		}
+
 		summary := &engine.BlockSummary{
 			Height:       block.Height,
-			Hash:         crypto.HexEncode(block.Hash)[:16] + "...",
-			PrevHash:     crypto.HexEncode(block.PrevBlockHash)[:16] + "...",
+			Hash:         hashDisplay,
+			PrevHash:     prevHashDisplay,
 			Timestamp:    block.Timestamp,
 			Nonce:        block.Nonce,
 			Transactions: len(block.Transactions),

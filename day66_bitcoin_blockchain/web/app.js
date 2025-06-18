@@ -132,9 +132,10 @@ class BitcoinBlockchainUI {
                     container.appendChild(walletElement);
 
                     // セレクトボックスに追加
-                    const option1 = new Option(`${wallet.address.substring(0, 16)}... (${(wallet.balance / 100000000).toFixed(2)} BTC)`, wallet.address);
-                    const option2 = option1.cloneNode(true);
-                    const option3 = option1.cloneNode(true);
+                    const optionText = `${wallet.address.substring(0, 16)}... (${(wallet.balance / 100000000).toFixed(2)} BTC)`;
+                    const option1 = new Option(optionText, wallet.address);
+                    const option2 = new Option(optionText, wallet.address);
+                    const option3 = new Option(optionText, wallet.address);
 
                     fromSelect.appendChild(option1);
                     toSelect.appendChild(option2);
@@ -151,21 +152,21 @@ class BitcoinBlockchainUI {
 
     createBlockElement(block) {
         const div = document.createElement('div');
-        div.className = 'border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition';
+        div.className = 'border border-gray-600 rounded-lg p-4 hover:bg-gray-700 transition bg-gray-800';
 
         const timestamp = new Date(block.timestamp * 1000);
 
         div.innerHTML = `
             <div class="flex justify-between items-start mb-2">
-                <span class="text-sm font-medium text-blue-600">ブロック #${block.height}</span>
-                <span class="text-xs text-gray-500">${timestamp.toLocaleString('ja-JP')}</span>
+                <span class="text-sm font-medium text-yellow-400">ブロック #${block.height}</span>
+                <span class="text-xs text-gray-400">${timestamp.toLocaleString('ja-JP')}</span>
             </div>
-            <div class="text-xs text-gray-600 space-y-1">
-                <div><strong>ハッシュ:</strong> ${block.hash}</div>
-                <div><strong>前ブロック:</strong> ${block.prev_hash}</div>
+            <div class="text-xs text-gray-300 space-y-1">
+                <div><strong>ハッシュ:</strong> <span class="font-mono">${block.hash ? block.hash.substring(0, 32) + '...' : 'N/A'}</span></div>
+                <div><strong>前ブロック:</strong> <span class="font-mono">${block.prev_hash ? block.prev_hash.substring(0, 32) + '...' : 'N/A'}</span></div>
                 <div class="flex justify-between">
-                    <span><strong>ナンス:</strong> ${block.nonce.toLocaleString()}</span>
-                    <span><strong>Tx:</strong> ${block.transactions}</span>
+                    <span><strong>ナンス:</strong> ${block.nonce ? block.nonce.toLocaleString() : 'N/A'}</span>
+                    <span><strong>Tx:</strong> ${block.transactions || 0}</span>
                 </div>
             </div>
         `;
@@ -175,22 +176,22 @@ class BitcoinBlockchainUI {
 
     createWalletElement(wallet) {
         const div = document.createElement('div');
-        div.className = 'border border-gray-200 rounded-lg p-3 hover:bg-gray-50 transition';
+        div.className = 'border border-gray-600 rounded-lg p-3 hover:bg-gray-700 transition bg-gray-800';
 
         const btcBalance = (wallet.balance / 100000000).toFixed(8);
 
         div.innerHTML = `
             <div class="flex justify-between items-center">
                 <div class="flex-1 min-w-0">
-                    <div class="text-sm font-medium text-gray-900 truncate">
-                        ${wallet.address}
+                    <div class="text-sm font-medium text-white truncate font-mono">
+                        ${wallet.address.substring(0, 20)}...
                     </div>
-                    <div class="text-xs text-gray-500">
+                    <div class="text-xs text-gray-400">
                         ${wallet.balance.toLocaleString()} satoshi
                     </div>
                 </div>
                 <div class="text-right">
-                    <div class="text-sm font-bold crypto-gold">
+                    <div class="text-sm font-bold text-yellow-400">
                         ${btcBalance} BTC
                     </div>
                 </div>
@@ -222,8 +223,8 @@ class BitcoinBlockchainUI {
     }
 
     async sendTransaction() {
-        const from = document.getElementById('fromWallet').value;
-        const to = document.getElementById('toWallet').value;
+        const from = document.getElementById('from-address').value;
+        const to = document.getElementById('to-address').value;
         const amount = parseInt(document.getElementById('amount').value);
 
         if (!from || !to || !amount || amount <= 0) {
@@ -262,7 +263,7 @@ class BitcoinBlockchainUI {
     }
 
     async mineBlock() {
-        const minerAddress = document.getElementById('minerWallet').value;
+        const minerAddress = document.getElementById('miner-address').value;
         if (!minerAddress) {
             this.showToast('マイナーを選択してください', 'error');
             return;
@@ -293,7 +294,7 @@ class BitcoinBlockchainUI {
     }
 
     async startAutoMining() {
-        const minerAddress = document.getElementById('minerWallet').value;
+        const minerAddress = document.getElementById('miner-address').value;
         if (!minerAddress) {
             this.showToast('マイナーを選択してください', 'error');
             return;
@@ -357,7 +358,7 @@ class BitcoinBlockchainUI {
     }
 
     showToast(message, type = 'info') {
-        const container = document.getElementById('toastContainer');
+        const container = document.getElementById('toast-container');
         const toast = document.createElement('div');
 
         const colors = {
@@ -404,7 +405,7 @@ class BitcoinBlockchainUI {
     }
 
     showLoading(show) {
-        const overlay = document.getElementById('loadingOverlay');
+        const overlay = document.getElementById('loading-overlay');
         if (show) {
             overlay.classList.remove('hidden');
         } else {
