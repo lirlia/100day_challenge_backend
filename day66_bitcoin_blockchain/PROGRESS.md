@@ -44,11 +44,11 @@
 - [ ] Git commit: "day66: step 5/8 - ブロックチェーン管理完了"
 
 ### ステップ6: CLI インターフェース
-- [ ] cobra CLI セットアップ
-- [ ] `wallet` コマンド (create, balance, send)
-- [ ] `blockchain` コマンド (create, add, print)
-- [ ] `mine` コマンド
-- [ ] CLI統合テスト
+- [x] cobra CLI セットアップ
+- [x] `wallet` コマンド (create, balance, send)
+- [x] `blockchain` コマンド (create, add, print)
+- [x] `mine` コマンド
+- [x] CLI統合テスト
 - [ ] Git commit: "day66: step 6/8 - CLI実装完了"
 
 ### ステップ7: 簡易P2P ネットワーク
@@ -68,8 +68,8 @@
 
 ## 現在の作業状況
 
-**現在のステップ**: 4/8 - ウォレット機能完了 ✅  
-**次のタスク**: ステップ5 - ブロックチェーン管理実装
+**現在のステップ**: 6/8 - CLI実装完了 ✅  
+**次のタスク**: ステップ7 - P2P機能実装
 
 ## ステップ4完了項目
 

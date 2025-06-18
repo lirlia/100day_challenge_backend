@@ -16,7 +16,7 @@ import (
 
 // 定数定義
 const (
-	CoinbaseAmount = 50                  // マイニング報酬（Bitcoin初期の報酬）
+	CoinbaseAmount = 5000000000          // マイニング報酬（50 BTC in satoshi）
 	CoinbaseData   = "The Genesis Block" // Genesis Coinbase データ
 )
 
