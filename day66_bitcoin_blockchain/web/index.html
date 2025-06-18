@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Day66 - Bitcoin ブロックチェーン</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white min-h-screen">
+    <header class="bg-gray-800 p-4 border-b border-gray-700">
+        <div class="container mx-auto flex justify-between items-center">
+            <h1 class="text-2xl font-bold text-orange-400">Day66 - Bitcoin ブロックチェーン</h1>
+            <button id="refresh-btn" class="bg-orange-500 hover:bg-orange-600 px-4 py-2 rounded">🔄 更新</button>
+        </div>
+    </header>
+
+    <main class="container mx-auto p-6">
+        <!-- Stats Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+            <div class="bg-gray-800 p-4 rounded-lg">
+                <p class="text-gray-400 text-sm">ブロック高</p>
+                <p id="block-height" class="text-2xl font-bold text-yellow-400">-</p>
+            </div>
+            <div class="bg-gray-800 p-4 rounded-lg">
+                <p class="text-gray-400 text-sm">総トランザクション</p>
+                <p id="total-transactions" class="text-2xl font-bold text-green-400">-</p>
+            </div>
+            <div class="bg-gray-800 p-4 rounded-lg">
+                <p class="text-gray-400 text-sm">総UTXO数</p>
+                <p id="total-utxos" class="text-2xl font-bold text-purple-400">-</p>
+            </div>
+            <div class="bg-gray-800 p-4 rounded-lg">
+                <p class="text-gray-400 text-sm">メンプール</p>
+                <p id="mempool-size" class="text-2xl font-bold text-orange-400">-</p>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Blocks -->
+            <div class="lg:col-span-2 bg-gray-800 p-6 rounded-lg">
+                <h2 class="text-xl font-bold mb-4">最新ブロック</h2>
+                <div id="recent-blocks" class="space-y-3 max-h-96 overflow-y-auto">
+                    <!-- Blocks loaded here -->
+                </div>
+            </div>
+
+            <!-- Controls -->
+            <div class="space-y-6">
+                <!-- Wallets -->
+                <div class="bg-gray-800 p-6 rounded-lg">
+                    <h3 class="text-lg font-bold mb-4">ウォレット管理</h3>
+                    <button id="create-wallet-btn" class="w-full bg-orange-500 hover:bg-orange-600 py-2 px-4 rounded mb-4">
+                        新しいウォレット作成
+                    </button>
+                    <div id="wallet-list" class="space-y-2">
+                        <!-- Wallets loaded here -->
+                    </div>
+                </div>
+
+                <!-- Transaction -->
+                <div class="bg-gray-800 p-6 rounded-lg">
+                    <h3 class="text-lg font-bold mb-4">トランザクション送信</h3>
+                    <form id="transaction-form" class="space-y-3">
+                        <select id="from-address" class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2">
+                            <option value="">送信者を選択</option>
+                        </select>
+                        <select id="to-address" class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2">
+                            <option value="">受信者を選択</option>
+                        </select>
+                        <input type="number" id="amount" class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2" placeholder="送金額 (satoshi)" min="1">
+                        <button type="submit" class="w-full bg-green-600 hover:bg-green-700 py-2 px-4 rounded">送信</button>
+                    </form>
+                </div>
+
+                <!-- Mining -->
+                <div class="bg-gray-800 p-6 rounded-lg">
+                    <h3 class="text-lg font-bold mb-4">マイニング制御</h3>
+                    <div id="mining-status" class="text-center p-3 bg-gray-700 rounded mb-4">
+                        <div id="mining-indicator" class="hidden">
+                            <div class="w-6 h-6 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
+                            <p class="text-orange-500 text-sm">マイニング中...</p>
+                        </div>
+                        <div id="mining-idle" class="text-gray-400 text-sm">待機中</div>
+                    </div>
+                    <select id="miner-address" class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 mb-3">
+                        <option value="">マイナーを選択</option>
+                    </select>
+                    <button id="mine-block-btn" class="w-full bg-purple-600 hover:bg-purple-700 py-2 px-4 rounded mb-2">
+                        ブロックをマイニング
+                    </button>
+                    <div class="flex space-x-2">
+                        <button id="start-auto-mining" class="flex-1 bg-blue-600 hover:bg-blue-700 py-1 px-2 rounded text-sm">
+                            自動開始
+                        </button>
+                        <button id="stop-auto-mining" class="flex-1 bg-red-600 hover:bg-red-700 py-1 px-2 rounded text-sm">
+                            自動停止
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Validation -->
+                <div class="bg-gray-800 p-6 rounded-lg">
+                    <h3 class="text-lg font-bold mb-4">チェーン検証</h3>
+                    <button id="validate-chain-btn" class="w-full bg-yellow-600 hover:bg-yellow-700 py-2 px-4 rounded">
+                        チェーンを検証
+                    </button>
+                    <div id="validation-result" class="mt-3 text-sm"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Additional Stats -->
+        <div class="mt-8 bg-gray-800 p-6 rounded-lg">
+            <h2 class="text-xl font-bold mb-6">詳細統計</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 text-center">
+                <div>
+                    <p class="text-gray-400 text-sm mb-2">総価値</p>
+                    <p id="total-value" class="text-xl font-bold text-yellow-400">- satoshi</p>
+                </div>
+                <div>
+                    <p class="text-gray-400 text-sm mb-2">平均ブロックサイズ</p>
+                    <p id="avg-block-size" class="text-xl font-bold text-blue-400">- bytes</p>
+                </div>
+                <div>
+                    <p class="text-gray-400 text-sm mb-2">マイニング難易度</p>
+                    <p id="difficulty" class="text-xl font-bold text-purple-400">-</p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Toast Container -->
+    <div id="toast-container" class="fixed top-4 right-4 z-50 space-y-2"></div>
+
+    <!-- Loading -->
+    <div id="loading-overlay" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-gray-800 rounded-lg p-8 text-center">
+            <div class="w-12 h-12 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <p class="text-white">処理中...</p>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

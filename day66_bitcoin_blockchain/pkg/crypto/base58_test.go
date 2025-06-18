@@ -65,8 +65,8 @@ func TestBase58Decode(t *testing.T) {
 		{
 			name:      "Empty input",
 			input:     "",
-			expected:  nil,
-			shouldErr: true,
+			expected:  []byte{},
+			shouldErr: false,
 		},
 		{
 			name:     "Single '1'",

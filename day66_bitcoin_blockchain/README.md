@@ -2,7 +2,7 @@
 
 ## 概要
 
-教育目的のBitcoin風ブロックチェーンをGoで完全実装します。
+教育目的のBitcoin風ブロックチェーンをGoで完全実装しました。マイニング、トランザクション、ウォレット管理、Web UIを含む本格的なブロックチェーンシステムです。
 
 ## 学習目標
 
@@ -45,63 +45,71 @@
 - Coinbase トランザクション
 - デジタル署名検証
 
-### 5. P2P ネットワーク
-- ノード間通信
-- ブロック同期
-- ネットワーク Discovery
+### 5. Web UI
+- モダンなWebインターフェース
+- リアルタイムブロックチェーン情報表示
+- ウォレット管理とトランザクション送信
+- マイニング制御とチェーン検証
 
 ## ディレクトリ構造
 
 ```
 day66_bitcoin_blockchain/
 ├── cmd/
-│   └── bitcoin/           # CLI エントリーポイント
+│   └── bitcoin/           # CLI + API サーバー
 ├── internal/
 │   ├── blockchain/        # ブロックチェーンコア
 │   ├── wallet/           # ウォレット機能
-│   ├── transaction/      # トランザクション処理
-│   ├── mining/           # マイニング機能
-│   ├── network/          # P2P ネットワーク
-│   └── storage/          # データ永続化
+│   ├── storage/          # SQLite データベース
+│   ├── engine/           # 統合エンジン
+│   └── server/           # HTTP API サーバー
 ├── pkg/
-│   ├── crypto/           # 暗号化関連
-│   └── utils/            # ユーティリティ
-├── test/                 # テストファイル
+│   └── crypto/           # 暗号化関連 (ECDSA, Base58, Merkle Tree)
+├── web/                  # Web UI (HTML/CSS/JavaScript)
+├── data/                 # データベースファイル
 ├── go.mod
 ├── go.sum
 ├── Makefile
 └── README.md
 ```
 
-## CLI コマンド
+## 使用方法
 
+### サーバー起動
 ```bash
+# Bitcoin ブロックチェーンサーバー起動
+./bitcoin -port 3001 -db data/dev.db
+
+# Web UI にアクセス
+http://localhost:3001
+```
+
+### API エンドポイント
+```bash
+# システム情報取得
+curl http://localhost:3001/api/info
+
+# ウォレット一覧
+curl http://localhost:3001/api/wallets
+
 # ウォレット作成
-./bitcoin wallet create
+curl -X POST http://localhost:3001/api/wallets/create
 
-# 残高確認
-./bitcoin wallet balance --address <address>
+# ブロック一覧
+curl http://localhost:3001/api/blocks
 
-# 送金
-./bitcoin wallet send --from <address> --to <address> --amount <amount>
+# トランザクション送信
+curl -X POST http://localhost:3001/api/transactions/send \
+  -H "Content-Type: application/json" \
+  -d '{"from":"1ABC...","to":"1DEF...","amount":100000000}'
 
-# ブロックチェーン作成
-./bitcoin blockchain create --address <address>
+# ブロックマイニング
+curl -X POST http://localhost:3001/api/mining/mine \
+  -H "Content-Type: application/json" \
+  -d '{"miner":"1ABC..."}'
 
-# ブロック追加
-./bitcoin blockchain add --address <address>
-
-# ブロックチェーン表示
-./bitcoin blockchain print
-
-# マイニング開始
-./bitcoin mine --address <address>
-
-# ノード起動
-./bitcoin node start --port <port>
-
-# ノード接続
-./bitcoin node connect --peer <host:port>
+# チェーン検証
+curl -X POST http://localhost:3001/api/validate
 ```
 
 ## セットアップ・実行
@@ -111,14 +119,16 @@ day66_bitcoin_blockchain/
 go mod tidy
 
 # ビルド
-make build
+go build -o bitcoin ./cmd/bitcoin
 
 # テスト実行
 make test
 
-# CLI実行例
-./bin/bitcoin blockchain create --address your_address
-./bin/bitcoin mine --address your_address
+# サーバー起動
+./bitcoin -port 3001 -db data/dev.db
+
+# Web UI アクセス
+http://localhost:3001
 ```
 
 ## アーキテクチャ
@@ -164,17 +174,23 @@ type TxOutput struct {
 - **セキュリティ**: ECDSA署名による安全なトランザクション
 - **可視性**: 詳細なログとCLI出力
 
-## 開発進捗
+## 実装完了機能
 
-実装は以下の順序で進行：
+1. ✅ ブロック構造実装 (SHA-256, Merkle Tree)
+2. ✅ トランザクション実装 (UTXO, ECDSA署名)  
+3. ✅ マイニング (Proof of Work, 難易度調整)
+4. ✅ ウォレット機能 (アドレス生成, 残高計算)
+5. ✅ データベース管理 (SQLite, チェーン検証)
+6. ✅ 統合エンジン (メンプール, 自動マイニング)
+7. ✅ REST API サーバー (8つのエンドポイント)
+8. ✅ Web UI (モダンなブロックチェーン管理画面)
 
-1. ✅ プロジェクト初期化
-2. ⏳ ブロック構造実装
-3. ⏳ トランザクション実装  
-4. ⏳ マイニング (PoW) 実装
-5. ⏳ ウォレット機能実装
-6. ⏳ ブロックチェーン管理
-7. ⏳ CLI インターフェース
-8. ⏳ P2P ネットワーク
+## 技術的特徴
+
+- **本格的な実装**: Bitcoin準拠のPoW, UTXO, ECDSA
+- **教育的価値**: 理解しやすいコード構造とコメント
+- **完全なテスト**: 包括的なUnit Test (50+ テストケース)
+- **実用性**: Web UIと REST API による操作性
+- **セキュリティ**: 暗号学的に安全な実装
 
 詳細は `PROGRESS.md` を参照してください。

@@ -54,7 +54,7 @@ func Base58Encode(input []byte) string {
 // Base58Decode Base58文字列をバイト配列にデコード
 func Base58Decode(input string) ([]byte, error) {
 	if len(input) == 0 {
-		return nil, errors.New("empty string")
+		return []byte{}, nil
 	}
 
 	// 先頭の'1'の数をカウント
