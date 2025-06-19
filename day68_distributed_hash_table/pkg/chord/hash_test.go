@@ -48,9 +48,12 @@ func TestGenerateNodeID(t *testing.T) {
 	}{
 		{"localhost", 8000},
 		{"localhost", 8001},
-		{"127.0.0.1", 8000},
+		{"localhost", 8002},
 		{"example.com", 9000},
+		{"test.local", 3000},
 	}
+
+	seenIDs := make(map[NodeID]bool)
 
 	for _, test := range tests {
 		nodeID := GenerateNodeID(test.address, test.port)
@@ -68,8 +71,10 @@ func TestGenerateNodeID(t *testing.T) {
 				test.address, test.port, nodeID, nodeID2)
 		}
 
-		t.Logf("GenerateNodeID(%s, %d) = %d", test.address, test.port, nodeID)
+		seenIDs[nodeID] = true
 	}
+
+	t.Logf("Generated %d unique node IDs from %d inputs", len(seenIDs), len(tests))
 }
 
 func TestHashKey(t *testing.T) {
@@ -135,104 +140,96 @@ func TestBetween(t *testing.T) {
 
 func TestBetweenInclusive(t *testing.T) {
 	tests := []struct {
-		id, start, end NodeID
-		expected       bool
-		description    string
+		id       NodeID
+		start    NodeID
+		end      NodeID
+		expected bool
 	}{
-		{5, 3, 7, true, "5 between 3 and 7 (inclusive)"},
-		{3, 3, 7, true, "3 between 3 and 7 (inclusive)"},
-		{7, 3, 7, true, "7 between 3 and 7 (inclusive)"},
-		{1, 3, 7, false, "1 not between 3 and 7"},
-		{8, 3, 7, false, "8 not between 3 and 7"},
-		{3, 3, 3, true, "3 between 3 and 3 (same)"},
-
-		// Wrap around cases
-		{1, 250, 10, true, "1 between 250 and 10 (wrap around, inclusive)"},
-		{255, 250, 10, true, "255 between 250 and 10 (wrap around, inclusive)"},
-		{250, 250, 10, true, "250 between 250 and 10 (wrap around, inclusive)"},
-		{10, 250, 10, true, "10 between 250 and 10 (wrap around, inclusive)"},
-		{100, 250, 10, false, "100 not between 250 and 10 (wrap around)"},
+		{5, 0, 10, true},     // 通常のケース: 0 <= 5 <= 10
+		{0, 0, 10, true},     // 境界値: start
+		{10, 0, 10, true},    // 境界値: end
+		{15, 0, 10, false},   // 範囲外
+		{5, 10, 0, false},    // リングを跨ぐケース: 10 <= 5 <= 0 は false
+		{200, 150, 50, true}, // リングを跨ぐケース: 150 <= 200 <= 50 (wrap around)
+		{25, 150, 50, true},  // リングを跨ぐケース: 150 <= 25 <= 50 (wrap around)
+		{100, 150, 50, false}, // リングを跨ぐケース: 150 <= 100 <= 50 は false
 	}
 
 	for _, test := range tests {
 		result := BetweenInclusive(test.id, test.start, test.end)
 		if result != test.expected {
-			t.Errorf("BetweenInclusive(%d, %d, %d) = %v, expected %v (%s)",
-				test.id, test.start, test.end, result, test.expected, test.description)
+			t.Errorf("BetweenInclusive(%d, %d, %d) = %v, expected %v",
+				test.id, test.start, test.end, result, test.expected)
 		}
 	}
 }
 
 func TestDistance(t *testing.T) {
 	tests := []struct {
-		start, end NodeID
-		expected   NodeID
-		description string
+		from     NodeID
+		to       NodeID
+		expected NodeID
 	}{
-		{3, 7, 4, "distance from 3 to 7"},
-		{7, 3, 252, "distance from 7 to 3 (wrap around)"},
-		{0, 255, 255, "distance from 0 to 255"},
-		{255, 0, 1, "distance from 255 to 0 (wrap around)"},
-		{100, 100, 0, "distance from 100 to 100 (same)"},
-		{0, 128, 128, "distance from 0 to 128 (half ring)"},
-		{128, 0, 128, "distance from 128 to 0 (half ring wrap)"},
+		{0, 0, 0},     // 同じ場所
+		{0, 10, 10},   // 通常のケース
+		{10, 0, 246},  // リングを跨ぐケース: (256 - 10) + 0 = 246
+		{100, 150, 50}, // 通常のケース
+		{200, 50, 106}, // リングを跨ぐケース: (256 - 200) + 50 = 106
 	}
 
 	for _, test := range tests {
-		result := Distance(test.start, test.end)
+		result := Distance(test.from, test.to)
 		if result != test.expected {
-			t.Errorf("Distance(%d, %d) = %d, expected %d (%s)",
-				test.start, test.end, result, test.expected, test.description)
+			t.Errorf("Distance(%d, %d) = %d, expected %d",
+				test.from, test.to, result, test.expected)
 		}
 	}
 }
 
 func TestPowerOfTwo(t *testing.T) {
 	tests := []struct {
-		k        int
+		input    int
 		expected NodeID
 	}{
-		{0, 1},
-		{1, 2},
-		{2, 4},
-		{3, 8},
-		{4, 16},
-		{5, 32},
-		{6, 64},
-		{7, 128},
-		{8, 0}, // オーバーフロー
-		{9, 0}, // オーバーフロー
+		{0, 1},   // 2^0 = 1
+		{1, 2},   // 2^1 = 2
+		{2, 4},   // 2^2 = 4
+		{3, 8},   // 2^3 = 8
+		{4, 16},  // 2^4 = 16
+		{5, 32},  // 2^5 = 32
+		{6, 64},  // 2^6 = 64
+		{7, 128}, // 2^7 = 128
+		{8, 0},   // 2^8 = 256, but NodeID is uint8 so it should return 0 for overflow
 	}
 
 	for _, test := range tests {
-		result := PowerOfTwo(test.k)
+		result := PowerOfTwo(test.input)
 		if result != test.expected {
-			t.Errorf("PowerOfTwo(%d) = %d, expected %d",
-				test.k, result, test.expected)
+			t.Errorf("PowerOfTwo(%d) = %d, expected %d", test.input, result, test.expected)
 		}
 	}
 }
 
 func TestAddPowerOfTwo(t *testing.T) {
 	tests := []struct {
-		id       NodeID
-		k        int
+		nodeID   NodeID
+		i        int
 		expected NodeID
 	}{
-		{10, 0, 11},      // 10 + 2^0 = 10 + 1 = 11
-		{10, 1, 12},      // 10 + 2^1 = 10 + 2 = 12
-		{10, 2, 14},      // 10 + 2^2 = 10 + 4 = 14
-		{10, 3, 18},      // 10 + 2^3 = 10 + 8 = 18
-		{250, 3, 2},      // 250 + 8 = 258 mod 256 = 2
-		{255, 1, 1},      // 255 + 2 = 257 mod 256 = 1
-		{128, 7, 0},      // 128 + 128 = 256 mod 256 = 0
+		{0, 0, 1},     // 0 + 2^0 = 1
+		{0, 1, 2},     // 0 + 2^1 = 2
+		{0, 7, 128},   // 0 + 2^7 = 128
+		{100, 0, 101}, // 100 + 2^0 = 101
+		{100, 1, 102}, // 100 + 2^1 = 102
+		{250, 3, 2},   // 250 + 8 = 258, 258 % 256 = 2
+		{255, 1, 1},   // 255 + 2 = 257, 257 % 256 = 1
 	}
 
 	for _, test := range tests {
-		result := AddPowerOfTwo(test.id, test.k)
+		result := AddPowerOfTwo(test.nodeID, test.i)
 		if result != test.expected {
 			t.Errorf("AddPowerOfTwo(%d, %d) = %d, expected %d",
-				test.id, test.k, result, test.expected)
+				test.nodeID, test.i, result, test.expected)
 		}
 	}
 }
@@ -250,6 +247,125 @@ func TestComputeFingerStart(t *testing.T) {
 		}
 
 		t.Logf("Finger[%d] start = %d", i, start)
+	}
+}
+
+func TestBetweenExclusive(t *testing.T) {
+	tests := []struct {
+		id       NodeID
+		start    NodeID
+		end      NodeID
+		expected bool
+	}{
+		{5, 0, 10, true},     // 通常のケース: 0 < 5 < 10
+		{0, 0, 10, false},    // 境界値: start (排他的)
+		{10, 0, 10, false},   // 境界値: end (排他的)
+		{15, 0, 10, false},   // 範囲外
+		{200, 150, 50, true}, // リングを跨ぐケース: 150 < 200 < 50 (wrap around)
+		{25, 150, 50, true},  // リングを跨ぐケース: 150 < 25 < 50 (wrap around)
+		{150, 150, 50, false}, // 境界値: start (排他的)
+		{50, 150, 50, false}, // 境界値: end (排他的)
+	}
+
+	for _, test := range tests {
+		result := BetweenExclusive(test.id, test.start, test.end)
+		if result != test.expected {
+			t.Errorf("BetweenExclusive(%d, %d, %d) = %v, expected %v",
+				test.id, test.start, test.end, result, test.expected)
+		}
+	}
+}
+
+func TestBetweenLeftInclusive(t *testing.T) {
+	tests := []struct {
+		id       NodeID
+		start    NodeID
+		end      NodeID
+		expected bool
+	}{
+		{5, 0, 10, true},     // 通常のケース: 0 <= 5 < 10
+		{0, 0, 10, true},     // 境界値: start (包含)
+		{10, 0, 10, false},   // 境界値: end (排他的)
+		{200, 150, 50, true}, // リングを跨ぐケース: 150 <= 200 < 50 (wrap around)
+		{150, 150, 50, true}, // 境界値: start (包含)
+		{50, 150, 50, false}, // 境界値: end (排他的)
+	}
+
+	for _, test := range tests {
+		result := BetweenLeftInclusive(test.id, test.start, test.end)
+		if result != test.expected {
+			t.Errorf("BetweenLeftInclusive(%d, %d, %d) = %v, expected %v",
+				test.id, test.start, test.end, result, test.expected)
+		}
+	}
+}
+
+func TestBetweenRightInclusive(t *testing.T) {
+	tests := []struct {
+		id       NodeID
+		start    NodeID
+		end      NodeID
+		expected bool
+	}{
+		{5, 0, 10, true},     // 通常のケース: 0 < 5 <= 10
+		{0, 0, 10, false},    // 境界値: start (排他的)
+		{10, 0, 10, true},    // 境界値: end (包含)
+		{200, 150, 50, true}, // リングを跨ぐケース: 150 < 200 <= 50 (wrap around)
+		{150, 150, 50, false}, // 境界値: start (排他的)
+		{50, 150, 50, true},  // 境界値: end (包含)
+	}
+
+	for _, test := range tests {
+		result := BetweenRightInclusive(test.id, test.start, test.end)
+		if result != test.expected {
+			t.Errorf("BetweenRightInclusive(%d, %d, %d) = %v, expected %v",
+				test.id, test.start, test.end, result, test.expected)
+		}
+	}
+}
+
+func TestHashInfo(t *testing.T) {
+	testValues := []string{
+		"test",
+		"localhost:8000",
+		"example.com:9000",
+		"",
+	}
+
+	for _, value := range testValues {
+		info := HashInfo(value)
+
+		// 基本フィールドの存在確認
+		if info["input"] != value {
+			t.Errorf("HashInfo(%s) input = %v, expected %s", value, info["input"], value)
+		}
+
+		nodeID, ok := info["node_id"].(NodeID)
+		if !ok {
+			t.Errorf("HashInfo(%s) node_id is not NodeID type", value)
+			continue
+		}
+
+		// 実際のハッシュ値と一致するか確認
+		expectedNodeID := HashString(value)
+		if nodeID != expectedNodeID {
+			t.Errorf("HashInfo(%s) node_id = %d, expected %d", value, nodeID, expectedNodeID)
+		}
+
+		// hex フィールドの確認
+		if info["hex"] == nil {
+			t.Errorf("HashInfo(%s) hex is nil", value)
+		}
+
+		// binary フィールドの確認
+		if info["binary"] == nil {
+			t.Errorf("HashInfo(%s) binary is nil", value)
+		}
+
+		// hash_space フィールドの確認
+		if info["hash_space"] != HASH_SPACE {
+			t.Errorf("HashInfo(%s) hash_space = %v, expected %d", value, info["hash_space"], HASH_SPACE)
+		}
 	}
 }
 
@@ -273,23 +389,39 @@ func BenchmarkGenerateNodeID(b *testing.B) {
 	}
 }
 
-func BenchmarkBetween(b *testing.B) {
-	id := NodeID(5)
-	start := NodeID(3)
-	end := NodeID(7)
+func BenchmarkPowerOfTwo(b *testing.B) {
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		PowerOfTwo(i % M)
+	}
+}
+
+func BenchmarkAddPowerOfTwo(b *testing.B) {
+	nodeID := NodeID(100)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		Between(id, start, end)
+		AddPowerOfTwo(nodeID, i%M)
 	}
 }
 
 func BenchmarkDistance(b *testing.B) {
-	start := NodeID(100)
-	end := NodeID(200)
+	from := NodeID(50)
+	to := NodeID(200)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		Distance(start, end)
+		Distance(from, to)
+	}
+}
+
+func BenchmarkBetweenInclusive(b *testing.B) {
+	id := NodeID(100)
+	start := NodeID(50)
+	end := NodeID(150)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		BetweenInclusive(id, start, end)
 	}
 }

@@ -185,8 +185,8 @@ func (r *Ring) GetRingInfo() *RingInfo {
 		if node.predecessor != nil {
 			nodeInfo.Predecessor = node.predecessor
 		}
-		// フィンガーテーブルのコピー
-		copy(nodeInfo.FingerTable[:], node.fingerTable[:])
+		// 基本Nodeにはフィンガーテーブルがないため、空の配列を設定
+		nodeInfo.FingerTable = [M]*Node{}
 		node.mu.RUnlock()
 
 		nodes = append(nodes, nodeInfo)

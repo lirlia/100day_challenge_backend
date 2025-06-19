@@ -1,7 +1,9 @@
-@import "tailwindcss";
-
 /* カスタムフォント - サイバーパンク風 */
 @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 /* CSS変数 - サイバーパンクカラーパレット */
 :root {
@@ -151,8 +153,13 @@ body::before {
 
 /* サイバーボタン */
 .cyber-button {
-  @apply px-6 py-3 bg-transparent border border-green-400 text-green-400 font-bold uppercase tracking-wider;
+  padding: 0.75rem 1.5rem;
   background: linear-gradient(45deg, transparent, rgba(0, 255, 136, 0.1), transparent);
+  border: 1px solid #4ade80;
+  color: #4ade80;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
   position: relative;
   overflow: hidden;
   transition: all 0.3s ease;
@@ -381,7 +388,8 @@ body::before {
   }
 
   .cyber-button {
-    @apply px-4 py-2 text-sm;
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
   }
 }
 

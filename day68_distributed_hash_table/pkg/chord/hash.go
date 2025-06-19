@@ -38,10 +38,8 @@ func GenerateNodeID(address string, port int) NodeID {
 }
 
 // HashToString はハッシュ値を16進文字列に変換する（デバッグ用）
-func HashToString(data []byte) string {
-	h := sha1.New()
-	h.Write(data)
-	return fmt.Sprintf("%x", h.Sum(nil))
+func HashToString(nodeID NodeID) string {
+	return fmt.Sprintf("%02x", uint8(nodeID))
 }
 
 // NodeIDFromBigInt は big.Int から NodeID を生成する
@@ -75,53 +73,38 @@ func Between(id, start, end NodeID) bool {
 
 // BetweenInclusive は id が start と end の間にあるかどうかを判定する（境界を含む）
 func BetweenInclusive(id, start, end NodeID) bool {
-	if start == end {
-		return id == start
+	if start <= end {
+		// 通常のケース: start <= end
+		return start <= id && id <= end
+	} else {
+		// リングの境界を跨ぐケース: start > end
+		return id >= start || id <= end
 	}
-
-	if start < end {
-		return id >= start && id <= end
-	}
-
-	// Wrap around case: start > end
-	return id >= start || id <= end
 }
 
-// PowerOfTwo は 2^k を計算する
-func PowerOfTwo(k int) NodeID {
-	if k >= M {
-		return 0 // オーバーフロー防止
+// PowerOfTwo は 2^i を計算する
+func PowerOfTwo(i int) NodeID {
+	if i >= M {
+		return 0
 	}
-	return NodeID(1 << k)
+	return NodeID(1 << uint(i))
 }
 
-// AddPowerOfTwo は NodeID に 2^k を加算する（mod 2^m）
-func AddPowerOfTwo(id NodeID, k int) NodeID {
-	return (id + PowerOfTwo(k)) % HASH_SPACE
+// AddPowerOfTwo は nodeID + 2^i を計算する（リング演算）
+func AddPowerOfTwo(nodeID NodeID, i int) NodeID {
+	if i >= M {
+		return nodeID
+	}
+	powerOfTwo := PowerOfTwo(i)
+	return (nodeID + powerOfTwo) % NodeID(HASH_SPACE)
 }
 
-// Distance は start から end までの距離を計算する（時計回り）
-func Distance(start, end NodeID) NodeID {
-	if end >= start {
-		return end - start
+// Distance はリング上での距離を計算する
+func Distance(from, to NodeID) NodeID {
+	if to >= from {
+		return to - from
 	}
-	return HASH_SPACE - start + end
-}
-
-// ClosestPrecedingNode は target に最も近い先行ノードを見つける
-func (n *Node) ClosestPrecedingNode(target NodeID) *Node {
-	n.mu.RLock()
-	defer n.mu.RUnlock()
-
-	// フィンガーテーブルを逆順に検索
-	for i := M - 1; i >= 0; i-- {
-		finger := n.fingerTable[i]
-		if finger != nil && Between(finger.ID, n.ID, target) {
-			return finger
-		}
-	}
-
-	return n
+	return (NodeID(HASH_SPACE) - from) + to
 }
 
 // ComputeFingerStart は i番目のフィンガーテーブルエントリの開始位置を計算する
@@ -157,4 +140,72 @@ func (n *Node) ResponsibleRange() (start, end NodeID) {
 
 	// (predecessor.ID, n.ID] の範囲
 	return n.predecessor.ID, n.ID
+}
+
+// BetweenExclusive は id が (start, end) の排他的範囲内にあるかチェック
+func BetweenExclusive(id, start, end NodeID) bool {
+	if start < end {
+		// 通常のケース: start < end
+		return start < id && id < end
+	} else {
+		// リングの境界を跨ぐケース: start > end
+		return id > start || id < end
+	}
+}
+
+// BetweenLeftInclusive は id が [start, end) の範囲内にあるかチェック
+func BetweenLeftInclusive(id, start, end NodeID) bool {
+	if start < end {
+		// 通常のケース: start < end
+		return start <= id && id < end
+	} else {
+		// リングの境界を跨ぐケース: start > end
+		return id >= start || id < end
+	}
+}
+
+// BetweenRightInclusive は id が (start, end] の範囲内にあるかチェック
+func BetweenRightInclusive(id, start, end NodeID) bool {
+	if start < end {
+		// 通常のケース: start < end
+		return start < id && id <= end
+	} else {
+		// リングの境界を跨ぐケース: start > end
+		return id > start || id <= end
+	}
+}
+
+// IsSuccessor は candidate が id の successor として適切かチェック
+func IsSuccessor(id, candidate, currentSuccessor NodeID) bool {
+	if currentSuccessor == id {
+		// 現在のsuccessorが自分自身の場合、任意のcandidateが適切
+		return true
+	}
+
+	// candidate が (id, currentSuccessor] の範囲内にある場合、より良いsuccessor
+	return BetweenRightInclusive(candidate, id, currentSuccessor)
+}
+
+// IsPredecessor は candidate が id の predecessor として適切かチェック
+func IsPredecessor(id, candidate, currentPredecessor NodeID) bool {
+	if currentPredecessor == id {
+		// 現在のpredecessorが自分自身の場合、任意のcandidateが適切
+		return true
+	}
+
+	// candidate が [currentPredecessor, id) の範囲内にある場合、より良いpredecessor
+	return BetweenLeftInclusive(candidate, currentPredecessor, id)
+}
+
+// HashInfo はハッシュ値の詳細情報を返す（デバッグ用）
+func HashInfo(value string) map[string]interface{} {
+	nodeID := HashString(value)
+
+	return map[string]interface{}{
+		"input":       value,
+		"node_id":     nodeID,
+		"hex":         HashToString(nodeID),
+		"binary":      fmt.Sprintf("%08b", uint8(nodeID)),
+		"hash_space":  HASH_SPACE,
+	}
 }

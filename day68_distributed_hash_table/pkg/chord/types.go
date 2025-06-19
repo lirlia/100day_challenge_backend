@@ -24,7 +24,6 @@ type Node struct {
 
 	// 内部状態
 	mu          sync.RWMutex
-	fingerTable [M]*Node    `json:"finger_table"`
 	successor   *Node       `json:"successor"`
 	predecessor *Node       `json:"predecessor"`
 
@@ -39,19 +38,6 @@ type Node struct {
 	// データストレージ
 	storage     map[string]string // Key-Value ストア
 	storageMu   sync.RWMutex
-}
-
-// FingerEntry はフィンガーテーブルのエントリ
-type FingerEntry struct {
-	Start     NodeID `json:"start"`     // (n + 2^(i-1)) mod 2^m
-	Interval  string `json:"interval"`  // [start, start + 2^i)
-	Successor *Node  `json:"successor"` // この区間の successor
-}
-
-// FingerTable はフィンガーテーブル全体を表す
-type FingerTable struct {
-	Entries [M]*FingerEntry `json:"entries"`
-	Owner   NodeID          `json:"owner"`
 }
 
 // Message は ノード間通信のメッセージ
@@ -118,7 +104,7 @@ type RingInfo struct {
 
 // NewNode は新しいノードを作成する
 func NewNode(address string, port int) *Node {
-	nodeID := HashString(address)
+	nodeID := GenerateNodeID(address, port)
 
 	return &Node{
 		ID:          nodeID,
@@ -131,31 +117,12 @@ func NewNode(address string, port int) *Node {
 	}
 }
 
-// NewFingerTable は新しいフィンガーテーブルを作成する
-func NewFingerTable(ownerID NodeID) *FingerTable {
-	ft := &FingerTable{
-		Owner:   ownerID,
-		Entries: [M]*FingerEntry{},
-	}
-
-	// フィンガーテーブルエントリを初期化
-	for i := 0; i < M; i++ {
-		start := (ownerID + NodeID(1<<i)) % HASH_SPACE
-		ft.Entries[i] = &FingerEntry{
-			Start:    start,
-			Interval: fmt.Sprintf("[%d, %d)", start, (start+NodeID(1<<i))%HASH_SPACE),
-		}
-	}
-
-	return ft
-}
-
 // String は Node の文字列表現を返す
 func (n *Node) String() string {
 	if n == nil {
 		return "<nil>"
 	}
-	return fmt.Sprintf("Node{ID: %d, Addr: %s}", n.ID, n.Address)
+	return fmt.Sprintf("Node{ID: %d, Addr: %s:%d}", n.ID, n.Address, n.Port)
 }
 
 // String は NodeID の文字列表現を返す
