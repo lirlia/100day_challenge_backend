@@ -137,14 +137,14 @@ func (s *APIServer) handleBlocks(w http.ResponseWriter, r *http.Request) {
 
 		// 空のハッシュを処理
 		hashDisplay := "N/A"
-		if len(hashStr) >= 16 {
+		if hashStr != "" && len(hashStr) >= 16 {
 			hashDisplay = hashStr[:16] + "..."
 		} else if hashStr != "" {
 			hashDisplay = hashStr
 		}
 
 		prevHashDisplay := "N/A"
-		if len(prevHashStr) >= 16 {
+		if prevHashStr != "" && len(prevHashStr) >= 16 {
 			prevHashDisplay = prevHashStr[:16] + "..."
 		} else if prevHashStr != "" {
 			prevHashDisplay = prevHashStr

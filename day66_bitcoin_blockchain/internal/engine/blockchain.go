@@ -196,6 +196,8 @@ func (e *BlockchainEngine) initializeGenesis() error {
 	log.Printf("   📝 ブロックハッシュ: %s", crypto.HexEncode(result.Hash)[:16])
 	log.Printf("   🎯 ナンス: %d", result.Nonce)
 	log.Printf("   ⏱️  マイニング時間: %v", result.Duration)
+	log.Printf("   💰 Genesis報酬ウォレット: %s", systemAddress)
+	log.Printf("   💎 Genesis報酬: %d satoshi", blockchain.CoinbaseAmount)
 
 	return nil
 }

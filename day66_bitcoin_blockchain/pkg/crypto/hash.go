@@ -86,10 +86,11 @@ func GenerateHashTarget(difficulty int) string {
 
 // HashPubKey 公開鍵をハッシュ化（Bitcoin風のアドレス生成用）
 func HashPubKey(pubKey []byte) []byte {
+	// 1. SHA256ハッシュ
 	pubSHA256 := sha256.Sum256(pubKey)
 
-	// 簡易版：SHA256のみ（実際のBitcoinはRIPEMD160も使用）
-	return pubSHA256[:]
+	// 2. RIPEMD160ハッシュ（Bitcoin標準）
+	return RIPEMD160(pubSHA256[:])
 }
 
 // RestorePublicKey バイト配列から公開鍵を復元
