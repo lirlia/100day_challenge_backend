@@ -80,3 +80,4 @@ LLMで生成したコードを置いています。
 | Day63 | 検索エンジン                                                               | <video src="https://github.com/user-attachments/assets/ec32d39f-6d1d-4b9a-a4f2-6c08f3c622f1">  |
 | Day64 | シンプル2Dゲームエンジン                                                   | <video src="https://github.com/user-attachments/assets/6d5700e1-777c-4c75-8129-49974e19c080">  |
 | Day65 | 分散ファイルシステム (GolangDFS)                                           | <video src="https://github.com/user-attachments/assets/bbfe99aa-4aa1-4059-8dc3-998bef566c36">  |
+| Day66 | ブロックチェーンエンジン                                                   | <video src="https://github.com/user-attachments/assets/e9fb7eaf-bcfd-4663-9366-188c1373c5cf">  |
