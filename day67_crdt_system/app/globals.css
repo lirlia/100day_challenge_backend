@@ -1,56 +1,38 @@
-/* カスタムフォント - サイバーパンク風 */
-@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-/* CSS変数 - サイバーパンクカラーパレット */
+/* グローバルフォント設定とサイバーパンク・テクノロジカルテーマ */
 :root {
-  /* メインカラー */
-  --cyber-bg: #0a0a0f;
-  --cyber-bg-light: #1a1a2e;
-  --cyber-bg-card: #16213e;
-  --cyber-surface: #0f1419;
+  /* ネオンカラー - サイバーパンクスタイル */
+  --cyber-green: #00ff88;
+  --cyber-pink: #ff0088;
+  --cyber-blue: #0088ff;
+  --cyber-purple: #8800ff;
+  --cyber-orange: #ff8800;
+  --cyber-cyan: #00ffff;
 
-  /* ネオンカラー */
-  --neon-green: #00ff88;
-  --neon-pink: #ff0088;
-  --neon-blue: #0088ff;
-  --neon-purple: #8800ff;
-  --neon-cyan: #00ffff;
-  --neon-orange: #ff8800;
+  /* ダークベース */
+  --bg-dark: #0a0a0a;
+  --bg-dark-secondary: #1a1a1a;
+  --bg-dark-card: #2a2a2a;
+  --text-primary: #ffffff;
+  --text-secondary: #cccccc;
+  --text-muted: #888888;
 
-  /* グレースケール */
-  --cyber-white: #e0e6ed;
-  --cyber-gray-light: #9ca3af;
-  --cyber-gray: #6b7280;
-  --cyber-gray-dark: #374151;
-
-  /* グロー効果 */
-  --glow-green: 0 0 20px rgba(0, 255, 136, 0.5);
-  --glow-pink: 0 0 20px rgba(255, 0, 136, 0.5);
-  --glow-blue: 0 0 20px rgba(0, 136, 255, 0.5);
-  --glow-purple: 0 0 20px rgba(136, 0, 255, 0.5);
-
-  /* グリッドパターン */
-  --grid-size: 20px;
+  /* グリッド */
   --grid-color: rgba(0, 255, 136, 0.1);
+
+  /* シャドウ */
+  --shadow-cyber: 0 0 20px rgba(0, 255, 136, 0.3);
+  --shadow-glow: 0 0 40px rgba(0, 255, 136, 0.5);
 }
 
-/* グローバルスタイル */
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
-
-html,
 body {
-  font-family: 'Orbitron', 'Share Tech Mono', monospace;
-  background: var(--cyber-bg);
-  color: var(--cyber-white);
+  font-family: 'Inter', 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  background: linear-gradient(135deg, var(--bg-dark) 0%, var(--bg-dark-secondary) 100%);
+  color: var(--text-primary);
   min-height: 100vh;
+  position: relative;
   overflow-x: hidden;
 }
 
@@ -65,77 +47,51 @@ body::before {
   background-image:
     linear-gradient(rgba(0, 255, 136, 0.03) 1px, transparent 1px),
     linear-gradient(90deg, rgba(0, 255, 136, 0.03) 1px, transparent 1px);
-  background-size: var(--grid-size) var(--grid-size);
+  background-size: 50px 50px;
   pointer-events: none;
-  z-index: -1;
+  z-index: 0;
 }
 
-/* スクロールバーのカスタマイズ */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+/* メインコンテンツエリア */
+.main-content {
+  position: relative;
+  z-index: 1;
 }
 
-::-webkit-scrollbar-track {
-  background: var(--cyber-bg-light);
-}
-
-::-webkit-scrollbar-thumb {
-  background: var(--neon-green);
-  border-radius: 4px;
-  box-shadow: var(--glow-green);
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: var(--neon-blue);
-  box-shadow: var(--glow-blue);
-}
-
-/* ユーティリティクラス */
-
-/* ネオンテキスト */
-.neon-text-green {
-  color: var(--neon-green);
-  text-shadow: var(--glow-green);
+/* ネオンテキストエフェクト */
+.neon-text {
+  color: var(--cyber-green);
+  text-shadow:
+    0 0 5px var(--cyber-green),
+    0 0 10px var(--cyber-green),
+    0 0 15px var(--cyber-green);
 }
 
 .neon-text-pink {
-  color: var(--neon-pink);
-  text-shadow: var(--glow-pink);
+  color: var(--cyber-pink);
+  text-shadow:
+    0 0 5px var(--cyber-pink),
+    0 0 10px var(--cyber-pink),
+    0 0 15px var(--cyber-pink);
 }
 
 .neon-text-blue {
-  color: var(--neon-blue);
-  text-shadow: var(--glow-blue);
-}
-
-.neon-text-purple {
-  color: var(--neon-purple);
-  text-shadow: var(--glow-purple);
-}
-
-/* ネオンボーダー */
-.neon-border-green {
-  border: 1px solid var(--neon-green);
-  box-shadow: var(--glow-green), inset 0 0 10px rgba(0, 255, 136, 0.1);
-}
-
-.neon-border-pink {
-  border: 1px solid var(--neon-pink);
-  box-shadow: var(--glow-pink), inset 0 0 10px rgba(255, 0, 136, 0.1);
-}
-
-.neon-border-blue {
-  border: 1px solid var(--neon-blue);
-  box-shadow: var(--glow-blue), inset 0 0 10px rgba(0, 136, 255, 0.1);
+  color: var(--cyber-blue);
+  text-shadow:
+    0 0 5px var(--cyber-blue),
+    0 0 10px var(--cyber-blue),
+    0 0 15px var(--cyber-blue);
 }
 
 /* サイバーカード */
 .cyber-card {
-  background: linear-gradient(135deg, var(--cyber-bg-card) 0%, var(--cyber-bg-light) 100%);
-  border: 1px solid rgba(0, 255, 136, 0.2);
-  border-radius: 8px;
-  backdrop-filter: blur(10px);
+  background: linear-gradient(145deg, var(--bg-dark-card), var(--bg-dark-secondary));
+  border: 1px solid var(--cyber-green);
+  border-radius: 12px;
+  box-shadow:
+    0 4px 20px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(0, 255, 136, 0.2);
+  transition: all 0.3s ease;
   position: relative;
   overflow: hidden;
 }
@@ -144,232 +100,123 @@ body::before {
   content: '';
   position: absolute;
   top: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--neon-green), transparent);
-  opacity: 0.5;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(0, 255, 136, 0.1), transparent);
+  transition: left 0.5s ease;
+}
+
+.cyber-card:hover::before {
+  left: 100%;
+}
+
+.cyber-card:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 8px 25px rgba(0, 0, 0, 0.6),
+    0 0 30px rgba(0, 255, 136, 0.4),
+    inset 0 1px 0 rgba(0, 255, 136, 0.3);
+  border-color: var(--cyber-cyan);
 }
 
 /* サイバーボタン */
-.cyber-button {
-  padding: 0.75rem 1.5rem;
-  background: linear-gradient(45deg, transparent, rgba(0, 255, 136, 0.1), transparent);
-  border: 1px solid #4ade80;
-  color: #4ade80;
-  font-weight: bold;
+.cyber-btn {
+  background: linear-gradient(45deg, var(--bg-dark-card), var(--bg-dark-secondary));
+  border: 2px solid var(--cyber-green);
+  color: var(--cyber-green);
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: 1px;
+  transition: all 0.3s ease;
   position: relative;
   overflow: hidden;
-  transition: all 0.3s ease;
+  text-decoration: none;
+  display: inline-block;
 }
 
-.cyber-button:hover {
-  background: var(--neon-green);
-  color: var(--cyber-bg);
-  box-shadow: var(--glow-green);
-  transform: translateY(-2px);
-}
-
-.cyber-button::before {
+.cyber-btn::before {
   content: '';
   position: absolute;
   top: 0;
   left: -100%;
   width: 100%;
   height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-  transition: left 0.5s;
+  background: linear-gradient(90deg, transparent, rgba(0, 255, 136, 0.2), transparent);
+  transition: left 0.3s ease;
 }
 
-.cyber-button:hover::before {
+.cyber-btn:hover::before {
   left: 100%;
 }
 
-/* グリッチアニメーション */
-.glitch {
-  position: relative;
-  animation: glitch 2s infinite;
+.cyber-btn:hover {
+  background: var(--cyber-green);
+  color: var(--bg-dark);
+  box-shadow:
+    0 0 20px rgba(0, 255, 136, 0.6),
+    inset 0 0 20px rgba(0, 255, 136, 0.1);
+  transform: translateY(-1px);
 }
 
-.glitch::before,
-.glitch::after {
-  content: attr(data-text);
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: var(--cyber-bg);
+/* ピンクボタンバリエーション */
+.cyber-btn-pink {
+  border-color: var(--cyber-pink);
+  color: var(--cyber-pink);
 }
 
-.glitch::before {
-  color: var(--neon-pink);
-  animation: glitch-1 0.3s infinite;
-  clip-path: polygon(0 0, 100% 0, 100% 45%, 0 45%);
+.cyber-btn-pink:hover {
+  background: var(--cyber-pink);
+  color: var(--bg-dark);
+  box-shadow:
+    0 0 20px rgba(255, 0, 136, 0.6),
+    inset 0 0 20px rgba(255, 0, 136, 0.1);
 }
 
-.glitch::after {
-  color: var(--neon-blue);
-  animation: glitch-2 0.3s infinite;
-  clip-path: polygon(0 55%, 100% 55%, 100% 100%, 0 100%);
+/* ブルーボタンバリエーション */
+.cyber-btn-blue {
+  border-color: var(--cyber-blue);
+  color: var(--cyber-blue);
 }
 
-@keyframes glitch {
-
-  0%,
-  100% {
-    transform: translate(0);
-  }
-
-  20% {
-    transform: translate(-2px, 2px);
-  }
-
-  40% {
-    transform: translate(-2px, -2px);
-  }
-
-  60% {
-    transform: translate(2px, 2px);
-  }
-
-  80% {
-    transform: translate(2px, -2px);
-  }
+.cyber-btn-blue:hover {
+  background: var(--cyber-blue);
+  color: var(--bg-dark);
+  box-shadow:
+    0 0 20px rgba(0, 136, 255, 0.6),
+    inset 0 0 20px rgba(0, 136, 255, 0.1);
 }
 
-@keyframes glitch-1 {
-
-  0%,
-  100% {
-    transform: translateX(0);
-  }
-
-  10% {
-    transform: translateX(-2px);
-  }
-
-  20% {
-    transform: translateX(2px);
-  }
-
-  30% {
-    transform: translateX(-2px);
-  }
+/* データバッジ */
+.data-badge {
+  background: linear-gradient(45deg, var(--bg-dark-secondary), var(--bg-dark-card));
+  border: 1px solid var(--cyber-green);
+  color: var(--cyber-green);
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  display: inline-block;
 }
 
-@keyframes glitch-2 {
-
-  0%,
-  100% {
-    transform: translateX(0);
-  }
-
-  15% {
-    transform: translateX(2px);
-  }
-
-  25% {
-    transform: translateX(-2px);
-  }
-
-  35% {
-    transform: translateX(2px);
-  }
-}
-
-/* パルスアニメーション */
-.pulse-glow {
-  animation: pulse-glow 2s ease-in-out infinite alternate;
-}
-
-@keyframes pulse-glow {
-  from {
-    box-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
-  }
-
-  to {
-    box-shadow: 0 0 20px rgba(0, 255, 136, 0.8), 0 0 30px rgba(0, 255, 136, 0.3);
-  }
-}
-
-/* タイプライターアニメーション */
-.typewriter {
-  overflow: hidden;
-  border-right: 2px solid var(--neon-green);
-  white-space: nowrap;
-  animation: typewriter 3s steps(40, end), blink-caret 0.75s step-end infinite;
-}
-
-@keyframes typewriter {
-  from {
-    width: 0;
-  }
-
-  to {
-    width: 100%;
-  }
-}
-
-@keyframes blink-caret {
-
-  from,
-  to {
-    border-color: transparent;
-  }
-
-  50% {
-    border-color: var(--neon-green);
-  }
-}
-
-/* データストリーム効果 */
-.data-stream {
-  position: relative;
-  overflow: hidden;
-}
-
-.data-stream::after {
-  content: '01010110010101';
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(45deg, transparent, rgba(0, 255, 136, 0.1));
-  color: var(--neon-green);
-  font-family: 'Share Tech Mono', monospace;
-  font-size: 10px;
-  opacity: 0.1;
-  animation: data-flow 10s linear infinite;
-  pointer-events: none;
-}
-
-@keyframes data-flow {
-  0% {
-    transform: translateX(-100%);
-  }
-
-  100% {
-    transform: translateX(100%);
-  }
-}
-
-/* ホログラム効果 */
+/* ホログラムエフェクト */
 .hologram {
+  position: relative;
   background: linear-gradient(45deg,
-      transparent,
-      rgba(0, 255, 136, 0.1),
-      transparent,
-      rgba(0, 136, 255, 0.1),
-      transparent);
-  background-size: 200% 200%;
-  animation: hologram 3s ease-in-out infinite;
+      rgba(0, 255, 136, 0.1) 0%,
+      rgba(0, 136, 255, 0.1) 25%,
+      rgba(255, 0, 136, 0.1) 50%,
+      rgba(136, 0, 255, 0.1) 75%,
+      rgba(0, 255, 136, 0.1) 100%);
+  background-size: 400% 400%;
+  animation: hologramShift 4s ease-in-out infinite;
 }
 
-@keyframes hologram {
+@keyframes hologramShift {
 
   0%,
   100% {
@@ -381,26 +228,92 @@ body::before {
   }
 }
 
-/* レスポンシブ調整 */
-@media (max-width: 768px) {
-  :root {
-    --grid-size: 15px;
+/* グリッチエフェクト */
+.glitch {
+  position: relative;
+  animation: glitch 2s infinite;
+}
+
+@keyframes glitch {
+
+  0%,
+  90%,
+  100% {
+    transform: translate(0);
   }
 
-  .cyber-button {
-    padding: 0.5rem 1rem;
-    font-size: 0.875rem;
+  20% {
+    transform: translate(-1px, 1px);
+  }
+
+  30% {
+    transform: translate(1px, -1px);
+  }
+
+  40% {
+    transform: translate(-1px, -1px);
+  }
+
+  50% {
+    transform: translate(1px, 1px);
+  }
+
+  60% {
+    transform: translate(-1px, 1px);
+  }
+
+  70% {
+    transform: translate(1px, -1px);
   }
 }
 
-/* フォーカス状態 */
-*:focus {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--neon-green);
+/* パルスグロー */
+.pulse-glow {
+  animation: pulseGlow 2s ease-in-out infinite alternate;
 }
 
-/* セレクション */
+@keyframes pulseGlow {
+  from {
+    box-shadow: 0 0 20px rgba(0, 255, 136, 0.4);
+  }
+
+  to {
+    box-shadow: 0 0 40px rgba(0, 255, 136, 0.8);
+  }
+}
+
+/* カスタムスクロールバー */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-dark-secondary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, var(--cyber-green), var(--cyber-blue));
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, var(--cyber-cyan), var(--cyber-pink));
+}
+
+/* 選択テキスト */
 ::selection {
   background: rgba(0, 255, 136, 0.3);
-  color: var(--cyber-white);
+  color: var(--text-primary);
+}
+
+/* レスポンシブ調整 */
+@media (max-width: 768px) {
+  .cyber-btn {
+    padding: 10px 20px;
+    font-size: 0.875rem;
+  }
+
+  .cyber-card {
+    border-radius: 8px;
+  }
 }

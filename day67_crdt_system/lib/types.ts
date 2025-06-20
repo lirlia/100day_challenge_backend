@@ -26,14 +26,12 @@ export interface NetworkConnection {
 // CRDT操作の基本インターface
 export interface CRDTOperation {
   id: string;
-  node_id: string;
-  crdt_type: CRDTType;
-  crdt_id: string;
-  operation_type: string;
-  operation_data: any;
-  vector_clock: VectorClock;
-  timestamp: string;
-  applied: boolean;
+  type: CRDTType;
+  nodeId: string;
+  crdtId: string;
+  vectorClock: VectorClock;
+  value: any;
+  timestamp: number;
 }
 
 // CRDT状態スナップショット
@@ -103,10 +101,19 @@ export interface RGAOperation {
   timestamp: number;
 }
 
+// RGA要素
+export interface RGAElement {
+  id: string;
+  value: string;
+  isDeleted: boolean;
+  previousElementId: string | null;
+}
+
 // RGA状態
 export interface RGAState {
-  operations: RGAOperation[];
-  content: string;
+  elements: { [elementId: string]: RGAElement };
+  order: string[];
+  text: string;
 }
 
 // AWORMap状態
@@ -115,9 +122,9 @@ export interface AWORMapState<T = any> {
     [key: string]: {
       value: T;
       timestamp: number;
-      node_id: string;
-      added_tags: Set<string>;
-      removed_tags: Set<string>;
+      nodeId: string;
+      addedTags: Set<string>;
+      removedTags: Set<string>;
     };
   };
 }

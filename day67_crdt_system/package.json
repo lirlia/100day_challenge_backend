@@ -11,6 +11,7 @@
     "check": "biome check --apply ."
   },
   "dependencies": {
+    "autoprefixer": "^10.4.21",
     "better-sqlite3": "^11.1.2",
     "nanoid": "^5.1.5",
     "next": "15.3.0",
@@ -20,7 +21,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
-    "@tailwindcss/postcss": "^4",
+    "@tailwindcss/postcss": "^4.1.10",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "22.14.1",
     "@types/react": "^19",
